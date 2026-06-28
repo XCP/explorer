@@ -11,6 +11,7 @@ const PRIMARY = [
   { label: "Transactions", href: "/transactions" },
   { label: "Leaderboards", href: "/leaderboards" },
   { label: "Firsts", href: "/firsts" },
+  { label: "Vaults", href: "/vaults" },
 ];
 const MORE: [string, string][] = [
   ["Sends", "/sends"], ["Issuances", "/issuances"], ["Orders", "/orders"], ["Matches", "/matches"],
