@@ -34,7 +34,8 @@ const ASSET_DDL = `CREATE TABLE IF NOT EXISTS asset_signals (
   dispenses INTEGER DEFAULT 0, dispense_btc REAL DEFAULT 0, low_quality INTEGER DEFAULT 0,
   holder_breadth REAL DEFAULT 0, pct_creator_holders REAL DEFAULT 0, burned_pct REAL DEFAULT 0,
   distinct_traders INTEGER DEFAULT 0, distinct_dispensers INTEGER DEFAULT 0, age_blocks INTEGER DEFAULT 0, avg_holder_dex REAL DEFAULT 0,
-  recent_events INTEGER DEFAULT 0, recency_blocks INTEGER DEFAULT 0)`;
+  recent_events INTEGER DEFAULT 0, recency_blocks INTEGER DEFAULT 0,
+  max_dispense_btc REAL DEFAULT 0, max_trade_xcp REAL DEFAULT 0)`;
 
 // Ordered passes. DDL passes are cheap; the rest are one heavy aggregation each.
 // Indexes on the hot leaderboard sort/filter columns — without these each board does a full SCAN +
@@ -138,6 +139,10 @@ const PASSES: { name: string; sql: string }[] = [
   // of the window go to 0, then recount within the window.
   { name: "asset_recent_reset", sql: `UPDATE asset_signals SET recent_events=0` },
   { name: "asset_recent", sql: `INSERT INTO asset_signals (asset,recent_events) SELECT asset,COUNT(*) FROM (SELECT forward_asset asset FROM order_matches WHERE block_index>=(SELECT MAX(block_index)-52560 FROM blocks) UNION ALL SELECT backward_asset FROM order_matches WHERE block_index>=(SELECT MAX(block_index)-52560 FROM blocks) UNION ALL SELECT asset FROM dispenses WHERE block_index>=(SELECT MAX(block_index)-52560 FROM blocks)) WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET recent_events=excluded.recent_events` },
+  // REALIZED VALUE: biggest BTC actually paid in a dispense, and biggest XCP that changed hands in a DEX match
+  // (the XCP side of an asset/XCP order match). Captures worth, not volume — surfaces scarce-but-valuable grails.
+  { name: "asset_max_disp_btc", sql: `INSERT INTO asset_signals (asset,max_dispense_btc) SELECT asset, MAX(btc_amount)/1e8 FROM dispenses WHERE btc_amount>0 AND asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET max_dispense_btc=excluded.max_dispense_btc` },
+  { name: "asset_max_trade_xcp", sql: `INSERT INTO asset_signals (asset,max_trade_xcp) SELECT asset, MAX(x)/1e8 FROM (SELECT forward_asset asset, CAST(backward_quantity AS REAL) x FROM order_matches WHERE backward_asset='XCP' UNION ALL SELECT backward_asset, CAST(forward_quantity AS REAL) FROM order_matches WHERE forward_asset='XCP') WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET max_trade_xcp=excluded.max_trade_xcp` },
   // seed asset metadata + precomputed age (tip − first issuance) via UPDATE existing rows (a full INSERT...SELECT of all assets exceeds D1's per-statement write cap)
   { name: "asset_seed", sql: `UPDATE asset_signals SET asset_longname=(SELECT asset_longname FROM assets a WHERE a.asset=asset_signals.asset), issuer=(SELECT issuer FROM assets a WHERE a.asset=asset_signals.asset), divisible=(SELECT divisible FROM assets a WHERE a.asset=asset_signals.asset), locked=(SELECT locked FROM assets a WHERE a.asset=asset_signals.asset), age_blocks=((SELECT MAX(block_index) FROM blocks)-(SELECT first_issuance_block_index FROM assets a WHERE a.asset=asset_signals.asset)), recency_blocks=((SELECT MAX(block_index) FROM blocks)-last_trade_blk) WHERE EXISTS (SELECT 1 FROM assets a WHERE a.asset=asset_signals.asset)` },
   ...INDEX_DDL.map((sql, i) => ({ name: `idx_${i}`, sql })),

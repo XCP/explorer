@@ -191,6 +191,18 @@ both. Conclusion: social attention is best as its OWN future signal, not a resha
 dex_trades 12.4x, btc_fees 3.8x, out_peers 2.5x — addresses DO have strong, measurable signals; current
 ADDRESS_FACTORS weights align with strength. (assets_held 13x is tautological with the proxy → discounted.)
 
+## Realized VALUE — the grail signal (2026-06-28)
+
+The model measured *volume* (holders/trades/activity) but never *worth*. A grail commands a high **price** at
+tiny volume — so volume-only scoring buried ultra-rare 1/1s (WINKELPEPE: 3 trades → p62). Fix: **realized**
+transaction value (NOT the aspirational dispenser ask — a dispense/match is the realized trade):
+- `max_dispense_btc` (largest BTC actually paid in a dispense) + `max_trade_xcp` (largest XCP in a DEX match).
+- Validated: vaulted assets are ~9× more likely to have realized a >0.05 BTC dispense (14.1% vs 1.5%).
+- Effect: lifted the grail validation set objectively — **RAREPEPE p97→Bluechip**, FDCARD/SATOSHICARD Bluechip,
+  PEPEALASSAD p80→p90, WINKELPEPE p62→p85 — with **no hardcoded grail list**. (Grail tags = validation set only.)
+- LESSON: ultra-rare 1/1 grails whose value is in *unsold asks* (not realized) stay mid-tier — honest, since
+  realized value is all CP can prove; full grail identity needs the canonical series directories (off-chain).
+
 ## Weighting / ML notes
 - **Targets/proxies:** POSITIVE = vaulted, high trades_per_holder, survived, durability. NEGATIVE = low_quality, self_trade, thin_secondary_market, imgur-storage.
 - **Multicollinearity to watch:** holders↔trades↔trade_durability (all "popularity"); btc_spent↔dispense_btc↔xcp ("wealth"); age↔span. Use one representative or PCA-style grouping so we don't triple-count one latent factor.

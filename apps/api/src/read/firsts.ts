@@ -10,6 +10,9 @@ export const firsts = router();
 
 // each sql returns: b (block index), t (unix block time), ref (display + link id), typ (entity type for linking)
 type First = { key: string; label: string; sql: string };
+// asset-property firsts read the ISSUANCES event (first valid issuance that set the property), not assets state.
+const VISS = `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM issuances WHERE status='valid'`;
+const ISSORD = `ORDER BY block_index, tx_index LIMIT 1`;
 const FIRSTS: First[] = [
   // --- protocol genesis ---
   { key: "block",        label: "First block",            sql: `SELECT block_index b, block_time t, CAST(block_index AS TEXT) ref, 'block' typ FROM blocks ORDER BY block_index LIMIT 1` },
@@ -33,8 +36,21 @@ const FIRSTS: First[] = [
   { key: "sweep",        label: "First sweep",            sql: `SELECT block_index b, block_time t, source ref, 'address' typ FROM sweeps ORDER BY block_index, rowid LIMIT 1` },
   { key: "cancel",       label: "First cancel",           sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM cancels ORDER BY block_index, rowid LIMIT 1` },
   { key: "btcpay",       label: "First BTC pay",          sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM btcpays ORDER BY block_index, rowid LIMIT 1` },
-  { key: "locked",       label: "First locked asset",     sql: `SELECT first_issuance_block_index b, first_issuance_block_time t, asset ref, 'asset' typ FROM assets WHERE locked=1 ORDER BY first_issuance_block_index LIMIT 1` },
-  { key: "one_of_one",   label: "First 1/1 (single edition)", sql: `SELECT first_issuance_block_index b, first_issuance_block_time t, asset ref, 'asset' typ FROM assets WHERE divisible=0 AND locked=1 AND CAST(supply_normalized AS REAL)=1 ORDER BY first_issuance_block_index LIMIT 1` },
+  { key: "non_xcp_order",label: "First non-XCP DEX order",sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM orders WHERE give_asset!='XCP' AND get_asset!='XCP' ORDER BY block_index, rowid LIMIT 1` },
+  { key: "btc_dispense", label: "First dispense paid in BTC", sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM dispenses WHERE btc_amount>0 ORDER BY block_index, event_index LIMIT 1` },
+  // asset-PROPERTY firsts — from the ISSUANCES table (the EVENT that first set the property), NOT the assets
+  // current-state table. e.g. first LOCKED = first valid issuance with locked=1, not the oldest now-locked asset.
+  { key: "locked",       label: "First locked issuance",  sql: `${VISS} AND locked=1 ${ISSORD}` },
+  { key: "divisible",    label: "First divisible asset",  sql: `${VISS} AND divisible=1 ${ISSORD}` },
+  { key: "indivisible",  label: "First indivisible asset",sql: `${VISS} AND divisible=0 ${ISSORD}` },
+  { key: "one_of_one",   label: "First 1/1 (single edition)", sql: `${VISS} AND divisible=0 AND locked=1 AND CAST(quantity AS INTEGER)=1 ${ISSORD}` },
+  { key: "reset",        label: "First asset reset (CIP03)", sql: `${VISS} AND reset=1 ${ISSORD}` },
+  { key: "transfer",     label: "First asset transfer",   sql: `${VISS} AND transfer=1 ${ISSORD}` },
+  { key: "callable",     label: "First callable asset",   sql: `${VISS} AND callable=1 ${ISSORD}` },
+  { key: "description",  label: "First asset description",sql: `${VISS} AND description IS NOT NULL AND description!='' ${ISSORD}` },
+  { key: "json_desc",    label: "First JSON description", sql: `${VISS} AND TRIM(description) LIKE '{%' ${ISSORD}` },
+  { key: "mime",         label: "First MIME-typed asset", sql: `${VISS} AND mime_type IS NOT NULL AND mime_type!='' ${ISSORD}` },
+  { key: "easyasset",    label: "First EasyAsset",        sql: `${VISS} AND lower(description) LIKE '%easyasset%' ${ISSORD}` },
   { key: "fairminter",   label: "First fairminter",       sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM fairminters ORDER BY block_index, rowid LIMIT 1` },
   { key: "fairmint",     label: "First fairmint",         sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM fairmints ORDER BY block_index, rowid LIMIT 1` },
   // --- derived firsts (our classification layer) ---

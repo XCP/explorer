@@ -81,7 +81,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     : sig && (sig.holders ?? 0) > 0 ? "held" : "none";
   const score = q && state === "market" ? assetScore(q.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
-  const tags = await c.env.DB.prepare(`SELECT tag FROM tags WHERE entity_type='asset' AND entity_id=?`).bind(r.asset).all().then((x) => x.results.map((t: any) => t.tag)).catch(() => []);
+  const tags: string[] = await c.env.DB.prepare(`SELECT tag FROM tags WHERE entity_type='asset' AND entity_id=?`).bind(r.asset).all().then((x) => x.results.map((t: any) => String(t.tag))).catch(() => []);
   return J(c, { result: {
     ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count: holders?.c ?? 0,
     burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),

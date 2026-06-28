@@ -53,12 +53,17 @@ const COMPUTED_RULES: { tag: string; sql: string }[] = [
 
 // Curated/labeled set — the validation anchors (source='curated'). Seed; expand by hand. These are the
 // "known good/known bad" the harness/face-validity checks measure against. Keep high-confidence only.
+// Grail validation set — known-iconic assets, the ground truth we test the objective score against (NOT a
+// score override; the score stays objective). LESSON (2026-06-28): liquid grails (FDCARD/SATOSHICARD ~p98)
+// the model ranks well, but ultra-rare 1/1 grails (WINKELPEPE 3 holders/3 trades, p62) are objectively
+// indistinguishable from dead assets in CP data — grail-ness there = series membership, which must come from
+// the canonical Rare Pepe / Fake Rare directories (off-chain but authoritative), imported as tags later.
 const CURATED_TAGS: { type: string; id: string; tag: string }[] = [
-  { type: "asset", id: "RAREPEPE", tag: "grail" },
-  { type: "asset", id: "PEPECASH", tag: "grail" },
-  { type: "asset", id: "FAKERARE", tag: "grail" },
-  { type: "asset", id: "NAKAMOTOCARD", tag: "grail" },
-  // (scams/wash are mostly covered by the computed 'wash' tag from low_quality; add named ones here)
+  { type: "asset", id: "FDCARD", tag: "grail" }, { type: "asset", id: "SATOSHICARD", tag: "grail" },
+  { type: "asset", id: "RAREPEPE", tag: "grail" }, { type: "asset", id: "DARKPILLPEPE", tag: "grail" },
+  { type: "asset", id: "WINKELPEPE", tag: "grail" }, { type: "asset", id: "PEPEALASSAD", tag: "grail" },
+  { type: "asset", id: "TEST", tag: "grail" }, { type: "asset", id: "NINJASUIT", tag: "grail" },
+  { type: "asset", id: "PEPECASH", tag: "grail" }, { type: "asset", id: "FAKERARE", tag: "grail" },
 ];
 
 export async function buildTags(env: Env): Promise<any> {

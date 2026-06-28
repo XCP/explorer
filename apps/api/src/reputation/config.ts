@@ -25,8 +25,9 @@ export const SCALARS = {
   // floored — so an aged-but-inactive entity decays toward dormant instead of coasting. Gentle ("starts to
   // decay"): ~half credit after the half-life, never below the floor. Assets decay on time-since-last-trade
   // (recency_blocks); addresses on time-since-last-activity (tip-last_blk).
-  assetDecayHalflife: 210240, assetDecayFloor: 0.3,  // ~4 years
-  addrDecayHalflife: 157680,  addrDecayFloor: 0.2,   // ~3 years
+  assetDecayHalflife: 420480, assetDecayFloor: 0.6,  // ~8 years, gentle — assets are durable stores; a quiet
+  //                                                     year shouldn't knock a real grail (RAREPEPE) off Bluechip
+  addrDecayHalflife: 157680,  addrDecayFloor: 0.2,   // ~3 years — people go inactive; idle OGs should decay more
 };
 
 /* ---------- ADDRESS reputation ---------- */
@@ -61,6 +62,9 @@ export const ASSET_FACTORS: Factor[] = [
   { key: "distinct_traders",    weight: 1.5, transform: "log",    label: "traders",     why: "distinct market participants — wash-resistant breadth (10.3x lift)" },
   // -- scarcity --
   { key: "burned_pct",          weight: 0.8, transform: "log",    label: "scarcity",    why: "% of supply burned — deflation, independent of popularity (6.68x)" },
+  // -- realized VALUE (worth, not volume) — the grail signal: high price at low volume (2026-06-28 lab) --
+  { key: "max_dispense_btc",    weight: 1.5, transform: "log",    label: "value_btc",   why: "largest BTC realized in a dispense — worth; surfaces scarce grails that volume misses" },
+  { key: "max_trade_xcp",       weight: 0.6, transform: "log",    label: "value_xcp",   why: "largest XCP realized in a DEX trade — realized value per sale" },
   // -- survivorship + recency --
   { key: "__asset_age",         weight: 1.0, transform: "span",   label: "age",         why: "older = survived (1.48x); precomputed tip−first issuance. DECAYS if the asset has gone quiet." },
   { key: "recent_events",       weight: 1.2, transform: "log",    label: "current",     why: "trailing-12mo trades+dispenses — current relevance / still-alive (6.59x lift)" },
@@ -89,16 +93,16 @@ export const ADDRESS_PCT = { floor: 0.5, p50: 2.5, p90: 4.7, p99: 17.5, max: 53 
 // dispensed). The score ranks an asset against real, traded assets — not against ~132k held-but-never-traded
 // or ~98k zero-holder assets, which would make every score meaningless. Those get honest non-ranked states
 // (Untraded / Dormant). Market-asset percentiles: p50=15.1, p90=26.9, p99=41, max=60.6.
-export const ASSET_PCT   = { floor: 1, p50: 13.9, p90: 24, p99: 41, max: 70 }; // recalibrated 06-28 w/ decay+recent
+export const ASSET_PCT   = { floor: 1, p50: 14.5, p90: 26.1, p99: 44.5, max: 72 }; // recalibrated 06-28 w/ realized value
 
 // Asset quality TIERS — the primary display (the 0-100 score is a heuristic, so we lead with a coarse, honest
 // tier and keep the number as detail). Tiers cut on RAW (= exact percentiles of the market population). Each
 // states its meaning so an open-source reader knows precisely what it asserts. Two non-ranked states below:
 //   Untraded = issued & held but never traded/dispensed · Dormant = no holders at all.
 export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "Bluechip",    minRaw: 41,    meaning: "top ~1% of assets with a market — deep, durable, broadly-held" },
-  { tier: "Established", minRaw: 24,    meaning: "top ~10% — sustained real trading and distribution" },
-  { tier: "Active",      minRaw: 13.9,  meaning: "upper half of assets that have a real market" },
+  { tier: "Bluechip",    minRaw: 44.5,  meaning: "top ~1% of assets with a market — deep, durable, valuable" },
+  { tier: "Established", minRaw: 26.1,  meaning: "top ~10% — sustained real trading and distribution" },
+  { tier: "Active",      minRaw: 14.5,  meaning: "upper half of assets that have a real market" },
   { tier: "Speculative", minRaw: -1e9,  meaning: "has a market but thin / early" },
 ];
 
