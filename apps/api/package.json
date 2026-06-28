@@ -1,0 +1,27 @@
+{
+  "name": "xcpdex-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "tsc -p tsconfig.test.json && node --test \".test-dist/tests/**/*.test.js\"",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply xcpdex --local",
+    "migrate:remote": "wrangler d1 migrations apply xcpdex --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250124.0",
+    "prettier": "^3.9.0",
+    "prettier-plugin-embed": "^0.5.1",
+    "prettier-plugin-sql": "^0.20.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
+    "@scure/base": "^2.0.0",
+    "@scure/btc-signer": "^2.0.1",
+    "hono": "^4.7.0"
+  }
+}

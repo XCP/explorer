@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* Converged design tokens — see DESIGN.md. Dark zinc-950 terminal (xcpdex family) + xcp brand accent. */
+@theme inline {
+  --color-background: #09090b;
+  --color-foreground: #f4f4f5;
+  --color-xcp: #ec1550;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root { color-scheme: dark; }
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
+/* Calm, readable links in dense tables; the xcp crimson is reserved for accents
+   (logo, active nav/tab, primary buttons) which set text-[--color-xcp] explicitly. */
+a { color: #d4d4d8; }
+a:hover { color: var(--color-xcp); }
+
+/* Terminal-feel scrollbar (matches xcpdex) */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #09090b; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }

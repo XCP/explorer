@@ -1,0 +1,26 @@
+name = "xcp-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[limits]
+cpu_ms = 300000
+
+[triggers]
+crons = ["*/2 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "xcpio"
+database_id = "0aa317ef-600f-4908-b7e3-fb8df8c71104"
+migrations_dir = "migrations"
+
+# worker-to-worker (avoids the workers.dev sibling-fetch issue) for swap market data
+[[services]]
+binding = "XCPDEX"
+service = "xcpdex-api"
+
+[vars]
+CP_API_BASE = "https://api.counterparty.io:4000/v2"
+XCPDEX_API = "https://xcpdex-api.me-bbe.workers.dev"
+CONSOLIDATION_API = "https://api.xcp.io"   # Hetzner consolidation svc (today api.xcp.io; switch to a grey-cloud origin at cutover)
+# ADMIN_TOKEN is a Cloudflare secret (wrangler secret put ADMIN_TOKEN) — not stored in the repo.

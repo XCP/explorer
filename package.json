@@ -1,0 +1,6 @@
+{
+  "name": "xcp-explorer",
+  "private": true,
+  "description": "XCP/explorer monorepo — apps/api = api.xcp.io (Cloudflare Worker API); apps/web (later) = xcp.io. Modeled on XCP/exchange.",
+  "workspaces": ["apps/*"]
+}

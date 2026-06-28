@@ -1,0 +1,11 @@
+name = "xcp-web"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+main = ".open-next/worker.js"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[vars]
+NEXT_PUBLIC_API_BASE = "https://xcp-api.me-bbe.workers.dev"

@@ -1,0 +1,13 @@
+{
+  "printWidth": 120,
+  "plugins": [
+    "prettier-plugin-embed",
+    "prettier-plugin-sql"
+  ],
+  "embeddedSqlTags": [
+    "sql"
+  ],
+  "language": "sqlite",
+  "keywordCase": "upper",
+  "expressionWidth": 120
+}
