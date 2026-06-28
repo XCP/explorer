@@ -1,8 +1,8 @@
 /** Asset surfaces: index, detail (with derived supply/burned/circulating), per-asset record tabs,
  *  market data (xcpdex), and the research reads (collector cohort, holder quality). */
 import { router, J, lim, off, ORDER_SELECT, activeBalance, round } from "./shared";
-import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS } from "../reputation/score";
-import { ASSET_PENALTY } from "../reputation/config";
+import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
+import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 
 export const assets = router();
 
@@ -89,6 +89,41 @@ assets.get("/v2/assets/:asset", async (c) => {
     quality: q ? { tier: assetTier(q.raw, state), score, raw: round(q.raw, 2), breakdown: q.breakdown, low_quality: sig.low_quality === 1 } : { tier: "Dormant", score: null },
     tags,
   } });
+});
+
+// Holder makeup — "who holds this asset?" by reputation tier + archetype + concentration. Surfaces the
+// quality of the holder base (a real asset is held by established collectors; a sybil-minted one by Casual
+// wallets — e.g. MINTS is ~94% Casual). Infra holders (exchange/vault/burn) are bucketed out.
+assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
+  const a = c.req.param("asset").toUpperCase();
+  const tip = Number((await c.env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<any>())?.m) || 0;
+  const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
+  const [og, est, act] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
+  const where = `b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`;
+  const rows = await c.env.DB.prepare(
+    `WITH h AS (
+       SELECT CAST(b.quantity AS REAL) q,
+         (sg.is_exchange=1 OR sg.is_deposit=1 OR sg.is_burn=1 OR sg.is_emblem_vault=1 OR sg.likely_service=1) infra,
+         (${expr}) raw, sg.survived_assets surv, sg.assets_held held
+       FROM balances b JOIN address_signals sg ON sg.addr=b.holder WHERE ${where}),
+     tot AS (SELECT SUM(q) s FROM h)
+     SELECT CASE WHEN infra THEN 'Infra' WHEN raw>=${og} THEN 'OG' WHEN raw>=${est} THEN 'Established'
+                 WHEN raw>=${act} THEN 'Active' ELSE 'Casual' END tier,
+       COUNT(*) holders, ROUND(100.0*SUM(q)/(SELECT s FROM tot),1) pct_supply
+     FROM h GROUP BY tier`
+  ).bind(a).all().then((x) => x.results).catch(() => []);
+  // archetype counts among holders + concentration (top holder share from the precomputed signal)
+  const arche = await c.env.DB.prepare(
+    `SELECT SUM(CASE WHEN sg.survived_assets>=20 THEN 1 ELSE 0 END) creators,
+            SUM(CASE WHEN sg.assets_held>=500 THEN 1 ELSE 0 END) whales,
+            SUM(CASE WHEN sg.assets_held>=100 THEN 1 ELSE 0 END) collectors,
+            COUNT(*) holders
+     FROM balances b JOIN address_signals sg ON sg.addr=b.holder WHERE ${where}`
+  ).bind(a).first<any>().catch(() => null);
+  const top1 = await c.env.DB.prepare(`SELECT ROUND(top1_pct,1) t FROM asset_signals WHERE asset=?`).bind(a).first<any>().catch(() => null);
+  const order = ["OG", "Established", "Active", "Casual", "Infra"];
+  const tiers = (rows as any[]).sort((x, y) => order.indexOf(x.tier) - order.indexOf(y.tier));
+  return J(c, { result: { asset: a, holders: arche?.holders ?? 0, tiers, archetypes: { creators: arche?.creators ?? 0, collectors: arche?.collectors ?? 0, whales: arche?.whales ?? 0 }, top_holder_pct: top1?.t ?? null } }, 300);
 });
 
 // Asset-quality calibration view (parallel to /v2/reputation/review for addresses): the population quality

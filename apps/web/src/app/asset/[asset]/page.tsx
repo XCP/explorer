@@ -8,6 +8,7 @@ import { Flame, Landmark, Hammer, Key } from "lucide-react";
 import { Card, KV, AssetArt, LockBadge, Loading, ErrorBox, Empty } from "@/components/ui";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { AssetCohort, HolderQuality } from "@/components/relationships";
+import { HolderMakeup } from "@/components/holder-makeup";
 import { bl, tx, ad, as, time, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/indexes";
 import { commas, short } from "@/lib/format";
 
@@ -98,6 +99,7 @@ export default function AssetPage({ params }: { params: Promise<{ asset: string 
           </div>
         </div>
       </Card>
+      <HolderMakeup asset={item.asset} />
       <HolderQuality asset={item.asset} />
       <AssetCohort asset={item.asset} />
       <DetailTabs tabs={tabs} />
