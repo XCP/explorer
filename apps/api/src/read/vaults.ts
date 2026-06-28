@@ -13,7 +13,7 @@ vaults.get("/v2/vaults", async (c) => {
   const [summary, topAssets, topFunders, topCrackers, activity] = await Promise.all([
     c.env.DB.prepare(
       `SELECT (SELECT COUNT(*) FROM emblem_vaults) vault_records,
-        (SELECT COUNT(DISTINCT b.holder) FROM ${inVault}) funded_vaults,
+        (SELECT COUNT(*) FROM emblem_vaults e WHERE EXISTS(SELECT 1 FROM balances b WHERE b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0)) funded_vaults,
         (SELECT COUNT(DISTINCT b.asset) FROM ${inVault}) assets_vaulted,
         (SELECT COUNT(*) FROM tags WHERE tag='vault_funder') funders,
         (SELECT COUNT(*) FROM tags WHERE tag='vault_cracker') crackers`

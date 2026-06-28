@@ -45,6 +45,9 @@ const INDEX_DDL = [
   "CREATE INDEX IF NOT EXISTS idx_as_trades ON asset_signals(trades)",
   "CREATE INDEX IF NOT EXISTS idx_as_disp ON asset_signals(dispense_btc)",
   "CREATE INDEX IF NOT EXISTS idx_as_lowq ON asset_signals(low_quality)",
+  // tiny partial index so the exchanges overview finds the ~23 exchange wallets instantly (else it scanned
+  // all 1.75M sends — 18s). Pairs with periodic ANALYZE (see index.ts) which fixes the join orders globally.
+  "CREATE INDEX IF NOT EXISTS idx_adr_exchange ON address_signals(is_exchange) WHERE is_exchange=1",
   "CREATE INDEX IF NOT EXISTS idx_adr_surv ON address_signals(survived_assets)",
   "CREATE INDEX IF NOT EXISTS idx_adr_held ON address_signals(assets_held)",
   "CREATE INDEX IF NOT EXISTS idx_adr_cdisp ON address_signals(clean_dispense_btc)",

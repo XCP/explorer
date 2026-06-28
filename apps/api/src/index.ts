@@ -29,6 +29,16 @@ export interface Env {
   ETHERSCAN_KEY: string;        // Etherscan API key (Emblem enumeration fallback)
 }
 
+// Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
+// block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
+async function maybeAnalyze(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='last_analyze_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 1008) return; // ~1 week of blocks
+  await env.DB.prepare(`ANALYZE`).run();
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('last_analyze_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/", (c) => c.text("api.xcp.io ok"));
@@ -57,6 +67,10 @@ export default {
         // Maintain authoritative asset supply (+asset_id/mime_type): backfill all assets once, then
         // refetch only assets touched by a supply-changing event, plus XCP every tick (fee-burn drift).
         try { await crawlAssetSupply(env); } catch (e) { console.error("crawlAssetSupply", e); }
+        // Refresh SQLite optimizer stats periodically (~weekly). Without stats D1 picked terrible join orders
+        // (exchanges overview scanned all 1.75M sends = 18s); ANALYZE fixed plans globally (→0.5s). Gated by
+        // block-delta because ANALYZE itself is ~10s — far too heavy to run every 2-min tick.
+        try { await maybeAnalyze(env); } catch (e) { console.error("maybeAnalyze", e); }
       }
     })());
   },
