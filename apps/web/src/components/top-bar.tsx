@@ -17,7 +17,7 @@ const MORE: [string, string][] = [
   ["Sends", "/sends"], ["Issuances", "/issuances"], ["Orders", "/orders"], ["Matches", "/matches"],
   ["Dispensers", "/dispensers"], ["Dispenses", "/dispenses"], ["Sweeps", "/sweeps"], ["Broadcasts", "/broadcasts"],
   ["Dividends", "/dividends"], ["Burns", "/burns"], ["Fairminters", "/fairminters"], ["Fairmints", "/fairmints"],
-  ["Destructions", "/destructions"], ["Bets", "/bets"], ["Network stats", "/stats"],
+  ["Destructions", "/destructions"], ["Bets", "/bets"], ["Exchanges", "/exchanges"], ["Network stats", "/stats"],
 ];
 
 function Ticker({ label, v, chg }: { label: string; v: number | null; chg: number | null }) {

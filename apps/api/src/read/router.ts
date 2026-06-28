@@ -12,6 +12,7 @@ import { chain } from "./chain";
 import { emblem } from "./emblem";
 import { firsts } from "./firsts";
 import { vaults } from "./vaults";
+import { exchanges } from "./exchanges";
 
 export const read = router();
 read.route("/", stats);
@@ -21,3 +22,4 @@ read.route("/", chain);
 read.route("/", emblem);
 read.route("/", firsts);
 read.route("/", vaults);
+read.route("/", exchanges);
