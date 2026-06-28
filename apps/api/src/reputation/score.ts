@@ -9,21 +9,26 @@ import {
 
 const num = (v: any) => Number(v) || 0;
 const ln = (x: number) => Math.log(1 + Math.max(0, x));
+// staleness decay multipliers (gentle hyperbolic, floored) — see SCALARS. Applied to legacy time-terms so an
+// aged-but-inactive entity decays toward dormant instead of coasting on historical standing.
+const assetDecay = (row: any) => Math.max(SCALARS.assetDecayFloor, SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)));
+const addrDecay = (row: any, tip: number) => Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_blk))));
 
 /* ---------- single-row scoring (read endpoint) ---------- */
 
 function factorValue(f: Factor, row: any, tip: number): number {
   // derived ratios (not stored columns) — computed from the row
   if (f.key === "__trades_per_holder") return ln(num(row.trades) / (num(row.holders) || 1));
-  if (f.key === "__asset_age") return num(row.age_blocks) / SCALARS.blockScale; // precomputed tip−first_issuance, scaled like age/span
+  if (f.key === "__asset_age") return (num(row.age_blocks) / SCALARS.blockScale) * assetDecay(row); // decays if the asset went quiet
   // durability is GATED by distinct traders: a long span counts only to the extent real people sustained the
   // trading (dt/(dt+3) → 0 at no traders, ~0.5 at 3, →1 with many). Kills the "two wash trades years apart" game.
+  // Then DECAYED by staleness (recency_blocks) so a long-dead market doesn't keep full durability credit.
   if (f.key === "__durability") {
     const dt = num(row.distinct_traders);
-    return ((num(row.last_trade_blk) - num(row.first_trade_blk)) / SCALARS.blockScale) * (dt / (dt + 3));
+    return ((num(row.last_trade_blk) - num(row.first_trade_blk)) / SCALARS.blockScale) * (dt / (dt + 3)) * assetDecay(row);
   }
   switch (f.transform) {
-    case "age": return (tip - num(row.first_blk)) / SCALARS.blockScale;
+    case "age": return ((tip - num(row.first_blk)) / SCALARS.blockScale) * addrDecay(row, tip); // address age decays if idle
     case "span": return (num(row.last_blk) - num(row.first_blk)) / SCALARS.blockScale; // __span (address)
     case "linear": return num(row[f.key]) / 100;
     default: return ln(num(row[f.key])); // "log"
@@ -99,10 +104,12 @@ export function rawSqlExpr(factors: Factor[], tip: number): string {
   for (const f of factors) {
     if (!f.weight || f.key === "xcp") continue;
     const w = f.weight, B = SCALARS.blockScale;
+    const aDk = `MAX(${SCALARS.assetDecayFloor},${SCALARS.assetDecayHalflife}.0/(${SCALARS.assetDecayHalflife}.0+COALESCE(recency_blocks,0)))`; // asset staleness decay
+    const adDk = `MAX(${SCALARS.addrDecayFloor},${SCALARS.addrDecayHalflife}.0/(${SCALARS.addrDecayHalflife}.0+MAX(0,${tip}-COALESCE(last_blk,${tip}))))`; // address idle decay
     if (f.key === "__trades_per_holder") terms.push(`${w}*LN(1+MAX(0,COALESCE(trades,0)*1.0/NULLIF(holders,0)))`);
-    else if (f.key === "__asset_age") terms.push(`${w}*(COALESCE(age_blocks,0)/${B}.0)`);
-    else if (f.key === "__durability") terms.push(`${w}*((COALESCE(last_trade_blk,0)-COALESCE(first_trade_blk,0))/${B}.0)*(COALESCE(distinct_traders,0)*1.0/(COALESCE(distinct_traders,0)+3.0))`);
-    else if (f.transform === "age") terms.push(`${w}*((${tip}-COALESCE(first_blk,${tip}))/${B}.0)`);
+    else if (f.key === "__asset_age") terms.push(`${w}*(COALESCE(age_blocks,0)/${B}.0)*${aDk}`);
+    else if (f.key === "__durability") terms.push(`${w}*((COALESCE(last_trade_blk,0)-COALESCE(first_trade_blk,0))/${B}.0)*(COALESCE(distinct_traders,0)*1.0/(COALESCE(distinct_traders,0)+3.0))*${aDk}`);
+    else if (f.transform === "age") terms.push(`${w}*((${tip}-COALESCE(first_blk,${tip}))/${B}.0)*${adDk}`);
     else if (f.transform === "span") terms.push(`${w}*((COALESCE(last_blk,0)-COALESCE(first_blk,0))/${B}.0)`);
     else if (f.transform === "linear") terms.push(`${w}*(COALESCE(${f.key},0)/100.0)`);
     else terms.push(`${w}*LN(1+MAX(0,COALESCE(${f.key},0)))`);

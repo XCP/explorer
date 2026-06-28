@@ -21,6 +21,12 @@ export const SCALARS = {
   blockScale: 100000,        // block deltas divided by this in age/span terms
   modernActiveBlock: 900000, // active at/after this block earns the flat modern bonus
   modernActiveBonus: 1.5,
+  // Staleness DECAY (2026-06-28): legacy time-terms are multiplied by halflife/(halflife+inactive_blocks),
+  // floored — so an aged-but-inactive entity decays toward dormant instead of coasting. Gentle ("starts to
+  // decay"): ~half credit after the half-life, never below the floor. Assets decay on time-since-last-trade
+  // (recency_blocks); addresses on time-since-last-activity (tip-last_blk).
+  assetDecayHalflife: 210240, assetDecayFloor: 0.3,  // ~4 years
+  addrDecayHalflife: 157680,  addrDecayFloor: 0.2,   // ~3 years
 };
 
 /* ---------- ADDRESS reputation ---------- */
@@ -55,8 +61,9 @@ export const ASSET_FACTORS: Factor[] = [
   { key: "distinct_traders",    weight: 1.5, transform: "log",    label: "traders",     why: "distinct market participants — wash-resistant breadth (10.3x lift)" },
   // -- scarcity --
   { key: "burned_pct",          weight: 0.8, transform: "log",    label: "scarcity",    why: "% of supply burned — deflation, independent of popularity (6.68x)" },
-  // -- survivorship --
-  { key: "__asset_age",         weight: 1.0, transform: "span",   label: "age",         why: "older = survived (1.48x); precomputed tip−first issuance" },
+  // -- survivorship + recency --
+  { key: "__asset_age",         weight: 1.0, transform: "span",   label: "age",         why: "older = survived (1.48x); precomputed tip−first issuance. DECAYS if the asset has gone quiet." },
+  { key: "recent_events",       weight: 1.2, transform: "log",    label: "current",     why: "trailing-12mo trades+dispenses — current relevance / still-alive (6.59x lift)" },
   // -- popularity family (correlated, weaker than demand depth → light) --
   // (down-weighted by MEASURED STRENGTH: holders 2.95x vs durability 20.9x — not by an "airdrop" claim,
   //  which was tested & refuted: high-holder/low-trade assets here got holders via paid dispensers, not airdrops.)
@@ -77,12 +84,12 @@ export const ASSET_PENALTY = { lowQuality: -6.0 }; // wash/bridge/curated junk
 // Calibrated 2026-06-28 to the REAL-USER population (349,499 addresses; infra + passive throwaways excluded):
 // p50=5.8, p90=12.7, p99=20, max=54.7. Ranking against real users (not deposits/vaults/burns/one-shot wallets)
 // makes the score meaningful — those get honest non-ranked states (Exchange/Deposit/Vault/Burn/Service/Dormant).
-export const ADDRESS_PCT = { floor: 1, p50: 5.8, p90: 12.7, p99: 20, max: 55 };
+export const ADDRESS_PCT = { floor: 0.5, p50: 2.5, p90: 4.7, p99: 17.5, max: 53 }; // recalibrated 06-28 w/ age-decay
 // Calibrated 2026-06-28 to the raw distribution of assets WITH A MARKET (the 22,826 that ever traded or
 // dispensed). The score ranks an asset against real, traded assets — not against ~132k held-but-never-traded
 // or ~98k zero-holder assets, which would make every score meaningless. Those get honest non-ranked states
 // (Untraded / Dormant). Market-asset percentiles: p50=15.1, p90=26.9, p99=41, max=60.6.
-export const ASSET_PCT   = { floor: 1, p50: 15.1, p90: 26.9, p99: 41, max: 60 };
+export const ASSET_PCT   = { floor: 1, p50: 13.9, p90: 24, p99: 41, max: 70 }; // recalibrated 06-28 w/ decay+recent
 
 // Asset quality TIERS — the primary display (the 0-100 score is a heuristic, so we lead with a coarse, honest
 // tier and keep the number as detail). Tiers cut on RAW (= exact percentiles of the market population). Each
@@ -90,8 +97,8 @@ export const ASSET_PCT   = { floor: 1, p50: 15.1, p90: 26.9, p99: 41, max: 60 };
 //   Untraded = issued & held but never traded/dispensed · Dormant = no holders at all.
 export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
   { tier: "Bluechip",    minRaw: 41,    meaning: "top ~1% of assets with a market — deep, durable, broadly-held" },
-  { tier: "Established", minRaw: 26.9,  meaning: "top ~10% — sustained real trading and distribution" },
-  { tier: "Active",      minRaw: 15.1,  meaning: "upper half of assets that have a real market" },
+  { tier: "Established", minRaw: 24,    meaning: "top ~10% — sustained real trading and distribution" },
+  { tier: "Active",      minRaw: 13.9,  meaning: "upper half of assets that have a real market" },
   { tier: "Speculative", minRaw: -1e9,  meaning: "has a market but thin / early" },
 ];
 
@@ -99,9 +106,9 @@ export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = 
 // the REAL-USER population). Each states its meaning. Non-ranked states (infra + dormant) are handled in
 // addressTier() and labelled via ADDRESS_TIER_MEANING below. Retires the old vague Established/Proven/Active.
 export const ADDRESS_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "OG",          minRaw: 20,    meaning: "top ~1% of real users — deep, long, multi-faceted history" },
-  { tier: "Established", minRaw: 12.7,  meaning: "top ~10% — a credible, sustained Counterparty history" },
-  { tier: "Active",      minRaw: 5.8,   meaning: "upper half of real users — an ongoing presence" },
+  { tier: "OG",          minRaw: 17.5,  meaning: "top ~1% of real users — deep, long, STILL-active history" },
+  { tier: "Established", minRaw: 4.7,   meaning: "top ~10% — a credible, sustained Counterparty history" },
+  { tier: "Active",      minRaw: 2.5,   meaning: "upper half of real users — an ongoing presence" },
   { tier: "Casual",      minRaw: -1e9,  meaning: "a real user with a light footprint" },
 ];
 // Plain-language meaning for every tier + non-ranked state, surfaced in the API so no label is unexplained.

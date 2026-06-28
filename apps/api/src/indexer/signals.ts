@@ -33,7 +33,8 @@ const ASSET_DDL = `CREATE TABLE IF NOT EXISTS asset_signals (
   self_trade_pct REAL DEFAULT 0, first_trade_blk INTEGER DEFAULT 0, last_trade_blk INTEGER DEFAULT 0,
   dispenses INTEGER DEFAULT 0, dispense_btc REAL DEFAULT 0, low_quality INTEGER DEFAULT 0,
   holder_breadth REAL DEFAULT 0, pct_creator_holders REAL DEFAULT 0, burned_pct REAL DEFAULT 0,
-  distinct_traders INTEGER DEFAULT 0, distinct_dispensers INTEGER DEFAULT 0, age_blocks INTEGER DEFAULT 0, avg_holder_dex REAL DEFAULT 0)`;
+  distinct_traders INTEGER DEFAULT 0, distinct_dispensers INTEGER DEFAULT 0, age_blocks INTEGER DEFAULT 0, avg_holder_dex REAL DEFAULT 0,
+  recent_events INTEGER DEFAULT 0, recency_blocks INTEGER DEFAULT 0)`;
 
 // Ordered passes. DDL passes are cheap; the rest are one heavy aggregation each.
 // Indexes on the hot leaderboard sort/filter columns — without these each board does a full SCAN +
@@ -133,8 +134,12 @@ const PASSES: { name: string; sql: string }[] = [
   { name: "asset_distinct_dispensers", sql: `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT source) FROM dispensers WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers` },
   // holder sophistication: avg DEX activity of the asset's holders (lift 2.23x). Scoped >=3 holders (write cap).
   { name: "asset_holder_dex", sql: `INSERT INTO asset_signals (asset,avg_holder_dex) SELECT b.asset, AVG(COALESCE(sg.dex_trades,0)) FROM balances b LEFT JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset HAVING COUNT(*)>=3 ON CONFLICT(asset) DO UPDATE SET avg_holder_dex=excluded.avg_holder_dex` },
+  // CURRENT ACTIVITY: trailing-~12mo trades+dispenses (the recency signal). Reset first so assets that fell out
+  // of the window go to 0, then recount within the window.
+  { name: "asset_recent_reset", sql: `UPDATE asset_signals SET recent_events=0` },
+  { name: "asset_recent", sql: `INSERT INTO asset_signals (asset,recent_events) SELECT asset,COUNT(*) FROM (SELECT forward_asset asset FROM order_matches WHERE block_index>=(SELECT MAX(block_index)-52560 FROM blocks) UNION ALL SELECT backward_asset FROM order_matches WHERE block_index>=(SELECT MAX(block_index)-52560 FROM blocks) UNION ALL SELECT asset FROM dispenses WHERE block_index>=(SELECT MAX(block_index)-52560 FROM blocks)) WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET recent_events=excluded.recent_events` },
   // seed asset metadata + precomputed age (tip − first issuance) via UPDATE existing rows (a full INSERT...SELECT of all assets exceeds D1's per-statement write cap)
-  { name: "asset_seed", sql: `UPDATE asset_signals SET asset_longname=(SELECT asset_longname FROM assets a WHERE a.asset=asset_signals.asset), issuer=(SELECT issuer FROM assets a WHERE a.asset=asset_signals.asset), divisible=(SELECT divisible FROM assets a WHERE a.asset=asset_signals.asset), locked=(SELECT locked FROM assets a WHERE a.asset=asset_signals.asset), age_blocks=((SELECT MAX(block_index) FROM blocks)-(SELECT first_issuance_block_index FROM assets a WHERE a.asset=asset_signals.asset)) WHERE EXISTS (SELECT 1 FROM assets a WHERE a.asset=asset_signals.asset)` },
+  { name: "asset_seed", sql: `UPDATE asset_signals SET asset_longname=(SELECT asset_longname FROM assets a WHERE a.asset=asset_signals.asset), issuer=(SELECT issuer FROM assets a WHERE a.asset=asset_signals.asset), divisible=(SELECT divisible FROM assets a WHERE a.asset=asset_signals.asset), locked=(SELECT locked FROM assets a WHERE a.asset=asset_signals.asset), age_blocks=((SELECT MAX(block_index) FROM blocks)-(SELECT first_issuance_block_index FROM assets a WHERE a.asset=asset_signals.asset)), recency_blocks=((SELECT MAX(block_index) FROM blocks)-last_trade_blk) WHERE EXISTS (SELECT 1 FROM assets a WHERE a.asset=asset_signals.asset)` },
   ...INDEX_DDL.map((sql, i) => ({ name: `idx_${i}`, sql })),
 ];
 
