@@ -29,10 +29,12 @@ stats.get("/v2/metrics", async (c) => {
   const dispenses = await series(`SELECT block_time/86400 d, COUNT(*) v FROM dispenses WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`);
   // BTC miner fees paid (every CP tx is a BTC tx) and XCP destroyed (issuance/sweep/dividend fees +
   // XCP destructions) — XCP is deflationary, so this is the daily burn rate.
+  const trades = await series(`SELECT block_time/86400 d, COUNT(*) v FROM order_matches WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`);
+  const sends = await series(`SELECT block_time/86400 d, COUNT(*) v FROM sends WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`);
   const btc_fees = await series(`SELECT block_time/86400 d, SUM(CAST(fee AS REAL))/100000000.0 v FROM transactions WHERE block_time>0 AND fee IS NOT NULL GROUP BY d ORDER BY d DESC LIMIT ?`);
   const xcp_burned = await series(`SELECT block_time/86400 d, SUM(CAST(amt AS REAL))/100000000.0 v
     FROM (${xcpDestroyed("block_time, ")}) WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`);
-  return J(c, { result: { transactions, issuances, dispenses, btc_fees, xcp_burned } }, 1800);
+  return J(c, { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } }, 1800);
 });
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */

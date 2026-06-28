@@ -5,8 +5,8 @@ import { apiUrl, type Envelope } from "@/lib/api";
 import { Card, AreaChart } from "@/components/ui";
 
 const SERIES = [
-  ["transactions", "Transactions"], ["issuances", "Issuances"], ["dispenses", "Dispenses"],
-  ["btc_fees", "BTC fees"], ["xcp_burned", "XCP burned"],
+  ["transactions", "Transactions"], ["issuances", "Issuances"], ["trades", "Trades"], ["dispenses", "Dispenses"],
+  ["sends", "Sends"], ["btc_fees", "BTC fees"], ["xcp_burned", "XCP burned"],
 ] as const;
 type Key = (typeof SERIES)[number][0];
 

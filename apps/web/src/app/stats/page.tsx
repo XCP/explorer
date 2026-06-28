@@ -2,6 +2,7 @@
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Card, Stat } from "@/components/ui";
+import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";
 
 const COUNTS: [string, string][] = [
@@ -26,6 +27,7 @@ export default function StatsPage() {
         <Stat label="BTC fees paid (all-time)" value={s.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
         <Stat label="Tip block" value={commas(s.tip)} />
       </div>
+      <ActivityChart />
       <Card title="Counterparty totals">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
           {COUNTS.map(([k, label]) => (
