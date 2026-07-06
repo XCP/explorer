@@ -291,6 +291,32 @@ const UNITS: FeatureUnit[] = [
   { name: "asset_max_trade_xcp", scope: "asset", reads: ["order_matches"],
     full: `INSERT INTO asset_signals (asset,max_trade_xcp) SELECT asset, MAX(x)/1e8 FROM (SELECT forward_asset asset, CAST(backward_quantity AS REAL) x FROM order_matches WHERE backward_asset='XCP' UNION ALL SELECT backward_asset, CAST(forward_quantity AS REAL) FROM order_matches WHERE forward_asset='XCP') WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET max_trade_xcp=excluded.max_trade_xcp`,
     scoped: (ph) => `INSERT INTO asset_signals (asset,max_trade_xcp) SELECT asset, MAX(x)/1e8 FROM (SELECT forward_asset asset, CAST(backward_quantity AS REAL) x FROM order_matches WHERE backward_asset='XCP' UNION ALL SELECT backward_asset, CAST(forward_quantity AS REAL) FROM order_matches WHERE forward_asset='XCP') WHERE asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET max_trade_xcp=excluded.max_trade_xcp` },
+  // USD-denominated realized value (Scoring Phase B): the largest single sale's usd_value across ALL venues
+  // (dex|dispense|emblem), so an Emblem/ETH grail sale counts the same as a BTC dispense — currency-agnostic
+  // worth, where max_dispense_btc/max_trade_xcp each only see one rail. Reads the DERIVED `trades` ledger, whose
+  // usd_value the price backfill fills. trades (~345k rows) is well under the 1M heavy threshold → no heavyEveryBlocks.
+  // ONE-TICK LAG (documented, acceptable): the scheduled handler (index.ts) runs the signals cascade/step BEFORE
+  // buildTrades, and `trades` is materialized by its own cursor there — so a scoped recompute this tick reads
+  // trades as of LAST tick (a block's trade rows land after that block's cascade pass). The Layer-C full rebuild
+  // (runSignalsStep `.full`) is the self-heal: it re-runs over the now-complete ledger, so the value is at worst
+  // briefly stale, never wrong. Reordering the cron is out of scope for this change.
+  { name: "asset_realized_usd", scope: "asset", reads: ["trades"],
+    full: `INSERT INTO asset_signals (asset,max_realized_usd) SELECT asset, MAX(usd_value) FROM trades WHERE usd_value>0 AND asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET max_realized_usd=excluded.max_realized_usd`,
+    scoped: (ph) => `INSERT INTO asset_signals (asset,max_realized_usd) SELECT asset, MAX(usd_value) FROM trades WHERE usd_value>0 AND asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET max_realized_usd=excluded.max_realized_usd` },
+  // Emblem-vault (ETH-side) sales count per asset — cross-chain demand invisible to the Counterparty rails.
+  // Same `trades`-ledger read as asset_realized_usd, hence the SAME one-tick lag (see above); single-purpose
+  // so it stays its own unit (mirrors max_dispense_btc / max_trade_xcp being split by source).
+  { name: "asset_emblem_trades", scope: "asset", reads: ["trades"],
+    full: `INSERT INTO asset_signals (asset,emblem_trades) SELECT asset, COUNT(*) FROM trades WHERE venue='emblem' AND asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET emblem_trades=excluded.emblem_trades`,
+    scoped: (ph) => `INSERT INTO asset_signals (asset,emblem_trades) SELECT asset, COUNT(*) FROM trades WHERE venue='emblem' AND asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET emblem_trades=excluded.emblem_trades` },
+  // Self-dispense-GUARDED dispense value (Scoring Phase B): closes the gaming hole reputation.md's Watch section
+  // flags — a whale self-dispensing at a high ask inflates max_dispense_btc with no real buyer. Excluding
+  // source=destination gives distinct REAL buyers + the largest BTC a real buyer actually paid. Both columns come
+  // from the SAME aggregation over `dispenses` (a mirror table synced BEFORE the cascade, so NO trades-lag here),
+  // so they share one unit. dispenses (~207k) is under the heavy threshold → no heavyEveryBlocks.
+  { name: "asset_dispense_buyers", scope: "asset", reads: ["dispenses"],
+    full: `INSERT INTO asset_signals (asset,distinct_dispense_buyers,max_dispense_btc_clean) SELECT asset, COUNT(DISTINCT destination), MAX(btc_amount)/1e8 FROM dispenses WHERE source<>destination AND asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispense_buyers=excluded.distinct_dispense_buyers, max_dispense_btc_clean=excluded.max_dispense_btc_clean`,
+    scoped: (ph) => `INSERT INTO asset_signals (asset,distinct_dispense_buyers,max_dispense_btc_clean) SELECT asset, COUNT(DISTINCT destination), MAX(btc_amount)/1e8 FROM dispenses WHERE source<>destination AND asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispense_buyers=excluded.distinct_dispense_buyers, max_dispense_btc_clean=excluded.max_dispense_btc_clean` },
 
   // ===== ASSET · metadata + tip-relative ages (age/recency slide with tip → PERIODIC) =====
   // seed asset metadata + precomputed age (tip − first issuance) + recency. age_blocks/recency_blocks are
