@@ -16,6 +16,9 @@ structure + roadmap) before structural work.
 4. **Domain language names things.** The test: what would someone who knows Counterparty but not
    this codebase call it? (`records`, `trades`, `vaults` — yes; `index-names`, `utils`, `helpers`,
    `shared2` — no.) Framework vocabulary (page/hook/component) never names a domain concept.
+   Spell out **Counterparty** — never the `Cp`/`CP` abbreviation in identifiers, file names, or
+   comments (`parseCounterpartyJson`, not `parseCpJson`). XCP/XCPDEX are product names, not
+   abbreviations.
 5. **One file, one concept.** A file that needs section-divider comments is several files. Split it.
 6. **SQL is private to its owner.** Never share SQL by exporting string fragments across modules.
    Query functions live in `apps/api/src/queries/<domain>.ts` (target layout); handlers do
