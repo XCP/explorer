@@ -33,27 +33,27 @@ async function setState(env: Env, k: string, v: number): Promise<void> {
 }
 
 // One Coinbase window: [[time, low, high, open, close, volume], ...] (close = index 4).
-async function cbWindow(product: string, start: number, end: number): Promise<any[]> {
+async function cbWindow(product: string, start: number, end: number): Promise<number[][]> {
   const u = `${CB}/${product}/candles?granularity=${DAY}&start=${new Date(start * 1000).toISOString()}&end=${new Date(end * 1000).toISOString()}`;
   const r = await fetch(u, { headers: { "user-agent": "xcp.io-indexer", accept: "application/json" }, signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error(`${product} ${r.status}`);
   const d = await r.json();
-  return Array.isArray(d) ? d : [];
+  return Array.isArray(d) ? (d as number[][]) : [];
 }
 
 /** Backfill BTC/ETH from Coinbase (resumable per-currency cursor), then re-derive XCP from our DEX × BTC. */
-export async function crawlPrices(env: Env): Promise<any> {
+export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   await env.DB.prepare(PRICES_DDL).run();
   await env.DB.prepare(PRICES_IDX).run();
   const now = Math.floor(Date.now() / 1000);
-  const out: any = {};
+  const out: Record<string, unknown> = {};
 
   for (const [cur, cfg] of Object.entries(COINS)) {
     let cursor = await getState(env, `prices_cur_${cur}`) || cfg.start;
     let filled = 0;
     for (let w = 0; w < WINDOWS_PER_CALL && cursor < now; w++) {
       const end = Math.min(cursor + WIN, now);
-      let rows: any[];
+      let rows: number[][];
       try { rows = await cbWindow(cfg.product, cursor, end); }
       catch (e) { out[`${cur}_err`] = String(e).slice(0, 60); break; }
       if (rows.length) {
@@ -96,7 +96,7 @@ const USD_WINDOW = 200_000; // rows per apply call (rowid-windowed — contiguou
 /** Map each (day, currency) trade onto the price calendar. Windowed by rowid (venue-agnostic and gap-free,
  *  unlike block_index which mixes CP blocks with huge ETH block numbers). Leaves USDC (already set) and any
  *  day with no price untouched. Resumable via usd_cur; wraps to re-sweep for late prices / freshly added rows. */
-export async function applyTradeUsd(env: Env): Promise<any> {
+export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
   let cur = await getState(env, "usd_cur");
   if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs

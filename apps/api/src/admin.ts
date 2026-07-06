@@ -141,11 +141,11 @@ admin.post("/admin/signal-test", async (c) => {
       ROUND((COUNT(*)*SUM(x*c)-SUM(x)*SUM(c))/NULLIF(SQRT((COUNT(*)*SUM(x*x)-SUM(x)*SUM(x))*(COUNT(*)*SUM(c*c)-SUM(c)*SUM(c))),0),3) corr_with
     FROM b WHERE x IS NOT NULL`;
   try {
-    const r = await c.env.DB.prepare(sql).first<any>();
+    const r = await c.env.DB.prepare(sql).first<Record<string, number>>();
     const lift = r && r.mean_rest ? Math.round((r.mean_target / r.mean_rest) * 100) / 100 : null;
     return c.json({ table, expr, target, corr, lift, ...r });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e).slice(0, 200), sql }, 400);
+  } catch (e) {
+    return c.json({ error: String((e as { message?: string })?.message ?? e).slice(0, 200), sql }, 400);
   }
 });
 

@@ -140,7 +140,7 @@ test("scoreAsset: a market row matches the independent re-derivation (special tr
     age_blocks: 200000, recent_events: 30, holder_breadth: 8, avg_holder_dex: 6, pct_creator_holders: 25,
     low_quality: 0,
   };
-  const s = scoreAsset(row);
+  const s = scoreAsset(row as Parameters<typeof scoreAsset>[0]);
   near(s.raw, expectedAssetRaw(row), "asset raw");
   assert(!("low_quality" in s.breakdown), "clean row must not carry the low_quality line");
 });

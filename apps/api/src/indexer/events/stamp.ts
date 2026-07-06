@@ -55,7 +55,7 @@ export function classifyStamp(description: string | null | undefined): StampInfo
     const t = decoded.trimStart();
     if (t.startsWith("{")) {
       try {
-        const j: any = JSON.parse(decoded);
+        const j = JSON.parse(decoded) as { p?: unknown; tick?: unknown; op?: unknown };
         const p = j && j.p != null ? String(j.p).toUpperCase() : null;
         if (p && SRC_PROTOCOLS.has(p)) {
           // tick is case-insensitive in SRC-20 (KEVIN == Kevin == kevin) — normalize to lowercase.

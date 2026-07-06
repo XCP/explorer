@@ -22,13 +22,13 @@ async function fetchMembers(slug: string): Promise<string[]> {
   const r = await fetch(`https://api.pepe.wtf/api/asset?collection=${slug}`,
     { headers: { "user-agent": "xcp.io-indexer" }, signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error(`pepe.wtf ${slug} ${r.status}`);
-  const arr = (await r.json()) as any[];
+  const arr = (await r.json()) as Array<{ name?: string; collection?: string }>;
   // keep only rows the API attributes to THIS collection (the endpoint is loose about the slug)
   return [...new Set(arr.filter((a) => a?.name && a?.collection === slug).map((a) => String(a.name)))];
 }
 
-export async function crawlCollections(env: Env): Promise<any> {
-  const out: any = { collections: {} };
+export async function crawlCollections(env: Env): Promise<Record<string, unknown>> {
+  const out: { collections: Record<string, string | number>; total_collection_tags?: number } = { collections: {} };
   for (const [slug, tag] of Object.entries(PEPEWTF)) {
     let names: string[];
     try { names = await fetchMembers(slug); }

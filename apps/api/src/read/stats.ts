@@ -7,6 +7,18 @@ import {
   homeOverview, networkCounts, networkTotals, metricSeries, maxBlock, leaderboards, type MetricName,
 } from "../queries/stats";
 
+// Minimal shape of a CP mempool event — only the fields the passthrough reads.
+interface MempoolParams {
+  source?: string | null; destination?: string | null;
+  asset?: string | null; quantity_normalized?: string | null;
+}
+interface MempoolEvent {
+  event: string;
+  tx_hash: string | null;
+  timestamp: number | null;
+  params: MempoolParams | null;
+}
+
 export const stats = router();
 
 /* ---------- home / stats ---------- */
@@ -63,13 +75,14 @@ stats.get("/v2/mempool", async (c) => {
   try {
     const r = await fetch(`${c.env.CP_API_BASE}/mempool/events?limit=40&verbose=true`, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) return J(c, { result: [] }, 5);
-    const j: any = parseCpJson(await r.text()); // preserve >2^53 quantities in pending tx params
+    // preserve >2^53 quantities in pending tx params
+    const j = parseCpJson(await r.text()) as { result?: MempoolEvent[] };
     // keep one meaningful ACTION row per pending tx; skip ledger/parse noise
     const NOISE = new Set(["TRANSACTION_PARSED", "NEW_TRANSACTION", "CREDIT", "DEBIT", "ASSET_CREATION", "BLOCK_PARSED", "NEW_BLOCK"]);
     const seen = new Set<string>();
-    const rows: any[] = [];
+    const rows: Array<Record<string, string | number | null>> = [];
     for (const e of (j.result || [])) {
-      const p = e.params || {};
+      const p: MempoolParams = e.params || {};
       if (NOISE.has(e.event)) continue;
       if (!p.source && !p.asset) continue;
       if (e.tx_hash && seen.has(e.tx_hash)) continue;

@@ -20,7 +20,7 @@ const BIG = [
 
 test("preserves > 2^53 quantity as an exact string, not a rounded number", () => {
   for (const v of BIG) {
-    const parsed = parseCpJson(`{"quantity": ${v}}`);
+    const parsed = parseCpJson(`{"quantity": ${v}}`) as { quantity: unknown };
     assert.equal(typeof parsed.quantity, "string", `${v} should be quoted to a string`);
     assert.equal(parsed.quantity, v, `${v} must survive verbatim`);
     assert.equal(bi(parsed.quantity).toString(), v, `${v} -> BigInt must be exact`);
@@ -32,17 +32,17 @@ test("naive JSON.parse WOULD have lost precision (proves the fix is load-bearing
   const v = "9223372036854775807";
   const naive = JSON.parse(`{"quantity": ${v}}`).quantity; // number -> rounded
   assert.notEqual(String(naive), v, "sanity: naive parse loses precision here");
-  assert.equal(parseCpJson(`{"quantity": ${v}}`).quantity, v, "parseCpJson keeps it exact");
+  assert.equal((parseCpJson(`{"quantity": ${v}}`) as { quantity: unknown }).quantity, v, "parseCpJson keeps it exact");
 });
 
 test("preserves large NEGATIVE integers", () => {
-  const parsed = parseCpJson(`{"delta": -9223372036854775807}`);
+  const parsed = parseCpJson(`{"delta": -9223372036854775807}`) as { delta: unknown };
   assert.equal(parsed.delta, "-9223372036854775807");
   assert.equal(bi(parsed.delta).toString(), "-9223372036854775807");
 });
 
 test("does NOT quote small/safe integers (block/tx/event indexes, timestamps stay numbers)", () => {
-  const parsed = parseCpJson(`{"block_index": 871234, "event_index": 12345678, "ts": 1718900000, "n15": 999999999999999}`);
+  const parsed = parseCpJson(`{"block_index": 871234, "event_index": 12345678, "ts": 1718900000, "n15": 999999999999999}`) as Record<string, number>;
   assert.equal(typeof parsed.block_index, "number");
   assert.equal(parsed.block_index, 871234);
   assert.equal(typeof parsed.event_index, "number");
@@ -54,7 +54,7 @@ test("does NOT quote small/safe integers (block/tx/event indexes, timestamps sta
 
 test("works inside a realistic CP events envelope (nested objects in result array)", () => {
   const wire = `{"result":[{"event":"CREDIT","params":{"asset":"PEPECASH","quantity":21000000000000000,"block_index":800000}},{"event":"DEBIT","params":{"asset":"XCP","quantity":250000000}}]}`;
-  const p = parseCpJson(wire);
+  const p = parseCpJson(wire) as { result: Array<{ params: { quantity: unknown; block_index?: number } }> };
   assert.equal(p.result[0].params.quantity, "21000000000000000");          // big -> string
   assert.equal(bi(p.result[0].params.quantity).toString(), "21000000000000000");
   assert.equal(p.result[0].params.block_index, 800000);                    // small -> number
@@ -63,9 +63,9 @@ test("works inside a realistic CP events envelope (nested objects in result arra
 
 test("full round-trip: parse -> BigInt -> re-serialize -> parse is stable for big values", () => {
   for (const v of BIG) {
-    const once = parseCpJson(`{"quantity": ${v}}`).quantity;
+    const once = (parseCpJson(`{"quantity": ${v}}`) as { quantity: unknown }).quantity;
     const reSerialized = `{"quantity": ${bi(once).toString()}}`;
-    const twice = parseCpJson(reSerialized).quantity;
+    const twice = (parseCpJson(reSerialized) as { quantity: unknown }).quantity;
     assert.equal(twice, v, `${v} must be stable across a parse/serialize round-trip`);
   }
 });
@@ -75,6 +75,6 @@ test("full round-trip: parse -> BigInt -> re-serialize -> parse is stable for bi
 // array-positioned today, so this is theoretical — this test pins the current behavior so any future
 // change (or a CP shape that puts quantities in arrays) is caught deliberately.
 test("documents the array-element blind spot (pin current behavior)", () => {
-  const parsed = parseCpJson(`{"vals": [9223372036854775807]}`);
+  const parsed = parseCpJson(`{"vals": [9223372036854775807]}`) as { vals: number[] };
   assert.equal(typeof parsed.vals[0], "number", "array elements are currently NOT quoted (known limitation)");
 });

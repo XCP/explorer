@@ -61,21 +61,21 @@ async function enqueueSupply(db: D1Database, assets: string[]): Promise<void> {
 
 /** tip event_index = result_count - 1 */
 async function tipEventIndex(api: string): Promise<number> {
-  const d = await cpJson(api, `/events?limit=1`);
+  const d = await cpJson<{ result_count?: number }>(api, `/events?limit=1`);
   return (d.result_count ?? 0) - 1;
 }
 /** ascending chunk [from, from+CHUNK): request cursor=from+CHUNK-1 desc, reverse. */
 async function fetchAsc(api: string, from: number): Promise<Ev[]> {
-  const d = await cpJson(api, `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`);
-  const rows: Ev[] = (d.result || []).filter((e: Ev) => e.event_index >= from);
+  const d = await cpJson<{ result?: Ev[] }>(api, `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`);
+  const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from);
   rows.sort((a, b) => a.event_index - b.event_index);
   return rows;
 }
 async function blockHash(api: string, n: number): Promise<string | null> {
-  try { return (await cpJson(api, `/blocks/${n}`)).result?.block_hash ?? null; } catch { return null; }
+  try { return (await cpJson<{ result?: { block_hash?: string } }>(api, `/blocks/${n}`)).result?.block_hash ?? null; } catch { return null; }
 }
 async function currentBlock(api: string): Promise<number> {
-  const d = await cpJson(api, `/blocks/last`); return d.result?.block_index ?? 0;
+  const d = await cpJson<{ result?: { block_index?: number } }>(api, `/blocks/last`); return d.result?.block_index ?? 0;
 }
 
 /* ---------- balances: apply netted deltas for a chunk ---------- */
@@ -88,10 +88,10 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
   for (let i = 0; i < keys.length; i += 50) {
     const slice = keys.slice(i, i + 50);
     const ors = slice.map(() => `(holder=? AND asset=?)`).join(" OR ");
-    const binds: any[] = [];
+    const binds: unknown[] = [];
     for (const k of slice) binds.push(k.holder, k.asset);
-    const rows = await env.DB.prepare(`SELECT holder,asset,quantity,updated_event_index FROM balances WHERE ${ors}`).bind(...binds).all<{ holder: string; asset: string; quantity: string }>();
-    for (const r of rows.results) current.set(`${r.holder} ${r.asset}`, { qty: bi(r.quantity), uei: (r as any).updated_event_index ?? 0 });
+    const rows = await env.DB.prepare(`SELECT holder,asset,quantity,updated_event_index FROM balances WHERE ${ors}`).bind(...binds).all<{ holder: string; asset: string; quantity: string; updated_event_index: number | null }>();
+    for (const r of rows.results) current.set(`${r.holder} ${r.asset}`, { qty: bi(r.quantity), uei: r.updated_event_index ?? 0 });
   }
   const stmts: Stmt[] = [];
   for (const k of keys) {
@@ -116,7 +116,7 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
 
 /* ---------- main replay loop ---------- */
 
-export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): Promise<any> {
+export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): Promise<Record<string, unknown>> {
   const api = env.CP_API_BASE;
   const now = Math.floor(Date.now() / 1000);
 
@@ -244,7 +244,7 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
   const tip = await tipEventIndex(api);
   let probe = parseInt((await getState(env.DB, "last_event_index")) || String(tip), 10);
   for (let i = 0; i < 20; i++) {
-    const d = await cpJson(api, `/events?cursor=${probe}&limit=${CHUNK}&verbose=true`);
+    const d = await cpJson<{ result?: Ev[] }>(api, `/events?cursor=${probe}&limit=${CHUNK}&verbose=true`);
     const rows: Ev[] = d.result || [];
     const firstAfter = [...rows].reverse().find((e) => e.block_index > rollbackTo);
     if (firstAfter) { await env.DB.batch([setStateStmt(env.DB, "last_event_index", String(firstAfter.event_index - 1))]); return; }

@@ -13,6 +13,9 @@ export type Stmt = (db: D1Database) => D1PreparedStatement;
 export interface Ev {
   event_index: number;
   event: string;
+  // Decoded CP event payload — intrinsically dynamic (shape varies per event type) and consumed field-by-field
+  // by the 20 message handlers; typing it would mean transcribing CP's whole event schema, so it stays `any`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params: any;
   tx_hash: string | null;
   block_index: number;
@@ -30,6 +33,8 @@ export interface Ctx {
 // A decoded event handed to a handler: the raw event plus the fields every handler pulls off it.
 export interface Msg {
   ev: Ev;
+  // ev.params — same intrinsically-dynamic CP payload as Ev.params (see above); the handler seam.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   p: any;            // ev.params
   b: number;         // block_index
   bt: number | null; // block_time
@@ -40,20 +45,20 @@ export type Handler = (m: Msg, ctx: Ctx) => void;
 
 // Tag for SQL template literals. Identity at runtime (composes the string for db.prepare), but lets
 // prettier-plugin-sql pretty-print the embedded SQL and editors syntax-highlight it.
-export const sql = (strings: TemplateStringsArray, ...values: any[]): string =>
+export const sql = (strings: TemplateStringsArray, ...values: unknown[]): string =>
   strings.reduce((acc, s, i) => acc + s + (i < values.length ? String(values[i]) : ""), "");
 
 /* ---------- value helpers ---------- */
 
-export function str(v: any): string | null { return v == null ? null : String(v); }
+export function str(v: unknown): string | null { return v == null ? null : String(v); }
 
-export function bi(v: any): bigint {
+export function bi(v: unknown): bigint {
   try { return BigInt(typeof v === "string" ? v.split(".")[0] : Math.trunc(Number(v || 0))); } catch { return 0n; }
 }
 
 // Cap free-text fields to avoid D1 SQLITE_TOOBIG (asset descriptions can embed base64 image data — MBs).
 // Images live in R2; the explorer doesn't need megabyte descriptions. 16KB is plenty for legit content.
-export function cap(v: any, max = 16384): string | null {
+export function cap(v: unknown, max = 16384): string | null {
   if (v == null) return null;
   const s = typeof v === "string" ? v : String(v);
   return s.length > max ? s.slice(0, max) : s;

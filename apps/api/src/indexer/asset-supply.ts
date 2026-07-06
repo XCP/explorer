@@ -47,7 +47,7 @@ const SUPPLY_EXPR =
 
 // After raw supply is set, derive supply_normalized in JS via the same normalize() the sync uses (exact
 // string math, no float) using each asset's current divisibility.
-async function normalizePass(env: Env, where: string, binds: any[]): Promise<void> {
+async function normalizePass(env: Env, where: string, binds: unknown[]): Promise<void> {
   const rows = await env.DB.prepare(
     `SELECT asset, supply, divisible FROM assets WHERE ${where} AND supply IS NOT NULL`
   ).bind(...binds).all<{ asset: string; supply: string; divisible: number }>();
@@ -70,7 +70,7 @@ async function recomputeXcp(env: Env): Promise<void> {
   await normalizePass(env, "asset='XCP'", []);
 }
 
-export async function crawlAssetSupply(env: Env): Promise<any> {
+export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown>> {
   // ---- BACKFILL phase: stepped full recompute over all assets ----
   if ((await getState(env.DB, "asset_supply_done")) !== "1") {
     const cursor = parseInt((await getState(env.DB, "asset_supply_cursor")) || "0", 10);
@@ -104,7 +104,7 @@ export async function crawlAssetSupply(env: Env): Promise<any> {
 }
 
 // Fairminter running totals = Σ over that fairminter's valid fairmints (deterministic, from our ledger).
-async function refreshFairminters(env: Env): Promise<any> {
+async function refreshFairminters(env: Env): Promise<{ updated: number }> {
   const r = await env.DB.prepare(
     `UPDATE fairminters SET
        earned_quantity = CAST(COALESCE((SELECT SUM(CAST(f.earn_quantity AS INTEGER)) FROM fairmints f WHERE f.fairminter_tx_hash=fairminters.tx_hash AND f.status='valid'),0) AS TEXT),
@@ -114,7 +114,7 @@ async function refreshFairminters(env: Env): Promise<any> {
 }
 
 // Pools: lp_supply = the LP token's own supply; price = spot reserve ratio (asset_b per asset_a).
-async function refreshPools(env: Env): Promise<any> {
+async function refreshPools(env: Env): Promise<{ updated: number }> {
   const r = await env.DB.prepare(
     `UPDATE pools SET
        lp_supply = (SELECT supply FROM assets WHERE assets.asset = pools.lp_asset),

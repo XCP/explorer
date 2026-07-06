@@ -16,10 +16,24 @@ export const EMBLEM_SALES_DDL = `CREATE TABLE IF NOT EXISTS emblem_sales (
   buyer TEXT, seller TEXT, block_number INTEGER, PRIMARY KEY (tx_hash, log_index))`;
 export const EMBLEM_SALES_IDX = `CREATE INDEX IF NOT EXISTS idx_emblem_sales_token ON emblem_sales(contract, token_id)`;
 
+// Minimal shape of an Alchemy getNFTSales row — only the fields this crawler reads.
+interface NftSale {
+  sellerFee?: { amount?: string; tokenAddress?: string };
+  protocolFee?: { amount?: string; tokenAddress?: string };
+  royaltyFee?: { amount?: string; tokenAddress?: string };
+  transactionHash?: string;
+  logIndex?: number;
+  tokenId?: string | number;
+  marketplace?: string;
+  buyerAddress?: string;
+  sellerAddress?: string;
+  blockNumber?: number;
+}
+
 // Total paid = seller proceeds + protocol + royalty fees, kept as the RAW integer string in the payment
 // token's own units (Alchemy leaves symbol/decimals blank, so we normalize downstream with a token map).
 // Native-ETH sales report no tokenAddress -> label 'ETH'. BigInt so we never lose precision.
-function priceOf(s: any): { raw: string; token: string } {
+function priceOf(s: NftSale): { raw: string; token: string } {
   let amt = 0n;
   for (const f of [s?.sellerFee, s?.protocolFee, s?.royaltyFee]) {
     try { if (f?.amount) amt += BigInt(f.amount); } catch { /* skip */ }
@@ -36,8 +50,8 @@ async function setState(env: Env, k: string, v: string): Promise<void> {
 }
 
 /** One bounded, resumable step: pull the next pages of getNFTSales for the active Emblem contract. */
-export async function crawlEmblemSales(env: Env): Promise<any> {
-  const key = (env as any).ALCHEMY_KEY as string | undefined;
+export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown>> {
+  const key = (env as { ALCHEMY_KEY?: string }).ALCHEMY_KEY;
   if (!key) return { skipped: "no ALCHEMY_KEY" };
   await env.DB.prepare(EMBLEM_SALES_DDL).run();
   await env.DB.prepare(EMBLEM_SALES_IDX).run();
@@ -49,14 +63,17 @@ export async function crawlEmblemSales(env: Env): Promise<any> {
   const contract = contracts[ci];
   let cursor = (await getState(env, `emblem_sales_cur_${contract}`)) || "";
 
-  const out: any = { contract, inserted: 0, pages: 0 };
+  const out: {
+    contract: string; inserted: number; pages: number;
+    err?: string; sample?: NftSale; contract_done?: boolean; total_sales?: number;
+  } = { contract, inserted: 0, pages: 0 };
   for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
     let url = `${ALCHEMY_SALES(key)}?contractAddress=${contract}&order=asc&limit=${PAGE}`;
     if (cursor) url += `&pageKey=${encodeURIComponent(cursor)}`;
-    let d: any;
-    try { d = await (await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })).json(); }
+    let d: { nftSales?: NftSale[]; pageKey?: string };
+    try { d = (await (await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })).json()) as { nftSales?: NftSale[]; pageKey?: string }; }
     catch (e) { out.err = String(e).slice(0, 80); break; }
-    const sales: any[] = d?.nftSales || [];
+    const sales: NftSale[] = d?.nftSales || [];
     if (!out.sample && sales[0]) out.sample = sales[0]; // surface the raw shape on the first run
     if (!sales.length) { cursor = ""; break; }
     const stmts = sales.map((s) => {

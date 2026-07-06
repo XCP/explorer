@@ -335,7 +335,7 @@ async function setState(env: Env, k: string, v: string): Promise<void> {
  * wrapping to 0 when a cycle completes. On a completed cycle it hands the per-block cascade its starting
  * point (signals_cascade_block = current tip) so the cascade takes over from a known-good full rebuild.
  */
-export async function runSignalsStep(env: Env, max = 3): Promise<any> {
+export async function runSignalsStep(env: Env, max = 3): Promise<Record<string, unknown>> {
   let i = parseInt((await getState(env, "signals_step")) || "0", 10);
   if (i >= UNITS.length || i < 0) i = 0;
   const tip = (await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number | null }>())?.m ?? 0;
@@ -351,12 +351,12 @@ export async function runSignalsStep(env: Env, max = 3): Promise<any> {
       const gkey = `signals_heavy_${u.name}_gen`;
       const lastGen = parseInt((await getState(env, gkey)) ?? "-1", 10);
       if (lastGen >= gen) { gated.push(u.name); continue; } // still fresh this generation → skip the global scan
-      const r: any = await env.DB.prepare(u.full).run();
+      const r = await env.DB.prepare(u.full).run();
       ran[u.name] = r?.meta?.rows_written ?? 0;
       await setState(env, gkey, String(gen));
       continue;
     }
-    const r: any = await env.DB.prepare(u.full).run();
+    const r = await env.DB.prepare(u.full).run();
     ran[u.name] = r?.meta?.rows_written ?? 0;
   }
   const done = i >= UNITS.length;
@@ -427,7 +427,21 @@ async function dirtyAddrs(env: Env, lo: number, hi: number, assets: string[]): P
  * unit's `.scoped`. Periodic/global units (community avgs, low-quality propagation, recent-window, tip-ages,
  * infra flags, pagerank, anchors) are left to runSignalsStep on cron. Returns caught_up / needs_backfill.
  */
-export async function runSignalsCascade(env: Env): Promise<any> {
+export interface SignalsCascadeResult {
+  needs_backfill?: boolean;
+  note?: string;
+  caught_up?: boolean;
+  at_block?: number;
+  from_block?: number;
+  to_block?: number;
+  tip?: number;
+  dirty_assets?: number;
+  dirty_addrs?: number;
+  ran?: Record<string, number>;
+  dirty?: { assets: string[]; addrs: string[] };
+}
+
+export async function runSignalsCascade(env: Env): Promise<SignalsCascadeResult> {
   const cur = await getState(env, "signals_cascade_block");
   if (cur == null) return { needs_backfill: true, note: "run a full runSignalsStep cycle first (it sets the cascade cursor to tip)" };
   const cursor = parseInt(cur, 10);
@@ -447,7 +461,7 @@ export async function runSignalsCascade(env: Env): Promise<any> {
     for (const part of chunk(keys, KEY_CHUNK)) {
       if (!part.length) continue;
       const ph = part.map(() => "?").join(",");
-      const r: any = await env.DB.prepare(u.scoped(ph)).bind(...part).run();
+      const r = await env.DB.prepare(u.scoped(ph)).bind(...part).run();
       wrote += r?.meta?.rows_written ?? 0;
     }
     ran[u.name] = wrote;
@@ -463,16 +477,16 @@ export async function runSignalsCascade(env: Env): Promise<any> {
  * — into a scratch and diff. Used by /admin/verify-signals to prove the cascade matches the canonical rebuild
  * before trusting it (the guardrail against a silent scoped-SQL bug). Returns per-column diffs, [] = identical.
  */
-export async function verifySignals(env: Env, scope: "asset" | "address", id: string): Promise<any> {
+export async function verifySignals(env: Env, scope: "asset" | "address", id: string): Promise<Record<string, unknown>> {
   const table = scope === "asset" ? "asset_signals" : "address_signals";
   const key = scope === "asset" ? "asset" : "addr";
-  const before = await env.DB.prepare(`SELECT * FROM ${table} WHERE ${key}=?`).bind(id).first<any>();
+  const before = await env.DB.prepare(`SELECT * FROM ${table} WHERE ${key}=?`).bind(id).first<Record<string, unknown>>();
   for (const u of UNITS) {
     if (u.periodic || !u.scoped || u.scope !== scope) continue;
     await env.DB.prepare(u.scoped("?")).bind(id).run();
   }
-  const after = await env.DB.prepare(`SELECT * FROM ${table} WHERE ${key}=?`).bind(id).first<any>();
-  const diffs: any[] = [];
+  const after = await env.DB.prepare(`SELECT * FROM ${table} WHERE ${key}=?`).bind(id).first<Record<string, unknown>>();
+  const diffs: Array<{ col: string; full: unknown; cascade: unknown }> = [];
   if (before && after) for (const k of Object.keys(after)) if (String(before[k]) !== String(after[k])) diffs.push({ col: k, full: before[k], cascade: after[k] });
   return { scope, id, identical: diffs.length === 0, diffs, note: "non-periodic units only; periodic globals (community/recent/ages/propagation) are excluded by design" };
 }

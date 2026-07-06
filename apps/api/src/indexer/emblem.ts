@@ -38,9 +38,10 @@ async function setState(env: Env, k: string, v: string): Promise<void> {
   await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
 }
 const hexToDec = (hex: string) => BigInt(hex).toString();
-const pickBtc = (addrs: any): string | null => {
+const pickBtc = (addrs: unknown): string | null => {
   if (!Array.isArray(addrs)) return null;
-  const x = addrs.find((a: any) => (a?.coin === "BTC" || a?.coin === "Bitcoin") && typeof a?.address === "string" && a.address.startsWith("1"));
+  const x = (addrs as Array<{ coin?: string; address?: string }>).find(
+    (a) => (a?.coin === "BTC" || a?.coin === "Bitcoin") && typeof a?.address === "string" && a.address.startsWith("1"));
   return x?.address ?? null;
 };
 
@@ -59,7 +60,9 @@ const LEGACY_CONTRACTS: string[] = [
 async function cpContracts(): Promise<string[]> {
   const out = new Set<string>(LEGACY_CONTRACTS.map((a) => a.toLowerCase()));
   try {
-    const list: any[] = await (await fetch(CURATED, { signal: AbortSignal.timeout(15000) })).json();
+    const list = (await (await fetch(CURATED, { signal: AbortSignal.timeout(15000) })).json()) as Array<{
+      nativeAssets?: string[]; collectionChain?: string; addressChain?: string; contracts?: Record<string, string>;
+    }>;
     for (const c of list) {
       const na: string[] = c?.nativeAssets || [];
       const isCp = c?.collectionChain === "xcp" || c?.addressChain === "BTC" || na.includes("XCP") || na.includes("BTC");
@@ -74,10 +77,12 @@ async function cpContracts(): Promise<string[]> {
 async function enumAlchemy(key: string, contract: string, pageKey: string): Promise<{ rows: { id: string; btc: string | null }[]; cursor: string }> {
   let url = `${ALCHEMY_NFT(key)}?contractAddress=${contract}&withMetadata=true&limit=${ALCHEMY_PAGE}`;
   if (pageKey) url += `&pageKey=${encodeURIComponent(pageKey)}`;
-  const d: any = await (await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })).json();
+  const d = (await (await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })).json()) as {
+    nfts?: Array<{ tokenId?: string; raw?: { metadata?: { addresses?: unknown } } }>; pageKey?: string;
+  };
   const rows = (d?.nfts || [])
-    .map((n: any) => ({ id: n?.tokenId, btc: pickBtc(n?.raw?.metadata?.addresses) }))
-    .filter((r: any) => typeof r.id === "string");
+    .map((n) => ({ id: n?.tokenId, btc: pickBtc(n?.raw?.metadata?.addresses) }))
+    .filter((r): r is { id: string; btc: string | null } => typeof r.id === "string");
   return { rows, cursor: d?.pageKey || "" };
 }
 
@@ -86,7 +91,7 @@ async function enumEtherscan(key: string, contract: string, fromBlock: number): 
   const ids = new Set<string>();
   let last = fromBlock;
   for (const topic0 of [TRANSFER_SINGLE, TRANSFER_BATCH]) {
-    const d: any = await (await fetch(`${ETHERSCAN}&module=logs&action=getLogs&address=${contract}&topic0=${topic0}&topic2=${ZERO_TOPIC}&topic0_2_opr=and&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=${ETHERSCAN_PAGE}&apikey=${key}`, { signal: AbortSignal.timeout(25000) })).json();
+    const d = (await (await fetch(`${ETHERSCAN}&module=logs&action=getLogs&address=${contract}&topic0=${topic0}&topic2=${ZERO_TOPIC}&topic0_2_opr=and&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=${ETHERSCAN_PAGE}&apikey=${key}`, { signal: AbortSignal.timeout(25000) })).json()) as { result?: Array<{ blockNumber: string; data?: string }> };
     if (!Array.isArray(d?.result)) continue;
     for (const log of d.result) {
       last = Math.max(last, parseInt(log.blockNumber, 16));
@@ -107,21 +112,21 @@ async function resolveBtc(tokenId: string): Promise<{ ok: boolean; btc: string |
     // A 200 is DEFINITIVE. Emblem's "not found" record for a bogus/burned token id has NO addresses[]; mark it
     // ok anyway (btc=null) so it drains as resolved. Otherwise those ~20k unresolvable ids sit at the front of
     // the `resolved=0 LIMIT 60` queue and get retried forever (the stall), starving real tokens behind them.
-    const a = (await r.json() as any)?.addresses;
+    const a = (await r.json() as { addresses?: unknown })?.addresses;
     return { ok: true, btc: Array.isArray(a) ? pickBtc(a) : null };
   } catch { return { ok: false, btc: null }; }              // network/parse error -> retry later
 }
 
 /** One bounded, resumable crawl step: enumerate (+resolve) the active contract's next page via Alchemy;
  *  if Alchemy errors, enumerate token ids via Etherscan and drain them through /meta. Cron / admin driven. */
-export async function crawlEmblemStep(env: Env): Promise<any> {
-  const ak = (env as any).ALCHEMY_KEY as string | undefined;
-  const ek = (env as any).ETHERSCAN_KEY as string | undefined;
+export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>> {
+  const ak = (env as { ALCHEMY_KEY?: string }).ALCHEMY_KEY;
+  const ek = (env as { ETHERSCAN_KEY?: string }).ETHERSCAN_KEY;
   await env.DB.prepare(EMBLEM_DDL).run();
   await env.DB.prepare(EMBLEM_IDX).run();
   await env.DB.prepare(EMBLEM_IDX2).run();
   const now = Math.floor(Date.now() / 1000);
-  const out: any = { enumerated: 0, resolved: 0 };
+  const out: Record<string, unknown> = { enumerated: 0, resolved: 0 };
 
   let contracts: string[] = JSON.parse((await getState(env, "emblem_contracts")) || "null") || [];
   if (!contracts.length) { contracts = await cpContracts(); if (contracts.length) await setState(env, "emblem_contracts", JSON.stringify(contracts)); }

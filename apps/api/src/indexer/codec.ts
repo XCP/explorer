@@ -11,7 +11,7 @@
 // negative balances. Quote every 16+ digit integer (a JSON value) so it survives as a string for exact
 // BigInt math. Safe: block/tx/event indexes and unix timestamps are all < 16 digits; tx hashes are
 // already quoted strings; quantity_normalized has a decimal point so it won't match \d{16,}.
-export function parseCpJson(text: string): any {
+export function parseCpJson(text: string): unknown {
   return JSON.parse(text.replace(/:\s*(-?\d{16,})(?=\s*[,}\]])/g, ':"$1"'));
 }
 

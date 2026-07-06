@@ -10,7 +10,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { syncEvents } from "./indexer/sync";
-import { runSignalsStep, runSignalsCascade } from "./indexer/signals";
+import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags, buildTagsScoped } from "./indexer/tags";
@@ -118,14 +118,14 @@ export default {
       } catch (e) { console.error("cron_paused check", e); }
       // assets (incl. supply) are maintained deterministically from the event stream — no CP refetch.
       let caughtUp = false;
-      try { const r: any = await syncEvents(env, { maxEvents: 10000 }); caughtUp = !!r?.caught_up; } catch (e) { console.error("syncEvents", e); }
+      try { const r = await syncEvents(env, { maxEvents: 10000 }); caughtUp = !!r?.caught_up; } catch (e) { console.error("syncEvents", e); }
       // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
       if (caughtUp) {
         // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).
         // Returns needs_backfill until the first full rebuild cycle completes and anchors the cursor at tip.
         // Its return carries the dirty entity sets, which we reuse for the scoped tag rebuild below (one
         // derivation shared by signals + tags).
-        let cascade: any = null;
+        let cascade: SignalsCascadeResult | null = null;
         try { cascade = await runSignalsCascade(env); } catch (e) { console.error("runSignalsCascade", e); }
         // Layer-C backstop: advance the FULL rebuild a couple bounded passes per tick. It maintains the
         // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra

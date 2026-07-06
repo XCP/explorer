@@ -101,7 +101,7 @@ async function tipBlock(env: Env): Promise<number> {
  * FULL self-healing rebuild (canonical): drop every computed tag and re-derive from the rules. Curated /
  * protocol / manual / collection / media tags (other `source` values) are left untouched. Idempotent.
  */
-export async function buildTags(env: Env): Promise<any> {
+export async function buildTags(env: Env): Promise<Record<string, unknown>> {
   const tip = await tipBlock(env);
   // refresh computed tags only (leave curated/manual/protocol/collection/media intact)
   await env.DB.prepare(`DELETE FROM tags WHERE source='computed'`).run();
@@ -130,7 +130,7 @@ export async function buildTags(env: Env): Promise<any> {
  * Takes the dirty sets straight from runSignalsCascade's return (one derivation, shared with the signals
  * cascade) so tags and signals are always rebuilt over the exact same entities.
  */
-export async function buildTagsScoped(env: Env, dirty: { assets: string[]; addrs: string[] }): Promise<any> {
+export async function buildTagsScoped(env: Env, dirty: { assets: string[]; addrs: string[] }): Promise<Record<string, unknown>> {
   const tip = await tipBlock(env);
   const sub = (sql: string) => sql.replace(/\{TIP\}/g, String(tip));
   let addrWrote = 0, assetWrote = 0, typeWrote = 0;
@@ -141,7 +141,7 @@ export async function buildTagsScoped(env: Env, dirty: { assets: string[]; addrs
     const ph = part.map(() => "?").join(",");
     await env.DB.prepare(`DELETE FROM tags WHERE source='computed' AND entity_type='address' AND tag IN (${ADDR_BEHAVIORAL_TAGS}) AND entity_id IN (${ph})`).bind(...part).run();
     for (const r of ADDR_RULES) {
-      const res: any = await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${sub(r.sql)} AND ${r.key} IN (${ph})`).bind(...part).run();
+      const res = await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${sub(r.sql)} AND ${r.key} IN (${ph})`).bind(...part).run();
       addrWrote += res?.meta?.rows_written ?? 0;
     }
   }
@@ -152,11 +152,11 @@ export async function buildTagsScoped(env: Env, dirty: { assets: string[]; addrs
     const ph = part.map(() => "?").join(",");
     await env.DB.prepare(`DELETE FROM tags WHERE source='computed' AND entity_type='asset' AND tag IN (${ASSET_BEHAVIORAL_TAGS}) AND entity_id IN (${ph})`).bind(...part).run();
     for (const r of ASSET_RULES) {
-      const res: any = await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${sub(r.sql)} AND ${r.key} IN (${ph})`).bind(...part).run();
+      const res = await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${sub(r.sql)} AND ${r.key} IN (${ph})`).bind(...part).run();
       assetWrote += res?.meta?.rows_written ?? 0;
     }
     for (const r of ASSET_TYPE_RULES) {
-      const res: any = await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql} AND ${r.key} IN (${ph})`).bind(...part).run();
+      const res = await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql} AND ${r.key} IN (${ph})`).bind(...part).run();
       typeWrote += res?.meta?.rows_written ?? 0;
     }
   }

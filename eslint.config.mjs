@@ -17,12 +17,9 @@ export default tseslint.config(
   },
   {
     // DEBT LEDGER — legacy code written before the `any` ban. Remove each glob as its domain is
-    // converted to the query-layer / typed-registry pattern (reference slice: trades).
+    // converted to the query-layer / typed-registry pattern (reference slice: trades). apps/api is fully
+    // converted (error-level again); only apps/web retains a few deliberate `any`s.
     files: [
-      "apps/api/src/read/**",
-      "apps/api/src/indexer/**",
-      "apps/api/src/reputation/**",
-      "apps/api/src/{admin,index,legacy,verify}.ts",
       "apps/web/src/**",
     ],
     rules: { "@typescript-eslint/no-explicit-any": "warn" },

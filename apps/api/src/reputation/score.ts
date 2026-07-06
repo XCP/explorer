@@ -6,17 +6,26 @@
 import {
   type Factor, SCALARS, ADDRESS_FACTORS, ASSET_FACTORS, ASSET_PENALTY, ADDRESS_PCT, ASSET_PCT, ASSET_TIERS, ADDRESS_TIERS,
 } from "./config";
+import type { AssetSignalsRow, AddressSignalsRow } from "../schema";
 
-const num = (v: any) => Number(v) || 0;
+// The address reputation row = the stored address_signals row + the two derived columns the scorer reads
+// (mirrors queries/addresses.ts AddressReputationRow, defined locally to keep this module import-light).
+type AddressScoreRow = AddressSignalsRow & { xcp?: number | null; tip?: number | null };
+
+// The scorer reads feature rows dynamically by factor key, so it treats a row as a bag of numeric-ish columns;
+// the public entry points take the concrete signal-row types and pass them through as this shape.
+type FeatureRow = Record<string, unknown>;
+
+const num = (v: unknown) => Number(v) || 0;
 const ln = (x: number) => Math.log(1 + Math.max(0, x));
 // staleness decay multipliers (gentle hyperbolic, floored) — see SCALARS. Applied to legacy time-terms so an
 // aged-but-inactive entity decays toward dormant instead of coasting on historical standing.
-const assetDecay = (row: any) => Math.max(SCALARS.assetDecayFloor, SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)));
-const addrDecay = (row: any, tip: number) => Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_blk))));
+const assetDecay = (row: FeatureRow) => Math.max(SCALARS.assetDecayFloor, SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)));
+const addrDecay = (row: FeatureRow, tip: number) => Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_blk))));
 
 /* ---------- single-row scoring (read endpoint) ---------- */
 
-function factorValue(f: Factor, row: any, tip: number): number {
+function factorValue(f: Factor, row: FeatureRow, tip: number): number {
   // derived ratios (not stored columns) — computed from the row
   if (f.key === "__trades_per_holder") return ln(num(row.trades) / (num(row.holders) || 1));
   if (f.key === "__asset_age") return (num(row.age_blocks) / SCALARS.blockScale) * assetDecay(row); // decays if the asset went quiet
@@ -45,7 +54,7 @@ function factorValue(f: Factor, row: any, tip: number): number {
 
 export interface Scored { raw: number; breakdown: Record<string, number>; }
 
-function sumFactors(factors: Factor[], row: any, tip: number): Scored {
+function sumFactors(factors: Factor[], row: FeatureRow, tip: number): Scored {
   let raw = 0;
   const breakdown: Record<string, number> = {};
   for (const f of factors) {
@@ -57,14 +66,14 @@ function sumFactors(factors: Factor[], row: any, tip: number): Scored {
   return { raw, breakdown };
 }
 
-export function scoreAddress(row: any, tip: number): Scored {
-  const s = sumFactors(ADDRESS_FACTORS, row, tip);
+export function scoreAddress(row: Partial<AddressScoreRow>, tip: number): Scored {
+  const s = sumFactors(ADDRESS_FACTORS, row as unknown as FeatureRow, tip);
   if (num(row.last_blk) >= SCALARS.modernActiveBlock) { s.raw += SCALARS.modernActiveBonus; s.breakdown.modern = SCALARS.modernActiveBonus; }
   return s;
 }
 
-export function scoreAsset(row: any): Scored {
-  const s = sumFactors(ASSET_FACTORS, row, 0);
+export function scoreAsset(row: Partial<AssetSignalsRow>): Scored {
+  const s = sumFactors(ASSET_FACTORS, row as unknown as FeatureRow, 0);
   if (num(row.low_quality) === 1) { s.raw += ASSET_PENALTY.lowQuality; s.breakdown.low_quality = ASSET_PENALTY.lowQuality; }
   return s;
 }

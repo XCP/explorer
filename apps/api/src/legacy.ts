@@ -7,10 +7,15 @@
  *   /api/v1/swap/{give}/{get}                                     -> proxy + reshape xcpdex market data
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "./index";
+import type { AssetRow } from "./schema";
+
+type Ctx = Context<{ Bindings: Env }>;
 
 export const legacy = new Hono<{ Bindings: Env }>();
-const json = (c: any, body: unknown, ttl = 60) =>
+const json = (c: Ctx, body: unknown, ttl = 60) =>
   c.json(body, 200, { "cache-control": `public, max-age=${ttl}`, "access-control-allow-origin": "*" });
 const num = (v: string | null): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
@@ -36,7 +41,10 @@ legacy.get("/api/v1/search", async (c) => {
     `SELECT asset, description, issuer, owner, supply_normalized, locked, first_issuance_block_time
      FROM assets WHERE asset LIKE ? OR asset_longname LIKE ?
      ORDER BY LENGTH(asset), asset LIMIT 20`
-  ).bind(like, q + "%").all<any>();
+  ).bind(like, q + "%").all<{
+    asset: string; description: string | null; issuer: string | null; owner: string | null;
+    supply_normalized: string | null; locked: number | null; first_issuance_block_time: number | null;
+  }>();
   return json(c, {
     assets: rows.results.map((r) => ({
       asset: r.asset, symbol: r.asset, description: r.description ?? "",
@@ -51,7 +59,7 @@ legacy.get("/api/v1/asset/:asset", async (c) => {
   const asset = c.req.param("asset");
   const r = await c.env.DB.prepare(
     `SELECT * FROM assets WHERE asset = ? OR asset_longname = ?`
-  ).bind(asset.toUpperCase(), asset).first<any>();
+  ).bind(asset.toUpperCase(), asset).first<AssetRow>();
   if (!r) return c.json({ error: "Asset not found" }, 404);
   // CP-derived fields only; market fields (price/volume) intentionally omitted (wallet falls back to CoinGecko).
   return json(c, {
@@ -72,7 +80,7 @@ legacy.get("/api/v1/asset/:asset", async (c) => {
 legacy.get("/api/v1/address/:address/utxos", (c) => proxyConsolidation(c));
 legacy.all("/api/v1/address/:address/consolidation", (c) => proxyConsolidation(c));
 legacy.all("/api/v1/address/:address/consolidation/:sub", (c) => proxyConsolidation(c));
-async function proxyConsolidation(c: any) {
+async function proxyConsolidation(c: Ctx) {
   const url = new URL(c.req.url);
   const target = c.env.CONSOLIDATION_API + url.pathname + url.search;
   const res = await fetch(target, {
@@ -81,7 +89,7 @@ async function proxyConsolidation(c: any) {
     body: c.req.method === "GET" || c.req.method === "HEAD" ? undefined : await c.req.raw.clone().arrayBuffer(),
     signal: AbortSignal.timeout(45000),
   });
-  return c.body(await res.text(), res.status, { "content-type": res.headers.get("content-type") || "application/json", "access-control-allow-origin": "*" });
+  return c.body(await res.text(), res.status as ContentfulStatusCode, { "content-type": res.headers.get("content-type") || "application/json", "access-control-allow-origin": "*" });
 }
 
 /* ---------- swap: proxy + reshape xcpdex pair data (market data lives in xcpdex) ---------- */
@@ -95,7 +103,11 @@ legacy.get("/api/v1/swap/:give/:get", async (c) => {
   if (!res.ok) {
     return json(c, { data: { trading_pair: { name: `${give}/${get}`, last_trade_price: null } } }, 30);
   }
-  const p: any = await res.json();
+  const p = (await res.json()) as {
+    base_asset?: string; quote_asset?: string; last_price?: unknown; last_trade_time?: unknown;
+    volume_7d?: unknown; volume_30d?: unknown; trade_count_7d?: unknown; trade_count_30d?: unknown;
+    price_change_7d?: unknown; price_change_30d?: unknown; updated_at?: unknown;
+  };
   const base = p.base_asset ?? give, quote = p.quote_asset ?? get;
   return json(c, {
     data: {
