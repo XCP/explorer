@@ -38,11 +38,17 @@ export type GraphTier = "trusted" | "distrusted" | "unscored";
  * trust is a MIN over k vectors so it is deliberately conservative vs the single distrust vector — ties break
  * toward distrusted (the safe direction).
  */
-export function graphTier(trust: number, distrust: number): GraphTier {
+// cuts: magnitude thresholds (p90 of the positive mass, computed at finalize into indexer_state).
+// The first prod run showed why they're needed: 12 years of organic mixing gives ~60% of addresses SOME
+// nonzero trust — "trusted" must mean meaningfully-trusted, so weak-positive collapses to unscored.
+// Defaults of 0 preserve the pure zero/nonzero semantics (the harness gauntlet exercises that path).
+export interface GraphCuts { trust: number; distrust: number }
+export function graphTier(trust: number, distrust: number, cuts: GraphCuts = { trust: 0, distrust: 0 }): GraphTier {
   const t = trust > 0 ? trust : 0;
   const d = distrust > 0 ? distrust : 0;
-  if (t <= 0 && d <= 0) return "unscored";
-  return d > t ? "distrusted" : "trusted";
+  if (d > t && d > cuts.distrust) return "distrusted";
+  if (t > 0 && t >= d && t >= cuts.trust) return "trusted";
+  return "unscored";
 }
 
 /**
@@ -103,6 +109,31 @@ export function finalizeStatements(): string[] {
        FROM (SELECT substr(node, ${ASSET_PREFIX.length + 1}) AS asset, r AS dr FROM graph_rank
              WHERE slot = ${DISTRUST_SLOT} AND node LIKE '${ASSET_PREFIX}%') m
        WHERE a.asset = m.asset`,
+    // SEEDS ARE AXIOMS, not inferences: a seed teleports in only ONE of the k subsets, so its component-wise
+    // MIN is its weakest non-seeded slot (the first prod run graded RAREPEPE ~p90 while non-seed assets of
+    // all-subset-trusted issuers scored 300x higher). Seed nodes take MAX over the trust slots instead.
+    `UPDATE address_signals AS a SET graph_trust = m.tr
+       FROM (SELECT r.node, MAX(r.r) AS tr FROM graph_rank r
+             JOIN graph_seed sd ON sd.node = r.node AND sd.slot < ${K}
+             WHERE r.slot IN (${trustSlots}) GROUP BY r.node) m
+       WHERE a.addr = m.node`,
+    `UPDATE asset_signals AS a SET graph_trust = m.tr
+       FROM (SELECT substr(r.node, ${ASSET_PREFIX.length + 1}) AS asset, MAX(r.r) AS tr FROM graph_rank r
+             JOIN graph_seed sd ON sd.node = r.node AND sd.slot < ${K}
+             WHERE r.slot IN (${trustSlots}) AND r.node LIKE '${ASSET_PREFIX}%' GROUP BY r.node) m
+       WHERE a.asset = m.asset`,
+    // Data-driven tier cuts = p90 of the positive mass per table/direction, stored for the read layer
+    // (graphTier cuts). Recomputed every rebuild so the tier keeps its meaning as the graph evolves.
+    ...[
+      ["graph_cut_addr_trust", "address_signals", "graph_trust"],
+      ["graph_cut_addr_distrust", "address_signals", "graph_distrust"],
+      ["graph_cut_asset_trust", "asset_signals", "graph_trust"],
+      ["graph_cut_asset_distrust", "asset_signals", "graph_distrust"],
+    ].map(([key, table, col]) =>
+      `INSERT INTO indexer_state (key, value)
+       VALUES ('${key}', COALESCE((SELECT CAST(${col} AS TEXT) FROM ${table} WHERE ${col} > 0
+                ORDER BY ${col} LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.9 AS INT) FROM ${table} WHERE ${col} > 0)), '0'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
   ];
 }
 

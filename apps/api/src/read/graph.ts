@@ -10,7 +10,7 @@
  * `tier` is the pure graphTier() classifier (trusted / distrusted / unscored — never a continuum).
  */
 import { router, cached, J } from "./respond";
-import { graphOverview, graphScore } from "../queries/graph";
+import { graphOverview, graphScore, graphCuts } from "../queries/graph";
 import { graphTier } from "../indexer/graph-core";
 
 export const graph = router();
@@ -19,13 +19,19 @@ graph.get("/v2/reputation/graph", (c) =>
   cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.DB) })));
 
 graph.get("/v2/addresses/:addr/graph", async (c) => {
-  const s = await graphScore(c.env.DB, "address_signals", "addr", c.req.param("addr"));
+  const [s, cuts] = await Promise.all([
+    graphScore(c.env.DB, "address_signals", "addr", c.req.param("addr")),
+    graphCuts(c.env.DB),
+  ]);
   const trust = s?.trust ?? 0, distrust = s?.distrust ?? 0;
-  return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust) } }, 60);
+  return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust, cuts.addr) } }, 60);
 });
 
 graph.get("/v2/assets/:asset/graph", async (c) => {
-  const s = await graphScore(c.env.DB, "asset_signals", "asset", c.req.param("asset"));
+  const [s, cuts] = await Promise.all([
+    graphScore(c.env.DB, "asset_signals", "asset", c.req.param("asset")),
+    graphCuts(c.env.DB),
+  ]);
   const trust = s?.trust ?? 0, distrust = s?.distrust ?? 0;
-  return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust) } }, 60);
+  return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust, cuts.asset) } }, 60);
 });
