@@ -20,6 +20,11 @@ body {
 a { color: #d4d4d8; }
 a:hover { color: var(--color-xcp); }
 
+/* One consistent keyboard-focus ring everywhere (mouse clicks don't trigger :focus-visible). */
+:focus-visible { outline: 2px solid var(--color-xcp); outline-offset: 2px; border-radius: 2px; }
+/* Snappier taps: no 300ms double-tap-zoom delay, no gray tap flash (focus ring covers feedback). */
+a, button, [role="button"], input, select { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
 /* Terminal-feel scrollbar (matches xcpdex) */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #09090b; }
