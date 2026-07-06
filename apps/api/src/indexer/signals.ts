@@ -79,9 +79,25 @@ interface FeatureUnit {
   reads: string[];               // raw mirror tables this unit aggregates (doc + dirties-it set)
   dependsOn?: string[];          // upstream UNIT names whose output it consumes (cascade edges)
   periodic?: boolean;            // whole-population / fan-out → full-rebuild + cron only (Layer C), no per-block scope
+  heavyEveryBlocks?: number;     // gate this unit's `.full` in runSignalsStep to a block-delta cadence (a heavy
+                                 // global scan whose population output doesn't need sub-cycle freshness). The
+                                 // per-block cascade still runs the `.scoped` variant every tick (dirty stays
+                                 // fresh); only the expensive global self-heal is throttled. Cursor: one
+                                 // indexer_state gen-key per unit (see runSignalsStep).
   full: string;                  // full-table SQL (ground truth)
   scoped?: (ph: string) => string; // dirty-scoped recompute (ph = "?,?,…" bound to the dirty keys)
 }
+
+// ~1 day of blocks. THE GATING CRITERION (applied to the whole class, not a hand-picked few): any unit whose
+// `.full` aggregates over a >~1M-row mirror table — sends (~1.75M), balances (~3M), transactions (~3.4M) —
+// carries this gate. Population aggregates (fees, burns, holders, breadth, creator-share, …) move slowly, so
+// daily is ample; the per-block cascade (`.scoped`) keeps DIRTY entities fresh every tick regardless, and the
+// full pass is only the self-healing backstop. Units that scan smaller tables (order_matches ~216k, assets
+// ~250k, dispenses/dispensers/dividends/broadcasts) stay per-cycle. A reset→re-correct pair MUST share the
+// gate (same generation ⇒ same cycle) or the reset out-runs the correction: (asset_holders, asset_burn_adjust)
+// on burned_pct, and (addr_iss, addr_surv) on locked_assets — so the resetter is co-gated even if it alone is
+// under the row threshold.
+const HEAVY_DAILY_BLOCKS = 144;
 
 // ---------------------------------------------------------------------------------------------------
 // FEATURE UNITS. Order matters: a unit may read an earlier unit's output (see dependsOn). The cascade
@@ -92,14 +108,14 @@ const UNITS: FeatureUnit[] = [
   // ===== schema (cheap, idempotent; full-rebuild only) =====
   { name: "ddl_addr", scope: "global", reads: [], periodic: true, full: ADDR_DDL },
 
-  // ===== ADDRESS · peers & activity span (from sends) =====
-  { name: "addr_send_out", scope: "address", reads: ["sends"],
+  // ===== ADDRESS · peers & activity span (from sends ~1.75M → heavy full scan, gated daily) =====
+  { name: "addr_send_out", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,first_blk,out_peers) SELECT source,MIN(block_index),COUNT(DISTINCT destination) FROM sends WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET first_blk=MIN(address_signals.first_blk,excluded.first_blk),out_peers=excluded.out_peers`,
     scoped: (ph) => `INSERT INTO address_signals (addr,first_blk,out_peers) SELECT source,MIN(block_index),COUNT(DISTINCT destination) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET first_blk=MIN(address_signals.first_blk,excluded.first_blk),out_peers=excluded.out_peers` },
-  { name: "addr_send_in", scope: "address", reads: ["sends"],
+  { name: "addr_send_in", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,in_peers,first_blk,last_blk) SELECT destination,COUNT(DISTINCT source),MIN(block_index),MAX(block_index) FROM sends WHERE destination IS NOT NULL GROUP BY destination ON CONFLICT(addr) DO UPDATE SET in_peers=excluded.in_peers,first_blk=MIN(address_signals.first_blk,excluded.first_blk),last_blk=MAX(address_signals.last_blk,excluded.last_blk)`,
     scoped: (ph) => `INSERT INTO address_signals (addr,in_peers,first_blk,last_blk) SELECT destination,COUNT(DISTINCT source),MIN(block_index),MAX(block_index) FROM sends WHERE destination IS NOT NULL AND destination IN (${ph}) GROUP BY destination ON CONFLICT(addr) DO UPDATE SET in_peers=excluded.in_peers,first_blk=MIN(address_signals.first_blk,excluded.first_blk),last_blk=MAX(address_signals.last_blk,excluded.last_blk)` },
-  { name: "addr_last", scope: "address", reads: ["sends"],
+  { name: "addr_last", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,last_blk) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_blk=MAX(address_signals.last_blk,excluded.last_blk)`,
     scoped: (ph) => `INSERT INTO address_signals (addr,last_blk) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_blk=MAX(address_signals.last_blk,excluded.last_blk)` },
 
@@ -116,16 +132,19 @@ const UNITS: FeatureUnit[] = [
 
   // assets_issued = raw count (FLOOD-gameable, so scored at weight 0). locked_assets is RESET to 0 here and
   // re-set in addr_surv gated by holders — else spam-issuing 1000 locked assets in one block games "no-rug".
-  { name: "addr_iss", scope: "address", reads: ["issuances"],
+  // heavyEveryBlocks: CO-GATED with addr_surv (its locked_assets re-corrector) even though issuances alone is
+  // under the row threshold — same daily generation so the reset and re-correction always run in one cycle.
+  { name: "addr_iss", scope: "address", reads: ["issuances"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,assets_issued,locked_assets) SELECT issuer,COUNT(*),0 FROM issuances WHERE issuer IS NOT NULL GROUP BY issuer ON CONFLICT(addr) DO UPDATE SET assets_issued=excluded.assets_issued,locked_assets=0`,
     scoped: (ph) => `INSERT INTO address_signals (addr,assets_issued,locked_assets) SELECT issuer,COUNT(*),0 FROM issuances WHERE issuer IS NOT NULL AND issuer IN (${ph}) GROUP BY issuer ON CONFLICT(addr) DO UPDATE SET assets_issued=excluded.assets_issued,locked_assets=0` },
-  { name: "addr_fees", scope: "address", reads: ["transactions"],
+  // transactions ~3.4M → heaviest full scan (measured 14.4s); gated daily. Cascade .scoped keeps dirty fresh.
+  { name: "addr_fees", scope: "address", reads: ["transactions"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,btc_fees) SELECT source,SUM(CAST(fee AS REAL))/1e8 FROM transactions WHERE source IS NOT NULL AND fee IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET btc_fees=excluded.btc_fees`,
     scoped: (ph) => `INSERT INTO address_signals (addr,btc_fees) SELECT source,SUM(CAST(fee AS REAL))/1e8 FROM transactions WHERE source IS NOT NULL AND fee IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET btc_fees=excluded.btc_fees` },
-  { name: "addr_held", scope: "address", reads: ["balances"],
+  { name: "addr_held", scope: "address", reads: ["balances"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,assets_held) SELECT holder,COUNT(DISTINCT asset) FROM balances WHERE holder_type='address' AND CAST(quantity AS INTEGER)>0 GROUP BY holder ON CONFLICT(addr) DO UPDATE SET assets_held=excluded.assets_held`,
     scoped: (ph) => `INSERT INTO address_signals (addr,assets_held) SELECT holder,COUNT(DISTINCT asset) FROM balances WHERE holder_type='address' AND CAST(quantity AS INTEGER)>0 AND holder IN (${ph}) GROUP BY holder ON CONFLICT(addr) DO UPDATE SET assets_held=excluded.assets_held` },
-  { name: "addr_recv", scope: "address", reads: ["sends"],
+  { name: "addr_recv", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,assets_received) SELECT destination,COUNT(DISTINCT asset) FROM sends WHERE destination IS NOT NULL GROUP BY destination ON CONFLICT(addr) DO UPDATE SET assets_received=excluded.assets_received`,
     scoped: (ph) => `INSERT INTO address_signals (addr,assets_received) SELECT destination,COUNT(DISTINCT asset) FROM sends WHERE destination IS NOT NULL AND destination IN (${ph}) GROUP BY destination ON CONFLICT(addr) DO UPDATE SET assets_received=excluded.assets_received` },
 
@@ -135,7 +154,7 @@ const UNITS: FeatureUnit[] = [
   // 'landed' tier (>=10 holders) — the predictive sweet spot; >=2 'distributed' (left the wallet) is the
   // weak floor; >=50 'hits' is the elite cut. The cascade includes issuers-of-dirty-assets in the dirty
   // address set, so a holder change on any asset recomputes that asset's issuer here.
-  { name: "addr_surv", scope: "address", reads: ["balances", "assets"], dependsOn: ["asset_holders"],
+  { name: "addr_surv", scope: "address", reads: ["balances", "assets"], dependsOn: ["asset_holders"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `WITH hc AS (SELECT asset, COUNT(*) h FROM balances WHERE holder_type='address' AND CAST(quantity AS INTEGER)>0 GROUP BY asset) INSERT INTO address_signals (addr,assets_distributed,survived_assets,assets_hits,locked_assets) SELECT a.issuer, SUM(CASE WHEN hc.h>=2 THEN 1 ELSE 0 END), SUM(CASE WHEN hc.h>=10 THEN 1 ELSE 0 END), SUM(CASE WHEN hc.h>=50 THEN 1 ELSE 0 END), SUM(CASE WHEN a.locked=1 AND hc.h>=2 THEN 1 ELSE 0 END) FROM assets a JOIN hc ON hc.asset=a.asset WHERE a.issuer IS NOT NULL GROUP BY a.issuer ON CONFLICT(addr) DO UPDATE SET assets_distributed=excluded.assets_distributed, survived_assets=excluded.survived_assets, assets_hits=excluded.assets_hits, locked_assets=excluded.locked_assets`,
     // scoped to dirty issuers: only their assets' holder counts (heavy balance scan limited to those assets).
     scoped: (ph) => `WITH ia AS (SELECT asset, issuer, locked FROM assets WHERE issuer IS NOT NULL AND issuer IN (${ph})), hc AS (SELECT b.asset, COUNT(*) h FROM balances b JOIN ia ON ia.asset=b.asset WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset) INSERT INTO address_signals (addr,assets_distributed,survived_assets,assets_hits,locked_assets) SELECT ia.issuer, SUM(CASE WHEN COALESCE(hc.h,0)>=2 THEN 1 ELSE 0 END), SUM(CASE WHEN COALESCE(hc.h,0)>=10 THEN 1 ELSE 0 END), SUM(CASE WHEN COALESCE(hc.h,0)>=50 THEN 1 ELSE 0 END), SUM(CASE WHEN ia.locked=1 AND COALESCE(hc.h,0)>=2 THEN 1 ELSE 0 END) FROM ia LEFT JOIN hc ON hc.asset=ia.asset GROUP BY ia.issuer ON CONFLICT(addr) DO UPDATE SET assets_distributed=excluded.assets_distributed, survived_assets=excluded.survived_assets, assets_hits=excluded.assets_hits, locked_assets=excluded.locked_assets` },
@@ -147,6 +166,10 @@ const UNITS: FeatureUnit[] = [
     full: `UPDATE address_signals SET is_exchange = CASE WHEN addr IN (${EXCHANGES_SQL}) THEN 1 ELSE 0 END` },
   { name: "addr_is_burn", scope: "address", reads: [], periodic: true,
     full: `UPDATE address_signals SET is_burn = CASE WHEN addr IN (${CURATED_BURNS_SQL}) THEN 1 ELSE 0 END` },
+  // NOT heavyEveryBlocks: its sends access is an INDEXED SEEK via the ~23 exchange destinations (idx_adr_exchange),
+  // not a 1.75M full scan, and it's a cheap infra-flag UPDATE — not in the measured heavy set. Same for the other
+  // infra flag UPDATEs below (is_exchange/is_burn/is_emblem/likely_service): they rewrite the derived
+  // address_signals with a small membership CASE, they don't aggregate a >1M-row mirror table.
   { name: "addr_is_deposit", scope: "address", reads: ["sends"], dependsOn: ["addr_is_exchange", "addr_send_out", "addr_held"], periodic: true,
     full: `UPDATE address_signals SET is_deposit = CASE WHEN out_peers=1 AND assets_held=0 AND addr IN (SELECT s.source FROM sends s JOIN address_signals e ON e.addr=s.destination WHERE e.is_exchange=1) THEN 1 ELSE 0 END` },
 
@@ -156,13 +179,18 @@ const UNITS: FeatureUnit[] = [
   // ===== ASSET · holders & concentration (from balances) =====
   // Resets burned_pct=0 for every (dirty) asset (cleared here, then re-set by asset_burn_adjust for assets
   // that still have burns) so assets that lost their burn holders don't keep a stale burned_pct.
-  { name: "asset_holders", scope: "asset", reads: ["balances"],
+  // heavyEveryBlocks: the `.full` is a ~3M-row balance scan; gate it (with asset_burn_adjust, its coupled
+  // re-corrector) to daily so the two always rebuild TOGETHER — asset_holders resets holders/top1/burned_pct
+  // and asset_burn_adjust re-states them for burn-holding assets, so they must share a cadence or the reset
+  // would out-run the re-correction. Same daily generation ⇒ they run in the same cycle. Cascade `.scoped`
+  // keeps dirty assets fresh every tick regardless.
+  { name: "asset_holders", scope: "asset", reads: ["balances"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO asset_signals (asset,holders,top1_pct) SELECT asset,COUNT(*),MAX(CAST(quantity AS REAL))*100.0/NULLIF(SUM(CAST(quantity AS REAL)),0) FROM balances WHERE holder_type='address' AND CAST(quantity AS INTEGER)>0 GROUP BY asset ON CONFLICT(asset) DO UPDATE SET holders=excluded.holders,top1_pct=excluded.top1_pct,burned_pct=0`,
     scoped: (ph) => `INSERT INTO asset_signals (asset,holders,top1_pct) SELECT asset,COUNT(*),MAX(CAST(quantity AS REAL))*100.0/NULLIF(SUM(CAST(quantity AS REAL)),0) FROM balances WHERE holder_type='address' AND CAST(quantity AS INTEGER)>0 AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET holders=excluded.holders,top1_pct=excluded.top1_pct,burned_pct=0` },
   // burn adjustment: for assets with burns, re-state holders & top1 as CIRCULATING (exclude burn addrs) and
   // record burned_pct (= supply − circulating). Depends on holders' is_burn flag + must run AFTER asset_holders
   // (which resets burned_pct=0). is_burn is curated/stable, so the per-block trigger is a balance change.
-  { name: "asset_burn_adjust", scope: "asset", reads: ["balances"], dependsOn: ["asset_holders", "addr_is_burn"],
+  { name: "asset_burn_adjust", scope: "asset", reads: ["balances"], dependsOn: ["asset_holders", "addr_is_burn"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `WITH adj AS (SELECT b.asset, COUNT(CASE WHEN COALESCE(sg.is_burn,0)=0 THEN 1 END) ch, MAX(CASE WHEN COALESCE(sg.is_burn,0)=0 THEN CAST(b.quantity AS REAL) END)*100.0/NULLIF(SUM(CASE WHEN COALESCE(sg.is_burn,0)=0 THEN CAST(b.quantity AS REAL) END),0) ct, SUM(CASE WHEN sg.is_burn=1 THEN CAST(b.quantity AS REAL) ELSE 0 END)*100.0/NULLIF(SUM(CAST(b.quantity AS REAL)),0) bp FROM balances b JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset HAVING SUM(CASE WHEN sg.is_burn=1 THEN 1 ELSE 0 END)>0) UPDATE asset_signals SET holders=adj.ch, top1_pct=COALESCE(adj.ct,0), burned_pct=adj.bp FROM adj WHERE adj.asset=asset_signals.asset`,
     scoped: (ph) => `WITH adj AS (SELECT b.asset, COUNT(CASE WHEN COALESCE(sg.is_burn,0)=0 THEN 1 END) ch, MAX(CASE WHEN COALESCE(sg.is_burn,0)=0 THEN CAST(b.quantity AS REAL) END)*100.0/NULLIF(SUM(CASE WHEN COALESCE(sg.is_burn,0)=0 THEN CAST(b.quantity AS REAL) END),0) ct, SUM(CASE WHEN sg.is_burn=1 THEN CAST(b.quantity AS REAL) ELSE 0 END)*100.0/NULLIF(SUM(CAST(b.quantity AS REAL)),0) bp FROM balances b JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 AND b.asset IN (${ph}) GROUP BY b.asset HAVING SUM(CASE WHEN sg.is_burn=1 THEN 1 ELSE 0 END)>0) UPDATE asset_signals SET holders=adj.ch, top1_pct=COALESCE(adj.ct,0), burned_pct=adj.bp FROM adj WHERE adj.asset=asset_signals.asset` },
 
@@ -189,7 +217,7 @@ const UNITS: FeatureUnit[] = [
   // community quality (un-confounded, fairmint-safe): avg holder breadth + % of holders that are creators.
   // Reverse-direction fan-out (one address changing affects every asset it holds), so kept periodic per the
   // architecture doc (Layer C); a per-block asset scope would miss assets whose holders changed elsewhere.
-  { name: "asset_community", scope: "asset", reads: ["balances"], dependsOn: ["addr_held", "addr_surv"], periodic: true,
+  { name: "asset_community", scope: "asset", reads: ["balances"], dependsOn: ["addr_held", "addr_surv"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO asset_signals (asset, holder_breadth, pct_creator_holders) SELECT b.asset, AVG(COALESCE(sg.assets_held,0)), AVG(CASE WHEN sg.survived_assets>0 THEN 1.0 ELSE 0 END)*100 FROM balances b LEFT JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset HAVING COUNT(*)>=3 ON CONFLICT(asset) DO UPDATE SET holder_breadth=excluded.holder_breadth, pct_creator_holders=excluded.pct_creator_holders` },
 
   // ===== ADDRESS · clean (low-quality-excluded) economics + burner (depend on asset low_quality → PERIODIC) =====
@@ -199,7 +227,7 @@ const UNITS: FeatureUnit[] = [
     full: `INSERT INTO address_signals (addr,clean_btc_spent) SELECT d.destination,SUM(d.btc_amount)/1e8 FROM dispenses d JOIN asset_signals a ON a.asset=d.asset WHERE a.low_quality=0 AND d.destination IS NOT NULL GROUP BY d.destination ON CONFLICT(addr) DO UPDATE SET clean_btc_spent=excluded.clean_btc_spent` },
   // Burner signal: distinct CLEAN assets sent to a known burn address (creators burning their own supply —
   // PEPECASH, Bitcorn — is a credible pro-holder/deflation act). Depends on is_burn + asset low_quality.
-  { name: "addr_burned_out", scope: "address", reads: ["sends"], dependsOn: ["addr_is_burn", "asset_lowq"], periodic: true,
+  { name: "addr_burned_out", scope: "address", reads: ["sends"], dependsOn: ["addr_is_burn", "asset_lowq"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,assets_burned) SELECT s.source,COUNT(DISTINCT s.asset) FROM sends s JOIN address_signals b ON b.addr=s.destination AND b.is_burn=1 LEFT JOIN asset_signals a ON a.asset=s.asset WHERE s.source IS NOT NULL AND COALESCE(a.low_quality,0)=0 GROUP BY s.source ON CONFLICT(addr) DO UPDATE SET assets_burned=excluded.assets_burned` },
 
   // ===== ADDRESS · dispenser-operator trust (from dispensers + dispenses) =====
@@ -221,7 +249,7 @@ const UNITS: FeatureUnit[] = [
   { name: "addr_stamps_created", scope: "address", reads: ["assets", "tags"],
     full: `INSERT INTO address_signals (addr,stamps_created,src20_deploys) SELECT a.issuer, COUNT(DISTINCT CASE WHEN t.tag='stamp' THEN a.asset END), COUNT(DISTINCT CASE WHEN t.tag='src20_deploy' THEN a.asset END) FROM assets a JOIN tags t ON t.entity_type='asset' AND t.entity_id=a.asset AND t.tag IN ('stamp','src20_deploy') WHERE a.issuer IS NOT NULL GROUP BY a.issuer ON CONFLICT(addr) DO UPDATE SET stamps_created=excluded.stamps_created, src20_deploys=excluded.src20_deploys`,
     scoped: (ph) => `INSERT INTO address_signals (addr,stamps_created,src20_deploys) SELECT a.issuer, COUNT(DISTINCT CASE WHEN t.tag='stamp' THEN a.asset END), COUNT(DISTINCT CASE WHEN t.tag='src20_deploy' THEN a.asset END) FROM assets a JOIN tags t ON t.entity_type='asset' AND t.entity_id=a.asset AND t.tag IN ('stamp','src20_deploy') WHERE a.issuer IS NOT NULL AND a.issuer IN (${ph}) GROUP BY a.issuer ON CONFLICT(addr) DO UPDATE SET stamps_created=excluded.stamps_created, src20_deploys=excluded.src20_deploys` },
-  { name: "addr_stamps_collected", scope: "address", reads: ["balances", "tags"],
+  { name: "addr_stamps_collected", scope: "address", reads: ["balances", "tags"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (addr,stamps_collected) SELECT b.holder, COUNT(DISTINCT b.asset) FROM balances b JOIN tags t ON t.entity_type='asset' AND t.entity_id=b.asset AND t.tag='stamp' WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.holder ON CONFLICT(addr) DO UPDATE SET stamps_collected=excluded.stamps_collected`,
     scoped: (ph) => `INSERT INTO address_signals (addr,stamps_collected) SELECT b.holder, COUNT(DISTINCT b.asset) FROM balances b JOIN tags t ON t.entity_type='asset' AND t.entity_id=b.asset AND t.tag='stamp' WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 AND b.holder IN (${ph}) GROUP BY b.holder ON CONFLICT(addr) DO UPDATE SET stamps_collected=excluded.stamps_collected` },
   { name: "addr_is_btns", scope: "address", reads: ["broadcasts"],
@@ -242,7 +270,7 @@ const UNITS: FeatureUnit[] = [
     full: `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT source) FROM dispensers WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers`,
     scoped: (ph) => `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT source) FROM dispensers WHERE asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers` },
   // holder sophistication: avg DEX activity of the asset's holders (depends on holders' dex_trades → PERIODIC).
-  { name: "asset_holder_dex", scope: "asset", reads: ["balances"], dependsOn: ["addr_dex_trades"], periodic: true,
+  { name: "asset_holder_dex", scope: "asset", reads: ["balances"], dependsOn: ["addr_dex_trades"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO asset_signals (asset,avg_holder_dex) SELECT b.asset, AVG(COALESCE(sg.dex_trades,0)) FROM balances b LEFT JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset HAVING COUNT(*)>=3 ON CONFLICT(asset) DO UPDATE SET avg_holder_dex=excluded.avg_holder_dex` },
 
   // ===== ASSET · current activity + realized value =====
@@ -287,20 +315,34 @@ async function setState(env: Env, k: string, v: string): Promise<void> {
 export async function runSignalsStep(env: Env, max = 3): Promise<any> {
   let i = parseInt((await getState(env, "signals_step")) || "0", 10);
   if (i >= UNITS.length || i < 0) i = 0;
+  const tip = (await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number | null }>())?.m ?? 0;
   const ran: Record<string, number> = {};
+  const gated: string[] = [];
   const start = i;
   for (let k = 0; k < max && i < UNITS.length; k++, i++) {
-    const r: any = await env.DB.prepare(UNITS[i].full).run();
-    ran[UNITS[i].name] = r?.meta?.rows_written ?? 0;
+    const u = UNITS[i];
+    if (u.heavyEveryBlocks) {
+      // Block-delta gate: run at most once per generation = floor(tip / heavyEveryBlocks). Coupled heavy units
+      // share the same generation function of `tip`, so they always run in the same generation (never desync).
+      const gen = Math.floor(tip / u.heavyEveryBlocks);
+      const gkey = `signals_heavy_${u.name}_gen`;
+      const lastGen = parseInt((await getState(env, gkey)) ?? "-1", 10);
+      if (lastGen >= gen) { gated.push(u.name); continue; } // still fresh this generation → skip the global scan
+      const r: any = await env.DB.prepare(u.full).run();
+      ran[u.name] = r?.meta?.rows_written ?? 0;
+      await setState(env, gkey, String(gen));
+      continue;
+    }
+    const r: any = await env.DB.prepare(u.full).run();
+    ran[u.name] = r?.meta?.rows_written ?? 0;
   }
   const done = i >= UNITS.length;
   await setState(env, "signals_step", done ? "0" : String(i));
   if (done) {
     // full rebuild just reproduced the whole feature matrix → anchor the cascade cursor at the current tip.
-    const tip = (await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number | null }>())?.m ?? 0;
     await setState(env, "signals_cascade_block", String(tip));
   }
-  return { ran_passes: `${start}..${i - 1}`, of: UNITS.length, cycle_done: done, ran };
+  return { ran_passes: `${start}..${i - 1}`, of: UNITS.length, cycle_done: done, ran, gated };
 }
 
 // ----- per-block dirty cascade (Layer B) -----
@@ -388,7 +430,9 @@ export async function runSignalsCascade(env: Env): Promise<any> {
     ran[u.name] = wrote;
   }
   await setState(env, "signals_cascade_block", String(hi));
-  return { from_block: lo, to_block: hi, tip, dirty_assets: assets.length, dirty_addrs: addrs.length, caught_up: hi >= tip, ran };
+  // `dirty` carries the exact touched sets so the tag rebuild (buildTagsScoped) reuses THIS derivation —
+  // one block-cursor scan, tags + signals always rebuilt over the same entities.
+  return { from_block: lo, to_block: hi, tip, dirty_assets: assets.length, dirty_addrs: addrs.length, caught_up: hi >= tip, ran, dirty: { assets, addrs } };
 }
 
 /**

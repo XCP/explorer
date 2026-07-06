@@ -89,9 +89,19 @@ cached anchors from (C). No storage; weight edits take effect on deploy. Tunable
 
 - **`source='computed'`** — derived from the **feature tables** (Layer 2) by rules in `tags.ts`: behavioral
   labels like `trader, active_trader, collector, whale, merchant, creator, liquid, broad, durable, wash,
-  vaulted, og`, plus the asset-type labels (`named, subasset, numeric`) read from `assets`. The builder
-  `DELETE`s all `source='computed'` rows and re-inserts from the rules, so these are self-healing — an entity
-  that stops matching a rule loses the tag on the next rebuild.
+  vaulted, og`, plus the asset-type labels (`named, subasset, numeric`) read from `assets`. Rebuilt with the
+  same dirty-set discipline as the feature tables (mirrors `signals.ts`' full/scoped pair):
+  - **Per block, dirty-scoped** (`buildTagsScoped`, right after the cascade, over the SAME touched entity
+    sets): for each dirty entity, `DELETE` its behavioral computed tags then re-run every rule scoped to it —
+    so an entity that stops matching a rule loses the tag that tick. Bounded by what changed, not table size
+    (the old every-tick global `DELETE FROM tags WHERE source='computed'` re-wrote ~430k rows per tick).
+  - **Intrinsic asset-type tags** (`named/subasset/numeric`) are **append-only** — an asset's type never
+    changes once issued, so the scoped path never `DELETE`s them; it `INSERT OR IGNORE`s them for the dirty
+    (incl. freshly-issued) assets.
+  - **Daily full self-heal** (`buildTags`, block-delta gated ~144): drops and re-derives all computed tags,
+    reconciling anything the dirty set couldn't have caught — chiefly the emblem-driven tags (`vault`,
+    `vault_funder`, `vault_cracker`, `vaulted`) when a *newly-crawled* vault retroactively re-labels an entity
+    whose own rows didn't change this tick. So a cascade gap is at worst briefly stale, never corrupt.
 - **`source='protocol'`** — stamp classification (`stamp, src20, src721, src101, src20_deploy`), written at
   **ingest** by the issuance handler. The classifier base64-decodes the issuance description (can't be
   expressed in SQL), so there's no rebuild rule; these are persisted at ingest and the computed rebuild
@@ -110,8 +120,11 @@ enhancement is a tag/overlay, never a column added to the raw Counterparty mirro
 | data | layer | freshness | mechanism |
 |---|---|---|---|
 | raw mirror, `balances`, `assets` | 1 | per block | event handlers |
-| `asset_signals`, `address_signals`, `tags` | 2 | per block (dirty-scoped) | cascade maintenance |
-| percentile anchors, `rep_score`, propagation, community avgs | 2 (global) | periodic | cron |
+| `asset_signals`, `address_signals` (dirty entities) | 2 | per block (dirty-scoped) | cascade maintenance |
+| `tags` — computed (dirty entities) | 2 | per block (dirty-scoped) | `buildTagsScoped` after the cascade |
+| `tags` — computed (full self-heal) | 2 | daily (block-delta gate) | `buildTags` |
+| heavy full-population scans (any unit whose `.full` aggregates a >1M-row mirror table: sends/balances/transactions) | 2 (global) | daily (block-delta gate) | `runSignalsStep` (per-unit `heavyEveryBlocks`); cascade `.scoped` keeps dirty entities fresh every tick |
+| percentile anchors, `rep_score`, propagation, other periodic globals | 2 (global) | periodic | cron |
 | scores / bands / archetypes | 3 | read time | `score.ts` + config |
 
 ---

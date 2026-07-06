@@ -12,7 +12,7 @@ import { syncEvents } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
-import { buildTags } from "./indexer/tags";
+import { buildTags, buildTagsScoped } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { buildTrades } from "./indexer/trades";
@@ -63,6 +63,18 @@ async function maybeCrawlEmblemSales(env: Env): Promise<void> {
   await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('emblem_sales_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
 }
 
+// FULL tags self-heal (~daily). The per-tick cascade rebuilds computed tags only for the entities it touched;
+// this full rebuild backstops it — reconciling anything the dirty set missed (e.g. an address that became a
+// vault_funder because a NEW vault was crawled, not because it sent this tick). Gated by block-delta like
+// ANALYZE/collections: the scoped rebuild keeps hot entities fresh, so once a day is ample for the sweep.
+async function maybeRebuildTags(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='tags_rebuilt_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 144) return; // ~1 day of blocks
+  await buildTags(env);
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('tags_rebuilt_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
 // Refresh the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP) ~daily. Gated by block-delta:
 // daily candles only change once a day, and a full run is a handful of fetches.
 async function maybeCrawlPrices(env: Env): Promise<void> {
@@ -100,13 +112,19 @@ export default {
       if (caughtUp) {
         // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).
         // Returns needs_backfill until the first full rebuild cycle completes and anchors the cursor at tip.
-        try { await runSignalsCascade(env); } catch (e) { console.error("runSignalsCascade", e); }
+        // Its return carries the dirty entity sets, which we reuse for the scoped tag rebuild below (one
+        // derivation shared by signals + tags).
+        let cascade: any = null;
+        try { cascade = await runSignalsCascade(env); } catch (e) { console.error("runSignalsCascade", e); }
         // Layer-C backstop: advance the FULL rebuild a couple bounded passes per tick. It maintains the
         // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra
         // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
         try { await runSignalsStep(env, 2); } catch (e) { console.error("runSignalsStep", e); }
-        // Rebuild the polymorphic tags table (categorical layer) from the refreshed signals + curated lists.
-        try { await buildTags(env); } catch (e) { console.error("buildTags", e); }
+        // Rebuild the polymorphic tags (categorical layer) for JUST the entities the cascade touched — the
+        // dirty-scoped equivalent of buildTags (no 430k-row global DELETE+reinsert every tick).
+        try { if (cascade?.dirty) await buildTagsScoped(env, cascade.dirty); } catch (e) { console.error("buildTagsScoped", e); }
+        // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
+        try { await maybeRebuildTags(env); } catch (e) { console.error("maybeRebuildTags", e); }
         // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).
         try { await crawlEmblemStep(env); } catch (e) { console.error("crawlEmblem", e); }
         // Maintain authoritative asset supply (+asset_id/mime_type): backfill all assets once, then
