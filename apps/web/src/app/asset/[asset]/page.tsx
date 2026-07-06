@@ -12,6 +12,7 @@ import { AssetTabs } from "@/components/asset-tabs";
 import { AssetCohort, HolderQuality } from "@/components/relationships";
 import { HolderMakeup } from "@/components/holder-makeup";
 import { PendingActions } from "@/components/pending-actions";
+import { GraphTrustChip } from "@/components/graph-trust-chip";
 import { commas } from "@/lib/format";
 
 // Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
@@ -57,6 +58,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold text-zinc-100 break-all">{item.asset_longname || item.asset}</h1>
               <LockBadge locked={item.locked} />
+              <GraphTrustChip kind="assets" id={item.asset} />
             </div>
             <div className="mt-3 grid sm:grid-cols-2 gap-x-6">
               <KV k="Asset" v={<span className="font-mono">{item.asset}</span>} />

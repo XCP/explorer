@@ -13,6 +13,7 @@
     "./addresses": "./src/addresses.ts",
     "./trades": "./src/trades.ts",
     "./stats": "./src/stats.ts",
-    "./emblem": "./src/emblem.ts"
+    "./emblem": "./src/emblem.ts",
+    "./graph": "./src/graph.ts"
   }
 }

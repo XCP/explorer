@@ -5,6 +5,7 @@ import type { AddressSummary } from "@xcp/shared/addresses";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, Stat } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
+import { GraphTrustChip } from "@/components/graph-trust-chip";
 import { AddressTabs } from "@/components/address-tabs";
 import { Holdings } from "@/components/holdings";
 import { AddressConnections, AddressLineage } from "@/components/relationships";
@@ -46,6 +47,7 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
         <CopyButton value={address} />
       </div>
       <div className="flex flex-wrap gap-1.5 mt-2.5">
+        <GraphTrustChip kind="addresses" id={address} />
         {address === BURN_ADDRESS && <Chip><Flame className="size-3 text-orange-400" />Burn address</Chip>}
         {(s?.issued ?? 0) > 0 && <Chip><Stamp className="size-3" />Issuer · {commas(s?.issued)} assets</Chip>}
         {(s?.dispensers ?? 0) > 0 && <Chip><Store className="size-3" />Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
