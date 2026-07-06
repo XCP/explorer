@@ -180,6 +180,31 @@ export function assetReviewTop(db: D1Database, expr: string): Promise<AssetRevie
   );
 }
 
+/** One convergent-validity group (v=1 vaulted-tagged, v=0 not) — count/mean/median of the raw quality expr. */
+export interface AssetValidationGroup { v: 0 | 1; n: number; mean: number; median: number; }
+
+/**
+ * Live convergent-validity check: over MARKET assets (ever traded or dispensed), compare the raw quality-score
+ * distribution of Emblem-vaulted-tagged assets vs the rest (H4: people only wrap good assets, so vaulted should
+ * score markedly higher). Median via a window rank (SQLite integer arithmetic picks the middle 1 or 2 rows).
+ */
+export function assetValidation(db: D1Database, expr: string): Promise<AssetValidationGroup[]> {
+  return q<AssetValidationGroup>(
+    db,
+    `WITH m AS (
+       SELECT (${expr}) raw,
+         CASE WHEN EXISTS (SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='vaulted') THEN 1 ELSE 0 END v
+       FROM asset_signals s WHERE s.trades>0 OR s.dispenses>0
+     ),
+     r AS (
+       SELECT v, raw, ROW_NUMBER() OVER (PARTITION BY v ORDER BY raw) rn, COUNT(*) OVER (PARTITION BY v) cnt FROM m
+     )
+     SELECT v, MAX(cnt) n, ROUND(AVG(raw),3) mean,
+       ROUND(AVG(CASE WHEN rn IN ((cnt+1)/2, (cnt/2)+1) THEN raw END),3) median
+     FROM r GROUP BY v`
+  );
+}
+
 /* ---------- per-asset record tabs ---------- */
 
 /** Holders of an asset, largest first. */

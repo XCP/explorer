@@ -9,7 +9,7 @@ import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 import {
   listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText,
   assetSignalsRow, assetTags, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
-  assetReviewDistribution, assetReviewTop, listAssetBalances, listAssetIssuances, listAssetSends,
+  assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listSubassets, assetCohort, assetQualitySignals,
 } from "../queries/assets";
 
@@ -114,6 +114,28 @@ assets.get("/v2/reputation/asset-review", async (c) => {
   const dist = await assetReviewDistribution(c.env.DB, expr).catch(() => null);
   const top = await assetReviewTop(c.env.DB, expr).catch(() => []);
   return J(c, { result: { distribution: dist, top } }, 60);
+});
+
+// Live convergent-validity guard for the asset-quality weights: vaulted-tagged assets should keep scoring far
+// above non-vaulted market assets (H4). `lift` = vaulted mean ÷ non-vaulted mean; watch it stays >2.5 and
+// stable across weight changes — a collapse means a re-dial broke the "quality" signal. Same raw expr as
+// /v2/reputation/asset-review (rawSqlExpr − the flat low_quality penalty).
+assets.get("/v2/reputation/asset-validation", async (c) => {
+  return cached(c, "asset-validation", { ttl: 600 }, async () => {
+    const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
+    const rows = await assetValidation(c.env.DB, expr).catch(() => []);
+    const grp = (v: 0 | 1) => rows.find((r) => r.v === v) ?? { v, n: 0, mean: 0, median: 0 };
+    const vaulted = grp(1), non_vaulted = grp(0);
+    const lift = non_vaulted.mean ? round(vaulted.mean / non_vaulted.mean, 2) : null;
+    return {
+      result: {
+        vaulted: { n: vaulted.n, mean: vaulted.mean, median: vaulted.median },
+        non_vaulted: { n: non_vaulted.n, mean: non_vaulted.mean, median: non_vaulted.median },
+        lift,
+        note: "market assets only (trades>0 OR dispenses>0); lift = vaulted mean ÷ non-vaulted mean — should stay >2.5 and stable across weight changes (H4).",
+      },
+    };
+  });
 });
 
 assets.get("/v2/assets/:asset/balances", async (c) => {

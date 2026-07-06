@@ -38,7 +38,8 @@ const assetDecay = (row: any) =>
 function expectedAddrRaw(row: any, tip: number): number {
   const B = SCALARS.blockScale;
   let r = 0;
-  r += aw("age") * ((tip - num(row.first_blk)) / B) * addrDecay(row, tip);
+  // age transform is decayed then WINSORIZED at SCALARS.addrAgeCap (cap pulled from config, not hardcoded).
+  r += aw("age") * Math.min(SCALARS.addrAgeCap, ((tip - num(row.first_blk)) / B) * addrDecay(row, tip));
   r += aw("span") * ((num(row.last_blk) - num(row.first_blk)) / B);
   r += aw("creator") * ln(num(row.survived_assets));
   r += aw("dividends") * ln(num(row.dividends));

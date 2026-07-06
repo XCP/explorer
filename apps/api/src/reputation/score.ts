@@ -45,7 +45,8 @@ function factorValue(f: Factor, row: FeatureRow, tip: number): number {
     return SCALARS.scarcityOffset - Math.log10(circ);
   }
   switch (f.transform) {
-    case "age": return ((tip - num(row.first_blk)) / SCALARS.blockScale) * addrDecay(row, tip); // address age decays if idle
+    // address age: decays if idle, then WINSORIZED at SCALARS.addrAgeCap so pure longevity can't dominate (H2 lab).
+    case "age": return Math.min(SCALARS.addrAgeCap, ((tip - num(row.first_blk)) / SCALARS.blockScale) * addrDecay(row, tip));
     case "span": return (num(row.last_blk) - num(row.first_blk)) / SCALARS.blockScale; // __span (address)
     case "linear": return num(row[f.key]) / 100;
     default: return ln(num(row[f.key])); // "log"
@@ -127,7 +128,7 @@ export function rawSqlExpr(factors: Factor[], tip: number): string {
     else if (f.key === "__asset_age") terms.push(`${w}*(COALESCE(age_blocks,0)/${B}.0)*${aDk}`);
     else if (f.key === "__durability") terms.push(`${w}*((COALESCE(last_trade_blk,0)-COALESCE(first_trade_blk,0))/${B}.0)*(COALESCE(distinct_traders,0)*1.0/(COALESCE(distinct_traders,0)+3.0))*${aDk}`);
     else if (f.key === "__circulating_scarcity") terms.push(`${w}*(CASE WHEN COALESCE(supply,0)<=0 THEN 0 ELSE ${SCALARS.scarcityOffset} - LN(MAX(1.0,COALESCE(supply,0)*(100-COALESCE(burned_pct,0))/100.0))/LN(10) END)`);
-    else if (f.transform === "age") terms.push(`${w}*((${tip}-COALESCE(first_blk,${tip}))/${B}.0)*${adDk}`);
+    else if (f.transform === "age") terms.push(`${w}*MIN(${SCALARS.addrAgeCap},((${tip}-COALESCE(first_blk,${tip}))/${B}.0)*${adDk})`); // age transform winsorized (mirrors score.ts Math.min)
     else if (f.transform === "span") terms.push(`${w}*((COALESCE(last_blk,0)-COALESCE(first_blk,0))/${B}.0)`);
     else if (f.transform === "linear") terms.push(`${w}*(COALESCE(${f.key},0)/100.0)`);
     else terms.push(`${w}*LN(1+MAX(0,COALESCE(${f.key},0)))`);

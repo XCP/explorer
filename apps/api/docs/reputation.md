@@ -133,7 +133,10 @@ exchanges/deposits/burns. Of 464,488 addresses:
 scores below an idle 2014 address. The data supports **capping or lowering `age`** and leaning on the
 engagement factors (`survived`, `held`, `dex_trades`, `stamps_created`). Candidate: cap the age term at
 ~3.0 (≈ blocks for ~5yr) and/or drop weight 2.0→1.0; then re-check `/v2/reputation/review` that engaged-new
-cohorts rise into Active/Proven without idle OGs collapsing. (Not yet applied — tuning decision.)
+cohorts rise into Active/Proven without idle OGs collapsing. **APPLIED 2026-07-06:** age TRANSFORM winsorized at
+`SCALARS.addrAgeCap = 4.0` (weight kept at 2.0), in both the TS scorer and rawSqlExpr. Live isolation over the
+261,746 real-user population (tip 956,949): the cap reduces raw for only 3,113 of the oldest addresses and moves
+just 932 across a tier boundary — the negligible downside H2 predicted. Anchors recalibrated (see below).
 
 ## Lab experiments (2026-06-27, post re-index)
 
@@ -252,9 +255,21 @@ and only modest value_xcp despite huge activity (their "value" lived on the ETH 
   dispense into the top — a whale self-dispensing at a high ask could game it. Future: a clean/distinct-buyer
   guard on realized value (we have it for DEX via self_trade_pct; not yet for dispenses).
 
+## Scoring Phase A (2026-07-06)
+- **Age cap APPLIED:** the address age transform is winsorized at `SCALARS.addrAgeCap = 4.0` (≈7.6yr), pre-weight,
+  in both score.ts and rawSqlExpr (parity is enforced by the reputation tests, which re-derive the cap from config).
+- **Dead pagerank factor REMOVED:** the never-computed `rep_score`/pagerank factor (weight 0.0 since inception) was
+  deleted from `ADDRESS_FACTORS`. The `address_signals.rep_score` column is kept in case personalized PageRank returns.
+- **Address anchors recalibrated** to the capped raw over the real-user population (n=261,746 @ tip 956,949):
+  `ADDRESS_PCT`/`ADDRESS_TIERS` p50 2.5→2.88, p90 4.7→5.22, p99/OG 17.5→16.33, max 53→51.15 (the cap compressed the top).
+- **New guard endpoint** `GET /v2/reputation/asset-validation`: vaulted-tagged vs non-vaulted market assets, count/mean/median
+  of the raw quality expr + `lift`. Live: vaulted mean 21.6 (n=4,801) vs non-vaulted 9.8 (n=18,048) → **lift 2.20**.
+  NOTE: below the ≥2.5 watch line — an artifact of the 2026-06-28 realized-value re-dial (which de-emphasized the
+  popularity signals vaulting correlates with), not a regression; revisit if it drifts further.
+
 ## Open decisions
-- **age weight (2.0):** an OG with no activity can still score high. Options: cap the age term (winsorize),
-  lower the weight, or require a minimum earned-signal floor for high bands.
-- **pagerank:** drop the dead term (and recalibrate) or implement real personalized PageRank over `pr_edges`.
+- **age:** further options if longevity still over-rewards — lower the weight below 2.0, or require a minimum
+  earned-signal floor for high bands (the cap addresses the dominant case).
+- **pagerank:** implement real personalized PageRank over `pr_edges` to revive the reserved `rep_score` column.
 - **social-attention signal:** the Telegram mention count (cross-chat filtered) could become its own
   "community favorite" tag — distinct from on-chain quality (score↔mentions Spearman ≈ 0.30).

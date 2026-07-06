@@ -21,6 +21,12 @@ export const SCALARS = {
   blockScale: 100000,        // block deltas divided by this in age/span terms
   modernActiveBlock: 900000, // active at/after this block earns the flat modern bonus
   modernActiveBonus: 1.5,
+  // ADDRESS AGE CAP (2026-07-06): winsorize the (decayed) age TRANSFORM at 4.0 (≈ blocks for ~7.6yr). Rationale:
+  // 'was early' ≠ 'is reputable' — uncapped age let the oldest addresses dominate reputation on longevity alone.
+  // Per the H2 age-cap lab (2026-06-27): capping at 4.0 promotes 436 modern-active creators into the top tier
+  // with negligible downside (only 16 pure-idle-OG freeloaders benefited). Applied pre-weight (weight 2.0 still
+  // multiplies), in BOTH the TS transform (score.ts) and rawSqlExpr's SQL so read-time and population scoring can't drift.
+  addrAgeCap: 4.0,
   // Staleness DECAY (2026-06-28): legacy time-terms are multiplied by halflife/(halflife+inactive_blocks),
   // floored — so an aged-but-inactive entity decays toward dormant instead of coasting. Gentle ("starts to
   // decay"): ~half credit after the half-life, never below the floor. Assets decay on time-since-last-trade
@@ -38,7 +44,7 @@ export const SCALARS = {
 /* ---------- ADDRESS reputation ---------- */
 // raw = Σ weight·transform(signal) (+ modern bonus). __age/__span use first_blk/last_blk.
 export const ADDRESS_FACTORS: Factor[] = [
-  { key: "__age",           weight: 2.0, transform: "age",    label: "age",       why: "longevity on-chain (under review: can dominate)" },
+  { key: "__age",           weight: 2.0, transform: "age",    label: "age",       why: "longevity on-chain — transform CAPPED at SCALARS.addrAgeCap ('was early' ≠ 'is reputable'; H2 lab 2026-06-27)" },
   { key: "__span",          weight: 1.0, transform: "span",   label: "span",      why: "active lifespan, not just early arrival" },
   { key: "survived_assets", weight: 2.0, transform: "log",    label: "creator",   why: "assets that found an audience (>=10 holders)" },
   { key: "dividends",       weight: 1.0, transform: "log",    label: "dividends", why: "pro-holder payouts" },
@@ -50,8 +56,8 @@ export const ADDRESS_FACTORS: Factor[] = [
   { key: "xcp",             weight: 1.0, transform: "log",    label: "xcp",       why: "XCP protocol stake" },
   { key: "dex_trades",      weight: 1.0, transform: "log",    label: "dex",       why: "DEX order-match participation" },
   { key: "stamps_created",  weight: 0.8, transform: "log",    label: "stamps",    why: "Bitcoin Stamp creation" },
-  // INACTIVE: rep_score is never computed (always 1.0). Weight 0 until real graph-centrality exists.
-  { key: "rep_score",       weight: 0.0, transform: "log",    label: "pagerank",  why: "graph centrality (not yet computed)" },
+  // NOTE: the never-computed rep_score/pagerank factor was removed 2026-07-06 (weight 0.0 since inception, so it
+  // never contributed). The address_signals.rep_score column is kept (harmless) in case personalized PageRank returns.
 ];
 
 /* ---------- ASSET quality ---------- */
@@ -97,10 +103,13 @@ export const ASSET_PENALTY = { lowQuality: -6.0 }; // wash/bridge/curated junk
 /* ---------- output mapping ---------- */
 // raw -> 0-100 percentile via piecewise-linear anchors. RECALIBRATE from /v2/reputation/review after any
 // weight change (read the observed p50/p90/p99 of the population and set them here).
-// Calibrated 2026-06-28 to the REAL-USER population (349,499 addresses; infra + passive throwaways excluded):
-// p50=5.8, p90=12.7, p99=20, max=54.7. Ranking against real users (not deposits/vaults/burns/one-shot wallets)
-// makes the score meaningful — those get honest non-ranked states (Exchange/Deposit/Vault/Burn/Service/Dormant).
-export const ADDRESS_PCT = { floor: 0.5, p50: 2.5, p90: 4.7, p99: 17.5, max: 53 }; // recalibrated 06-28 w/ age-decay
+// Recalibrated 2026-07-06 for the ADDRESS AGE CAP (SCALARS.addrAgeCap): read the observed percentiles of the
+// CAPPED raw over the SAME real-user population /v2/reputation/review ranks (infra + passive throwaways excluded).
+// Live query at tip 956,949 over n=261,746 real users: p50=2.88, p90=5.22, p99=16.33, max=51.15, min=0.005.
+// The cap compresses the top (old p99 17.5→16.33, max 53→51.15); the mid barely moves. Ranking against real
+// users (not deposits/vaults/burns/one-shot wallets) makes the score meaningful — those get honest non-ranked
+// states (Exchange/Deposit/Vault/Burn/Service/Dormant).
+export const ADDRESS_PCT = { floor: 0.5, p50: 2.88, p90: 5.22, p99: 16.33, max: 51.15 }; // recalibrated 07-06 w/ age-cap
 // Calibrated 2026-06-28 to the raw distribution of assets WITH A MARKET (the 22,826 that ever traded or
 // dispensed). The score ranks an asset against real, traded assets — not against ~132k held-but-never-traded
 // or ~98k zero-holder assets, which would make every score meaningless. Those get honest non-ranked states
@@ -127,9 +136,9 @@ export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = 
 // the REAL-USER population). Each states its meaning. Non-ranked states (infra + dormant) are handled in
 // addressTier() and labelled via ADDRESS_TIER_MEANING below. Retires the old vague Established/Proven/Active.
 export const ADDRESS_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "OG",          minRaw: 17.5,  meaning: "top ~1% of real users — deep, long, STILL-active history" },
-  { tier: "Established", minRaw: 4.7,   meaning: "top ~10% — a credible, sustained Counterparty history" },
-  { tier: "Active",      minRaw: 2.5,   meaning: "upper half of real users — an ongoing presence" },
+  { tier: "OG",          minRaw: 16.33, meaning: "top ~1% of real users — deep, long, STILL-active history" },
+  { tier: "Established", minRaw: 5.22,  meaning: "top ~10% — a credible, sustained Counterparty history" },
+  { tier: "Active",      minRaw: 2.88,  meaning: "upper half of real users — an ongoing presence" },
   { tier: "Casual",      minRaw: -1e9,  meaning: "a real user with a light footprint" },
 ];
 // Plain-language meaning for every tier + non-ranked state, surfaced in the API so no label is unexplained.
