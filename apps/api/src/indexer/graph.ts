@@ -23,7 +23,7 @@ import type { Env } from "../index";
 import { q } from "../db";
 import {
   K, DISTRUST_SLOT, PASSES, ASSET_PREFIX,
-  seedSubset, passStatements, finalizeStatements, EDGE_INSERTS, NODE_INSERTS, RANK_INIT, SEED_APPLY,
+  seedSubset, passStatements, finalizeStatements, EDGE_INSERTS, BIPARTITE_EDGE_INSERTS, NODE_INSERTS, RANK_INIT, SEED_APPLY,
 } from "./graph-core";
 
 const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per admin call
@@ -109,8 +109,9 @@ async function applySeeds(env: Env): Promise<void> {
   await env.DB.prepare(SEED_APPLY).run();
 }
 
-// the ordered build operations (each a bounded unit of work advanced by the cursor).
-function buildOps(): { name: string; exec: (env: Env) => Promise<void> }[] {
+// the ordered build operations (each a bounded unit of work advanced by the cursor). The bipartite flag
+// is captured in indexer_state at reset so every resumed call constructs the SAME deterministic op list.
+function buildOps(bipartite: boolean): { name: string; exec: (env: Env) => Promise<void> }[] {
   const runSql = (sql: string) => async (env: Env) => { await env.DB.prepare(sql).run(); };
   const ops: { name: string; exec: (env: Env) => Promise<void> }[] = [
     { name: "reset", exec: async (env) => {
@@ -121,6 +122,7 @@ function buildOps(): { name: string; exec: (env: Env) => Promise<void> }[] {
     } },
   ];
   EDGE_INSERTS.forEach((sql, i) => ops.push({ name: `edges_${i}`, exec: runSql(sql) }));
+  if (bipartite) BIPARTITE_EDGE_INSERTS.forEach((sql, i) => ops.push({ name: `bip_${i}`, exec: runSql(sql) }));
   NODE_INSERTS.forEach((sql, i) => ops.push({ name: `node_${i}`, exec: runSql(sql) }));
   RANK_INIT.forEach((sql, i) => ops.push({ name: `rank_init_${i}`, exec: runSql(sql) }));
   ops.push({ name: "seeds", exec: applySeeds });
@@ -140,18 +142,21 @@ export interface GraphBuildProgress {
   note?: string;
 }
 
-export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: boolean } = {}): Promise<GraphBuildProgress> {
+export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: boolean; bipartite?: boolean } = {}): Promise<GraphBuildProgress> {
   const work = Math.max(1, Math.min(40, opts.work ?? DEFAULT_WORK));
   if (opts.reset) {
     await setState(env, K_PHASE, "build");
     await setState(env, K_BUILD, "0");
     await setState(env, K_PASS, "0");
+    // captured at reset so every resumed call constructs the same deterministic op list
+    await setState(env, "graph_bipartite", opts.bipartite ? "1" : "0");
   }
+  const bipartite = (await getState(env, "graph_bipartite")) === "1";
   let phase = (await getState(env, K_PHASE)) || "build";
   if (!["build", "iterate", "finalize", "done"].includes(phase)) phase = "build";
 
   if (phase === "build") {
-    const ops = buildOps();
+    const ops = buildOps(bipartite);
     let i = int(await getState(env, K_BUILD), 0);
     if (i < 0 || i > ops.length) i = 0;
     const ran: string[] = [];

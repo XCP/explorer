@@ -210,6 +210,32 @@ export const EDGE_INSERTS: string[] = [
    ON CONFLICT(src, dst) DO NOTHING`,
 ];
 
+// EXPERIMENT (opt-in via /admin/build-graph?bipartite=1): the deferred holder<->asset edges — the
+// doc's "grail -> holders -> their holdings" flow as PROPAGATION rather than seeding. balances is one
+// row per (holder, asset), so no GROUP BY is needed; chunked by rowid for the D1 op limits. Constant
+// weight, post-normalize, DO NOTHING on conflict (a pair can't repeat within balances).
+const BAL_CHUNK = 250_000;
+const BAL_MAX = 4_000_000; // headroom over ~1.85M balance rows
+const balWindows: Array<[number, number]> = [];
+for (let lo = 0; lo < BAL_MAX; lo += BAL_CHUNK) balWindows.push([lo, lo + BAL_CHUNK]);
+export const BIPARTITE_EDGE_INSERTS: string[] = [
+  // holder -> asset (a trusted holder's demand reaches the asset).
+  ...balWindows.map(([lo, hi]) =>
+    `INSERT INTO graph_edges (src, dst, w)
+     SELECT b.holder, '${ASSET_PREFIX}' || b.asset, ${BIP_W} FROM balances b
+     WHERE b.rowid > ${lo} AND b.rowid <= ${hi}
+       AND b.holder_type = 'address' AND CAST(b.quantity AS INTEGER) > 0 AND b.holder IS NOT NULL
+       AND b.holder NOT IN ${EXCLUDE_SRC}
+     ON CONFLICT(src, dst) DO NOTHING`),
+  // asset -> holder (a grail seed flows to its holders -> what those holders hold).
+  ...balWindows.map(([lo, hi]) =>
+    `INSERT INTO graph_edges (src, dst, w)
+     SELECT '${ASSET_PREFIX}' || b.asset, b.holder, ${BIP_W} FROM balances b
+     WHERE b.rowid > ${lo} AND b.rowid <= ${hi}
+       AND b.holder_type = 'address' AND CAST(b.quantity AS INTEGER) > 0 AND b.holder IS NOT NULL
+     ON CONFLICT(src, dst) DO NOTHING`),
+];
+
 // NB: the `WHERE true` before ON CONFLICT disambiguates the upsert clause from a join constraint — required by
 // SQLite (all versions, D1 included) whenever an INSERT...SELECT carries an ON CONFLICT.
 export const NODE_INSERTS: string[] = [

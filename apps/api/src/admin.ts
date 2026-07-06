@@ -127,7 +127,8 @@ admin.post("/admin/apply-usd", async (c) => {
 admin.post("/admin/build-graph", async (c) => {
   const work = c.req.query("work") ? parseInt(c.req.query("work")!, 10) : undefined;
   const reset = c.req.query("reset") === "1";
-  return c.json(await buildGraphTrust(c.env, { work, reset }));
+  const bipartite = c.req.query("bipartite") === "1"; // experiment: include holder<->asset edges
+  return c.json(await buildGraphTrust(c.env, { work, reset, bipartite }));
 });
 
 // SIGNAL-TEST HARNESS — the research loop's measuring stick. Score a CANDIDATE signal (any SQL expression
