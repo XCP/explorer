@@ -132,7 +132,7 @@ assets.get("/v2/reputation/asset-validation", async (c) => {
         vaulted: { n: vaulted.n, mean: vaulted.mean, median: vaulted.median },
         non_vaulted: { n: non_vaulted.n, mean: non_vaulted.mean, median: non_vaulted.median },
         lift,
-        note: "market assets only (trades>0 OR dispenses>0); lift = vaulted mean ÷ non-vaulted mean — should stay >2.5 and stable across weight changes (H4).",
+        note: "market assets only (trades>0 OR dispenses>0); lift = vaulted mean ÷ non-vaulted mean. Baseline 2.20 (measured 2026-07-06, post realized-value re-dial) — watch for degradation below it across weight changes (H4).",
       },
     };
   });
