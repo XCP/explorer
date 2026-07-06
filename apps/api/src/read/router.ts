@@ -15,6 +15,8 @@ import { vaults } from "./vaults";
 import { exchanges } from "./exchanges";
 import { trades } from "./trades";
 import { mempool } from "./mempool";
+import { tags } from "./tags";
+import { graph } from "./graph";
 
 export const read = router();
 read.route("/", stats);
@@ -27,3 +29,5 @@ read.route("/", vaults);
 read.route("/", exchanges);
 read.route("/", trades);
 read.route("/", mempool);
+read.route("/", tags);
+read.route("/", graph);
