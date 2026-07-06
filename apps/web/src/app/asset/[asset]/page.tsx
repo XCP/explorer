@@ -1,79 +1,49 @@
-"use client";
-import { use } from "react";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import useSWR from "swr";
-import type { AssetMarket } from "@xcp/shared/assets";
-import { useAsset } from "@/lib/hooks";
-import { apiUrl, type Envelope } from "@/lib/api";
-import { Flame, Landmark, Hammer, Key } from "lucide-react";
+import { Flame, Hammer, Key } from "lucide-react";
+import type { AssetDetail } from "@xcp/shared/assets";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
 import { LockBadge } from "@/components/ui/badges";
-import { Loading, ErrorBox, Empty } from "@/components/ui/feedback";
 import { AssetArt } from "@/components/asset-art";
-import { DetailTabs, type TabDef } from "@/components/detail-tabs";
+import { MarketChip } from "@/components/market-chip";
+import { AssetTabs } from "@/components/asset-tabs";
 import { AssetCohort, HolderQuality } from "@/components/relationships";
 import { HolderMakeup } from "@/components/holder-makeup";
-import { blockCell, txCell, addrCell, assetCell, timeCell } from "@/lib/cells";
-import { ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/registry";
-import { commas, short } from "@/lib/format";
+import { commas } from "@/lib/format";
 
-// Live market chip from xcpdex (cross-app composition) — only renders if the asset trades.
-function MarketChip({ asset }: { asset: string }) {
-  // XCP/BTC have no meaningful self-market (priced in XCP); skip the chip for native assets.
-  const native = asset === "XCP" || asset === "BTC";
-  const { data } = useSWR<Envelope<AssetMarket>>(native ? null : apiUrl(`/v2/assets/${encodeURIComponent(asset)}/market`));
-  const m = data?.result;
-  if (!m || m.last_price == null) return null;
-  const chg = m.price_change_7d;
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
-      <span className="text-xs text-zinc-500">Market · xcpdex</span>
-      <span className="font-mono text-zinc-100">{m.last_price} <span className="text-zinc-500 text-xs">XCP</span></span>
-      {m.volume_7d != null && <span className="font-mono text-xs text-zinc-400">vol {commas(m.volume_7d)} (7d)</span>}
-      {chg != null && <span className={`font-mono text-xs ${chg >= 0 ? "text-green-500" : "text-red-500"}`}>{chg >= 0 ? "+" : ""}{Number(chg).toFixed(1)}% 7d</span>}
-    </div>
-  );
+// Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
+async function loadAsset(asset: string): Promise<AssetDetail> {
+  let env: Envelope<AssetDetail>;
+  try {
+    env = await getJson<Envelope<AssetDetail>>(`/v2/assets/${encodeURIComponent(asset)}`, { revalidate: 30 });
+  } catch (e) {
+    if (e instanceof NotFoundError) notFound();
+    throw e;
+  }
+  if (!env.result) notFound();
+  return env.result;
 }
 
-export default function AssetPage({ params }: { params: Promise<{ asset: string }> }) {
-  const { asset } = use(params);
-  const { item, error, isLoading } = useAsset(asset);
-  if (isLoading) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
-  if (!item) return <Empty what="asset" />;
+export async function generateMetadata({ params }: { params: Promise<{ asset: string }> }): Promise<Metadata> {
+  const { asset } = await params;
+  const item = await loadAsset(asset);
+  const name = item.asset_longname || item.asset;
+  const description = (item.description?.trim()
+    || `Counterparty asset ${name} — ${commas(item.holder_count)} holders, supply ${commas(item.supply_normalized)}.`).slice(0, 200);
+  const image = `https://cdn.xcp.io/img/full/${encodeURIComponent(item.asset)}`;
+  return {
+    title: name,
+    description,
+    openGraph: { title: `${name} | XCP.io`, description, images: [{ url: image }] },
+    twitter: { card: "summary", title: `${name} | XCP.io`, description, images: [image] },
+  };
+}
 
-  const base = `/v2/assets/${encodeURIComponent(item.asset)}`;
-  const tabs: TabDef[] = [
-    { label: "Holders", path: `${base}/balances`, cols: [
-      { label: "Holder", cell: (r) => (
-        <span className="inline-flex items-center gap-1.5 min-w-0">
-          {r.holder_type === "address" ? addrCell(r.holder) : <span className="font-mono">{short(r.holder)}</span>}
-          {r.is_burn ? <span className="inline-flex items-center gap-0.5 rounded bg-orange-500/10 text-orange-400 px-1.5 py-0.5 text-[10px] ring-1 ring-inset ring-orange-500/20 shrink-0"><Flame className="size-2.5" />burn</span> : null}
-          {r.is_exchange ? <span className="inline-flex items-center gap-0.5 rounded bg-violet-500/10 text-violet-300 px-1.5 py-0.5 text-[10px] ring-1 ring-inset ring-violet-500/20 shrink-0"><Landmark className="size-2.5" />exchange</span> : null}
-        </span>
-      ) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-    ]},
-    { label: "Issuances", path: `${base}/issuances`, cols: [
-      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) }, { label: "Time", cell: (r) => timeCell(r.block_time) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-      { label: "Issuer", cell: (r) => addrCell(r.issuer) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
-    ]},
-    { label: "Dispensers", path: `${base}/dispensers`, cols: DISPENSER_COLS },
-    { label: "Dispenses", path: `${base}/dispenses`, cols: [
-      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.dispense_quantity_normalized) },
-      { label: "Buyer", cell: (r) => addrCell(r.destination) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
-    ]},
-    { label: "Orders", path: `${base}/orders`, cols: ORDER_COLS },
-    { label: "Sends", path: `${base}/sends`, cols: [
-      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
-      { label: "From", cell: (r) => addrCell(r.source) }, { label: "To", cell: (r) => addrCell(r.destination) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
-    ]},
-    { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS },
-    ...(item.issuer ? [{ label: "From issuer", path: `/v2/addresses/${item.issuer}/issued`, cols: ASSET_LIST_COLS }] : []),
-  ];
+export default async function AssetPage({ params }: { params: Promise<{ asset: string }> }) {
+  const { asset } = await params;
+  const item = await loadAsset(asset);
 
   return (
     <>
@@ -107,7 +77,7 @@ export default function AssetPage({ params }: { params: Promise<{ asset: string 
       <HolderMakeup asset={item.asset} />
       <HolderQuality asset={item.asset} />
       <AssetCohort asset={item.asset} />
-      <DetailTabs tabs={tabs} />
+      <AssetTabs asset={item.asset} issuer={item.issuer} />
     </>
   );
 }

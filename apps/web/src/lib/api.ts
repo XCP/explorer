@@ -20,3 +20,23 @@ export async function fetcher<T>(url: string): Promise<T> {
   if (!res.ok) throw new Error(`API ${res.status} ${res.statusText}`);
   return res.json();
 }
+
+/** Thrown by getJson on a 404 so server components can translate it into notFound(). */
+export class NotFoundError extends Error {
+  constructor(readonly path: string) {
+    super(`Not found: ${path}`);
+    this.name = "NotFoundError";
+  }
+}
+
+/**
+ * Server-side read of the API (React Server Components / route handlers). Plain fetch against the
+ * same API_BASE, cached by Next's data cache (`next: { revalidate }`, seconds). Throws NotFoundError
+ * on a 404 so pages can catch it and call notFound(); other non-2xx statuses throw a generic error.
+ */
+export async function getJson<T>(path: string, opts: { revalidate?: number } = {}): Promise<T> {
+  const res = await fetch(API_BASE + path, { next: { revalidate: opts.revalidate ?? 30 } });
+  if (res.status === 404) throw new NotFoundError(path);
+  if (!res.ok) throw new Error(`API ${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}

@@ -1,17 +1,33 @@
-"use client";
-import { use } from "react";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import { useTx } from "@/lib/hooks";
+import type { TxDetail } from "@xcp/shared/chain";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
-import { Loading, ErrorBox, Empty } from "@/components/ui/feedback";
-import { commas, ts } from "@/lib/format";
+import { commas, short, ts } from "@/lib/format";
 
-export default function TxPage({ params }: { params: Promise<{ hash: string }> }) {
-  const { hash } = use(params);
-  const { item, error, isLoading } = useTx(hash);
-  if (isLoading) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
-  if (!item) return <Empty what="transaction" />;
+async function loadTx(hash: string): Promise<TxDetail> {
+  let env: Envelope<TxDetail>;
+  try {
+    env = await getJson<Envelope<TxDetail>>(`/v2/transactions/${encodeURIComponent(hash)}`, { revalidate: 30 });
+  } catch (e) {
+    if (e instanceof NotFoundError) notFound();
+    throw e;
+  }
+  if (!env.result) notFound();
+  return env.result;
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ hash: string }> }): Promise<Metadata> {
+  const { hash } = await params;
+  const title = `Transaction ${short(hash)}`;
+  const description = `Counterparty transaction ${hash}.`;
+  return { title, description, openGraph: { title: `${title} | XCP.io`, description } };
+}
+
+export default async function TxPage({ params }: { params: Promise<{ hash: string }> }) {
+  const { hash } = await params;
+  const item = await loadTx(hash);
 
   return (
     <Card title="Transaction">

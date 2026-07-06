@@ -1,36 +1,48 @@
-"use client";
-import { use, useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import useSWR from "swr";
 import { Coins, Store, ArrowLeftRight, Flame, Wallet, Stamp } from "lucide-react";
 import type { AddressSummary } from "@xcp/shared/addresses";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, Stat } from "@/components/ui/card";
-import { apiUrl, type Envelope } from "@/lib/api";
-import { DetailTabs, type TabDef } from "@/components/detail-tabs";
+import { CopyButton } from "@/components/copy-button";
+import { AddressTabs } from "@/components/address-tabs";
 import { Holdings } from "@/components/holdings";
 import { AddressConnections, AddressLineage } from "@/components/relationships";
 import { ReputationHeader } from "@/components/reputation";
-import { blockCell, txCell, addrCell, assetCell } from "@/lib/cells";
-import { ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/registry";
-import { commas } from "@/lib/format";
+import { commas, short } from "@/lib/format";
 
 const BURN_ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
 const Chip = ({ children }: { children: React.ReactNode }) =>
   <span className="inline-flex items-center gap-1 rounded-md bg-zinc-800 text-zinc-200 px-2 py-1 text-xs font-medium ring-1 ring-inset ring-white/5">{children}</span>;
 
+// The summary is one of several panels, not a gate — an address with no history still renders (dashes),
+// so we tolerate a null result and only translate a real 404 into notFound().
+async function loadSummary(address: string): Promise<AddressSummary | null> {
+  try {
+    const env = await getJson<Envelope<AddressSummary | null>>(`/v2/addresses/${encodeURIComponent(address)}/summary`, { revalidate: 30 });
+    return env.result;
+  } catch (e) {
+    if (e instanceof NotFoundError) return null;
+    throw e;
+  }
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ address: string }> }): Promise<Metadata> {
+  const { address } = await params;
+  const title = `Address ${short(address)}`;
+  const description = `Counterparty holdings, activity, and reputation for address ${address}.`;
+  return { title, description, openGraph: { title: `${title} | XCP.io`, description } };
+}
+
 // Identity-first header: who is this address (archetype chips) + how old/active, then balances.
-// Answers the non-owner's "can I trust this?" and the owner's "this is me / OG status" at a glance.
-function AddressHeader({ address }: { address: string }) {
-  const { data } = useSWR<Envelope<AddressSummary>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/summary`));
-  const s = data?.result;
-  const [copied, setCopied] = useState(false);
-  const copy = () => navigator.clipboard?.writeText(address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); });
+// Server-rendered from the fetched summary; only the copy button is a client island.
+function AddressHeader({ address, s }: { address: string; s: AddressSummary | null }) {
   const xcp = Number(s?.xcp) || 0;
   return (
     <Card>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm break-all text-zinc-100">{address}</span>
-        <button onClick={copy} className="shrink-0 text-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-1.5 py-0.5">{copied ? "copied ✓" : "copy"}</button>
+        <CopyButton value={address} />
       </div>
       <div className="flex flex-wrap gap-1.5 mt-2.5">
         {address === BURN_ADDRESS && <Chip><Flame className="size-3 text-orange-400" />Burn address</Chip>}
@@ -56,44 +68,18 @@ function AddressHeader({ address }: { address: string }) {
   );
 }
 
-export default function AddressPage({ params }: { params: Promise<{ address: string }> }) {
-  const { address } = use(params);
-  const base = `/v2/addresses/${encodeURIComponent(address)}`;
-
-  const tabs: TabDef[] = [
-    { label: "Sends", path: `${base}/sends`, cols: [
-      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
-      { label: "Asset", cell: (r) => assetCell(r.asset) },
-      { label: "Direction", cell: (r) => r.source === address ? <span className="text-red-400">out</span> : <span className="text-green-400">in</span> },
-      { label: "Counterparty", cell: (r) => addrCell(r.source === address ? r.destination : r.source) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-      { label: "Tx", cell: (r) => txCell(r.tx_hash) },
-    ]},
-    { label: "Issuances", path: `${base}/issuances`, cols: [
-      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
-      { label: "Asset", cell: (r) => assetCell(r.asset) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-      { label: "Tx", cell: (r) => txCell(r.tx_hash) },
-    ]},
-    { label: "Dispensers", path: `${base}/dispensers`, cols: DISPENSER_COLS },
-    { label: "Dispenses", path: `${base}/dispenses`, cols: [
-      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
-      { label: "Asset", cell: (r) => assetCell(r.asset) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.dispense_quantity_normalized) },
-      { label: "Counterparty", cell: (r) => addrCell(r.source === address ? r.destination : r.source) },
-      { label: "Tx", cell: (r) => txCell(r.tx_hash) },
-    ]},
-    { label: "Issued", path: `${base}/issued`, cols: ASSET_LIST_COLS },
-  ];
+export default async function AddressPage({ params }: { params: Promise<{ address: string }> }) {
+  const { address } = await params;
+  const summary = await loadSummary(address);
 
   return (
     <>
-      <AddressHeader address={address} />
+      <AddressHeader address={address} s={summary} />
       <ReputationHeader address={address} />
       <AddressLineage address={address} />
       <Holdings address={address} />
       <AddressConnections address={address} />
-      <DetailTabs tabs={tabs} />
+      <AddressTabs address={address} />
     </>
   );
 }

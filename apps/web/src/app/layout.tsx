@@ -10,7 +10,11 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "xcp.io — Counterparty Explorer",
+  metadataBase: new URL("https://xcp.io"),
+  title: {
+    default: "xcp.io — Counterparty Explorer",
+    template: "%s | XCP.io",
+  },
   description: "Explore Counterparty assets, addresses, blocks, and transactions.",
 };
 

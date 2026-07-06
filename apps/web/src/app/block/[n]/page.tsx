@@ -1,20 +1,36 @@
-"use client";
-import { use } from "react";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { BlockTxSummary } from "@xcp/shared/chain";
-import { useBlock } from "@/lib/hooks";
+import type { BlockDetail, BlockTxSummary } from "@xcp/shared/chain";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
-import { Empty, Loading, ErrorBox } from "@/components/ui/feedback";
+import { Empty } from "@/components/ui/feedback";
 import { RecordTable } from "@/components/record-table";
 import { type Col, txCell, addrCell } from "@/lib/cells";
 import { commas, short, ts } from "@/lib/format";
 
-export default function BlockPage({ params }: { params: Promise<{ n: string }> }) {
-  const { n } = use(params);
-  const { item, error, isLoading } = useBlock(n);
-  if (isLoading) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
-  if (!item) return <Empty what="block" />;
+async function loadBlock(n: string): Promise<BlockDetail> {
+  let env: Envelope<BlockDetail>;
+  try {
+    env = await getJson<Envelope<BlockDetail>>(`/v2/blocks/${encodeURIComponent(n)}`, { revalidate: 30 });
+  } catch (e) {
+    if (e instanceof NotFoundError) notFound();
+    throw e;
+  }
+  if (!env.result) notFound();
+  return env.result;
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ n: string }> }): Promise<Metadata> {
+  const { n } = await params;
+  const title = `Block ${commas(n)}`;
+  const description = `Counterparty transactions in Bitcoin block ${n}.`;
+  return { title, description, openGraph: { title: `${title} | XCP.io`, description } };
+}
+
+export default async function BlockPage({ params }: { params: Promise<{ n: string }> }) {
+  const { n } = await params;
+  const item = await loadBlock(n);
 
   const txs = item.transactions ?? [];
   const cols: Col<BlockTxSummary>[] = [
