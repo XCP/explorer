@@ -36,6 +36,12 @@ function factorValue(f: Factor, row: FeatureRow, tip: number): number {
     const dt = num(row.distinct_traders);
     return ((num(row.last_trade_blk) - num(row.first_trade_blk)) / SCALARS.blockScale) * (dt / (dt + 3)) * assetDecay(row);
   }
+  // realized USD, GATED by distinct buyers (B/(B+3), B = traders + dispense buyers) — mirrors __durability's
+  // gate so a single huge sale to 1-2 buyers can't dominate the score (the thin-whale vector).
+  if (f.key === "__realized_usd") {
+    const b = num(row.distinct_traders) + num(row.distinct_dispense_buyers);
+    return ln(num(row.max_realized_usd)) * (b / (b + 3));
+  }
   // circulating-scarcity: offset − log10(circulating supply). circulating = supply × (100 − burned_pct)/100
   // (burn-adjusted, so a fully-burned high-issuance asset reads as scarce). Zero/unknown supply → no signal.
   if (f.key === "__circulating_scarcity") {
@@ -93,10 +99,14 @@ export const assetScore = (raw: number) => Math.round(percentile(raw, ASSET_PCT)
 
 // Asset quality tier (the primary display). state: "market" = ever traded/dispensed (ranked into a tier);
 // "held" = issued & held but no market (Untraded); "none" = no holders (Dormant). Tiers cut on raw.
+// low_quality is a CLASSIFICATION, not a score component: it hard-caps the tier at Speculative regardless
+// of raw (the additive penalty only orders raws; on the Phase-B scale it can't demote — OXBT proved a
+// wash/bridge asset rode $9M of flow to Established despite the penalty). Parallel to infra address states.
 export type MarketState = "market" | "held" | "none";
-export function assetTier(raw: number, state: MarketState): string {
+export function assetTier(raw: number, state: MarketState, lowQuality = false): string {
   if (state === "none") return "Dormant";
   if (state === "held") return "Untraded";
+  if (lowQuality) return "Speculative";
   for (const t of ASSET_TIERS) if (raw >= t.minRaw) return t.tier;
   return "Speculative";
 }
@@ -124,7 +134,8 @@ export function rawSqlExpr(factors: Factor[], tip: number): string {
     const w = f.weight, B = SCALARS.blockScale;
     const aDk = `MAX(${SCALARS.assetDecayFloor},${SCALARS.assetDecayHalflife}.0/(${SCALARS.assetDecayHalflife}.0+COALESCE(recency_blocks,0)))`; // asset staleness decay
     const adDk = `MAX(${SCALARS.addrDecayFloor},${SCALARS.addrDecayHalflife}.0/(${SCALARS.addrDecayHalflife}.0+MAX(0,${tip}-COALESCE(last_blk,${tip}))))`; // address idle decay
-    if (f.key === "__trades_per_holder") terms.push(`${w}*LN(1+MAX(0,COALESCE(trades,0)*1.0/NULLIF(holders,0)))`);
+    if (f.key === "__realized_usd") terms.push(`${w}*LN(1+MAX(0,COALESCE(max_realized_usd,0)))*((COALESCE(distinct_traders,0)+COALESCE(distinct_dispense_buyers,0))*1.0/(COALESCE(distinct_traders,0)+COALESCE(distinct_dispense_buyers,0)+3.0))`);
+    else if (f.key === "__trades_per_holder") terms.push(`${w}*LN(1+MAX(0,COALESCE(trades,0)*1.0/NULLIF(holders,0)))`);
     else if (f.key === "__asset_age") terms.push(`${w}*(COALESCE(age_blocks,0)/${B}.0)*${aDk}`);
     else if (f.key === "__durability") terms.push(`${w}*((COALESCE(last_trade_blk,0)-COALESCE(first_trade_blk,0))/${B}.0)*(COALESCE(distinct_traders,0)*1.0/(COALESCE(distinct_traders,0)+3.0))*${aDk}`);
     else if (f.key === "__circulating_scarcity") terms.push(`${w}*(CASE WHEN COALESCE(supply,0)<=0 THEN 0 ELSE ${SCALARS.scarcityOffset} - LN(MAX(1.0,COALESCE(supply,0)*(100-COALESCE(burned_pct,0))/100.0))/LN(10) END)`);

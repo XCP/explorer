@@ -76,10 +76,18 @@ export const ADDRESS_FACTORS: Factor[] = [
 // against the full market population (/v2/reputation/asset-review) and face-checked before this is trusted.
 export const ASSET_FACTORS: Factor[] = [
   // -- realized VALUE (worth, not volume) — THE grail signal: real money changed hands. Now dominant. --
-  { key: "max_dispense_btc",    weight: 4.0, transform: "log",    label: "value_btc",   why: "largest BTC realized in a dispense — the strongest grail/scam discriminator: grails sold for real BTC, vault-pumped pepes have ~0. Can't be faked without spending BTC." },
-  { key: "max_trade_xcp",       weight: 1.8, transform: "log",    label: "value_xcp",   why: "largest XCP realized in a DEX trade — realized value per sale (covers grails sold on the DEX, not via BTC dispenser)" },
-  { key: "dispense_btc",        weight: 1.0, transform: "log",    label: "commerce",    why: "total real BTC commerce — sustained money in, not one lucky dispense" },
+  // PHASE B RE-DIAL (2026-07-06): USD-denominated realized value is the new PRIMARY anchor — currency-agnostic,
+  // so a grail sold for ETH on Emblem or XCP on the DEX counts the same as one sold for BTC in a dispense (the
+  // single-rail maxima each saw only their own currency). The old max_dispense_btc (4.0) was also GAMEABLE —
+  // a whale self-dispensing at a high ask inflated it with no real buyer (reputation.md Watch). It's replaced by
+  // the self-dispense-guarded max_dispense_btc_clean and demoted to a corroborating signal.
+  { key: "__realized_usd",      weight: 4.5, transform: "log",    label: "value_usd",   why: "largest single sale's USD value across ALL venues (dex|dispense|emblem), GATED by distinct buyers B/(B+3) where B = distinct_traders + distinct_dispense_buyers — the DOMINANT realized-value signal (Phase B). The gate mirrors __durability's trader gate: one huge sale to 1-2 buyers (PEPEMILLION: $896k, 2 buyers) is heavily damped; broad demand passes at full strength. Can't be faked without real money changing hands across many real counterparties." },
+  { key: "max_dispense_btc_clean", weight: 0.5, transform: "log", label: "value_btc",   why: "largest BTC realized in a NON-self dispense (source<>destination) — the self-dispense-GUARDED replacement for max_dispense_btc (closes the whale-self-dispense hole). DEMOTED 4.0→0.5: max_realized_usd now leads." },
+  { key: "max_trade_xcp",       weight: 0.5, transform: "log",    label: "value_xcp",   why: "largest XCP realized in a DEX trade — DEMOTED 1.8→0.5 to a corroborating rail now that USD realized value leads." },
+  { key: "dispense_btc",        weight: 0.5, transform: "log",    label: "commerce",    why: "total real BTC commerce — DEMOTED 1.0→0.5: sustained money in, but secondary to realized peak value." },
   { key: "distinct_dispensers", weight: 1.0, transform: "log",    label: "dispensers",  why: "distinct dispenser operators — breadth of who sold it for BTC (3.98x)" },
+  { key: "distinct_dispense_buyers", weight: 0.8, transform: "log", label: "buyers",    why: "distinct NON-self dispense buyers (source<>destination) — real demand breadth, self-dispense-guarded (Phase B)." },
+  { key: "emblem_trades",       weight: 0.4, transform: "log",    label: "emblem",      why: "count of Emblem-vault (ETH-side) sales attributed to the asset — cross-chain demand invisible to the Counterparty rails (Phase B)." },
   // -- demand depth (hard to fake; core quality, but pumpable so trimmed from v1) --
   { key: "__trades_per_holder", weight: 1.5, transform: "log",    label: "demand_depth", why: "trades ÷ holders — demand depth airdrops can't fake (3.8x)" },
   { key: "__durability",        weight: 1.0, transform: "span",   label: "durability",  why: "traded over a long span (20.9x lift) — TRIMMED from 2.0: sustained pumping games a long active span, which is what floated the scam pepes" },
@@ -116,20 +124,31 @@ export const ADDRESS_PCT = { floor: 0.5, p50: 2.88, p90: 5.22, p99: 16.33, max: 
 // (Untraded / Dormant). Market-asset percentiles: p50=15.1, p90=26.9, p99=41, max=60.6.
 // Recalibrated 2026-06-28 (realized-value re-dial + circulating-scarcity) against the 22,824 market assets:
 // observed p50=11.68, p90=22.01, p99=36.64, max=56.87.
-export const ASSET_PCT   = { floor: 1, p50: 11.68, p90: 22.01, p99: 36.64, max: 56.87 };
+// PHASE B RECALIBRATION (2026-07-06): the USD-led re-dial (max_realized_usd @4.5, log of a $-value) lifts the
+// whole raw scale ~2.7x. FINAL anchors re-read with the buyer-GATED __realized_usd expr against the 22,849
+// market assets at tip 956,949: p50=20.19, p90=45.86, p99=68.73, max=105.48, min=-10.34. The gate pulls the
+// mid-distribution DOWN vs the ungated read (thin-buyer assets lose most of the USD term) while the broad-demand
+// top is barely touched. floor 5 (a low, positive score-0 anchor; secondary to the tier).
+export const ASSET_PCT   = { floor: 5, p50: 20.19, p90: 45.86, p99: 68.73, max: 105.48 };
 
 // Asset quality TIERS — the primary display (the 0-100 score is a heuristic, so we lead with a coarse, honest
 // tier and keep the number as detail). Tiers cut on RAW (= exact percentiles of the market population). Each
 // states its meaning so an open-source reader knows precisely what it asserts. Two non-ranked states below:
 //   Untraded = issued & held but never traded/dispensed · Dormant = no holders at all.
-// Bluechip is deliberately set TIGHTER than p99 — at raw≥45 (top ~0.1%, ~19 assets) — so it means genuinely
-// elite and excludes the borderline knockoffs that cluster just under it (the grail-vs-scam separability limit:
-// objective signals can't tell a 1000-supply knockoff from a thin grail). Established/Active are the p90/p50.
+// Bluechip is deliberately set TIGHTER than p99 so it means genuinely elite. PHASE B FINAL (2026-07-06, post
+// buyer-gate): the gate sank the thin single-large-sale whales outright (PEPEMILLION 90.9→75.4 — into the scam
+// band on buyer-thinness alone, exactly the intended mechanism; DEXTERPEPE/TROUTPEPE now ~86-88 on the strength
+// of ~46-48 REAL buyers). The top of the gated distribution breaks cleanly at 94.0: seven unambiguous assets
+// (PEPECASH 105.5, XCP 103, SATOSHICARD 100, FDCARD 98.7, BITCRYSTALS 97.4, RAREPEPE 96.6, SHITCOINCARD 94.0),
+// then a 4.4-point gap to DARKPILLPEPE 89.6 (a real grail with a thin 48-buyer base — top-Established is honest
+// for it). Bluechip = raw≥92. Curated junk (OXBT 85.2, ORDIPEPE 84.2, both low_quality=1) is HARD-CAPPED to
+// Speculative by assetTier() regardless of raw — the flat −6 penalty only orders raws now; the gate demotes.
+// Est/Active=p90/p50.
 export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "Bluechip",    minRaw: 45,     meaning: "top ~0.1% of assets with a market — elite: real realized value + scarcity + durable demand" },
-  { tier: "Established", minRaw: 22.01,  meaning: "top ~10% — sustained real trading and distribution" },
-  { tier: "Active",      minRaw: 11.68,  meaning: "upper half of assets that have a real market" },
-  { tier: "Speculative", minRaw: -1e9,   meaning: "has a market but thin / early" },
+  { tier: "Bluechip",    minRaw: 92,     meaning: "top ~0.03% of assets with a market — elite: broad real demand + realized value + durability" },
+  { tier: "Established", minRaw: 45.86,  meaning: "top ~10% — sustained real trading and distribution" },
+  { tier: "Active",      minRaw: 20.19,  meaning: "upper half of assets that have a real market" },
+  { tier: "Speculative", minRaw: -1e9,   meaning: "has a market but thin / early — or flagged low-quality (hard-capped here)" },
 ];
 
 // Address reputation TIERS — primary display, parallel to the asset tiers. Cut on RAW (= exact percentiles of

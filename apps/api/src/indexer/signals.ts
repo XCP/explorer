@@ -120,9 +120,21 @@ const UNITS: FeatureUnit[] = [
     scoped: (ph) => `INSERT INTO address_signals (addr,last_blk) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_blk=MAX(address_signals.last_blk,excluded.last_blk)` },
 
   // ===== ADDRESS · dispenser economics (from dispenses) =====
-  { name: "addr_disp_earn", scope: "address", reads: ["dispenses"],
-    full: `INSERT INTO address_signals (addr,dispense_btc,dispenses) SELECT source,COALESCE(SUM(btc_amount),0)/1e8,COUNT(*) FROM dispenses WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses`,
-    scoped: (ph) => `INSERT INTO address_signals (addr,dispense_btc,dispenses) SELECT source,COALESCE(SUM(btc_amount),0)/1e8,COUNT(*) FROM dispenses WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses` },
+  // MERCHANT ATTRIBUTION TO THE CREATOR (Phase B addendum): dispense revenue is credited to the human operator
+  // A = COALESCE(dispensers.origin, dispenses.source), not the throwaway empty-address dispenser B (origin≠source
+  // for the modern empty-address pattern; migration 0009). Same PK-seek join as asset_dispense_buyers.
+  // TWO DEPLOY-TIME CAVEATS (documented, not forced — the full-rebuild self-heal is the backstop):
+  //  (1) dirtyAddrs does NOT derive dispenser origins (only source/destination), so the per-block cascade won't
+  //      refresh an origin A when a buyer hits A's dispenser — the origin isn't in the dirty ADDRESS set. The
+  //      full rebuild (.full below) re-attributes correctly every cycle; cascade freshness for this signal is the
+  //      gap. FIXED: dirtyAddrs now derives dispenser origins (block-range origins + dispense→
+  //      dispenser origin join), so creator A IS in the dirty set when a buyer hits A's dispenser.
+  //  (2) ORPHAN RESET: this .full only UPDATEs origin-keyed rows, so throwaway B addresses that held a source-
+  //      attributed dispense_btc from BEFORE this change are not reset — they keep a stale value until a one-time
+  //      `UPDATE address_signals SET dispense_btc=0,dispenses=0,disp_trust=0,clean_dispense_btc=0` at deploy.
+  { name: "addr_disp_earn", scope: "address", reads: ["dispenses", "dispensers"],
+    full: `INSERT INTO address_signals (addr,dispense_btc,dispenses) SELECT COALESCE(dp.origin,d.source) addr,COALESCE(SUM(d.btc_amount),0)/1e8,COUNT(*) FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash=d.dispenser_tx_hash WHERE COALESCE(dp.origin,d.source) IS NOT NULL GROUP BY COALESCE(dp.origin,d.source) ON CONFLICT(addr) DO UPDATE SET dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses`,
+    scoped: (ph) => `INSERT INTO address_signals (addr,dispense_btc,dispenses) SELECT COALESCE(dp.origin,d.source) addr,COALESCE(SUM(d.btc_amount),0)/1e8,COUNT(*) FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash=d.dispenser_tx_hash WHERE COALESCE(dp.origin,d.source) IN (${ph}) GROUP BY COALESCE(dp.origin,d.source) ON CONFLICT(addr) DO UPDATE SET dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses` },
   { name: "addr_disp_spend", scope: "address", reads: ["dispenses"],
     full: `INSERT INTO address_signals (addr,btc_spent) SELECT destination,COALESCE(SUM(btc_amount),0)/1e8 FROM dispenses WHERE destination IS NOT NULL GROUP BY destination ON CONFLICT(addr) DO UPDATE SET btc_spent=excluded.btc_spent`,
     scoped: (ph) => `INSERT INTO address_signals (addr,btc_spent) SELECT destination,COALESCE(SUM(btc_amount),0)/1e8 FROM dispenses WHERE destination IS NOT NULL AND destination IN (${ph}) GROUP BY destination ON CONFLICT(addr) DO UPDATE SET btc_spent=excluded.btc_spent` },
@@ -224,8 +236,12 @@ const UNITS: FeatureUnit[] = [
     full: `INSERT INTO asset_signals (asset, holder_breadth, pct_creator_holders) SELECT b.asset, AVG(COALESCE(sg.assets_held,0)), AVG(CASE WHEN sg.survived_assets>0 THEN 1.0 ELSE 0 END)*100 FROM balances b LEFT JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset HAVING COUNT(*)>=3 ON CONFLICT(asset) DO UPDATE SET holder_breadth=excluded.holder_breadth, pct_creator_holders=excluded.pct_creator_holders` },
 
   // ===== ADDRESS · clean (low-quality-excluded) economics + burner (depend on asset low_quality → PERIODIC) =====
-  { name: "addr_clean_disp", scope: "address", reads: ["dispenses"], dependsOn: ["asset_lowq"], periodic: true,
-    full: `INSERT INTO address_signals (addr,clean_dispense_btc) SELECT d.source,SUM(d.btc_amount)/1e8 FROM dispenses d JOIN asset_signals a ON a.asset=d.asset WHERE a.low_quality=0 AND d.source IS NOT NULL GROUP BY d.source ON CONFLICT(addr) DO UPDATE SET clean_dispense_btc=excluded.clean_dispense_btc` },
+  // clean_dispense_btc is the low-quality-excluded twin of dispense_btc, so it gets the SAME creator attribution
+  // (COALESCE(dispensers.origin, dispenses.source)) for consistency — not explicitly named in the addendum but it
+  // would be incoherent to attribute the two merchant-revenue columns to different addresses. Periodic (full-only),
+  // so no cascade origin-gap; still subject to the orphan-reset caveat (see addr_disp_earn).
+  { name: "addr_clean_disp", scope: "address", reads: ["dispenses", "dispensers"], dependsOn: ["asset_lowq"], periodic: true,
+    full: `INSERT INTO address_signals (addr,clean_dispense_btc) SELECT COALESCE(dp.origin,d.source) addr,SUM(d.btc_amount)/1e8 FROM dispenses d JOIN asset_signals a ON a.asset=d.asset LEFT JOIN dispensers dp ON dp.tx_hash=d.dispenser_tx_hash WHERE a.low_quality=0 AND COALESCE(dp.origin,d.source) IS NOT NULL GROUP BY COALESCE(dp.origin,d.source) ON CONFLICT(addr) DO UPDATE SET clean_dispense_btc=excluded.clean_dispense_btc` },
   { name: "addr_clean_spent", scope: "address", reads: ["dispenses"], dependsOn: ["asset_lowq"], periodic: true,
     full: `INSERT INTO address_signals (addr,clean_btc_spent) SELECT d.destination,SUM(d.btc_amount)/1e8 FROM dispenses d JOIN asset_signals a ON a.asset=d.asset WHERE a.low_quality=0 AND d.destination IS NOT NULL GROUP BY d.destination ON CONFLICT(addr) DO UPDATE SET clean_btc_spent=excluded.clean_btc_spent` },
   // Burner signal: distinct CLEAN assets sent to a known burn address (creators burning their own supply —
@@ -236,9 +252,13 @@ const UNITS: FeatureUnit[] = [
   // ===== ADDRESS · dispenser-operator trust (from dispensers + dispenses) =====
   // Dispenser-operator trust = longevity-weighted track record (validated: at the top it's 100% legit
   // operators, 0 wash). span(months)*2 + repeat-operation*1.5 + distinct buyers + a small volume term.
+  // Attributed to the CREATOR COALESCE(o.origin,o.source) (Phase B addendum) — dispensers.origin is on the row,
+  // so no extra join here (the inner buyers/volume subquery still aggregates dispenses by their own source B, and
+  // MAX() picks the busiest of the operator's dispensers). Same two deploy caveats as addr_disp_earn (cascade
+  // origin gap in dirtyAddrs; orphan-reset of throwaway B rows).
   { name: "addr_disp_trust", scope: "address", reads: ["dispensers", "dispenses"],
-    full: `INSERT INTO address_signals (addr,disp_trust) SELECT o.source, 2*LN(1+(MAX(o.block_index)-MIN(o.block_index))/4320.0)+1.5*LN(1+COUNT(DISTINCT o.tx_hash))+LN(1+COALESCE(MAX(b.buyers),0))+0.5*LN(1+COALESCE(MAX(b.dx),0)) FROM dispensers o LEFT JOIN (SELECT source,COUNT(*) dx,COUNT(DISTINCT destination) buyers FROM dispenses WHERE source IS NOT NULL GROUP BY source) b ON b.source=o.source WHERE o.source IS NOT NULL GROUP BY o.source ON CONFLICT(addr) DO UPDATE SET disp_trust=excluded.disp_trust`,
-    scoped: (ph) => `INSERT INTO address_signals (addr,disp_trust) SELECT o.source, 2*LN(1+(MAX(o.block_index)-MIN(o.block_index))/4320.0)+1.5*LN(1+COUNT(DISTINCT o.tx_hash))+LN(1+COALESCE(MAX(b.buyers),0))+0.5*LN(1+COALESCE(MAX(b.dx),0)) FROM dispensers o LEFT JOIN (SELECT source,COUNT(*) dx,COUNT(DISTINCT destination) buyers FROM dispenses WHERE source IS NOT NULL GROUP BY source) b ON b.source=o.source WHERE o.source IS NOT NULL AND o.source IN (${ph}) GROUP BY o.source ON CONFLICT(addr) DO UPDATE SET disp_trust=excluded.disp_trust` },
+    full: `INSERT INTO address_signals (addr,disp_trust) SELECT COALESCE(o.origin,o.source) addr, 2*LN(1+(MAX(o.block_index)-MIN(o.block_index))/4320.0)+1.5*LN(1+COUNT(DISTINCT o.tx_hash))+LN(1+COALESCE(MAX(b.buyers),0))+0.5*LN(1+COALESCE(MAX(b.dx),0)) FROM dispensers o LEFT JOIN (SELECT source,COUNT(*) dx,COUNT(DISTINCT destination) buyers FROM dispenses WHERE source IS NOT NULL GROUP BY source) b ON b.source=o.source WHERE COALESCE(o.origin,o.source) IS NOT NULL GROUP BY COALESCE(o.origin,o.source) ON CONFLICT(addr) DO UPDATE SET disp_trust=excluded.disp_trust`,
+    scoped: (ph) => `INSERT INTO address_signals (addr,disp_trust) SELECT COALESCE(o.origin,o.source) addr, 2*LN(1+(MAX(o.block_index)-MIN(o.block_index))/4320.0)+1.5*LN(1+COUNT(DISTINCT o.tx_hash))+LN(1+COALESCE(MAX(b.buyers),0))+0.5*LN(1+COALESCE(MAX(b.dx),0)) FROM dispensers o LEFT JOIN (SELECT source,COUNT(*) dx,COUNT(DISTINCT destination) buyers FROM dispenses WHERE source IS NOT NULL GROUP BY source) b ON b.source=o.source WHERE COALESCE(o.origin,o.source) IN (${ph}) GROUP BY COALESCE(o.origin,o.source) ON CONFLICT(addr) DO UPDATE SET disp_trust=excluded.disp_trust` },
 
   // ===== ADDRESS · Emblem vault + service heuristic (crawler/heuristic driven → PERIODIC) =====
   { name: "ddl_emblem", scope: "global", reads: [], periodic: true, full: EMBLEM_DDL },
@@ -269,9 +289,11 @@ const UNITS: FeatureUnit[] = [
   { name: "asset_distinct_traders", scope: "asset", reads: ["order_matches"],
     full: `WITH m AS (SELECT forward_asset asset,tx0_address a FROM order_matches UNION ALL SELECT forward_asset,tx1_address FROM order_matches UNION ALL SELECT backward_asset,tx0_address FROM order_matches UNION ALL SELECT backward_asset,tx1_address FROM order_matches) INSERT INTO asset_signals (asset,distinct_traders) SELECT asset,COUNT(DISTINCT a) FROM m WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_traders=excluded.distinct_traders`,
     scoped: (ph) => `WITH m AS (SELECT forward_asset asset,tx0_address a FROM order_matches UNION ALL SELECT forward_asset,tx1_address FROM order_matches UNION ALL SELECT backward_asset,tx0_address FROM order_matches UNION ALL SELECT backward_asset,tx1_address FROM order_matches) INSERT INTO asset_signals (asset,distinct_traders) SELECT asset,COUNT(DISTINCT a) FROM m WHERE asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_traders=excluded.distinct_traders` },
+  // Origin-deduped: a creator opening N empty-address dispensers is ONE operator, not N (origin≠source for
+  // the modern empty-address pattern; origin is on the dispensers row, so no join needed).
   { name: "asset_distinct_dispensers", scope: "asset", reads: ["dispensers"],
-    full: `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT source) FROM dispensers WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers`,
-    scoped: (ph) => `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT source) FROM dispensers WHERE asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers` },
+    full: `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT COALESCE(origin,source)) FROM dispensers WHERE asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers`,
+    scoped: (ph) => `INSERT INTO asset_signals (asset,distinct_dispensers) SELECT asset,COUNT(DISTINCT COALESCE(origin,source)) FROM dispensers WHERE asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispensers=excluded.distinct_dispensers` },
   // holder sophistication: avg DEX activity of the asset's holders (depends on holders' dex_trades → PERIODIC).
   { name: "asset_holder_dex", scope: "asset", reads: ["balances"], dependsOn: ["addr_dex_trades"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO asset_signals (asset,avg_holder_dex) SELECT b.asset, AVG(COALESCE(sg.dex_trades,0)) FROM balances b LEFT JOIN address_signals sg ON sg.addr=b.holder WHERE b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset HAVING COUNT(*)>=3 ON CONFLICT(asset) DO UPDATE SET avg_holder_dex=excluded.avg_holder_dex` },
@@ -314,9 +336,14 @@ const UNITS: FeatureUnit[] = [
   // source=destination gives distinct REAL buyers + the largest BTC a real buyer actually paid. Both columns come
   // from the SAME aggregation over `dispenses` (a mirror table synced BEFORE the cascade, so NO trades-lag here),
   // so they share one unit. dispenses (~207k) is under the heavy threshold → no heavyEveryBlocks.
-  { name: "asset_dispense_buyers", scope: "asset", reads: ["dispenses"],
-    full: `INSERT INTO asset_signals (asset,distinct_dispense_buyers,max_dispense_btc_clean) SELECT asset, COUNT(DISTINCT destination), MAX(btc_amount)/1e8 FROM dispenses WHERE source<>destination AND asset IS NOT NULL GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispense_buyers=excluded.distinct_dispense_buyers, max_dispense_btc_clean=excluded.max_dispense_btc_clean`,
-    scoped: (ph) => `INSERT INTO asset_signals (asset,distinct_dispense_buyers,max_dispense_btc_clean) SELECT asset, COUNT(DISTINCT destination), MAX(btc_amount)/1e8 FROM dispenses WHERE source<>destination AND asset IS NOT NULL AND asset IN (${ph}) GROUP BY asset ON CONFLICT(asset) DO UPDATE SET distinct_dispense_buyers=excluded.distinct_dispense_buyers, max_dispense_btc_clean=excluded.max_dispense_btc_clean` },
+  // ORIGIN-AWARE self-dispense guard (Phase B addendum): a creator A can open a dispenser AT an empty address B
+  // (dispensers.origin=A, dispensers.source=B — the dominant modern pattern) then buy from it (dispense
+  // source=B, destination=A). The plain source<>destination filter MISSES that (B<>A passes), so we also exclude
+  // destination=COALESCE(dp.origin,d.source) — the real operator. dispensers.tx_hash is PK ⇒ the join is a PK seek
+  // (idx_dispe_disp covers the reverse direction); LEFT JOIN + COALESCE tolerates a missing dispenser row.
+  { name: "asset_dispense_buyers", scope: "asset", reads: ["dispenses", "dispensers"],
+    full: `INSERT INTO asset_signals (asset,distinct_dispense_buyers,max_dispense_btc_clean) SELECT d.asset, COUNT(DISTINCT d.destination), MAX(d.btc_amount)/1e8 FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash=d.dispenser_tx_hash WHERE d.destination<>d.source AND d.destination<>COALESCE(dp.origin,d.source) AND d.asset IS NOT NULL GROUP BY d.asset ON CONFLICT(asset) DO UPDATE SET distinct_dispense_buyers=excluded.distinct_dispense_buyers, max_dispense_btc_clean=excluded.max_dispense_btc_clean`,
+    scoped: (ph) => `INSERT INTO asset_signals (asset,distinct_dispense_buyers,max_dispense_btc_clean) SELECT d.asset, COUNT(DISTINCT d.destination), MAX(d.btc_amount)/1e8 FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash=d.dispenser_tx_hash WHERE d.destination<>d.source AND d.destination<>COALESCE(dp.origin,d.source) AND d.asset IS NOT NULL AND d.asset IN (${ph}) GROUP BY d.asset ON CONFLICT(asset) DO UPDATE SET distinct_dispense_buyers=excluded.distinct_dispense_buyers, max_dispense_btc_clean=excluded.max_dispense_btc_clean` },
 
   // ===== ASSET · metadata + tip-relative ages (age/recency slide with tip → PERIODIC) =====
   // seed asset metadata + precomputed age (tip − first issuance) + recency. age_blocks/recency_blocks are
@@ -428,6 +455,9 @@ async function dirtyAddrs(env: Env, lo: number, hi: number, assets: string[]): P
       UNION SELECT source FROM dispenses WHERE block_index BETWEEN ?1 AND ?2 AND source IS NOT NULL
       UNION SELECT destination FROM dispenses WHERE block_index BETWEEN ?1 AND ?2 AND destination IS NOT NULL
       UNION SELECT source FROM dispensers WHERE block_index BETWEEN ?1 AND ?2 AND source IS NOT NULL
+      UNION SELECT origin FROM dispensers WHERE block_index BETWEEN ?1 AND ?2 AND origin IS NOT NULL
+      UNION SELECT dp.origin FROM dispenses d JOIN dispensers dp ON dp.tx_hash=d.dispenser_tx_hash
+        WHERE d.block_index BETWEEN ?1 AND ?2 AND dp.origin IS NOT NULL
       UNION SELECT source FROM transactions WHERE block_index BETWEEN ?1 AND ?2 AND source IS NOT NULL
       UNION SELECT tx0_address FROM order_matches WHERE block_index BETWEEN ?1 AND ?2 AND tx0_address IS NOT NULL
       UNION SELECT tx1_address FROM order_matches WHERE block_index BETWEEN ?1 AND ?2 AND tx1_address IS NOT NULL

@@ -61,10 +61,15 @@ function expectedAssetRaw(row: any): number {
   const circ = supply <= 0 ? 0 : Math.max(1, supply * (100 - num(row.burned_pct)) / 100);
   const dt = num(row.distinct_traders);
   let r = 0;
-  r += sw("value_btc") * ln(num(row.max_dispense_btc));
+  // Phase B: primary realized-value factor, GATED by distinct buyers B/(B+3) (B = traders + dispense buyers)
+  const gateB = dt + num(row.distinct_dispense_buyers);
+  r += sw("value_usd") * ln(num(row.max_realized_usd)) * (gateB / (gateB + 3));
+  r += sw("value_btc") * ln(num(row.max_dispense_btc_clean));   // Phase B: value_btc now reads the self-dispense-guarded column
   r += sw("value_xcp") * ln(num(row.max_trade_xcp));
   r += sw("commerce") * ln(num(row.dispense_btc));
   r += sw("dispensers") * ln(num(row.distinct_dispensers));
+  r += sw("buyers") * ln(num(row.distinct_dispense_buyers));    // Phase B
+  r += sw("emblem") * ln(num(row.emblem_trades));               // Phase B
   r += sw("demand_depth") * ln(num(row.trades) / (num(row.holders) || 1));
   r += sw("durability") * ((num(row.last_trade_blk) - num(row.first_trade_blk)) / B) * (dt / (dt + 3)) * dA;
   r += sw("traders") * ln(dt);
@@ -134,7 +139,8 @@ test("scoreAddress: modern-active bonus is applied once, exactly SCALARS.modernA
 
 test("scoreAsset: a market row matches the independent re-derivation (special transforms exercised)", () => {
   const row = {
-    max_dispense_btc: 2, max_trade_xcp: 5, dispense_btc: 3, distinct_dispensers: 4,
+    max_realized_usd: 5000, max_dispense_btc_clean: 1.5, distinct_dispense_buyers: 8, emblem_trades: 3, // Phase B realized-value factors
+    max_trade_xcp: 5, dispense_btc: 3, distinct_dispensers: 4,
     trades: 100, holders: 20, // demand_depth = ln(trades/holders)
     last_trade_blk: 800000, first_trade_blk: 700000, distinct_traders: 10, recency_blocks: 50000, // durability + decay
     burned_pct: 10, supply: 1000, // circulating scarcity
@@ -160,7 +166,7 @@ test("scoreAsset: __circulating_scarcity returns 0 when supply is unknown/zero (
 /* ---------- low_quality penalty ---------- */
 
 test("scoreAsset: low_quality applies the flat penalty on top of the earned raw", () => {
-  const row = { max_dispense_btc: 2, trades: 100, holders: 20, distinct_traders: 10, supply: 1000, burned_pct: 10 };
+  const row = { max_realized_usd: 5000, trades: 100, holders: 20, distinct_traders: 10, supply: 1000, burned_pct: 10 };
   const clean = scoreAsset({ ...row, low_quality: 0 });
   const dirty = scoreAsset({ ...row, low_quality: 1 });
   near(dirty.raw - clean.raw, ASSET_PENALTY.lowQuality, "penalty delta");
@@ -254,4 +260,23 @@ test("rawSqlExpr: address expression omits the xcp factor (per the score.ts cont
 test("rawSqlExpr: an all-zero-weight factor list collapses to the literal \"0\"", () => {
   const expr = rawSqlExpr([{ key: "held", weight: 0, transform: "log", label: "held", why: "" }], 900000);
   assert.equal(expr, "0", "no weighted terms → \"0\" (safe, non-empty SQL)");
+});
+
+/* ---------- low_quality hard tier gate (Phase B round 3) ---------- */
+
+test("assetTier: low_quality caps at Speculative regardless of raw (OXBT case)", () => {
+  assert.equal(assetTier(1000, "market", true), "Speculative");
+  assert.equal(assetTier(1000, "market", false) !== "Speculative", true);
+  assert.equal(assetTier(1000, "held", true), "Untraded");   // non-market states unaffected
+  assert.equal(assetTier(1000, "none", true), "Dormant");
+});
+
+test("scoreAsset __realized_usd gate: thin-buyer sale is damped, broad demand passes", () => {
+  const base = { max_realized_usd: 900000, distinct_traders: 0 };
+  const thin = scoreAsset({ ...base, distinct_dispense_buyers: 2 });
+  const broad = scoreAsset({ ...base, distinct_dispense_buyers: 500 });
+  // gate = B/(B+3): 2 buyers → 0.4, 500 buyers → ~0.994 (coarse tolerance: breakdown values are 2dp-rounded)
+  const ratio = thin.breakdown.value_usd / broad.breakdown.value_usd;
+  assert(Math.abs(ratio - (2 / 5) / (500 / 503)) < 0.01, `gate ratio ${ratio}`);
+  assert(thin.raw < broad.raw, "thin whale must score below broad demand at equal USD");
 });

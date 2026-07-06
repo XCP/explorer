@@ -84,7 +84,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),
     circulating: circRaw.toString(), circulating_normalized: norm(circRaw),
     quality: scored && sig
-      ? { tier: assetTier(scored.raw, state), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
+      ? { tier: assetTier(scored.raw, state, sig.low_quality === 1), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
       : { tier: "Dormant", score: null },
     tags,
   };
@@ -132,7 +132,8 @@ assets.get("/v2/reputation/asset-validation", async (c) => {
         vaulted: { n: vaulted.n, mean: vaulted.mean, median: vaulted.median },
         non_vaulted: { n: non_vaulted.n, mean: non_vaulted.mean, median: non_vaulted.median },
         lift,
-        note: "market assets only (trades>0 OR dispenses>0); lift = vaulted mean ÷ non-vaulted mean. Baseline 2.20 (measured 2026-07-06, post realized-value re-dial) — watch for degradation below it across weight changes (H4).",
+        median_gap: round(vaulted.median - non_vaulted.median, 2),
+        note: "market assets only (trades>0 OR dispenses>0). median_gap (vaulted − non-vaulted median raw) is the PRIMARY gauge under the realized-value-dominant model — the mean RATIO compresses as the shared USD term lifts every asset, so read `lift` only alongside the gap. Watch for degradation from the post-Phase-B baseline across weight changes (H4).",
       },
     };
   });

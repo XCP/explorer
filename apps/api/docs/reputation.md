@@ -267,9 +267,104 @@ and only modest value_xcp despite huge activity (their "value" lived on the ETH 
   NOTE: below the ≥2.5 watch line — an artifact of the 2026-06-28 realized-value re-dial (which de-emphasized the
   popularity signals vaulting correlates with), not a regression; revisit if it drifts further.
 
+## Scoring Phase B — USD realized-value lead (2026-07-06)
+The 06-28 re-dial made realized value dominant but measured it **per rail** (`max_dispense_btc` for BTC dispenses,
+`max_trade_xcp` for XCP DEX trades) — so a grail sold for **ETH on Emblem** counted as ~0 realized value, and
+`max_dispense_btc` was **gameable** (a whale self-dispensing at a high ask, the Watch item above). Phase B fixes both.
+
+- **New signals** (migration 0023 + three `signals.ts` feature units; populated in prod): `max_realized_usd` (largest
+  single sale's `usd_value` across ALL venues dex|dispense|emblem — currency-agnostic worth), `max_dispense_btc_clean`
+  + `distinct_dispense_buyers` (dispense value/buyers with self-dispenses `source=destination` **excluded** — the
+  clean/distinct-buyer guard the 06-28 Watch note called for), `emblem_trades` (ETH-side sale count). Trades-ledger
+  units carry a documented one-tick lag (they read `trades`, materialized after the cascade; the full-rebuild self-heals).
+- **Factor re-dial (`ASSET_FACTORS`):** `max_realized_usd` is the new PRIMARY realized-value anchor (log, **4.5**);
+  the gameable `max_dispense_btc` (4.0) is **replaced** by `max_dispense_btc_clean` and demoted to 0.5 under the same
+  `value_btc` label; `max_trade_xcp` 1.8→0.5; `dispense_btc` 1.0→0.5; added `distinct_dispense_buyers` (0.8) and
+  `emblem_trades` (0.4). All plain `log` transforms (no special handling; parity holds in score.ts + rawSqlExpr).
+- **Anchors recalibrated** (22,849 market assets @ tip 956,949): the USD-led model (log of a $-value) lifts the raw
+  scale ~2.7×. `ASSET_PCT` p50 11.68→**30.84**, p90 22.01→**52.49**, p99 36.64→**71.74**, max 56.87→**105.52**, floor 1→5.
+  `ASSET_TIERS` Established/Active = p90/p50 (52.49 / 30.84). **Bluechip 45→93** (see below).
+- **Bluechip = raw≥93 (8 assets, top ~0.035%).** Under the USD lead the 85–93 band mixes real broadly-held assets
+  (SARUTOBICARD 771 holders, LORDKEK 760) and thin real grails (NINJASUIT) with **thin single-large-sale whales**
+  the USD term floats up (PEPEMILLION 5 holders/$896k, GRIMPEPE, TECHNOPEPE — the documented gaming vector). raw≥93
+  is the clean break ABOVE that whale cluster (tops out ~91): the 8 there — PEPECASH, XCP, SATOSHICARD, FDCARD,
+  RAREPEPE, BITCRYSTALS, SHITCOINCARD, DARKPILLPEPE — are all unambiguous. **Cost:** thin real grails (NINJASUIT 85.1)
+  land top-of-Established, not Bluechip (accepted per "optimize scams-not-Bluechip, not all-grails-in").
+- **Grail validation — margin IMPROVED to +16.1** (was +8.1): the 4 strong grails (SATOSHICARD 100.9, FDCARD 99.4,
+  RAREPEPE 97.6, DARKPILLPEPE 93.1) clear the entire scam set (PEPEONMUSK 77.1 the top scam) by 16.1 — grails sold for
+  $358k–$629k realized vs the scams' $3k–$7k. w=4.5 **maximizes** this margin (lowering it shrinks separation).
+  The thin grails NINJASUIT (85.1) / WINKELPEPE (79.2) stay Established — the honest series-directory separability limit.
+- **Vaulted lift DROPPED 2.20→1.66 — a mean-RATIO artifact, not a regression.** The shared USD term adds a large ~common
+  offset to every market asset, compressing the ratio while ABSOLUTE separation stays healthy: vaulted mean **48.6** /
+  median 48.9 (n=4,801) vs non-vaulted **29.3** / median 28.8 (n=18,048) — a **+19–20 raw** gap. Under a realized-value-
+  dominant model, absolute/median separation is the better convergent-validity gauge than the mean ratio; the `lift`
+  watch-line (≥2.5) should be read with that caveat (or the endpoint switched to report the median gap).
+- **Watch / follow-ups:** (1) the thin single-large-sale whales (PEPEMILLION etc.) are still floated into the top of
+  Established by one big `max_realized_usd`; the true fix is a **distinct-buyer GATE on realized value** (like
+  durability's `dt/(dt+3)` trader gate) so a single sale with ~no distinct buyers can't dominate — a new `__special`
+  factor, deferred. (2) **the flat `low_quality` penalty (−6) is now demonstrably under-powered on the ~2.7× scale:**
+  curated-junk **OXBT** (`low_quality=1`, a bridge token — 0 DEX trades, 18.7k dispenses, $9M realized, 15k holders)
+  still lands **Established at raw 85.2** — a wash/bridge asset in the top ~10%. A bigger additive constant can't fix
+  this cleanly (it'd need ≈−60 to sink OXBT below Active, which would over-punish borderline assets); the right fix is
+  a **hard gate** — treat `low_quality=1` like infra addresses and force a non-ranked/Speculative-capped tier in
+  `assetTier()`, independent of raw. Deferred (touches display semantics, out of the Part-2 weight scope). (3) verify
+  PEPEMILLION's 16-BTC "clean" dispense isn't a two-address wash defeating the `source≠destination` guard, or a
+  price-backfill artifact.
+
+### Origin-aware dispenser attribution (Phase B addendum, 2026-07-06)
+Protocol fact: a creator A can open a dispenser AT an empty address B (`dispensers.origin=A`, `dispensers.source=B` —
+the dominant modern pattern; 42,473 of 101,907 prod dispensers are origin≠source). Both the asset self-dispense guard
+and the address merchant attribution keyed on the wrong address; corrected via a PK-seek join to `dispensers`.
+- **Asset guard hardened.** `asset_dispense_buyers` now excludes `destination = COALESCE(dp.origin, d.source)` on top
+  of `destination = d.source`, so an origin self-buy (A opens at B, A buys from B — source=B≠dest=A passed the old
+  filter) no longer counts as a buyer or a clean-max. Impact on the score is negligible: only a few origin self-buys
+  drop out (SATOSHICARD 67→66 buyers, FDCARD 19→18; `max_dispense_btc_clean` unchanged everywhere in the spot-check),
+  raw shifts ≤0.04, so the **grail margin (+16.1) and vaulted lift hold** — those are USD-term-dominated and the USD
+  term is unaffected. (The stored `distinct_dispense_buyers`/`max_dispense_btc_clean` columns stay pre-hardening until
+  the next full rebuild; the numbers above are the on-the-fly hardened re-computation, read-only.)
+- **Merchant attribution moved to the creator.** `addr_disp_earn` (`dispense_btc`/`dispenses`), `addr_disp_trust`
+  (`disp_trust`), and `addr_clean_disp` (`clean_dispense_btc`, changed for consistency — it would be incoherent to
+  attribute the two merchant-revenue columns differently) now credit `COALESCE(origin, source)` = the human operator,
+  not the throwaway dispenser B. Buyer-side columns (`btc_spent`, `clean_btc_spent`) are unchanged (the buyer is real).
+- **Address anchors need a POST-DEPLOY re-check — flagged, not recomputed.** The reattribution consolidates 53,827
+  source-addresses into **21,548 real operators**, and **22,290 currently-ranked addresses** hold source-attributed
+  `dispense_btc` that moves to a creator (~8.5% of the ~261k real-user population) — too large to treat as noise. It
+  can't be measured read-only because prod columns are still source-attributed; recompute `ADDRESS_PCT` from
+  `/v2/reputation/review` AFTER the rebuild repopulates origin-attribution.
+- **Two deploy caveats (self-healed by the full rebuild, documented in signals.ts):** (1) `dirtyAddrs` derives only
+  dispenser `source`/`destination`, not `origin`, so the per-block cascade won't refresh a creator A when a buyer hits
+  A's dispenser — the full rebuild re-attributes each cycle; closing it means adding origin to `dirtyAddrs`. (2) The
+  origin-keyed `.full` doesn't reset throwaway-B rows that hold a stale source-attributed value from before the change —
+  a one-time `UPDATE address_signals SET dispense_btc=0,dispenses=0,disp_trust=0,clean_dispense_btc=0` at deploy clears
+  them before the rebuild.
+- **Related, not changed:** `distinct_dispensers` (asset breadth, weight 1.0) still counts distinct dispenser *sources*,
+  so a creator opening N empty-address dispensers reads as N operators — the same origin-vs-source over-count. Out of
+  the addendum's scope; flagged for a follow-up if breadth needs to reflect distinct operators.
+
 ## Open decisions
 - **age:** further options if longevity still over-rewards — lower the weight below 2.0, or require a minimum
   earned-signal floor for high bands (the cap addresses the dominant case).
 - **pagerank:** implement real personalized PageRank over `pr_edges` to revive the reserved `rep_score` column.
 - **social-attention signal:** the Telegram mention count (cross-chat filtered) could become its own
   "community favorite" tag — distinct from on-chain quality (score↔mentions Spearman ≈ 0.30).
+
+### Phase B round 3 — the buyer gate, the tier gate, and origin-aware attribution (2026-07-06, final)
+
+- **`__realized_usd` buyer gate**: the primary USD factor is now `ln(max_realized_usd) × B/(B+3)`,
+  B = distinct_traders + distinct_dispense_buyers — mirrors `__durability`'s trader gate. Validation:
+  PEPEMILLION ($896k, 2 buyers — verified legit-but-thin, NOT origin-wash) fell 90.9 → 75.4, into the
+  scam band on buyer-thinness alone. The gated top breaks cleanly at 94.0 (seven unambiguous assets);
+  Bluechip = raw≥92.
+- **`low_quality` hard tier gate**: `assetTier()` caps flagged assets at Speculative regardless of raw
+  (OXBT: raw 85.2, $9M bridge flow — now Speculative, not Established). The −6 additive penalty remains
+  only to order raws; the gate is the demotion mechanism.
+- **Origin-aware everywhere**: dispense-buyer guard excludes `destination = COALESCE(origin, source)`;
+  merchant revenue (dispense_btc/dispenses/disp_trust/clean) attributes to the creator
+  `COALESCE(origin, source)`; `distinct_dispensers` counts operators not throwaway addresses; and
+  `dirtyAddrs` now derives dispenser origins so creator signals stay per-block fresh.
+- **Final anchors** (gated expr, 22,849 market assets @ tip 956,949): p50 20.19 / p90 45.86 /
+  p99 68.73 / max 105.48. Grail margin +12.7 (strong-grail min DARKPILLPEPE 89.6 vs top scam
+  PEPEONMUSK 76.9). Vaulted separation: mean 42.4 vs 19.5 (gap +22.9, ratio 2.18 ≈ baseline) — the
+  validation endpoint now reports `median_gap` as the primary gauge.
+- **Deploy ops**: one-time orphan reset of source-attributed merchant columns before the rebuild;
+  ADDRESS_PCT re-check after re-attribution populates.
