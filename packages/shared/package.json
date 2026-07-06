@@ -5,7 +5,12 @@
   "description": "Wire contract for xcp.io — the single source of truth for API response types shared by apps/api and apps/web.",
   "exports": {
     "./envelope": "./src/envelope.ts",
-    "./models": "./src/models.ts",
-    "./index-names": "./src/index-names.ts"
+    "./records": "./src/records.ts",
+    "./chain": "./src/chain.ts",
+    "./assets": "./src/assets.ts",
+    "./addresses": "./src/addresses.ts",
+    "./trades": "./src/trades.ts",
+    "./stats": "./src/stats.ts",
+    "./emblem": "./src/emblem.ts"
   }
 }

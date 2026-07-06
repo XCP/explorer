@@ -1,5 +1,6 @@
 "use client";
 import useSWR from "swr";
+import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import { apiUrl, type Envelope } from "./api";
 
 // Generic list/detail hooks over the explorer read API. Pagination via offset.
@@ -30,3 +31,11 @@ export type IndexName =
   | "sweeps" | "fairminters" | "fairmints" | "destructions" | "burns" | "dividends" | "broadcasts"
   | "btcpays" | "bets" | "bet_matches" | "rps" | "rps_matches" | "pools" | "pool_matches";
 export const useIndex = (name: IndexName, offset = 0, limit = 50) => useList(`/v2/${name}`, { offset, limit });
+
+// Unified trades ledger (typed end-to-end — the reference idiom for new hooks).
+export const useTrades = (filter: { venue?: string; currency?: string; asset?: string } = {}, offset = 0, limit = 50) =>
+  useList<TradeRow>("/v2/trades", { ...filter, offset, limit });
+export function useTradeStats() {
+  const { data } = useSWR<Envelope<TradeVenueStats[]>>(apiUrl("/v2/trades/stats"));
+  return { venues: data?.result ?? [] };
+}

@@ -11,11 +11,9 @@ export function apiUrl(path: string, params?: Record<string, string | number | u
   return url.toString();
 }
 
-export interface Envelope<T> {
-  result: T;
-  result_count?: number;
-  next_offset?: number;
-}
+// The envelope is defined once, in the wire contract. (Type alias for existing importers; new code
+// should import it from @xcp/shared/envelope directly.)
+export type { Envelope } from "@xcp/shared/envelope";
 
 export async function fetcher<T>(url: string): Promise<T> {
   const res = await fetch(url);

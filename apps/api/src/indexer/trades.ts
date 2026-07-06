@@ -10,25 +10,7 @@
  */
 import type { Env } from "../index";
 
-export const TRADES_DDL = `CREATE TABLE IF NOT EXISTS trades (
-  venue       TEXT NOT NULL,               -- 'dex' | 'dispense' | 'emblem'
-  ref         TEXT NOT NULL,               -- dedupe key within venue (source row id / tx_log)
-  asset       TEXT,                        -- the CP card (NULL if unattributable)
-  block_time  INTEGER,                     -- unix seconds (Emblem: approximated from ETH block)
-  block_index INTEGER,                     -- CP block, or ETH block_number for Emblem
-  quantity    REAL,                        -- units of asset
-  currency    TEXT,                        -- 'XCP' | 'BTC' | 'ETH' | 'USDC'
-  total       REAL,                        -- price paid, in currency
-  price       REAL GENERATED ALWAYS AS (CASE WHEN quantity > 0 THEN total / quantity END) VIRTUAL,
-  usd_value   REAL,                        -- total in USD (nullable; filled later)
-  buyer TEXT, seller TEXT, tx_hash TEXT,
-  PRIMARY KEY (venue, ref)
-)`;
-const TRADES_IDX = [
-  `CREATE INDEX IF NOT EXISTS idx_trades_time ON trades(block_time DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_trades_asset ON trades(asset, block_time DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_trades_venue ON trades(venue, block_time DESC)`,
-];
+// Schema lives in migrations/0021_trades_prices.sql.
 
 // Payment-token map (ETH-family all 18-dec and value-equivalent; USDC is 6-dec and ≈USD). Derived from the
 // observed getNFTSales token distribution: native-ETH, WETH, the Blur ETH-pool, a Blur router, and USDC.
@@ -101,13 +83,21 @@ function emblemSql() {
       AND es.token_addr IN (${eth}, '${USDC}')`;
 }
 
+export interface TradesBuildProgress {
+  tip: number;
+  dex?: { from: number; to: number };
+  dex_done: boolean;
+  dispense?: { from: number; to: number };
+  dispense_done: boolean;
+  counts: Record<string, number>;
+  done: boolean;
+}
+
 /** Advance the trades materialization one bounded step. On-chain venues walk a CP-block window per call;
  *  Emblem is re-folded whole (small, idempotent). Loop until dex_done && dispense_done. */
-export async function buildTrades(env: Env): Promise<any> {
-  await env.DB.prepare(TRADES_DDL).run();
-  for (const s of TRADES_IDX) await env.DB.prepare(s).run();
+export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const out: any = { tip };
+  const out: Partial<TradesBuildProgress> = { tip };
 
   const dcur = await getState(env, "trades_cur_dex");
   if (dcur < tip) {
@@ -133,5 +123,5 @@ export async function buildTrades(env: Env): Promise<any> {
   const counts = await env.DB.prepare(`SELECT venue, COUNT(*) n FROM trades GROUP BY venue`).all<{ venue: string; n: number }>();
   out.counts = Object.fromEntries((counts.results || []).map((r) => [r.venue, r.n]));
   out.done = out.dex_done && out.dispense_done;
-  return out;
+  return out as TradesBuildProgress;
 }

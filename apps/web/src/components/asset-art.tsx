@@ -16,7 +16,6 @@ export function AssetArt({
   const [pixel, setPixel] = useState(stamp || asset[0] === "A"); // initial guess avoids a flash before load
   const [ratio, setRatio] = useState<string | undefined>();
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={`https://cdn.xcp.io/img/full/${encodeURIComponent(asset)}`}
       alt={asset}

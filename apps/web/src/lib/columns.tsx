@@ -8,10 +8,12 @@ import { orderView } from "@/lib/trading-pair";
 // Per-index display config — the single place that knows each model's columns + how to render a row.
 // RecordTable maps these to <Table>/<Row>/<Cell>. `numeric` => right-aligned mono+tabular cell.
 // `hideBelow` drops the column below a breakpoint (mobile priority); `weight` sets the zinc hierarchy.
-export type Col = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- default stays `any` until every
+// legacy column def is converted; new defs must bind T (see app/trades for the typed idiom).
+export type Col<T = any> = {
   label: string;
   numeric?: boolean;
-  cell: (r: any) => ReactNode;
+  cell: (r: T) => ReactNode;
   hideBelow?: "sm" | "md" | "lg";
   weight?: "primary" | "muted";
 };

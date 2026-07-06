@@ -7,6 +7,7 @@ import { SearchBox } from "@/components/search-box";
 
 const PRIMARY = [
   { label: "Assets", href: "/assets" },
+  { label: "Trades", href: "/trades" },
   { label: "Blocks", href: "/blocks" },
   { label: "Transactions", href: "/transactions" },
   { label: "Leaderboards", href: "/leaderboards" },
