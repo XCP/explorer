@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Single-driver reindex loop: walk the event mirror to tip. Cron must stay paused while this runs.
 set -u
-TOK="$(cat .admintok)"
-URL="https://xcp-api.me-bbe.workers.dev/admin/sync?events=50000&token=$TOK"
+# Token via env (ADMIN_TOKEN=...) or a local .admintok file; sent as a Bearer header, never in the URL.
+TOK="${ADMIN_TOKEN:-$(cat .admintok)}"
+URL="https://xcp-api.me-bbe.workers.dev/admin/sync?events=50000"
 LOG="reindex_progress.log"
 fails=0
 echo "=== driver start $(date -u +%H:%M:%S) ===" >> "$LOG"
 while true; do
-  resp="$(curl -s -m 300 -X POST "$URL")"
+  resp="$(curl -s -m 300 -X POST -H "Authorization: Bearer $TOK" "$URL")"
   ts="$(date -u +%H:%M:%S)"
   if echo "$resp" | grep -q '"caught_up":true'; then
     echo "$ts CAUGHT_UP $resp" >> "$LOG"

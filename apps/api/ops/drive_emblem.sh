@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Drive the emblem resolve pass to drain the ~19k poison/unresolvable tokens fast (each step resolves 60).
 set -u
-TOK="$(cat .emblemtok)"
-URL="https://xcp-api.me-bbe.workers.dev/admin/crawl-emblem?token=$TOK"
+# Token via env (ADMIN_TOKEN=...) or a local .emblemtok file; sent as a Bearer header, never in the URL.
+TOK="${ADMIN_TOKEN:-$(cat .emblemtok)}"
+URL="https://xcp-api.me-bbe.workers.dev/admin/crawl-emblem"
 LOG="emblem_progress.log"
 echo "=== emblem driver start $(date -u +%H:%M:%S) ===" >> "$LOG"
 prev=99999999; stall=0
 for i in $(seq 1 1200); do
-  resp="$(curl -s -m 120 -X POST "$URL")"
+  resp="$(curl -s -m 120 -X POST -H "Authorization: Bearer $TOK" "$URL")"
   ts="$(date -u +%H:%M:%S)"
   unres="$(echo "$resp" | grep -o '"unresolved":[0-9]*' | grep -o '[0-9]*')"
   res="$(echo "$resp" | grep -o '"resolved":[0-9]*' | grep -o '[0-9]*' | head -1)"
