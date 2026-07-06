@@ -91,6 +91,10 @@ packages/shared/src/
 - **API side**: each read handler's final `J(c, {...})` return is annotated
   `Envelope<AssetDetail>` etc. Add a `j<T>(c, body: Envelope<T>, ttl?)` typed wrapper around `J` so
   forgetting `next_offset` on a list endpoint is a compile error (fixes reviewer finding #10).
+  *(Done: every `/v2` list endpoint — records feeds, per-asset tabs, address lists, blocks, emblem —
+  now null-terminates `next_offset` like `trades` (`rows.length === limit ? offset + limit : null`),
+  so a short/final page ends pagination instead of advancing forever. The typed `j<T>` wrapper that
+  makes the omission a compile error is still pending.)*
 - **Web side**: `useList<SendRow>("/v2/sends")`, `Col<SendRow>` in `columns.tsx` — kills the ~35
   `any`s on each side *with one set of types*, and makes an API field rename a compile error in
   both apps instead of a silent runtime break.
@@ -109,6 +113,9 @@ export const one = <T>(db: D1Database, sql: string, ...binds: unknown[]) =>
 Every `const sig: any = await ...` becomes `await one<AssetSignalsRow>(...)`. Define
 `AssetSignalsRow` / `AddressSignalsRow` once (they're the schema-duplication hotspot the API review
 flagged — three hand-maintained column lists today collapse to one interface + the migration).
+*(Done: the four `TODO(wire)` types in `queries/assets.ts` — `HolderTierRow`, `HolderArchetypes`,
+`AssetReviewDistribution`, `AssetReviewTopRow` — now live in `packages/shared/src/assets.ts` since they
+cross the wire; the query module imports them.)*
 
 ## Phase 2 — Web: adopt the server/client hybrid Next.js is built for
 
@@ -272,7 +279,9 @@ Prioritized steps (each independently shippable, in order):
    Hand-written row types now; revisit Drizzle once schema churn slows and the reindex era is over.
 3. **API query layer + safety items** (Phase 3), extracted domain-by-domain — assets first
    (biggest file), then addresses, then the rest. Curated lists → tables; Bearer admin auth;
-   error middleware; signal-unit dependency validation; scorer + cascade-equivalence tests.
+   error middleware *(done: root `app.onError` returns `{ error }` with the HTTPException status or 500,
+   logging the request path)*; signal-unit dependency validation *(done: `signals.ts` asserts unique
+   names + valid, topologically-ordered `dependsOn` at module load)*; scorer + cascade-equivalence tests.
 4. **Trades table as the pilot of the new architecture.** A derived projection unifying
    order_matches + dispenses + emblem sales into one queryable trades surface — built the new way
    from day one: schema in a migration, row type in shared, a feature-unit-style builder

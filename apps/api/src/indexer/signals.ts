@@ -300,6 +300,26 @@ const UNITS: FeatureUnit[] = [
   ...INDEX_DDL.map((sql, i) => ({ name: `idx_${i}`, scope: "global" as Scope, reads: [], periodic: true, full: sql })),
 ];
 
+// Fail-fast validation of the unit graph at MODULE LOAD, so a bad edit breaks at deploy, not at 3am:
+//   (1) names are unique (the step/cascade cursors + heavy-gen state keys are keyed by name);
+//   (2) every dependsOn references a real unit; (3) a unit is declared AFTER every unit it depends on —
+//       both drivers run units in array order, so a forward reference would consume a not-yet-computed
+//       upstream (silent staleness). A dep that exists but appears later is a topo-order violation; a dep
+//       that exists nowhere is a typo — reported distinctly.
+(function validateUnitGraph(units: FeatureUnit[]): void {
+  const seen = new Set<string>();
+  for (const u of units) {
+    if (seen.has(u.name)) throw new Error(`signals: duplicate unit name "${u.name}"`);
+    seen.add(u.name);
+    for (const dep of u.dependsOn ?? []) {
+      if (seen.has(dep)) continue; // declared earlier → edge respected
+      if (units.some((x) => x.name === dep))
+        throw new Error(`signals: unit "${u.name}" dependsOn "${dep}", which is declared LATER — dependencies must come first (units run in array order)`);
+      throw new Error(`signals: unit "${u.name}" dependsOn unknown unit "${dep}"`);
+    }
+  }
+})(UNITS);
+
 async function getState(env: Env, k: string): Promise<string | null> {
   return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
 }

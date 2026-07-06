@@ -18,11 +18,11 @@ emblem.get("/v2/emblem/stats", async (c) => {
 // Assets currently locked inside Emblem vaults (held by a vault Bitcoin address), by vault count.
 emblem.get("/v2/emblem/assets", async (c) => {
   const result = await emblemAssets(c.env.DB, { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) }, 600);
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null }, 600);
 });
 
 // The vaults themselves: token id + contract + BTC address, and whether they currently hold CP value.
 emblem.get("/v2/emblem/vaults", async (c) => {
   const result = await emblemVaults(c.env.DB, { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) }, 120);
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null }, 120);
 });

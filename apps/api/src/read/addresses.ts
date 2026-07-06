@@ -15,27 +15,27 @@ export const addresses = router();
 
 addresses.get("/v2/addresses/:addr/balances", async (c) => {
   const result = await listBalances(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:addr/sends", async (c) => {
   const result = await listSends(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:addr/issuances", async (c) => {
   const result = await listIssuances(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:addr/dispensers", async (c) => {
   const result = await listDispensers(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:addr/dispenses", async (c) => {
   const result = await listDispenses(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 // Address reputation — composed, intrinsic, earned-only score from precomputed address_signals.
@@ -119,7 +119,7 @@ addresses.get("/v2/addresses/:addr/summary", async (c) => {
 
 addresses.get("/v2/addresses/:addr/issued", async (c) => {
   const result = await listIssued(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: off(c) + lim(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 // Address connections: top counterparties merged across sends + dispenses + DEX order matches.

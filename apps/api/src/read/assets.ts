@@ -17,7 +17,7 @@ export const assets = router();
 
 assets.get("/v2/assets", async (c) => {
   const rows = await listAssets(c.env.DB, { query: c.req.query("query"), limit: lim(c), offset: off(c) });
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 // Featured grid — highest-quality MARKET assets that actually have art (the has_media tag). Powers a
@@ -118,32 +118,32 @@ assets.get("/v2/reputation/asset-review", async (c) => {
 
 assets.get("/v2/assets/:asset/balances", async (c) => {
   const rows = await listAssetBalances(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/issuances", async (c) => {
   const rows = await listAssetIssuances(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/sends", async (c) => {
   const rows = await listAssetSends(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/dispensers", async (c) => {
   const rows = await listAssetDispensers(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/dispenses", async (c) => {
   const rows = await listAssetDispenses(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/orders", async (c) => {
   const rows = await listAssetOrders(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 // market data for an asset (vs XCP) from xcpdex — cross-app composition via the service binding
@@ -162,7 +162,7 @@ assets.get("/v2/assets/:asset/market", async (c) => {
 
 assets.get("/v2/assets/:asset/subassets", async (c) => {
   const rows = await listSubassets(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
-  return J(c, { result: rows, next_offset: off(c) + lim(c) });
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 // Collector cohort: "holders of X also collect…" — the holders-also-hold graph. Excludes XCP (currency,

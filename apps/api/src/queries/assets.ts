@@ -10,6 +10,7 @@
  */
 import type {
   AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
+  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow,
 } from "@xcp/shared/assets";
 import type { SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow } from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "../schema";
@@ -112,11 +113,6 @@ export async function assetTags(db: D1Database, asset: string): Promise<string[]
 
 /* ---------- holder makeup ---------- */
 
-// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
-export type HolderTierRow = { tier: string; holders: number; pct_supply: number };
-// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
-export type HolderArchetypes = { creators: number; whales: number; collectors: number; holders: number };
-
 /** Chain tip (max block) — substituted into the address-decay term of the reputation expression. */
 export async function chainTip(db: D1Database): Promise<number> {
   const r = await one<{ m: number }>(db, `SELECT MAX(block_index) m FROM blocks`);
@@ -165,15 +161,6 @@ export function assetTop1Pct(db: D1Database, asset: string): Promise<{ t: number
 }
 
 /* ---------- asset-quality calibration (parallel to /v2/reputation/review) ---------- */
-
-// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
-export interface AssetReviewDistribution {
-  n: number; mean: number; max: number; min: number; top1pct: number; top10pct: number;
-}
-// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
-export interface AssetReviewTopRow {
-  asset: string; asset_longname: string | null; holders: number; trades: number; raw: number;
-}
 
 /** Population quality distribution over asset_signals (`expr` = config-driven raw-score SQL). */
 export function assetReviewDistribution(db: D1Database, expr: string): Promise<AssetReviewDistribution | null> {

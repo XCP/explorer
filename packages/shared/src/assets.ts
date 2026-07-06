@@ -122,9 +122,25 @@ export interface AssetQualityReport {
 export interface AssetHolderMakeup {
   asset: string;
   holders: number;
-  tiers: Array<{ tier: string; holders: number; pct_supply: number }>;
+  tiers: HolderTierRow[];
   archetypes: { creators: number; collectors: number; whales: number };
   top_holder_pct: number | null;
+}
+
+/** One reputation-tier bucket of an asset's holder base (holder-makeup `tiers[]`). */
+export type HolderTierRow = { tier: string; holders: number; pct_supply: number };
+
+/** Archetype counts among an asset's holders (holder-makeup source; `holders` is the total). */
+export type HolderArchetypes = { creators: number; whales: number; collectors: number; holders: number };
+
+/** GET /v2/reputation/asset-review — population quality distribution over asset_signals. */
+export interface AssetReviewDistribution {
+  n: number; mean: number; max: number; min: number; top1pct: number; top10pct: number;
+}
+
+/** GET /v2/reputation/asset-review — a top-20-by-raw-quality row (face-validity check). */
+export interface AssetReviewTopRow {
+  asset: string; asset_longname: string | null; holders: number; trades: number; raw: number;
 }
 
 /** GET /v2/assets/:asset/market — cross-app market chip from xcpdex (null when it doesn't trade). */

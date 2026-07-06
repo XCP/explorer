@@ -11,7 +11,7 @@ export const chain = router();
 chain.get("/v2/blocks", async (c) => {
   const l = lim(c), o = off(c);
   const rows = await listBlocks(c.env.DB, l, o);
-  return J(c, { result: rows, next_offset: o + l }, 15);
+  return J(c, { result: rows, next_offset: rows.length === l ? o + l : null }, 15);
 });
 
 chain.get("/v2/blocks/:n", async (c) => {

@@ -8,6 +8,7 @@
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance — so catch-up never contends.
  */
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { syncEvents } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
@@ -93,6 +94,16 @@ app.route("/", read);     // explorer read API: /v2/assets, /v2/addresses/{a}/ba
 app.route("/", verify);   // /admin/verify — mirror-vs-CP evaluation harness
 app.route("/", legacy);   // /api/v1/* — wallet-extension compatibility surface
 app.route("/", admin);    // /admin/* — operational routes (token-gated)
+
+// Consistent error envelope: any UNCAUGHT throw from a handler returns { error } (never a bare 500 HTML).
+// A Hono HTTPException keeps its own status; anything else is an unexpected fault → 500 (and logged with the
+// request path so it's traceable). Intentional not-found payloads are returned directly by handlers (c.json(
+// { error }, 404)) — they never throw, so they don't pass through here and keep their exact shape.
+app.onError((err, c) => {
+  const status = err instanceof HTTPException ? err.status : 500;
+  console.error(`onError ${c.req.method} ${c.req.path}`, err);
+  return c.json({ error: err.message || "Internal Server Error" }, status);
+});
 
 export default {
   fetch: app.fetch,
