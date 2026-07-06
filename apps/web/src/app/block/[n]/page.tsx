@@ -9,16 +9,16 @@ import { RecordTable } from "@/components/record-table";
 import { type Col, txCell, addrCell } from "@/lib/cells";
 import { commas, short, ts } from "@/lib/format";
 
-async function loadBlock(n: string): Promise<BlockDetail> {
-  let env: Envelope<BlockDetail>;
+// Returns null on 404; only the page calls notFound() (notFound() in generateMetadata renders the
+// error boundary instead of the 404 route under OpenNext).
+async function loadBlock(n: string): Promise<BlockDetail | null> {
   try {
-    env = await getJson<Envelope<BlockDetail>>(`/v2/blocks/${encodeURIComponent(n)}`, { revalidate: 30 });
+    const env = await getJson<Envelope<BlockDetail>>(`/v2/blocks/${encodeURIComponent(n)}`, { revalidate: 30 });
+    return env.result ?? null;
   } catch (e) {
-    if (e instanceof NotFoundError) notFound();
+    if (e instanceof NotFoundError) return null;
     throw e;
   }
-  if (!env.result) notFound();
-  return env.result;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ n: string }> }): Promise<Metadata> {
@@ -31,6 +31,7 @@ export async function generateMetadata({ params }: { params: Promise<{ n: string
 export default async function BlockPage({ params }: { params: Promise<{ n: string }> }) {
   const { n } = await params;
   const item = await loadBlock(n);
+  if (!item) notFound();
 
   const txs = item.transactions ?? [];
   const cols: Col<BlockTxSummary>[] = [

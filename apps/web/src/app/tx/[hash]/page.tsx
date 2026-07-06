@@ -6,16 +6,16 @@ import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
 import { commas, short, ts } from "@/lib/format";
 
-async function loadTx(hash: string): Promise<TxDetail> {
-  let env: Envelope<TxDetail>;
+// Returns null on 404; only the page calls notFound() (notFound() in generateMetadata renders the
+// error boundary instead of the 404 route under OpenNext).
+async function loadTx(hash: string): Promise<TxDetail | null> {
   try {
-    env = await getJson<Envelope<TxDetail>>(`/v2/transactions/${encodeURIComponent(hash)}`, { revalidate: 30 });
+    const env = await getJson<Envelope<TxDetail>>(`/v2/transactions/${encodeURIComponent(hash)}`, { revalidate: 30 });
+    return env.result ?? null;
   } catch (e) {
-    if (e instanceof NotFoundError) notFound();
+    if (e instanceof NotFoundError) return null;
     throw e;
   }
-  if (!env.result) notFound();
-  return env.result;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ hash: string }> }): Promise<Metadata> {
@@ -28,6 +28,7 @@ export async function generateMetadata({ params }: { params: Promise<{ hash: str
 export default async function TxPage({ params }: { params: Promise<{ hash: string }> }) {
   const { hash } = await params;
   const item = await loadTx(hash);
+  if (!item) notFound();
 
   return (
     <Card title="Transaction">

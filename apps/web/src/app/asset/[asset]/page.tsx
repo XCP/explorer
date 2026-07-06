@@ -14,21 +14,22 @@ import { HolderMakeup } from "@/components/holder-makeup";
 import { commas } from "@/lib/format";
 
 // Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
-async function loadAsset(asset: string): Promise<AssetDetail> {
-  let env: Envelope<AssetDetail>;
+// Returns null on 404 — only the PAGE calls notFound() (notFound() inside generateMetadata renders
+// the error boundary instead of the 404 route under OpenNext); metadata degrades to a plain title.
+async function loadAsset(asset: string): Promise<AssetDetail | null> {
   try {
-    env = await getJson<Envelope<AssetDetail>>(`/v2/assets/${encodeURIComponent(asset)}`, { revalidate: 30 });
+    const env = await getJson<Envelope<AssetDetail>>(`/v2/assets/${encodeURIComponent(asset)}`, { revalidate: 30 });
+    return env.result ?? null;
   } catch (e) {
-    if (e instanceof NotFoundError) notFound();
+    if (e instanceof NotFoundError) return null;
     throw e;
   }
-  if (!env.result) notFound();
-  return env.result;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ asset: string }> }): Promise<Metadata> {
   const { asset } = await params;
   const item = await loadAsset(asset);
+  if (!item) return { title: "Not found" };
   const name = item.asset_longname || item.asset;
   const description = (item.description?.trim()
     || `Counterparty asset ${name} — ${commas(item.holder_count)} holders, supply ${commas(item.supply_normalized)}.`).slice(0, 200);
@@ -44,6 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ asset: st
 export default async function AssetPage({ params }: { params: Promise<{ asset: string }> }) {
   const { asset } = await params;
   const item = await loadAsset(asset);
+  if (!item) notFound();
 
   return (
     <>
