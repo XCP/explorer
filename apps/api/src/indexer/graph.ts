@@ -45,11 +45,11 @@ const int = (v: string | null, d: number): number => { const n = parseInt(v ?? "
 
 // ---------------------------------------------------------------------------------------------------
 // SEEDS. Compute the trust/distrust node sets from curated + the mirror, split trust k ways, stage them in
-// graph_seed, then apply. Grails are few (~10), so the IN-chunking here is effectively single-batch.
+// graph_seed, then apply. Chunk sizes respect D1's 100-bound-parameters-per-query limit (30 rows x 3 vars).
 // ---------------------------------------------------------------------------------------------------
 async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
   const out = new Set<string>();
-  for (const part of chunk(assets, 400)) {
+  for (const part of chunk(assets, 90)) {
     if (!part.length) continue;
     const ph = part.map(() => "?").join(",");
     const r = await q<{ issuer: string }>(env.DB, `SELECT DISTINCT issuer FROM assets WHERE issuer IS NOT NULL AND asset IN (${ph})`, ...part);
@@ -60,7 +60,7 @@ async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
 // holders of >=2 DISTINCT grails (aggregated across IN-chunks in TS).
 async function multiGrailHolders(env: Env, grails: string[]): Promise<string[]> {
   const held = new Map<string, Set<string>>();
-  for (const part of chunk(grails, 400)) {
+  for (const part of chunk(grails, 90)) {
     if (!part.length) continue;
     const ph = part.map(() => "?").join(",");
     const r = await q<{ holder: string; asset: string }>(env.DB,
@@ -101,7 +101,7 @@ async function applySeeds(env: Env): Promise<void> {
   for (const node of dArr) rows.push([node, DISTRUST_SLOT, ds]);
 
   await env.DB.prepare(`DELETE FROM graph_seed`).run();
-  for (const part of chunk(rows, 150)) {
+  for (const part of chunk(rows, 30)) {
     if (!part.length) continue;
     const ph = part.map(() => "(?,?,?)").join(",");
     await env.DB.prepare(`INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES ${ph}`).bind(...part.flat()).run();
