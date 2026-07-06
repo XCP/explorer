@@ -7,8 +7,18 @@ chains), GeckoTerminal (degen trading terminal — wrong energy for a historic c
 (analytics authority), GONDI (art marketplace — neutral chrome, the art provides the color),
 Tokenscan (the raw mirror — already exists; competing on table-dumps is a losing game).
 
-**xcp.io is the market and the museum: an intelligence layer over a historic art chain.**
-Its unique holdings — the things no other Counterparty surface has:
+**xcp.io is squarely an explorer — the reference site that knows everything about Counterparty,
+with an intelligence layer no raw mirror has.** The product family divides the jobs:
+
+| Site | Job |
+|---|---|
+| **xcp.io** (this) | Explore & know: search, records, provenance, scores, sales history |
+| **xcpdex** | Trade: the exchange |
+| **Digirare** | Collect: the NFT-focused browsing/collecting site |
+
+The explorer shows the art and the market *as knowledge* (what sold, what's real, who holds it) and
+deep-links the *doing* — trading to xcpdex, collecting to Digirare. Its unique holdings — the things
+no other Counterparty surface has:
 
 1. The unified cross-venue **trades ledger with USD values** (DEX + dispensers + Emblem).
 2. The **quality/reputation intelligence** (scores, tiers, holder makeup).
@@ -52,12 +62,35 @@ compelling sentence this product can say; "look at the art" is the most beautifu
 
 ## Home page hierarchy (the species decision, applied)
 
+The core audience behavior: **power users check daily and want "what's happening right now" in the
+first screenful.** The home is a *now* dashboard, then the museum, then the reference.
+
 1. Tight hero: identity line + search.
-2. **Recent sales** — trades ledger, USD-first ("RAREPEPE · $114 · dispenser · 2m").
-3. **Featured art grid** — quality-scored assets with media; the museum face.
-4. Vitals as one slim stat strip (tip · mempool · assets · transactions), not hero cards.
+2. **Now strip** — live vitals: tip block, mempool pending count, last-block age. Small, live.
+3. **Happening now** — the daily-check row: **Latest sales** (trades ledger, USD-first:
+   "RAREPEPE · $114 · dispenser · 2m") · **Mempool** (pending actions, unconfirmed treatment) ·
+   **Latest transactions**. Freshness is the product here; timestamps prominent, polling live.
+4. **Featured art grid** — quality-scored assets with media; the museum face, below the now-fold.
 5. Activity chart — secondary, drawn in accent (a red activity chart reads as an incident).
-6. Compact record feeds last.
+6. Compact record feeds last (deep cuts for browsing).
+
+## App chrome (header + footer carry the brand)
+
+**Header** (iterating — the highest-traffic UI in the product):
+- Brand mark: `xcp.io` wordmark with crimson dot — the one place brand red always lives.
+- Nav IA: Assets · Trades · Blocks · Records ▾ · Discover ▾ (intent-ranked; see nav-menu.tsx).
+- Search: the hero utility — `/` shortcut chip, shape-routing; candidates: ⌘K affordance,
+  typeahead suggestions (assets by prefix) as a later feature.
+- Buttons: exactly one primary (Connect Wallet, brand); everything else quiet.
+- Tickers: BTC/XCP compact, tabular-nums; drop below md.
+
+**Footer** (generous — the explorer's site map + trust signals, Etherscan-fat, not a strip):
+- 4 columns: **Explore** (Assets, Trades, Blocks, Mempool, all records) · **Discover**
+  (Leaderboards, Firsts, Vaults, Exchanges, Stats) · **Ecosystem** (xcpdex, Digirare, Wallet,
+  counterparty.io, GitHub) · **Data** (API, docs, this repo).
+- Brand row: wordmark + "Counterparty blockchain explorer — on Bitcoin since 2014."
+- The interesting bit: a **live sync line** — "Synced to block 956,948 · n pending" — the
+  explorer's heartbeat, in the footer on every page.
 
 ## Component recipes
 
