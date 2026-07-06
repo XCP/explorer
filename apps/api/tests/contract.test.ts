@@ -103,6 +103,11 @@ const ADDRESS_REPUTATION: Spec = {
   score: "number|null", tier: "string", band: "string", tier_meaning: "string|null", tags: "array",
   evidence: "object|null", raw: "number?", breakdown: "object?",
 };
+const MEMPOOL_ACTION: Spec = {
+  tx_hash: "string|null", event: "string", source: "string|null", destination: "string|null",
+  asset: "string|null", asset_longname: "string|null", quantity_normalized: "string|null",
+  dispenser_tx_hash: "string|null", timestamp: "number|null",
+};
 const REP_EVIDENCE: Spec = {
   first_block: "number", last_block: "number", span_years: "number", survived_assets: "number", assets_distributed: "number",
   assets_hits: "number", dividends: "number", dispense_btc: "number", btc_fees: "number", btc_spent: "number",
@@ -188,6 +193,14 @@ test("contract: GET /v2/vaults — VaultsPayload", async (t) => {
   assertRows(p.top_funders, { addr: "string", vaults: "number" }, "vaults.top_funders");
   assertRows(p.top_crackers, { addr: "string", vaults: "number" }, "vaults.top_crackers");
   assertRows(p.activity, { t: "number", v: "number" }, "vaults.activity");
+});
+
+test("contract: GET /v2/mempool — MempoolActionRow envelope (may be empty)", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson("/v2/mempool");
+  // Mempool can legitimately be empty; assert the envelope always, per-row shape only when rows exist.
+  assert.ok(j && typeof j === "object" && Array.isArray(j.result), "mempool.result must be an array");
+  assertRows(j.result, MEMPOOL_ACTION, "mempool.result");
 });
 
 test("contract: GET /v2/addresses/:a/summary — AddressSummary", async (t) => {

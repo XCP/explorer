@@ -14,6 +14,7 @@ import { firsts } from "./firsts";
 import { vaults } from "./vaults";
 import { exchanges } from "./exchanges";
 import { trades } from "./trades";
+import { mempool } from "./mempool";
 
 export const read = router();
 read.route("/", stats);
@@ -25,3 +26,4 @@ read.route("/", firsts);
 read.route("/", vaults);
 read.route("/", exchanges);
 read.route("/", trades);
+read.route("/", mempool);

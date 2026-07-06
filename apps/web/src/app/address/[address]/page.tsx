@@ -9,6 +9,7 @@ import { AddressTabs } from "@/components/address-tabs";
 import { Holdings } from "@/components/holdings";
 import { AddressConnections, AddressLineage } from "@/components/relationships";
 import { ReputationHeader } from "@/components/reputation";
+import { PendingActions } from "@/components/pending-actions";
 import { commas, short } from "@/lib/format";
 
 const BURN_ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
@@ -77,6 +78,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
       <AddressHeader address={address} s={summary} />
       <ReputationHeader address={address} />
       <AddressLineage address={address} />
+      <PendingActions address={address} />
       <Holdings address={address} />
       <AddressConnections address={address} />
       <AddressTabs address={address} />

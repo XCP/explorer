@@ -1,4 +1,4 @@
-/** Chain surfaces — blocks, transactions, mempool (GET /v2/blocks, /v2/transactions/:hash, /v2/mempool). */
+/** Chain surfaces — blocks and transactions (GET /v2/blocks, /v2/transactions/:hash). */
 
 /** GET /v2/blocks (list row). Mirror: blocks (subset). */
 export interface BlockRow {
@@ -44,15 +44,4 @@ export interface TxDetail {
   data: string | null;
   supported: 0 | 1;
   utxos_info: string | null;
-}
-
-/** GET /v2/mempool — pending "what's happening now" rows (read-through to Counterparty, not mirrored). */
-export interface MempoolRow {
-  tx_hash: string | null;
-  event: string;
-  source: string | null;
-  destination: string | null;
-  asset: string | null;
-  quantity_normalized: string | null;
-  timestamp: number | null;
 }

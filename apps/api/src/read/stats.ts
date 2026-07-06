@@ -1,23 +1,10 @@
-/** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards, mempool. */
-import { parseCounterpartyJson } from "../indexer/codec";
-import { router, J, cached } from "./respond";
+/** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards. */
+import { router, cached } from "./respond";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
 import {
   homeOverview, networkCounts, networkTotals, metricSeries, maxBlock, leaderboards, type MetricName,
 } from "../queries/stats";
-
-// Minimal shape of a Counterparty mempool event — only the fields the passthrough reads.
-interface MempoolParams {
-  source?: string | null; destination?: string | null;
-  asset?: string | null; quantity_normalized?: string | null;
-}
-interface MempoolEvent {
-  event: string;
-  tx_hash: string | null;
-  timestamp: number | null;
-  params: MempoolParams | null;
-}
 
 export const stats = router();
 
@@ -68,31 +55,4 @@ stats.get("/v2/leaderboards", async (c) => {
   const boards = await leaderboards(c.env.DB, { includeHidden: incl, addrExpr, assetExpr });
   return { result: { ...boards, include_hidden: incl } };
   });
-});
-
-/* ---------- mempool (live "what's happening now") — cached read-through to Counterparty, not mirrored ---------- */
-stats.get("/v2/mempool", async (c) => {
-  try {
-    const r = await fetch(`${c.env.COUNTERPARTY_API_BASE}/mempool/events?limit=40&verbose=true`, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return J(c, { result: [] }, 5);
-    // preserve >2^53 quantities in pending tx params
-    const j = parseCounterpartyJson(await r.text()) as { result?: MempoolEvent[] };
-    // keep one meaningful ACTION row per pending tx; skip ledger/parse noise
-    const NOISE = new Set(["TRANSACTION_PARSED", "NEW_TRANSACTION", "CREDIT", "DEBIT", "ASSET_CREATION", "BLOCK_PARSED", "NEW_BLOCK"]);
-    const seen = new Set<string>();
-    const rows: Array<Record<string, string | number | null>> = [];
-    for (const e of (j.result || [])) {
-      const p: MempoolParams = e.params || {};
-      if (NOISE.has(e.event)) continue;
-      if (!p.source && !p.asset) continue;
-      if (e.tx_hash && seen.has(e.tx_hash)) continue;
-      if (e.tx_hash) seen.add(e.tx_hash);
-      rows.push({
-        tx_hash: e.tx_hash, event: e.event,
-        source: p.source ?? null, destination: p.destination ?? null,
-        asset: p.asset ?? null, quantity_normalized: p.quantity_normalized ?? null, timestamp: e.timestamp ?? null,
-      });
-    }
-    return J(c, { result: rows }, 10); // 10s edge cache shields Counterparty from the home's traffic
-  } catch { return J(c, { result: [] }, 5); }
 });

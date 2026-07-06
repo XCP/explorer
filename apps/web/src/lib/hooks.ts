@@ -2,7 +2,8 @@
 import useSWR from "swr";
 import type { RecordKind } from "@xcp/shared/records";
 import type { AssetDetail, AssetIndexRow } from "@xcp/shared/assets";
-import type { BlockDetail, BlockRow, MempoolRow, TxDetail } from "@xcp/shared/chain";
+import type { BlockDetail, BlockRow, TxDetail } from "@xcp/shared/chain";
+import type { MempoolActionRow } from "@xcp/shared/mempool";
 import type { StatsOverview } from "@xcp/shared/stats";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import { apiUrl, type Envelope } from "./api";
@@ -18,9 +19,20 @@ function useDetail<T>(path: string | null) {
 }
 
 export const useStats = () => useDetail<StatsOverview>("/v2/");
-// mempool refreshes faster (it's the "now" view)
+// Mempool hooks poll every 10s (the "now" view). Protocol-wide, plus per-entity feeds that render nothing
+// when the entity has no pending actions. A null/undefined entity disables the fetch (SWR skips a null key).
 export function useMempool() {
-  const { data } = useSWR<Envelope<MempoolRow[]>>(apiUrl("/v2/mempool"), { refreshInterval: 15_000 });
+  const { data } = useSWR<Envelope<MempoolActionRow[]>>(apiUrl("/v2/mempool"), { refreshInterval: 10_000 });
+  return { rows: data?.result ?? [] };
+}
+export function useAddressMempool(address?: string) {
+  const { data } = useSWR<Envelope<MempoolActionRow[]>>(
+    address ? apiUrl(`/v2/addresses/${encodeURIComponent(address)}/mempool`) : null, { refreshInterval: 10_000 });
+  return { rows: data?.result ?? [] };
+}
+export function useAssetMempool(asset?: string) {
+  const { data } = useSWR<Envelope<MempoolActionRow[]>>(
+    asset ? apiUrl(`/v2/assets/${encodeURIComponent(asset)}/mempool`) : null, { refreshInterval: 10_000 });
   return { rows: data?.result ?? [] };
 }
 export const useAssets = (query?: string, offset = 0, limit = 50) =>

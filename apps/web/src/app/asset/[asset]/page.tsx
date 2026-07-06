@@ -11,6 +11,7 @@ import { MarketChip } from "@/components/market-chip";
 import { AssetTabs } from "@/components/asset-tabs";
 import { AssetCohort, HolderQuality } from "@/components/relationships";
 import { HolderMakeup } from "@/components/holder-makeup";
+import { PendingActions } from "@/components/pending-actions";
 import { commas } from "@/lib/format";
 
 // Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
@@ -76,6 +77,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
           </div>
         </div>
       </Card>
+      <PendingActions asset={item.asset} />
       <HolderMakeup asset={item.asset} />
       <HolderQuality asset={item.asset} />
       <AssetCohort asset={item.asset} />
