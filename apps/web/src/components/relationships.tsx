@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { GitBranch, Users, Network, ShieldCheck, ShieldAlert, Crown, Flame } from "lucide-react";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Card, AssetArt, Skeleton, Stat } from "@/components/ui";
-import { ad } from "@/lib/indexes";
+import { addrCell } from "@/lib/columns";
 import { commas } from "@/lib/format";
 
 // "Holders also collect" — the collector-cohort / related-collections graph, rendered as a wall of
@@ -82,7 +82,7 @@ export function AddressConnections({ address }: { address: string }) {
             <li key={r.cp} className="relative rounded overflow-hidden">
               <div className="absolute inset-y-0 left-0 bg-[--color-xcp]/10" style={{ width: `${Math.max(3, (Number(r.interactions) / max) * 100)}%` }} />
               <div className="relative flex items-center justify-between px-2 py-1.5 text-sm">
-                <span className="truncate">{ad(r.cp)}</span>
+                <span className="truncate">{addrCell(r.cp)}</span>
                 <span className="font-mono text-xs text-zinc-400 shrink-0 ml-2">{commas(r.interactions)}×</span>
               </div>
             </li>
@@ -107,7 +107,7 @@ export function AddressLineage({ address }: { address: string }) {
         {rows.map((r, i) => (
           <span key={i} className="text-zinc-400">
             {r.direction === "out" ? "swept all assets → " : "received sweep ← "}
-            {ad(r.counterparty)} <span className="text-zinc-600">· block {commas(r.block_index)}</span>
+            {addrCell(r.counterparty)} <span className="text-zinc-600">· block {commas(r.block_index)}</span>
           </span>
         ))}
       </div>

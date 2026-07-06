@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Card, AssetArt, Skeleton, Empty } from "@/components/ui";
 import { RecordTable } from "@/components/record-table";
-import { as } from "@/lib/indexes";
+import { assetCell } from "@/lib/columns";
 import { commas } from "@/lib/format";
 
 // Holdings as a visual collection (the owner's #1 want) — a wall of the actual card art, sorted by
@@ -35,7 +35,7 @@ export function Holdings({ address }: { address: string }) {
         </div>
       ) : (
         <RecordTable rows={rows} cols={[
-          { label: "Asset", cell: (r) => as(r.asset) },
+          { label: "Asset", cell: (r) => assetCell(r.asset) },
           { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
         ]} />
       )}

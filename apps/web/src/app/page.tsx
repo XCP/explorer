@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useStats, useBlocks, useIndex, useAssets, useMempool } from "@/lib/hooks";
+import useSWR from "swr";
+import { apiUrl } from "@/lib/api";
+import { useStats, useBlocks, useIndex, useMempool } from "@/lib/hooks";
 import { usePrices } from "@/lib/prices";
 import { Card, Stat, Table, Row, Cell, Skeleton, Empty, AssetIcon, AssetArt } from "@/components/ui";
 import { ActivityChart } from "@/components/activity-chart";
 import { SearchBox } from "@/components/search-box";
-import { commas, ts, short } from "@/lib/format";
+import { commas, ts } from "@/lib/format";
 import { orderView } from "@/lib/trading-pair";
 
 function Feed({ title, href, rows, head, render }: { title: string; href: string; rows: any[]; head: any[]; render: (r: any, i: number) => React.ReactNode }) {
@@ -29,7 +31,9 @@ export default function Home() {
   const { rows: dispensers } = useIndex("dispensers", 0, 8);
   const { rows: blocks } = useBlocks(0, 8);
   const { rows: mempool } = useMempool();
-  const { rows: assets } = useAssets(undefined, 0, 14);
+  // Featured = top-quality assets that actually have art (has_media). 12-wide grid; only real art shows.
+  const { data: featuredData } = useSWR<{ result: any[] }>(apiUrl("/v2/featured?limit=12"));
+  const featured = featuredData?.result ?? [];
 
   return (
     <>
@@ -65,7 +69,7 @@ export default function Home() {
             <Row key={i}>
               <Cell primary>{assetCell(r.asset, r.asset_longname || r.asset)}</Cell>
               <Cell numeric>{commas(r.quantity_normalized)}</Cell>
-              <Cell muted><Link href={`/address/${r.issuer}`} className="font-mono">{short(r.issuer)}</Link></Cell>
+              <Cell muted><Link href={`/address/${r.issuer}`} className="font-mono">{r.issuer}</Link></Cell>
             </Row>
           )} />
         <Feed title="Dispenses" href="/dispenses" rows={dispenses}
@@ -74,7 +78,7 @@ export default function Home() {
             <Row key={i}>
               <Cell primary>{assetCell(r.asset)}</Cell>
               <Cell numeric>{commas(r.dispense_quantity_normalized)}</Cell>
-              <Cell muted><Link href={`/address/${r.destination}`} className="font-mono">{short(r.destination)}</Link></Cell>
+              <Cell muted><Link href={`/address/${r.destination}`} className="font-mono">{r.destination}</Link></Cell>
             </Row>
           )} />
       </div>
@@ -99,7 +103,7 @@ export default function Home() {
             <Row key={i}>
               <Cell primary>{assetCell(r.asset)}</Cell>
               <Cell numeric>{commas(r.give_remaining_normalized)}</Cell>
-              <Cell muted><Link href={`/address/${r.source}`} className="font-mono">{short(r.source)}</Link></Cell>
+              <Cell muted><Link href={`/address/${r.source}`} className="font-mono">{r.source}</Link></Cell>
             </Row>
           )} />
       </div>
@@ -116,7 +120,7 @@ export default function Home() {
                 <Row key={`${m.tx_hash ?? "x"}-${i}`}>
                   <Cell muted>{String(m.event || "").toLowerCase().replace(/_/g, " ")}</Cell>
                   <Cell primary>{m.asset ? assetCell(m.asset) : "—"}</Cell>
-                  <Cell muted>{m.source ? <Link href={`/address/${m.source}`} className="font-mono">{short(m.source)}</Link> : "—"}</Cell>
+                  <Cell muted>{m.source ? <Link href={`/address/${m.source}`} className="font-mono">{m.source}</Link> : "—"}</Cell>
                 </Row>
               ))}
             </Table>
@@ -133,14 +137,17 @@ export default function Home() {
           )} />
       </div>
 
-      {/* art accent */}
+      {/* featured — curated by quality, and ONLY assets with real art (has_media). 12-wide. The card
+          aspect box (5:7) suits the collection: ~40% is portrait card art, ~50% square — object-contain
+          (in AssetArt) shows the whole image either way, letterboxed on the dark bg, never cropped. */}
       <section>
-        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Latest assets</h2>
-        {assets.length === 0 ? <Skeleton rows={2} /> : (
-          <div className="flex flex-wrap gap-2">
-            {assets.slice(0, 14).map((a: any) => (
+        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Featured <span className="text-zinc-600 font-normal">— top quality, with art</span></h2>
+        {featured.length === 0 ? <Skeleton rows={2} /> : (
+          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2">
+            {featured.map((a: any) => (
               <Link key={a.asset} href={`/asset/${a.asset}`} title={a.asset_longname || a.asset} className="group">
-                <AssetArt asset={a.asset} className="w-16 h-16 rounded-lg border border-zinc-800 group-hover:border-[--color-xcp] transition-colors" />
+                <AssetArt asset={a.asset} className="w-full aspect-[5/7] rounded-lg border border-zinc-800 group-hover:border-[--color-xcp] transition-colors" />
+                <div className="mt-1 text-[10px] text-zinc-500 truncate group-hover:text-zinc-300">{a.asset_longname || a.asset}</div>
               </Link>
             ))}
           </div>

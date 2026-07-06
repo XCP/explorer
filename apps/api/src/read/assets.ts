@@ -1,6 +1,6 @@
 /** Asset surfaces: index, detail (with derived supply/burned/circulating), per-asset record tabs,
  *  market data (xcpdex), and the research reads (collector cohort, holder quality). */
-import { router, J, lim, off, ORDER_SELECT, activeBalance, round } from "./shared";
+import { router, J, lim, off, ORDER_SELECT, activeBalance, round, cached } from "./shared";
 import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 
@@ -11,13 +11,31 @@ assets.get("/v2/assets", async (c) => {
   const where = q ? `WHERE a.asset LIKE ? OR a.asset_longname LIKE ?` : "";
   const binds = q ? [q.toUpperCase() + "%", q + "%"] : [];
   const rows = await c.env.DB.prepare(
+    // description is truncated server-side (the list only shows a clamped single line); the full text is on
+    // the single-asset detail endpoint. mime_type isn't rendered in the list, so it's omitted.
     `SELECT a.asset, a.asset_longname, a.type, a.issuer, a.owner, a.divisible, a.locked, a.supply_normalized,
-            a.description, a.mime_type,
+            substr(a.description,1,140) description,
             EXISTS(SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=a.asset AND t.tag='stamp') stamp,
             a.first_issuance_block_time, a.last_issuance_block_index
      FROM assets a ${where} ORDER BY a.last_issuance_block_index DESC LIMIT ? OFFSET ?`
   ).bind(...binds, lim(c), off(c)).all();
   return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+});
+
+// Featured grid — highest-quality MARKET assets that actually have art (the has_media tag). Powers a
+// "feature only assets with media" curation grid. Default 12 (the leaderboard card design); up to 144 (12x12).
+assets.get("/v2/featured", async (c) => {
+  const n = lim(c, 12, 144);
+  return cached(c, `featured:${n}`, { ttl: 600, edge: 120 }, async () => {
+    const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
+    const rows = await c.env.DB.prepare(
+      `SELECT s.asset, s.asset_longname, ROUND((${expr}),1) score
+       FROM asset_signals s JOIN tags t ON t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='has_media'
+       WHERE (s.trades>0 OR s.dispenses>0) AND COALESCE(s.low_quality,0)=0
+       ORDER BY (${expr}) DESC LIMIT ?`
+    ).bind(n).all();
+    return { result: rows.results };
+  });
 });
 
 assets.get("/v2/assets/:asset", async (c) => {
@@ -155,7 +173,7 @@ assets.get("/v2/assets/:asset/balances", async (c) => {
 assets.get("/v2/assets/:asset/issuances", async (c) => {
   const a = c.req.param("asset").toUpperCase();
   const rows = await c.env.DB.prepare(
-    `SELECT tx_hash, block_index, block_time, source, issuer, transfer, quantity_normalized, description, status
+    `SELECT tx_hash, block_index, block_time, source, issuer, transfer, quantity_normalized, status
      FROM issuances WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
   ).bind(a, lim(c), off(c)).all();
   return J(c, { result: rows.results, next_offset: off(c) + lim(c) });

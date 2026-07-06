@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { type ReactNode } from "react";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Card, Stat, AssetIcon, Skeleton } from "@/components/ui";
-import { commas, short } from "@/lib/format";
+import { commas } from "@/lib/format";
 
 function Board({ title, rows, render }: { title: string; rows: any[]; render: (r: any) => ReactNode }) {
   return (
@@ -46,7 +46,7 @@ export default function ExchangesPage() {
             </div>
             {ex.map((e) => (
               <div key={e.addr} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1.5 border-b border-zinc-900 last:border-0">
-                <span className="flex items-center gap-2 min-w-0"><span className="text-zinc-200">{e.name}</span><Link href={`/address/${e.addr}`} className="font-mono text-xs text-zinc-500 truncate">{short(e.addr)}</Link></span>
+                <span className="flex items-center gap-2 min-w-0"><span className="text-zinc-200">{e.name}</span><Link href={`/address/${e.addr}`} className="font-mono text-xs text-zinc-500 break-all">{e.addr}</Link></span>
                 <span className="text-right font-mono text-zinc-400 text-xs">{commas(e.assets_received)}</span>
                 <span className="text-right font-mono text-zinc-400 text-xs">{commas(e.in_peers)}</span>
               </div>

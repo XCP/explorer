@@ -27,6 +27,14 @@ function factorValue(f: Factor, row: any, tip: number): number {
     const dt = num(row.distinct_traders);
     return ((num(row.last_trade_blk) - num(row.first_trade_blk)) / SCALARS.blockScale) * (dt / (dt + 3)) * assetDecay(row);
   }
+  // circulating-scarcity: offset − log10(circulating supply). circulating = supply × (100 − burned_pct)/100
+  // (burn-adjusted, so a fully-burned high-issuance asset reads as scarce). Zero/unknown supply → no signal.
+  if (f.key === "__circulating_scarcity") {
+    const supply = num(row.supply);
+    if (supply <= 0) return 0;
+    const circ = Math.max(1, supply * (100 - num(row.burned_pct)) / 100);
+    return SCALARS.scarcityOffset - Math.log10(circ);
+  }
   switch (f.transform) {
     case "age": return ((tip - num(row.first_blk)) / SCALARS.blockScale) * addrDecay(row, tip); // address age decays if idle
     case "span": return (num(row.last_blk) - num(row.first_blk)) / SCALARS.blockScale; // __span (address)
@@ -109,6 +117,7 @@ export function rawSqlExpr(factors: Factor[], tip: number): string {
     if (f.key === "__trades_per_holder") terms.push(`${w}*LN(1+MAX(0,COALESCE(trades,0)*1.0/NULLIF(holders,0)))`);
     else if (f.key === "__asset_age") terms.push(`${w}*(COALESCE(age_blocks,0)/${B}.0)*${aDk}`);
     else if (f.key === "__durability") terms.push(`${w}*((COALESCE(last_trade_blk,0)-COALESCE(first_trade_blk,0))/${B}.0)*(COALESCE(distinct_traders,0)*1.0/(COALESCE(distinct_traders,0)+3.0))*${aDk}`);
+    else if (f.key === "__circulating_scarcity") terms.push(`${w}*(CASE WHEN COALESCE(supply,0)<=0 THEN 0 ELSE ${SCALARS.scarcityOffset} - LN(MAX(1.0,COALESCE(supply,0)*(100-COALESCE(burned_pct,0))/100.0))/LN(10) END)`);
     else if (f.transform === "age") terms.push(`${w}*((${tip}-COALESCE(first_blk,${tip}))/${B}.0)*${adDk}`);
     else if (f.transform === "span") terms.push(`${w}*((COALESCE(last_blk,0)-COALESCE(first_blk,0))/${B}.0)`);
     else if (f.transform === "linear") terms.push(`${w}*(COALESCE(${f.key},0)/100.0)`);

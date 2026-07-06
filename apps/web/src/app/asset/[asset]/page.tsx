@@ -9,7 +9,7 @@ import { Card, KV, AssetArt, LockBadge, Loading, ErrorBox, Empty } from "@/compo
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { AssetCohort, HolderQuality } from "@/components/relationships";
 import { HolderMakeup } from "@/components/holder-makeup";
-import { bl, tx, ad, as, time, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/indexes";
+import { blockCell, txCell, addrCell, assetCell, timeCell, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/columns";
 import { commas, short } from "@/lib/format";
 
 // Live market chip from xcpdex (cross-app composition) — only renders if the asset trades.
@@ -42,7 +42,7 @@ export default function AssetPage({ params }: { params: Promise<{ asset: string 
     { label: "Holders", path: `${base}/balances`, cols: [
       { label: "Holder", cell: (r) => (
         <span className="inline-flex items-center gap-1.5 min-w-0">
-          {r.holder_type === "address" ? ad(r.holder) : <span className="font-mono">{short(r.holder)}</span>}
+          {r.holder_type === "address" ? addrCell(r.holder) : <span className="font-mono">{short(r.holder)}</span>}
           {r.is_burn ? <span className="inline-flex items-center gap-0.5 rounded bg-orange-500/10 text-orange-400 px-1.5 py-0.5 text-[10px] ring-1 ring-inset ring-orange-500/20 shrink-0"><Flame className="size-2.5" />burn</span> : null}
           {r.is_exchange ? <span className="inline-flex items-center gap-0.5 rounded bg-violet-500/10 text-violet-300 px-1.5 py-0.5 text-[10px] ring-1 ring-inset ring-violet-500/20 shrink-0"><Landmark className="size-2.5" />exchange</span> : null}
         </span>
@@ -50,21 +50,21 @@ export default function AssetPage({ params }: { params: Promise<{ asset: string 
       { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
     ]},
     { label: "Issuances", path: `${base}/issuances`, cols: [
-      { label: "Block", numeric: true, cell: (r) => bl(r.block_index) }, { label: "Time", cell: (r) => time(r.block_time) },
+      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) }, { label: "Time", cell: (r) => timeCell(r.block_time) },
       { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-      { label: "Issuer", cell: (r) => ad(r.issuer) }, { label: "Tx", cell: (r) => tx(r.tx_hash) },
+      { label: "Issuer", cell: (r) => addrCell(r.issuer) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
     { label: "Dispensers", path: `${base}/dispensers`, cols: DISPENSER_COLS },
     { label: "Dispenses", path: `${base}/dispenses`, cols: [
-      { label: "Block", numeric: true, cell: (r) => bl(r.block_index) },
+      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
       { label: "Quantity", numeric: true, cell: (r) => commas(r.dispense_quantity_normalized) },
-      { label: "Buyer", cell: (r) => ad(r.destination) }, { label: "Tx", cell: (r) => tx(r.tx_hash) },
+      { label: "Buyer", cell: (r) => addrCell(r.destination) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
     { label: "Orders", path: `${base}/orders`, cols: ORDER_COLS },
     { label: "Sends", path: `${base}/sends`, cols: [
-      { label: "Block", numeric: true, cell: (r) => bl(r.block_index) },
-      { label: "From", cell: (r) => ad(r.source) }, { label: "To", cell: (r) => ad(r.destination) },
-      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) }, { label: "Tx", cell: (r) => tx(r.tx_hash) },
+      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
+      { label: "From", cell: (r) => addrCell(r.source) }, { label: "To", cell: (r) => addrCell(r.destination) },
+      { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
     { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS },
     ...(item.issuer ? [{ label: "From issuer", path: `/v2/addresses/${item.issuer}/issued`, cols: ASSET_LIST_COLS }] : []),
@@ -87,8 +87,8 @@ export default function AssetPage({ params }: { params: Promise<{ asset: string 
               {Number(item.burned) > 0 && <KV k="Burned" v={<span className="font-mono inline-flex items-center gap-1 text-orange-400"><Flame className="size-3" />{commas(item.burned_normalized)}</span>} />}
               <KV k="Divisible" v={item.divisible ? "yes" : "no"} />
               <KV k="Holders" v={commas(item.holder_count)} />
-              <KV k="Issuer" v={item.issuer ? <span className="inline-flex items-center gap-1"><Hammer className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.issuer}`} className="font-mono">{short(item.issuer)}</Link></span> : "—"} />
-              <KV k="Owner" v={item.owner ? <span className="inline-flex items-center gap-1"><Key className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.owner}`} className="font-mono">{short(item.owner)}</Link></span> : "—"} />
+              <KV k="Issuer" v={item.issuer ? <span className="inline-flex items-center gap-1"><Hammer className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.issuer}`} className="font-mono break-all">{item.issuer}</Link></span> : "—"} />
+              <KV k="Owner" v={item.owner ? <span className="inline-flex items-center gap-1"><Key className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.owner}`} className="font-mono break-all">{item.owner}</Link></span> : "—"} />
             </div>
             {item.tags?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{item.tags.map((t: string) => <span key={t} className="rounded bg-zinc-800 text-zinc-300 px-1.5 py-0.5 text-[10px]">{t}</span>)}</div> : null}
             {item.description && <p className="mt-2 text-sm text-zinc-400 break-all">{item.description}</p>}

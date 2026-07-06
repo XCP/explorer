@@ -11,7 +11,7 @@ interface First { key: string; label: string; block: number; time: number; date:
 function Entity({ type, ref }: { type: string; ref: string }) {
   if (type === "asset")
     return <Link href={`/asset/${ref}`} className="flex items-center gap-1.5 min-w-0"><AssetIcon asset={ref} size={16} /><span className="truncate">{ref}</span></Link>;
-  if (type === "address") return <Link href={`/address/${ref}`} className="font-mono">{short(ref)}</Link>;
+  if (type === "address") return <Link href={`/address/${ref}`} className="font-mono break-all">{ref}</Link>;
   if (type === "tx") return <Link href={`/tx/${ref}`} className="font-mono">{short(ref)}</Link>;
   if (type === "block") return <Link href={`/block/${ref}`} className="font-mono">#{ref}</Link>;
   return <span className="truncate">{ref}</span>;

@@ -30,7 +30,7 @@ addresses.get("/v2/addresses/:addr/sends", async (c) => {
 addresses.get("/v2/addresses/:addr/issuances", async (c) => {
   const h = c.req.param("addr");
   const rows = await c.env.DB.prepare(
-    `SELECT tx_hash, block_index, block_time, asset, quantity_normalized, transfer, description, status
+    `SELECT tx_hash, block_index, block_time, asset, quantity_normalized, transfer, status
      FROM issuances WHERE source=? OR issuer=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
   ).bind(h, h, lim(c), off(c)).all();
   return J(c, { result: rows.results, next_offset: off(c) + lim(c) });

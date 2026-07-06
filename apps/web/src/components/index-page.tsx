@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useIndex, type IndexName } from "@/lib/hooks";
-import { INDEXES } from "@/lib/indexes";
+import { INDEXES } from "@/lib/columns";
 import { Card, Loading, ErrorBox, Empty, SecondaryButton } from "@/components/ui";
 import { RecordTable } from "@/components/record-table";
 

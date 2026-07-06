@@ -9,7 +9,7 @@ import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { Holdings } from "@/components/holdings";
 import { AddressConnections, AddressLineage } from "@/components/relationships";
 import { ReputationHeader } from "@/components/reputation";
-import { bl, tx, ad, as, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/indexes";
+import { blockCell, txCell, addrCell, assetCell, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/columns";
 import { commas } from "@/lib/format";
 
 const BURN_ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
@@ -60,26 +60,26 @@ export default function AddressPage({ params }: { params: Promise<{ address: str
 
   const tabs: TabDef[] = [
     { label: "Sends", path: `${base}/sends`, cols: [
-      { label: "Block", numeric: true, cell: (r) => bl(r.block_index) },
-      { label: "Asset", cell: (r) => as(r.asset) },
+      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
+      { label: "Asset", cell: (r) => assetCell(r.asset) },
       { label: "Direction", cell: (r) => r.source === address ? <span className="text-red-400">out</span> : <span className="text-green-400">in</span> },
-      { label: "Counterparty", cell: (r) => ad(r.source === address ? r.destination : r.source) },
+      { label: "Counterparty", cell: (r) => addrCell(r.source === address ? r.destination : r.source) },
       { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-      { label: "Tx", cell: (r) => tx(r.tx_hash) },
+      { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
     { label: "Issuances", path: `${base}/issuances`, cols: [
-      { label: "Block", numeric: true, cell: (r) => bl(r.block_index) },
-      { label: "Asset", cell: (r) => as(r.asset) },
+      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
+      { label: "Asset", cell: (r) => assetCell(r.asset) },
       { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-      { label: "Tx", cell: (r) => tx(r.tx_hash) },
+      { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
     { label: "Dispensers", path: `${base}/dispensers`, cols: DISPENSER_COLS },
     { label: "Dispenses", path: `${base}/dispenses`, cols: [
-      { label: "Block", numeric: true, cell: (r) => bl(r.block_index) },
-      { label: "Asset", cell: (r) => as(r.asset) },
+      { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
+      { label: "Asset", cell: (r) => assetCell(r.asset) },
       { label: "Quantity", numeric: true, cell: (r) => commas(r.dispense_quantity_normalized) },
-      { label: "Counterparty", cell: (r) => ad(r.source === address ? r.destination : r.source) },
-      { label: "Tx", cell: (r) => tx(r.tx_hash) },
+      { label: "Counterparty", cell: (r) => addrCell(r.source === address ? r.destination : r.source) },
+      { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
     { label: "Issued", path: `${base}/issued`, cols: ASSET_LIST_COLS },
   ];

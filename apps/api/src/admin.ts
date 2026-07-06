@@ -5,10 +5,14 @@
 import { Hono } from "hono";
 import type { Env } from "./index";
 import { syncEvents } from "./indexer/sync";
-import { runSignalsStep } from "./indexer/signals";
+import { runSignalsStep, runSignalsCascade, verifySignals } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags } from "./indexer/tags";
+import { crawlCollections } from "./indexer/collections";
+import { crawlEmblemSales } from "./indexer/emblem-sales";
+import { buildTrades } from "./indexer/trades";
+import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -24,11 +28,39 @@ admin.post("/admin/sync", async (c) => {
   return c.json(await syncEvents(c.env, { maxEvents: events }));
 });
 
+// Full re-index: reset the event cursor to -1 so the next /admin/sync (or cron) WIPES balances + snapshots
+// and replays from event 0. Needed to heal balances corrupted by the old reorg high-water bug — the
+// per-balance high-water makes a plain replay a no-op on existing balances, so they must be wiped first. Heavy.
+admin.post("/admin/reindex", async (c) => {
+  await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('last_event_index','-1') ON CONFLICT(key) DO UPDATE SET value='-1'`),
+    c.env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('last_block_index','0') ON CONFLICT(key) DO UPDATE SET value='0'`),
+    c.env.DB.prepare(`DELETE FROM indexer_state WHERE key='last_block_hash'`),
+  ]);
+  return c.json({ ok: true, note: "cursor reset to -1; next sync wipes balances+snapshots and replays from event 0" });
+});
+
 // Rebuild precomputed reputation signal tables (address_signals + asset_signals). Heavy; cron advances
 // it a couple bounded passes per caught-up tick. Manual trigger here for on-demand refresh.
 admin.post("/admin/refresh-signals", async (c) => {
   const steps = Math.min(6, Math.max(1, parseInt(c.req.query("steps") || "3", 10)));
   return c.json(await runSignalsStep(c.env, steps));
+});
+
+// Per-block dirty CASCADE (Layer B): recompute only the entities touched since the cascade cursor. Loop until
+// caught_up. Returns needs_backfill until a full runSignalsStep cycle has anchored the cursor at tip.
+admin.post("/admin/cascade-signals", async (c) => {
+  return c.json(await runSignalsCascade(c.env));
+});
+
+// VERIFIER (safety gate): recompute one entity's non-periodic feature columns via the dirty `.scoped` SQL and
+// diff against the value the full rebuild left. identical:true ⇒ the cascade matches the canonical rebuild.
+//   /admin/verify-signals?scope=asset&id=RAREPEPE   ·   ?scope=address&id=1GQ...
+admin.post("/admin/verify-signals", async (c) => {
+  const scope = c.req.query("scope") === "address" ? "address" : "asset";
+  const id = c.req.query("id");
+  if (!id) return c.json({ error: "need ?id=" }, 400);
+  return c.json(await verifySignals(c.env, scope, id));
 });
 
 // Advance the Emblem Vault crawl one step: enumerate token ids (Alchemy, per-contract pageKey cursor) +
@@ -48,6 +80,34 @@ admin.post("/admin/crawl-supply", async (c) => {
 // after the signals refresh; manual trigger here.
 admin.post("/admin/build-tags", async (c) => {
   return c.json(await buildTags(c.env));
+});
+
+// Refresh collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf. Cron runs it ~daily;
+// manual trigger here to rebuild on demand.
+admin.post("/admin/crawl-collections", async (c) => {
+  return c.json(await crawlCollections(c.env));
+});
+
+// Index Emblem vault sales (Alchemy getNFTSales) into emblem_sales. Loop until contract_done cycles; the
+// `sample` field returns the raw Alchemy shape on the first run so we can confirm the fields.
+admin.post("/admin/crawl-emblem-sales", async (c) => {
+  return c.json(await crawlEmblemSales(c.env));
+});
+
+// Materialize the polymorphic `trades` ledger (dex + dispense + emblem). Loop until {done:true}; on-chain
+// venues advance a CP-block window per call, Emblem is re-folded whole each pass.
+admin.post("/admin/build-trades", async (c) => {
+  return c.json(await buildTrades(c.env));
+});
+
+// Backfill the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP). Loop a couple times to backfill.
+admin.post("/admin/crawl-prices", async (c) => {
+  return c.json(await crawlPrices(c.env));
+});
+
+// Map trades onto the price calendar (fills usd_value). Loop until {done:true}.
+admin.post("/admin/apply-usd", async (c) => {
+  return c.json(await applyTradeUsd(c.env));
 });
 
 // SIGNAL-TEST HARNESS — the research loop's measuring stick. Score a CANDIDATE signal (any SQL expression

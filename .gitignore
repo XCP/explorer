@@ -3,6 +3,10 @@ node_modules/
 dist/
 .dev.vars
 *.log
+tailout*
+*.tok
+.salestok
+.tt
 .DS_Store
 .next/
 .open-next/

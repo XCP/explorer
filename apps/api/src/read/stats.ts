@@ -1,26 +1,29 @@
 /** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards, mempool. */
 import { parseCpJson } from "../indexer/codec";
-import { router, J, xcpDestroyed } from "./shared";
+import { router, J, cached, xcpDestroyed } from "./shared";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
 
 export const stats = router();
 
 /* ---------- home / stats ---------- */
-stats.get("/v2/", async (c) => {
-  const s = await c.env.DB.prepare(
-    `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            (SELECT COUNT(*) FROM assets) assets,
-            (SELECT COUNT(*) FROM transactions) transactions,
-            (SELECT COUNT(*) FROM balances) balances,
-            (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`
-  ).first<any>();
-  return J(c, { result: s }, 15);
-});
+// home summary — counts are O(n) covering-index scans (millions of rows); the D1 response cache runs them at
+// most once/ttl globally instead of once per colo. Edge stays short so `tip`/`indexed_block` feel live.
+stats.get("/v2/", async (c) =>
+  cached(c, "home", { ttl: 60, edge: 15 }, async () => ({
+    result: await c.env.DB.prepare(
+      `SELECT (SELECT MAX(block_index) FROM blocks) tip,
+              (SELECT COUNT(*) FROM assets) assets,
+              (SELECT COUNT(*) FROM transactions) transactions,
+              (SELECT COUNT(*) FROM balances) balances,
+              (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`
+    ).first<any>(),
+  })));
 
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
   const days = Math.min(365, Math.max(7, parseInt(c.req.query("days") || "90", 10)));
+  return cached(c, `metrics:${days}`, { ttl: 1800, edge: 300 }, async () => {
   const series = async (sql: string) => (await c.env.DB.prepare(sql).bind(days).all<{ d: number; v: number }>()).results
     .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
   // transactions from blocks (cheap: 1 row/block carries CP's tx_count); issuances + dispenses by count
@@ -34,11 +37,13 @@ stats.get("/v2/metrics", async (c) => {
   const btc_fees = await series(`SELECT block_time/86400 d, SUM(CAST(fee AS REAL))/100000000.0 v FROM transactions WHERE block_time>0 AND fee IS NOT NULL GROUP BY d ORDER BY d DESC LIMIT ?`);
   const xcp_burned = await series(`SELECT block_time/86400 d, SUM(CAST(amt AS REAL))/100000000.0 v
     FROM (${xcpDestroyed("block_time, ")}) WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`);
-  return J(c, { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } }, 1800);
+  return { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } };
+  });
 });
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
-stats.get("/v2/stats", async (c) => {
+stats.get("/v2/stats", async (c) =>
+  cached(c, "stats", { ttl: 3600, edge: 120 }, async () => {
   const counts: any = await c.env.DB.prepare(
     `SELECT (SELECT MAX(block_index) FROM blocks) tip,
             (SELECT COUNT(*) FROM assets) assets,
@@ -60,14 +65,15 @@ stats.get("/v2/stats", async (c) => {
     `SELECT (SELECT COALESCE(SUM(CAST(fee AS REAL)),0)/100000000.0 FROM transactions) btc_fees,
             (SELECT COALESCE(SUM(CAST(amt AS REAL)),0)/100000000.0 FROM (${xcpDestroyed()})) xcp_destroyed`
   ).first();
-  return J(c, { result: { ...counts, ...totals } }, 3600);
-});
+  return { result: { ...counts, ...totals } };
+  }));
 
 /* ---------- leaderboards: derived relationships across the whole dataset (cached) ---------- */
 stats.get("/v2/leaderboards", async (c) => {
   // Fast reads from precomputed signal tables. Low-quality assets (bridge/exchange tokens + wash) are
   // HIDDEN by default — they distort the BTC/dispense boards (?include_hidden=1 to show them).
   const incl = c.req.query("include_hidden") === "1";
+  return cached(c, `lb:${incl ? 1 : 0}`, { ttl: 600, edge: 120 }, async () => {
   // address boards use CLEAN (low-quality-excluded) BTC so bridge deposit flow doesn't inflate merchants/spenders
   const dispCol = incl ? "dispense_btc" : "clean_dispense_btc";
   const spendCol = incl ? "btc_spent" : "clean_btc_spent";
@@ -103,14 +109,15 @@ stats.get("/v2/leaderboards", async (c) => {
     q(`SELECT addr, ROUND((${addrExpr}),1) score FROM address_signals WHERE is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 ORDER BY (${addrExpr}) DESC LIMIT 12`),
     q(`SELECT asset, asset_longname, ROUND((${assetExpr}),1) score FROM asset_signals WHERE (trades>0 OR dispenses>0)${lowqF} ORDER BY (${assetExpr}) DESC LIMIT 12`),
   ]);
-  return J(c, { result: {
+  return { result: {
     top_creators: topCreators, top_collectors: topCollectors, top_merchants: topMerchants, biggest_spenders: bigSpenders,
     richest_xcp: richXcp, most_held: mostHeld, most_traded: mostTraded, most_durable: durable, top_dispensed: topDispensed,
     top_dispensers: topDispensers, top_hits: topHits, broadest_holders: broadestHolders, most_creator_held: mostCreatorHeld,
     top_stamp_creators: stampCreators, top_stamp_collectors: stampCollectors, top_src20_deployers: src20Deployers,
     most_held_stamps: mostHeldStamps, top_reputation: topReputation, top_quality: topQuality,
     include_hidden: incl,
-  } }, 600);
+  } };
+  });
 });
 
 /* ---------- mempool (live "what's happening now") — cached read-through to CP, not mirrored ---------- */

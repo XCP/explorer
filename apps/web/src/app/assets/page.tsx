@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useAssets } from "@/lib/hooks";
 import { Card, Table, Row, Cell, Skeleton, ErrorBox, Empty, AssetIcon, LockBadge, SecondaryButton } from "@/components/ui";
-import { commas, short } from "@/lib/format";
+import { commas } from "@/lib/format";
 
 export default function AssetsPage() {
   const [query, setQuery] = useState("");
@@ -31,7 +31,7 @@ export default function AssetsPage() {
                 </Cell>
                 <Cell muted><span className="block max-w-xs truncate">{a.description || ""}</span></Cell>
                 <Cell numeric>{commas(a.supply_normalized)}</Cell>
-                <Cell muted><Link href={`/address/${a.issuer}`} className="font-mono">{short(a.issuer)}</Link></Cell>
+                <Cell muted><Link href={`/address/${a.issuer}`} className="font-mono">{a.issuer}</Link></Cell>
                 <Cell>{a.locked ? <LockBadge locked /> : <LockBadge />}</Cell>
               </Row>
             ))}

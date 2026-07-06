@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Skeleton, Empty } from "@/components/ui";
 import { RecordTable } from "@/components/record-table";
-import type { Col } from "@/lib/indexes";
+import type { Col } from "@/lib/columns";
 
 export type TabDef = { label: string; path: string; cols: Col[] };
 

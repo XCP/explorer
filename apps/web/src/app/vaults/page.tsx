@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { type ReactNode } from "react";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Card, Stat, AssetIcon, AreaChart, Skeleton } from "@/components/ui";
-import { commas, short } from "@/lib/format";
+import { commas } from "@/lib/format";
 
 function Board({ title, rows, render }: { title: string; rows: any[]; render: (r: any) => ReactNode }) {
   return (
@@ -26,7 +26,7 @@ export default function VaultsPage() {
   const { data } = useSWR<Envelope<any>>(apiUrl("/v2/vaults"));
   const d = data?.result ?? {};
   const s = d.summary ?? {};
-  const Addr = (a: string) => <Link href={`/address/${a}`} className="font-mono flex-1 truncate min-w-0">{short(a)}</Link>;
+  const Addr = (a: string) => <Link href={`/address/${a}`} className="font-mono flex-1 min-w-0 break-all">{a}</Link>;
   const Asset = (asset: string, longname?: string) => (
     <Link href={`/asset/${asset}`} className="flex items-center gap-2 flex-1 min-w-0"><AssetIcon asset={asset} size={16} /><span className="truncate">{longname || asset}</span></Link>
   );

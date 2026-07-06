@@ -4,53 +4,70 @@
  * so each is an instant index seek). Includes our derived firsts (stamp/SRC-20/SRC-721/BTNS) from the tag
  * + classification layer. Pure read off the mirror; cached an hour (history doesn't change).
  */
-import { router, J } from "./shared";
+import { router, cached } from "./shared";
 
 export const firsts = router();
 
 // each sql returns: b (block index), t (unix block time), ref (display + link id), typ (entity type for linking)
 type First = { key: string; label: string; sql: string };
+
+// EARLIEST matching row, index-fast. A bare `ORDER BY block_index, <tx_index|event_index> LIMIT 1` can't use a
+// single-column block_index index for the secondary sort, so SQLite full-scans the whole table into a TEMP
+// B-TREE (sends = 1.75M rows read for ONE row — confirmed via EXPLAIN QUERY PLAN). Instead we narrow to
+// MIN(block_index) first — which DOES use the block_index index (and for filtered firsts stops at the first
+// matching block) — then order only the handful of rows inside that single earliest block. Verified to return
+// the identical row while turning the SCAN+TEMP-B-TREE into a SEARCH ... USING INDEX (block_index=?).
+const earliest = (
+  table: string,
+  ref: string,
+  opts: { where?: string; by?: string; bcol?: string } = {}
+): string => {
+  const { where, by = "rowid", bcol = "block_index" } = opts;
+  const tcol = bcol === "block_index" ? "block_time" : "first_issuance_block_time";
+  const filt = where ? ` AND (${where})` : "";
+  const minWhere = where ? ` WHERE ${where}` : "";
+  return `SELECT ${bcol} b, ${tcol} t, ${ref} FROM ${table} WHERE ${bcol}=(SELECT MIN(${bcol}) FROM ${table}${minWhere})${filt} ORDER BY ${by} LIMIT 1`;
+};
 // asset-property firsts read the ISSUANCES event (first valid issuance that set the property), not assets state.
-const VISS = `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM issuances WHERE status='valid'`;
-const ISSORD = `ORDER BY block_index, tx_index LIMIT 1`;
+const viss = (extra: string) => earliest("issuances", "asset ref, 'asset' typ", { where: `status='valid' AND (${extra})`, by: "tx_index" });
 const FIRSTS: First[] = [
   // --- protocol genesis ---
-  { key: "block",        label: "First block",            sql: `SELECT block_index b, block_time t, CAST(block_index AS TEXT) ref, 'block' typ FROM blocks ORDER BY block_index LIMIT 1` },
-  { key: "transaction",  label: "First transaction",      sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM transactions ORDER BY block_index, tx_index LIMIT 1` },
-  { key: "burn",         label: "First XCP burn",         sql: `SELECT block_index b, block_time t, source ref, 'address' typ FROM burns ORDER BY block_index, rowid LIMIT 1` },
+  { key: "block",        label: "First block",            sql: earliest("blocks", "CAST(block_index AS TEXT) ref, 'block' typ", { by: "block_index" }) },
+  { key: "transaction",  label: "First transaction",      sql: earliest("transactions", "tx_hash ref, 'tx' typ", { by: "tx_index" }) },
+  { key: "burn",         label: "First XCP burn",         sql: earliest("burns", "source ref, 'address' typ") },
   // --- assets ---
-  { key: "asset",        label: "First asset issued",     sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM issuances ORDER BY block_index, tx_index LIMIT 1` },
-  { key: "subasset",     label: "First subasset",         sql: `SELECT first_issuance_block_index b, first_issuance_block_time t, asset ref, 'asset' typ FROM assets WHERE type='subasset' ORDER BY first_issuance_block_index LIMIT 1` },
-  { key: "numeric",      label: "First numeric asset",    sql: `SELECT first_issuance_block_index b, first_issuance_block_time t, asset ref, 'asset' typ FROM assets WHERE type='numeric' ORDER BY first_issuance_block_index LIMIT 1` },
-  { key: "destruction",  label: "First destruction",      sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM destructions ORDER BY block_index, event_index LIMIT 1` },
+  { key: "asset",        label: "First asset issued",     sql: earliest("issuances", "asset ref, 'asset' typ", { by: "tx_index" }) },
+  { key: "subasset",     label: "First subasset",         sql: earliest("assets", "asset ref, 'asset' typ", { where: "type='subasset'", bcol: "first_issuance_block_index" }) },
+  { key: "numeric",      label: "First numeric asset",    sql: earliest("assets", "asset ref, 'asset' typ", { where: "type='numeric'", bcol: "first_issuance_block_index" }) },
+  { key: "destruction",  label: "First destruction",      sql: earliest("destructions", "asset ref, 'asset' typ", { by: "event_index" }) },
   // --- transfers & markets ---
-  { key: "send",         label: "First send",             sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM sends ORDER BY block_index, tx_index LIMIT 1` },
-  { key: "order",        label: "First DEX order",        sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM orders ORDER BY block_index, rowid LIMIT 1` },
-  { key: "order_match",  label: "First order match",      sql: `SELECT block_index b, block_time t, tx0_hash ref, 'tx' typ FROM order_matches ORDER BY block_index, rowid LIMIT 1` },
-  { key: "dispenser",    label: "First dispenser",        sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM dispensers ORDER BY block_index, rowid LIMIT 1` },
-  { key: "dispense",     label: "First dispense",         sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM dispenses ORDER BY block_index, event_index LIMIT 1` },
+  { key: "send",         label: "First send",             sql: earliest("sends", "asset ref, 'asset' typ", { by: "tx_index" }) },
+  { key: "order",        label: "First DEX order",        sql: earliest("orders", "tx_hash ref, 'tx' typ") },
+  { key: "order_match",  label: "First order match",      sql: earliest("order_matches", "tx0_hash ref, 'tx' typ") },
+  { key: "dispenser",    label: "First dispenser",        sql: earliest("dispensers", "asset ref, 'asset' typ") },
+  { key: "dispense",     label: "First dispense",         sql: earliest("dispenses", "asset ref, 'asset' typ", { by: "event_index" }) },
   // --- other message types ---
-  { key: "dividend",     label: "First dividend",         sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM dividends ORDER BY block_index, rowid LIMIT 1` },
-  { key: "broadcast",    label: "First broadcast",        sql: `SELECT block_index b, block_time t, source ref, 'address' typ FROM broadcasts ORDER BY block_index, rowid LIMIT 1` },
-  { key: "bet",          label: "First bet",              sql: `SELECT block_index b, block_time t, source ref, 'address' typ FROM bets ORDER BY block_index, rowid LIMIT 1` },
-  { key: "sweep",        label: "First sweep",            sql: `SELECT block_index b, block_time t, source ref, 'address' typ FROM sweeps ORDER BY block_index, rowid LIMIT 1` },
-  { key: "cancel",       label: "First cancel",           sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM cancels ORDER BY block_index, rowid LIMIT 1` },
-  { key: "btcpay",       label: "First BTC pay",          sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM btcpays ORDER BY block_index, rowid LIMIT 1` },
-  { key: "non_xcp_order",label: "First non-XCP DEX order",sql: `SELECT block_index b, block_time t, tx_hash ref, 'tx' typ FROM orders WHERE give_asset!='XCP' AND get_asset!='XCP' ORDER BY block_index, rowid LIMIT 1` },
-  { key: "btc_dispense", label: "First dispense paid in BTC", sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM dispenses WHERE btc_amount>0 ORDER BY block_index, event_index LIMIT 1` },
+  { key: "dividend",     label: "First dividend",         sql: earliest("dividends", "asset ref, 'asset' typ") },
+  { key: "broadcast",    label: "First broadcast",        sql: earliest("broadcasts", "source ref, 'address' typ") },
+  { key: "bet",          label: "First bet",              sql: earliest("bets", "source ref, 'address' typ") },
+  { key: "sweep",        label: "First sweep",            sql: earliest("sweeps", "source ref, 'address' typ") },
+  { key: "cancel",       label: "First cancel",           sql: earliest("cancels", "tx_hash ref, 'tx' typ") },
+  { key: "btcpay",       label: "First BTC pay",          sql: earliest("btcpays", "tx_hash ref, 'tx' typ") },
+  { key: "non_xcp_order",label: "First non-XCP DEX order",sql: earliest("orders", "tx_hash ref, 'tx' typ", { where: "give_asset!='XCP' AND get_asset!='XCP'" }) },
+  { key: "btc_dispense", label: "First dispense paid in BTC", sql: earliest("dispenses", "asset ref, 'asset' typ", { where: "btc_amount>0", by: "event_index" }) },
   // asset-PROPERTY firsts — from the ISSUANCES table (the EVENT that first set the property), NOT the assets
   // current-state table. e.g. first LOCKED = first valid issuance with locked=1, not the oldest now-locked asset.
-  { key: "locked",       label: "First locked issuance",  sql: `${VISS} AND locked=1 ${ISSORD}` },
-  { key: "divisible",    label: "First divisible asset",  sql: `${VISS} AND divisible=1 ${ISSORD}` },
-  { key: "indivisible",  label: "First indivisible asset",sql: `${VISS} AND divisible=0 ${ISSORD}` },
-  { key: "one_of_one",   label: "First 1/1 (single edition)", sql: `${VISS} AND divisible=0 AND locked=1 AND CAST(quantity AS INTEGER)=1 ${ISSORD}` },
-  { key: "reset",        label: "First asset reset (CIP03)", sql: `${VISS} AND reset=1 ${ISSORD}` },
-  { key: "transfer",     label: "First asset transfer",   sql: `${VISS} AND transfer=1 ${ISSORD}` },
-  { key: "callable",     label: "First callable asset",   sql: `${VISS} AND callable=1 ${ISSORD}` },
-  { key: "description",  label: "First asset description",sql: `${VISS} AND description IS NOT NULL AND description!='' ${ISSORD}` },
-  { key: "json_desc",    label: "First JSON description", sql: `${VISS} AND TRIM(description) LIKE '{%' ${ISSORD}` },
-  { key: "mime",         label: "First MIME-typed asset", sql: `${VISS} AND mime_type IS NOT NULL AND mime_type!='' ${ISSORD}` },
-  { key: "easyasset",    label: "First EasyAsset",        sql: `${VISS} AND lower(description) LIKE '%easyasset%' ${ISSORD}` },
+  { key: "locked",       label: "First locked issuance",  sql: viss(`locked=1`) },
+  { key: "divisible",    label: "First divisible asset",  sql: viss(`divisible=1`) },
+  { key: "indivisible",  label: "First indivisible asset",sql: viss(`divisible=0`) },
+  { key: "one_of_one",   label: "First 1/1 (single edition)", sql: viss(`divisible=0 AND locked=1 AND CAST(quantity AS INTEGER)=1`) },
+  { key: "reset",        label: "First asset reset (CIP03)", sql: viss(`reset=1`) },
+  { key: "transfer",     label: "First asset transfer",   sql: viss(`transfer=1`) },
+  { key: "callable",     label: "First callable asset",   sql: viss(`callable=1`) },
+  { key: "description",  label: "First asset description",sql: viss(`description IS NOT NULL AND description!=''`) },
+  { key: "json_desc",    label: "First JSON description", sql: viss(`TRIM(description) LIKE '{%'`) },
+  { key: "mime",         label: "First MIME-typed asset", sql: viss(`mime_type IS NOT NULL AND mime_type!=''`) },
+  { key: "easyasset",    label: "First EasyAsset",        sql: viss(`lower(description) LIKE '%easyasset%'`) },
   { key: "fairminter",   label: "First fairminter",       sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM fairminters ORDER BY block_index, rowid LIMIT 1` },
   { key: "fairmint",     label: "First fairmint",         sql: `SELECT block_index b, block_time t, asset ref, 'asset' typ FROM fairmints ORDER BY block_index, rowid LIMIT 1` },
   // --- derived firsts (our classification layer) ---
@@ -63,12 +80,13 @@ const FIRSTS: First[] = [
   { key: "btns",         label: "First BTNS broadcast",   sql: `SELECT block_index b, block_time t, source ref, 'address' typ FROM broadcasts WHERE btns=1 ORDER BY block_index, rowid LIMIT 1` },
 ];
 
-firsts.get("/v2/firsts", async (c) => {
-  const rows = await Promise.all(FIRSTS.map(async (f) => {
-    const r = await c.env.DB.prepare(f.sql).first<any>().catch(() => null);
-    if (!r || r.b == null) return null;
-    const t = Number(r.t) || 0;
-    return { key: f.key, label: f.label, block: r.b, time: t, date: new Date(t * 1000).toISOString().slice(0, 10), ref: r.ref, type: r.typ };
+firsts.get("/v2/firsts", async (c) =>
+  cached(c, "firsts", { ttl: 3600, edge: 600 }, async () => {
+    const rows = await Promise.all(FIRSTS.map(async (f) => {
+      const r = await c.env.DB.prepare(f.sql).first<any>().catch(() => null);
+      if (!r || r.b == null) return null;
+      const t = Number(r.t) || 0;
+      return { key: f.key, label: f.label, block: r.b, date: new Date(t * 1000).toISOString().slice(0, 10), ref: r.ref, type: r.typ };
+    }));
+    return { result: rows.filter(Boolean).sort((a, b) => (a!.block - b!.block)) };
   }));
-  return J(c, { result: rows.filter(Boolean).sort((a, b) => (a!.block - b!.block)) }, 3600);
-});

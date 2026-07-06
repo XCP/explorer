@@ -90,7 +90,8 @@ export function Sparkline({ data, height = 36 }: { data: number[]; height?: numb
 }
 
 // Dense data table — the xcpdex recipe (sticky header, hover rows, mono numerics handled per-cell).
-export function Table({ head, children }: { head: (string | { label: string; numeric?: boolean })[]; children: ReactNode }) {
+export type Head = string | { label: string; numeric?: boolean; hide?: string };
+export function Table({ head, children }: { head: Head[]; children: ReactNode }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm whitespace-nowrap">
@@ -99,7 +100,8 @@ export function Table({ head, children }: { head: (string | { label: string; num
             {head.map((h) => {
               const label = typeof h === "string" ? h : h.label;
               const numeric = typeof h === "object" && h.numeric;
-              return <th key={label} className={`font-normal px-3 py-2 ${numeric ? "text-right" : "text-left"}`}>{label}</th>;
+              const hide = typeof h === "object" ? h.hide : undefined;
+              return <th key={label} className={`font-normal px-3 py-2 ${numeric ? "text-right" : "text-left"} ${hide ?? ""}`}>{label}</th>;
             })}
           </tr>
         </thead>
@@ -113,12 +115,13 @@ export function Table({ head, children }: { head: (string | { label: string; num
 export const Row = ({ children }: { children: ReactNode }) => (
   <tr className="border-b border-zinc-900 hover:bg-zinc-900 transition-colors">{children}</tr>
 );
-export const Cell = ({ children, numeric, muted, primary }: { children: ReactNode; numeric?: boolean; muted?: boolean; primary?: boolean }) => (
+export const Cell = ({ children, numeric, muted, primary, hide }: { children: ReactNode; numeric?: boolean; muted?: boolean; primary?: boolean; hide?: string }) => (
   <td className={[
     "px-3 py-2",
-    numeric ? "text-right font-mono" : "",
+    numeric ? "text-right font-mono tabular-nums" : "",
     muted ? "text-zinc-500" : numeric ? "text-zinc-300" : "",
     primary ? "text-zinc-100 font-medium" : "",
+    hide ?? "",
   ].filter(Boolean).join(" ")}>{children}</td>
 );
 

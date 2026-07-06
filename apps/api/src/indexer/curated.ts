@@ -42,6 +42,7 @@ export const EXCHANGES = [
   "1LTBCyh9dKhNNZFaByPXfrkeuAD7yr6A4b",  // Poloniex (LTBC vanity; community-confirmed)
   "1AhAExgxS6aVRdKdyEuC5M4v6dxdzdgTaq",  // Zaif (chat-confirmed; vanity 'Exg')
   "15ctNNSfo84dW5Ki8fTkcqbFAyfGbBXwsC",  // Poloniex cold storage (chat-confirmed)
+  "1Co1dcFX6u1wQ8cW8mnj1DEgW7xQMEaChD",  // Poloniex cold storage (probable) — 'Co1d' vanity; cold-wallet profile (19 senders, 20 assets, 2015-22)
   "1N9XWkNp4zPykh8kajbwJXY5d5ZzkQXs3L",  // Huobi deposit (chat-confirmed)
   "1F2zjMv6dTwTW4r9fJ7zTonXp7Tfk23su3",  // Zaif #1 - community-confirmed (131k XCP; was suspected whale-FP)
   "3DZzgGNxsSK1XyUJcKHLM9PxLTEypPGo8W",  // Zaif #2 - community-confirmed

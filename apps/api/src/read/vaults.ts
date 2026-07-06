@@ -3,11 +3,12 @@
  * bridge); emblem_vaults maps vault NFTs → their BTC address, and the assets they hold come from our own
  * Counterparty ledger. Surfaces what's vaulted, who funds/cracks vaults, and vaulting activity over time.
  */
-import { router, J } from "./shared";
+import { router, cached } from "./shared";
 
 export const vaults = router();
 
-vaults.get("/v2/vaults", async (c) => {
+vaults.get("/v2/vaults", async (c) =>
+  cached(c, "vaults", { ttl: 600, edge: 120 }, async () => {
   const q = (sql: string) => c.env.DB.prepare(sql).all().then((r) => r.results).catch(() => []);
   const inVault = `emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`;
   const [summary, topAssets, topFunders, topCrackers, activity] = await Promise.all([
@@ -27,5 +28,5 @@ vaults.get("/v2/vaults", async (c) => {
     q(`SELECT s.block_time/86400 d, COUNT(*) v FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.block_time>0 GROUP BY d ORDER BY d DESC LIMIT 90`)
       .then((rows: any[]) => rows.map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse()),
   ]);
-  return J(c, { result: { summary, top_assets: topAssets, top_funders: topFunders, top_crackers: topCrackers, activity } }, 600);
-});
+  return { result: { summary, top_assets: topAssets, top_funders: topFunders, top_crackers: topCrackers, activity } };
+  }));

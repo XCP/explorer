@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useBlock } from "@/lib/hooks";
 import { Card, KV, Empty, Loading, ErrorBox } from "@/components/ui";
 import { RecordTable } from "@/components/record-table";
-import { tx, ad } from "@/lib/indexes";
+import { txCell, addrCell } from "@/lib/columns";
 import { commas, short, ts } from "@/lib/format";
 
 export default function BlockPage({ params }: { params: Promise<{ n: string }> }) {
@@ -16,9 +16,9 @@ export default function BlockPage({ params }: { params: Promise<{ n: string }> }
 
   const txs = item.transactions ?? [];
   const cols = [
-    { label: "Tx", cell: (r: any) => tx(r.tx_hash) },
-    { label: "Source", cell: (r: any) => ad(r.source) },
-    { label: "Destination", cell: (r: any) => ad(r.destination) },
+    { label: "Tx", cell: (r: any) => txCell(r.tx_hash) },
+    { label: "Source", cell: (r: any) => addrCell(r.source) },
+    { label: "Destination", cell: (r: any) => addrCell(r.destination) },
     { label: "Fee", numeric: true, cell: (r: any) => (r.fee ? <span className="font-mono">{r.fee}</span> : "—") },
   ];
 

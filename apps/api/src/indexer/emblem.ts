@@ -23,8 +23,8 @@ const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c
 const ZERO_TOPIC = "0x" + "0".repeat(64);
 const ALCHEMY_PAGE = 100;
 const ETHERSCAN_PAGE = 1000;
-const RESOLVE_PER_STEP = 60;
-const META_CONCURRENCY = 6;
+const RESOLVE_PER_STEP = 200;
+const META_CONCURRENCY = 16;
 
 export const EMBLEM_DDL =
   `CREATE TABLE IF NOT EXISTS emblem_vaults (token_id TEXT PRIMARY KEY, contract TEXT, btc_address TEXT, resolved INTEGER DEFAULT 0, first_seen INTEGER)`;
@@ -103,11 +103,13 @@ async function enumEtherscan(key: string, contract: string, fromBlock: number): 
 async function resolveBtc(tokenId: string): Promise<{ ok: boolean; btc: string | null }> {
   try {
     const r = await fetch(`${META}/${tokenId}`, { headers: { "x-api-key": "demo", "user-agent": "xcp.io-indexer" }, signal: AbortSignal.timeout(12000) });
-    if (!r.ok) return { ok: false, btc: null };
+    if (!r.ok) return { ok: false, btc: null };            // non-200 (rate limit / down) -> retry later
+    // A 200 is DEFINITIVE. Emblem's "not found" record for a bogus/burned token id has NO addresses[]; mark it
+    // ok anyway (btc=null) so it drains as resolved. Otherwise those ~20k unresolvable ids sit at the front of
+    // the `resolved=0 LIMIT 60` queue and get retried forever (the stall), starving real tokens behind them.
     const a = (await r.json() as any)?.addresses;
-    if (!Array.isArray(a)) return { ok: false, btc: null };
-    return { ok: true, btc: pickBtc(a) };
-  } catch { return { ok: false, btc: null }; }
+    return { ok: true, btc: Array.isArray(a) ? pickBtc(a) : null };
+  } catch { return { ok: false, btc: null }; }              // network/parse error -> retry later
 }
 
 /** One bounded, resumable crawl step: enumerate (+resolve) the active contract's next page via Alchemy;

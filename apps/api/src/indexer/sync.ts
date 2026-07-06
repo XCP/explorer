@@ -107,8 +107,8 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
     ).bind(k.holder, k.asset, k.htype, raw, norm, k.block, k.evIdx, k.utxoAddr ?? null));
     if (snapshot) {
       stmts.push((db) => db.prepare(
-        `INSERT OR REPLACE INTO balance_snapshots (holder,asset,block_index,quantity) VALUES (?,?,?,?)`
-      ).bind(k.holder, k.asset, k.block, raw));
+        `INSERT OR REPLACE INTO balance_snapshots (holder,asset,block_index,quantity,updated_event_index) VALUES (?,?,?,?,?)`
+      ).bind(k.holder, k.asset, k.block, raw, k.evIdx));
     }
   }
   await batchAll(env.DB, stmts);
@@ -128,12 +128,35 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
 
   try {
     let lastIdx = parseInt((await getState(env.DB, "last_event_index")) || "-1", 10);
+    // Full re-index (cursor reset to -1): wipe ALL DERIVED STATE so it recomputes from scratch. The general
+    // hazard (learned from the negative-balance bug): any derived store with a per-row high-water or a "done"
+    // flag survives a replay and silently blocks the rebuild from healing it. So on a fresh index we reset
+    // EVERY such store. Raw mirror/event/row tables re-apply idempotently and are left alone.
+    if (lastIdx < 0) {
+      // 1) balances carry a per-balance event-index high-water → a replay is a no-op on existing rows. WIPE.
+      await env.DB.prepare(`DELETE FROM balances`).run();
+      await env.DB.prepare(`DELETE FROM balance_snapshots`).run();
+      // 2) supply backfill is gated by a "done" flag (asset-supply.ts) — same class as the balance bug: a
+      //    replay would skip the full backfill. Reset it + its cursor/queue so supply backfills cleanly.
+      for (const k of ["asset_supply_done", "asset_supply_cursor", "asset_supply_queue"])
+        await env.DB.prepare(`DELETE FROM indexer_state WHERE key=?`).bind(k).run();
+      // 3) feature signal tables: no high-water, but stale rows would persist; the cascade cursor would also
+      //    be stale. Wipe the tables + reset both signal cursors so the full rebuild reproduces them pristine.
+      //    (Guarded: created lazily by the signal passes, so they may not exist on a brand-new DB.)
+      for (const t of ["asset_signals", "address_signals"])
+        await env.DB.prepare(`DELETE FROM ${t}`).run().catch(() => {});
+      for (const k of ["signals_step", "signals_cascade_block"])
+        await env.DB.prepare(`DELETE FROM indexer_state WHERE key=?`).bind(k).run();
+    }
     const tip = await tipEventIndex(api);
-    const tipBlockHash = await blockHash(api, await currentBlock(api));
 
-    // reorg check (only meaningful once caught up): our checkpoint block hash still valid?
+    // Reorg check — ONLY when caught up / near tip. During historical backfill those blocks are immutable, and
+    // last_block_hash is intentionally NOT maintained yet (see end of run), so running the check while
+    // backfilling compares the checkpoint block's real hash against a stale tip hash, ALWAYS mismatches, and
+    // fires rollback(checkpoint) — whose `block_index > checkpoint` DELETE spans millions of mirror rows and
+    // NOMEMs the DB on every sync (the stuck-at-46999 bug). Gating on near-tip keeps any rollback range tiny.
     const ckBlock = parseInt((await getState(env.DB, "last_block_index")) || "0", 10);
-    if (ckBlock > 0) {
+    if (ckBlock > 0 && tip - lastIdx < 5 * CHUNK) {
       const stored = await getState(env.DB, "last_block_hash");
       const actual = await blockHash(api, ckBlock);
       if (stored && actual && stored !== actual) {
@@ -164,8 +187,14 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       ]);
     }
 
-    // checkpoint block hash for reorg detection + prune snapshots
-    if (tipBlockHash) await env.DB.batch([setStateStmt(env.DB, "last_block_hash", tipBlockHash)]);
+    // Checkpoint hash for reorg detection — store the hash of OUR replayed checkpoint block (last_block_index),
+    // NOT the chain tip. Only maintained once near tip; left untouched during backfill so the reorg gate above
+    // stays off until we're actually following the tip. (Storing the tip hash here against a backfill checkpoint
+    // index was the original inconsistency that produced the false reorg + NOMEM.)
+    if (followingWindow && lastBlock > 0) {
+      const ckHash = await blockHash(api, lastBlock);
+      if (ckHash) await env.DB.batch([setStateStmt(env.DB, "last_block_hash", ckHash)]);
+    }
     if (followingWindow && lastBlock > SNAPSHOT_WINDOW) await pruneSnapshots(env, lastBlock - SNAPSHOT_WINDOW);
 
     return { applied, last_event_index: lastIdx, last_block: lastBlock, tip, caught_up: lastIdx >= tip };
@@ -176,13 +205,24 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
 
 /* ---------- reorg rollback ---------- */
 
+/** Delete every row with block_index > blk from a table, in bounded batches. A single unbounded DELETE over a
+ *  large range (e.g. a deep/erroneous rollback) allocates the whole change set at once and NOMEMs D1, so we
+ *  loop with a rowid+LIMIT subquery until a short batch signals we're done. */
+async function deleteAbove(db: D1Database, table: string, blk: number): Promise<void> {
+  const BATCH = 5000;
+  for (;;) {
+    const r = await db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE block_index > ? LIMIT ${BATCH})`).bind(blk).run();
+    if ((r.meta.changes ?? 0) < BATCH) break;
+  }
+}
+
 /** cascade delete > rollbackTo across all tables; restore balances from snapshots <= rollbackTo. */
 async function rollback(env: Env, rollbackTo: number, api: string): Promise<void> {
   const tables = ["transactions", "sends", "issuances", "destructions", "dispensers", "dispenses",
     "dispenser_refills", "cancels", "orders", "order_matches", "btcpays", "sweeps", "burns", "dividends", "broadcasts",
     "fairminters", "fairmints", "pools", "pool_matches", "pool_liquidity",
     "bets", "bet_matches", "bet_match_resolutions", "rps", "rps_matches", "blocks"];
-  for (const t of tables) await env.DB.prepare(`DELETE FROM ${t} WHERE block_index > ?`).bind(rollbackTo).run();
+  for (const t of tables) await deleteAbove(env.DB, t, rollbackTo);
   // reopen orders/dispensers closed after rollback
   await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();
   await env.DB.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();
@@ -190,9 +230,11 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
   const changed = await env.DB.prepare(`SELECT DISTINCT holder,asset FROM balance_snapshots WHERE block_index > ?`).bind(rollbackTo).all<{ holder: string; asset: string }>();
   const stmts: Stmt[] = [];
   for (const c of changed.results) {
-    const snap = await env.DB.prepare(`SELECT quantity FROM balance_snapshots WHERE holder=? AND asset=? AND block_index <= ? ORDER BY block_index DESC LIMIT 1`)
-      .bind(c.holder, c.asset, rollbackTo).first<{ quantity: string }>();
-    if (snap) stmts.push((db) => db.prepare(`UPDATE balances SET quantity=?, updated_block_index=? WHERE holder=? AND asset=?`).bind(snap.quantity, rollbackTo, c.holder, c.asset));
+    const snap = await env.DB.prepare(`SELECT quantity, updated_event_index FROM balance_snapshots WHERE holder=? AND asset=? AND block_index <= ? ORDER BY block_index DESC LIMIT 1`)
+      .bind(c.holder, c.asset, rollbackTo).first<{ quantity: string; updated_event_index: number }>();
+    // restore quantity AND the event-index high-water from the snapshot, so the post-reorg replay re-applies
+    // events after this point instead of being skipped by the idempotency guard (the negative-balance bug).
+    if (snap) stmts.push((db) => db.prepare(`UPDATE balances SET quantity=?, updated_block_index=?, updated_event_index=? WHERE holder=? AND asset=?`).bind(snap.quantity, rollbackTo, snap.updated_event_index ?? 0, c.holder, c.asset));
     else stmts.push((db) => db.prepare(`DELETE FROM balances WHERE holder=? AND asset=?`).bind(c.holder, c.asset));
   }
   stmts.push((db) => db.prepare(`DELETE FROM balance_snapshots WHERE block_index > ?`).bind(rollbackTo));

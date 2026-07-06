@@ -9,10 +9,14 @@
  */
 import { Hono } from "hono";
 import { syncEvents } from "./indexer/sync";
-import { runSignalsStep } from "./indexer/signals";
+import { runSignalsStep, runSignalsCascade } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags } from "./indexer/tags";
+import { crawlCollections } from "./indexer/collections";
+import { crawlEmblemSales } from "./indexer/emblem-sales";
+import { buildTrades } from "./indexer/trades";
+import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 import { read } from "./read/router";
 import { verify } from "./verify";
 import { legacy } from "./legacy";
@@ -39,6 +43,36 @@ async function maybeAnalyze(env: Env): Promise<void> {
   await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('last_analyze_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
 }
 
+// Refresh collection-membership tags (Rare Pepe / Fake Rare / …) from pepe.wtf ~daily. Gated by block-delta
+// like ANALYZE — collections change rarely, and each run is ~11 fetches, so once a day is ample.
+async function maybeCrawlCollections(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='collections_synced_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 144) return; // ~1 day of blocks
+  await crawlCollections(env);
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('collections_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
+// Continue the Emblem-sales backfill a bounded step, gated to ~hourly so we crawl Alchemy getNFTSales
+// steadily (rotating one contract per call) without hammering it every 2-min tick.
+async function maybeCrawlEmblemSales(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='emblem_sales_synced_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 6) return; // ~1 hour of blocks
+  await crawlEmblemSales(env);
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('emblem_sales_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
+// Refresh the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP) ~daily. Gated by block-delta:
+// daily candles only change once a day, and a full run is a handful of fetches.
+async function maybeCrawlPrices(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='prices_synced_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 144) return; // ~1 day of blocks
+  await crawlPrices(env);
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('prices_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/", (c) => c.text("api.xcp.io ok"));
@@ -52,13 +86,24 @@ export default {
   fetch: app.fetch,
   async scheduled(_e: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
+      // BOOTSTRAP PAUSE: while a full reindex/bootstrap is driven manually, set indexer_state 'cron_paused'='1'
+      // so the cron stands down entirely. A cron sync running CONCURRENTLY with the bootstrap driver means two
+      // large D1 write transactions at once → SQLITE_NOMEM (D1 out of memory). One driver at a time avoids it.
+      try {
+        const p = await env.DB.prepare("SELECT value FROM indexer_state WHERE key='cron_paused'").first<{ value: string }>();
+        if (p?.value === "1") return;
+      } catch (e) { console.error("cron_paused check", e); }
       // assets (incl. supply) are maintained deterministically from the event stream — no CP refetch.
       let caughtUp = false;
       try { const r: any = await syncEvents(env, { maxEvents: 10000 }); caughtUp = !!r?.caught_up; } catch (e) { console.error("syncEvents", e); }
       // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
       if (caughtUp) {
-        // Advance the reputation signal rebuild a couple bounded passes per tick (cursor cycles ->
-        // tables stay continuously fresh without ever timing out a single invocation).
+        // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).
+        // Returns needs_backfill until the first full rebuild cycle completes and anchors the cursor at tip.
+        try { await runSignalsCascade(env); } catch (e) { console.error("runSignalsCascade", e); }
+        // Layer-C backstop: advance the FULL rebuild a couple bounded passes per tick. It maintains the
+        // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra
+        // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
         try { await runSignalsStep(env, 2); } catch (e) { console.error("runSignalsStep", e); }
         // Rebuild the polymorphic tags table (categorical layer) from the refreshed signals + curated lists.
         try { await buildTags(env); } catch (e) { console.error("buildTags", e); }
@@ -71,6 +116,15 @@ export default {
         // (exchanges overview scanned all 1.75M sends = 18s); ANALYZE fixed plans globally (→0.5s). Gated by
         // block-delta because ANALYZE itself is ~10s — far too heavy to run every 2-min tick.
         try { await maybeAnalyze(env); } catch (e) { console.error("maybeAnalyze", e); }
+        // Collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf, ~daily.
+        try { await maybeCrawlCollections(env); } catch (e) { console.error("crawlCollections", e); }
+        // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
+        try { await maybeCrawlEmblemSales(env); } catch (e) { console.error("crawlEmblemSales", e); }
+        // Materialize the unified trades ledger: dex + dispense advance by CP-block cursor, emblem re-folded.
+        try { await buildTrades(env); } catch (e) { console.error("buildTrades", e); }
+        // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).
+        try { await maybeCrawlPrices(env); } catch (e) { console.error("crawlPrices", e); }
+        try { await applyTradeUsd(env); } catch (e) { console.error("applyTradeUsd", e); }
       }
     })());
   },

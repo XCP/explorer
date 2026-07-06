@@ -13,6 +13,43 @@ export const router = (): ReadApp => new Hono<{ Bindings: Env }>();
 // Envelope: { result, result_count?, next_offset? }. Cached at the edge via cache-control.
 export const J = (c: any, body: unknown, ttl = 30) =>
   c.json(body, 200, { "cache-control": `public, max-age=${ttl}`, "access-control-allow-origin": "*" });
+
+/**
+ * D1-backed response cache (the `cache` table: key, body, ctype, expires_at) with stale-while-revalidate.
+ * Layer 2 above the per-colo edge cache: it PERSISTS across colos and cold edge, so a heavy aggregation
+ * (e.g. the home COUNT(*) over millions of rows, or the leaderboards fan-out) runs at most once per `ttl`
+ * GLOBALLY instead of once per colo per edge-TTL. On a stale-but-usable hit we serve the cached body
+ * immediately and recompute in the background via waitUntil, so a user never blocks on the slow query.
+ * Use ONLY for low-cardinality, global (non per-entity) endpoints so the key space stays tiny.
+ */
+export async function cached(
+  c: any,
+  key: string,
+  opts: { ttl: number; edge?: number; swr?: number },
+  producer: () => Promise<unknown>
+): Promise<Response> {
+  const { ttl, edge = Math.min(ttl, 30), swr = ttl } = opts;
+  const now = Math.floor(Date.now() / 1000);
+  const send = (body: string, ctype = "application/json") =>
+    c.body(body, 200, { "content-type": ctype, "cache-control": `public, max-age=${edge}`, "access-control-allow-origin": "*" });
+  const write = async (): Promise<string> => {
+    const body = JSON.stringify(await producer());
+    await c.env.DB.prepare(
+      `INSERT INTO cache (key,body,ctype,expires_at) VALUES (?,?,'application/json',?)
+       ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype, expires_at=excluded.expires_at`
+    ).bind(key, body, Math.floor(Date.now() / 1000) + ttl).run().catch(() => {});
+    return body;
+  };
+  const hit: any = await c.env.DB.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`).bind(key).first().catch(() => null);
+  if (hit?.body) {
+    if (now < hit.expires_at) return send(hit.body, hit.ctype);            // fresh
+    if (now < hit.expires_at + swr) {                                      // stale: serve now, refresh in bg
+      const ctx = (() => { try { return c.executionCtx; } catch { return null; } })();
+      if (ctx) { ctx.waitUntil(write().catch(() => {})); return send(hit.body, hit.ctype); }
+    }
+  }
+  return send(await write());                                             // miss / too stale: compute now
+}
 export const lim = (c: any, def = 50, max = 100) =>
   Math.min(max, Math.max(1, parseInt(c.req.query("limit") || String(def), 10)));
 export const off = (c: any) => Math.max(0, parseInt(c.req.query("offset") || "0", 10));

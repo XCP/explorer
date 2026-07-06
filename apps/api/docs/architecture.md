@@ -4,6 +4,37 @@ The mental model in one sentence: **boring deterministic capture of Counterparty
 derived on top and maintained per-block as we ingest (Layer 2), scoring computed at read time (Layer 3).**
 A short list of genuinely-global computations can't be done per-block; those run periodically.
 
+## System picture
+
+Three indexers stand side by side, feeding one database:
+
+1. **Counterparty replayer** (`indexer/sync.ts` + `events/`) — the pure 1:1 mirror. Nothing derived
+   ever lands in its tables; re-indexing from genesis reproduces them exactly.
+2. **Emblem Vault crawler** (`indexer/emblem.ts`) — vaults enumerated via Alchemy/Etherscan, resolved
+   to their BTC addresses. Lives *next to* the mirror, never in it.
+3. **Emblem sales crawler** (`indexer/emblem-sales.ts`) — vault sale history, same sidecar rule.
+
+Derived layers build on top and are always rebuildable from the sources: `asset_signals` /
+`address_signals` / `tags` today, and the planned **unified `trades` projection** (order_matches +
+dispenses + Emblem sales in one queryable surface). The web app consumes all of it through the read
+API's layered caching.
+
+## Pattern language (name things so code knows where to go)
+
+- **Write side**: event-sourced projections (CQRS read models) maintained by idempotent replay;
+  derived features via dirty-set **recompute-over-delta** (never delta-patching) with a self-healing
+  full-rebuild backstop.
+- **Scoring**: a pure **policy module** (`reputation/score.ts`) over a single config surface
+  (`reputation/config.ts`); no storage, tunable per deploy.
+- **Read side (target)**: **query modules returning DTOs** — named, typed query functions per domain
+  (`src/queries/`), route handlers reduced to parse → query → envelope. SQL is private to the query
+  module that owns it; it is never shared by exporting string fragments.
+- **Contract (target)**: wire types defined once in `packages/shared` and consumed by both apps.
+- There is deliberately **no rich domain model**: the chain enforced every invariant before we saw
+  the data, so entities carry no behavior — the model *is* the schema plus the DTOs.
+
+See `docs/refactor-proposal.md` (repo root) for the migration plan toward the target patterns.
+
 ---
 
 ## The four concerns
@@ -89,8 +120,16 @@ enhancement is a tag/overlay, never a column added to the raw Counterparty mirro
 
 1. **Doc + tag rule** (this file): classification tags from `assets`, behavioral from features. ✅
 2. **Feature completeness**: create a feature row per entity at first-seen, so the matrix is complete (fixes
-   harness bias + SRC-20 absence at the source).
-3. **Dirty-set cascade**: handlers enqueue touched ids; per-block maintenance recomputes features + tags for
-   the dirty set. Retire `runSignalsStep` from the hot path → keep only as a repair/full-rebuild tool.
-4. **Isolate the periodic globals** (C) onto their own slow cadence.
-5. **Resume the testing regime** over the now-complete, always-fresh feature matrix.
+   harness bias + SRC-20 absence at the source). ✅
+3. **Dirty-set cascade** ✅ (`signals.ts`): the analytic SQL is organized into documented **FEATURE UNITS**,
+   each declaring `scope` / `reads` / `dependsOn` / `periodic` + a `full` and a dirty-`scoped` SQL. Two drivers
+   over the same units: `runSignalsCascade` derives the entities touched per block range straight from the
+   mirror tables (a block cursor — no per-handler annotation to miss) and recomputes only those via `.scoped`;
+   `runSignalsStep` remains the canonical full rebuild / repair tool and keeps cycling on cron as a self-healing
+   backstop (so a cascade gap is at worst briefly stale, never corrupt). `/admin/verify-signals` diffs the two
+   for an entity as the safety gate.
+4. **Isolate the periodic globals** (C) ✅: units that are whole-population or fan-out (community averages,
+   `low_quality` propagation, the trailing-window `recent_events`, tip-relative ages/recency, infra flags,
+   `rep_score`, percentile anchors) are marked `periodic` and run ONLY in `runSignalsStep`/cron — never the
+   per-block cascade, because their inputs change for entities the block didn't touch.
+5. **Resume the testing regime** over the now-complete, always-fresh feature matrix. ✅ (signal-test harness)

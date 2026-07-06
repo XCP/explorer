@@ -215,6 +215,43 @@ Design rule: **the heaviest weights must require costly or hard-to-fake action.*
 Residual: a determined sybil with real BTC can still move the needle — but every lever costs money or
 counterparties, and tiers are coarse so small manipulations don't change the tier. That's the honest bar.
 
+### Realized-value re-dial (2026-06-28) — the grail-vs-scam-pepe fix
+Symptom: high-issuance Rare Pepes that were Emblem-vaulted and pumped on Ethereum-as-a-scam were ranking
+**Bluechip**. Root cause (found by validating against live prod data, not theory): they score high on the
+**popularity family** — durability (a long *active* span), distinct traders, holders, current activity — all of
+which sustained pumping inflates. The clean discriminator is **realized economic value**: real Rare Pepe grails
+were *sold for real BTC/XCP* (value_btc 1.0–4.6, value_xcp 4.4–5.7), whereas the scam pepes have **value_btc ≈ 0**
+and only modest value_xcp despite huge activity (their "value" lived on the ETH side, invisible to Counterparty).
+- **Fix:** realized value now DOMINATES (`max_dispense_btc` 1.5→4.0, `max_trade_xcp` 0.6→1.8, `dispense_btc`
+  0.5→1.0, `distinct_dispensers` 0.6→1.0) and the popularity/recency family is trimmed hard (`__durability`
+  2.0→1.0, `distinct_traders` 1.5→0.9, `recent_events` 1.2→0.3, `holders` 1.0→0.4, `trades` 0.5→0.2,
+  `holder_breadth` 1.0→0.6, `__asset_age` 1.0→0.7). Bluechip now means **"people paid real money for this"** —
+  which is also the most gaming-resistant definition (you cannot fake spending BTC).
+- **Validated** on a 12-asset convergent set: all 4 strong grails (SATOSHICARD 55.7, RAREPEPE 55.3, FDCARD
+  52.2, DARKPILLPEPE 48.5) clear every scam pepe (top scam 41.9) — margin **+6.6**. The only grail left low is
+  WINKELPEPE (supply 2, ~no trades): a genuine ultra-rare 1/1 that no behavioral signal can separate from a
+  dead asset (the known series-directory limitation).
+- **Rejected first:** a *supply-scarcity penalty* (dock high whole-unit supply on indivisible assets). It was a
+  leaky proxy — it hit legit assets (BITCORN, NINJASUIT) while missing the 1000-supply pepes (TREEOFPEPE,
+  RGBPEPE) and the divisible one (TESTNETPEPE). Supply ≠ the thing; *realized value* is.
+- **Circulating-scarcity (added + validated 2026-06-28, Dan's idea):** `__circulating_scarcity = 3.5 −
+  log10(circulating supply)`, where **circulating = supply_normalized × (100 − burned_pct)/100**. Uses
+  CIRCULATING not issued supply — the key fix: NINJASUIT issued 21M but burned ~100% → circ ~198, correctly
+  scarce (raw issued supply wrongly flagged it; that earlier attempt was rejected). Rewards genuine scarcity,
+  penalizes printed supply; legit high-demand currencies (PEPECASH, BITCRYSTALS) survive the penalty because
+  their realized demand carries them. Needs `asset_signals.supply` (migration 0019, seeded by `asset_seed`).
+- **Calibrated + DEPLOYED 2026-06-28** against the full 22,824 market-asset population: `ASSET_PCT`
+  {p50:11.68, p90:22.01, p99:36.64, max:56.87}. Tiers: **Bluechip = raw≥45 (top ~0.1%, ~19 assets)** — set
+  TIGHTER than p99 on purpose so it's genuinely elite and excludes the knockoffs that cluster 36–42 just under
+  it; Established=22.01, Active=11.68. Live-verified: the 6 clear grails are Bluechip; all the scam pepes
+  (PEPEONMUSK/TREEOFPEPE/RGBPEPE/CULTOFPEPE/TESTNETPEPE/PEPEREPUBLIC) are Established.
+- **Honest separability limit:** NINJASUIT (a grail) and RGBPEPE (a scam) score nearly identically (~42) —
+  objective on-chain signals can't tell a 1000-supply knockoff from a thin grail, so NINJASUIT/WINKELPEPE land
+  Established. No cutoff puts ALL curated grails in AND ALL scams out; we optimize for "scams not Bluechip".
+- **Watch (over-indexing):** a few thin-holder assets (PEPEMILLION, TECHNOPEPE) ride a single large `value_btc`
+  dispense into the top — a whale self-dispensing at a high ask could game it. Future: a clean/distinct-buyer
+  guard on realized value (we have it for DEX via self_trade_pct; not yet for dispenses).
+
 ## Open decisions
 - **age weight (2.0):** an OG with no activity can still score high. Options: cap the age term (winsorize),
   lower the weight, or require a minimum earned-signal floor for high bands.

@@ -39,7 +39,7 @@ const listRoute = (path: string, sql: string) =>
     return J(c, { result: rows.results, next_offset: rows.results.length === l ? o + l : null });
   });
 listRoute("/v2/transactions", `SELECT tx_hash,tx_index,block_index,block_time,source,destination,btc_amount,fee,supported FROM transactions`);
-listRoute("/v2/sends", `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,memo,send_type,status FROM sends`);
+listRoute("/v2/sends", `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status FROM sends`);
 listRoute("/v2/issuances", `SELECT tx_hash,block_index,block_time,asset,asset_longname,source,issuer,quantity_normalized,transfer,divisible,locked,description,status FROM issuances`);
 listRoute("/v2/dispensers", `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status FROM dispensers`);
 listRoute("/v2/dispenses", `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized,dispenser_tx_hash FROM dispenses`);

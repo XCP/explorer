@@ -45,6 +45,9 @@ const COMPUTED_RULES: { tag: string; sql: string }[] = [
   { tag: "durable",         sql: `SELECT 'asset',asset,'durable','computed' FROM asset_signals WHERE (last_trade_blk-first_trade_blk)>=43800` },
   { tag: "broad",           sql: `SELECT 'asset',asset,'broad','computed' FROM asset_signals WHERE holders>=50` },
   { tag: "vaulted",         sql: `SELECT 'asset',asset,'vaulted','computed' FROM asset_signals WHERE asset IN (SELECT b.asset FROM emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND CAST(b.quantity AS INTEGER)>0)` },
+  // NOTE: `has_media` (asset has real art in the CDN) is NOT computed here — it's a persistent tag with
+  // source='media', written directly by the xcp-cdn ingest when it stores art (and backfilled once from the
+  // R2 bucket). The DELETE-and-rebuild below only touches source='computed', so those survive. ~91k assets.
   // ---- asset type (from the assets table) ----
   { tag: "named",           sql: `SELECT 'asset',asset,'named','computed' FROM assets WHERE type='asset'` },
   { tag: "subasset",        sql: `SELECT 'asset',asset,'subasset','computed' FROM assets WHERE type='subasset'` },
