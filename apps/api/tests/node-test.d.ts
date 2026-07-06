@@ -25,3 +25,18 @@ declare module "node:assert/strict" {
 }
 // process is not in @cloudflare/workers-types; contract.test.ts reads process.env.LIVE_API to stay hermetic.
 declare const process: { env: Record<string, string | undefined> };
+// Minimal ambient for node:sqlite (graph.test.ts runs the PPR iteration SQL against an in-memory DB). Only the
+// members the harness uses; the runtime feature is stable enough for our test (Node 22+ / 24).
+declare module "node:sqlite" {
+  interface Statement {
+    all(...params: unknown[]): Record<string, unknown>[];
+    get(...params: unknown[]): Record<string, unknown> | undefined;
+    run(...params: unknown[]): { changes: number };
+  }
+  export class DatabaseSync {
+    constructor(path: string);
+    exec(sql: string): void;
+    prepare(sql: string): Statement;
+    close(): void;
+  }
+}

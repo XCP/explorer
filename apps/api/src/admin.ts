@@ -12,6 +12,7 @@ import { buildTags } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { buildTrades } from "./indexer/trades";
+import { buildGraphTrust } from "./indexer/graph";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "./queries/curated";
 
@@ -117,6 +118,16 @@ admin.post("/admin/crawl-prices", async (c) => {
 // Map trades onto the price calendar (fills usd_value). Loop until {done:true}.
 admin.post("/admin/apply-usd", async (c) => {
   return c.json(await applyTradeUsd(c.env));
+});
+
+// Graph-reputation trait (Phase C): advance the bounded Min-k-PPR TrustRank + Anti-TrustRank build one step
+// (build -> iterate -> finalize). Loop until {done:true}; POST ?reset=1 to restart from scratch, ?work=N to
+// tune the units advanced per call. See src/indexer/graph.ts + docs/graph-reputation.md.
+//   POST /admin/build-graph?reset=1   then   POST /admin/build-graph  (repeat until done)
+admin.post("/admin/build-graph", async (c) => {
+  const work = c.req.query("work") ? parseInt(c.req.query("work")!, 10) : undefined;
+  const reset = c.req.query("reset") === "1";
+  return c.json(await buildGraphTrust(c.env, { work, reset }));
 });
 
 // SIGNAL-TEST HARNESS — the research loop's measuring stick. Score a CANDIDATE signal (any SQL expression
