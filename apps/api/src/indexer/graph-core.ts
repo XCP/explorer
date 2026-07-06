@@ -101,52 +101,75 @@ export function finalizeStatements(): string[] {
 
 // ---- edge / node / rank construction SQL (prod uses these; the harness reuses NODE/RANK/SEED verbatim) ----
 
+// D1 bounds each storage operation (~30s): the full-table GROUP BY aggregations exceeded it on prod
+// (first build attempt died on the 1.75M-row sends aggregation). So the money-flow edges are built as
+// CHUNKED count-accumulations — block_index windows, raw COUNT(*) upserted via ON CONFLICT on the
+// unique (src,dst) index (migration 0025) — then log-normalized (w -> LN(1+w)) in rowid-chunked passes.
+// Constant-weight issuer edges are inserted AFTER the normalize so they are never double-transformed.
+// The holder<->asset bipartite edges (~6M rows from balances) are DEFERRED in v1: multi-grail holders
+// already enter as DIRECT seeds, so the grail->holder flow is seeded rather than propagated; revisit
+// as an experiment once v1 is validated on prod data.
+const BLOCK_CHUNK = 100_000;
+const BLOCK_MAX = 1_200_000; // grid headroom over the current ~957k tip; empty windows are no-ops
+const blockWindows: Array<[number, number]> = [];
+for (let lo = 0; lo < BLOCK_MAX; lo += BLOCK_CHUNK) blockWindows.push([lo, lo + BLOCK_CHUNK]);
+const ROWID_CHUNK = 1_000_000;
+const ROWID_MAX = 8_000_000; // ≥ worst-case accumulated edge rows
+const rowidWindows: Array<[number, number]> = [];
+for (let lo = 0; lo < ROWID_MAX; lo += ROWID_CHUNK) rowidWindows.push([lo, lo + ROWID_CHUNK]);
+
+// Accumulate raw counts for one (src,dst) SELECT core within a block window. The SELECT cores all end
+// in WHERE/GROUP BY, so the upsert clause is unambiguous without the `WHERE true` trick (which is only
+// needed when a bare SELECT could parse its ON as a join constraint).
+const countEdges = (selectCore: (lo: number, hi: number) => string) =>
+  blockWindows.map(([lo, hi]) =>
+    `INSERT INTO graph_edges (src, dst, w) ${selectCore(lo, hi)}
+     ON CONFLICT(src, dst) DO UPDATE SET w = graph_edges.w + excluded.w`);
+
 export const EDGE_INSERTS: string[] = [
-  // sends: the source endorses the destination (a payment is a weak vouch). Plain sends are already keyed to the
-  // human operator (source), so no origin remap is needed here — that only matters on the dispenser rail below.
-  `INSERT INTO graph_edges (src, dst, w)
-   SELECT source, destination, LN(1 + COUNT(*)) FROM sends
-   WHERE source IS NOT NULL AND destination IS NOT NULL AND source <> destination
-     AND source NOT IN ${EXCLUDE_SRC}
-   GROUP BY source, destination`,
-  // order_matches: a trade is a mutual interaction -> an edge each way (down-weighted per pair by the ln).
-  `INSERT INTO graph_edges (src, dst, w)
-   SELECT tx0_address, tx1_address, LN(1 + COUNT(*)) FROM order_matches
-   WHERE tx0_address IS NOT NULL AND tx1_address IS NOT NULL AND tx0_address <> tx1_address
-     AND tx0_address NOT IN ${EXCLUDE_SRC}
-   GROUP BY tx0_address, tx1_address`,
-  `INSERT INTO graph_edges (src, dst, w)
-   SELECT tx1_address, tx0_address, LN(1 + COUNT(*)) FROM order_matches
-   WHERE tx0_address IS NOT NULL AND tx1_address IS NOT NULL AND tx0_address <> tx1_address
-     AND tx1_address NOT IN ${EXCLUDE_SRC}
-   GROUP BY tx1_address, tx0_address`,
+  // sends: the source endorses the destination (a payment is a weak vouch). Plain sends are already keyed
+  // to the human operator (source) — the origin remap only matters on the dispenser rail below.
+  ...countEdges((lo, hi) =>
+    `SELECT source, destination, COUNT(*) FROM sends
+     WHERE block_index > ${lo} AND block_index <= ${hi}
+       AND source IS NOT NULL AND destination IS NOT NULL AND source <> destination
+       AND source NOT IN ${EXCLUDE_SRC}
+     GROUP BY source, destination`),
+  // order_matches: a trade is a mutual interaction -> an edge each way.
+  ...countEdges((lo, hi) =>
+    `SELECT tx0_address, tx1_address, COUNT(*) FROM order_matches
+     WHERE block_index > ${lo} AND block_index <= ${hi}
+       AND tx0_address IS NOT NULL AND tx1_address IS NOT NULL AND tx0_address <> tx1_address
+       AND tx0_address NOT IN ${EXCLUDE_SRC}
+     GROUP BY tx0_address, tx1_address`),
+  ...countEdges((lo, hi) =>
+    `SELECT tx1_address, tx0_address, COUNT(*) FROM order_matches
+     WHERE block_index > ${lo} AND block_index <= ${hi}
+       AND tx0_address IS NOT NULL AND tx1_address IS NOT NULL AND tx0_address <> tx1_address
+       AND tx1_address NOT IN ${EXCLUDE_SRC}
+     GROUP BY tx1_address, tx0_address`),
   // dispenses: the BUYER (destination) endorses the CREATOR, origin-aware (COALESCE(dispensers.origin,
   // dispenses.source)) so a creator dispensing from a throwaway empty address is credited to the operator.
+  ...countEdges((lo, hi) =>
+    `SELECT d.destination, COALESCE(dp.origin, d.source), COUNT(*)
+     FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash = d.dispenser_tx_hash
+     WHERE d.block_index > ${lo} AND d.block_index <= ${hi}
+       AND d.destination IS NOT NULL AND COALESCE(dp.origin, d.source) IS NOT NULL
+       AND d.destination <> COALESCE(dp.origin, d.source)
+       AND d.destination NOT IN ${EXCLUDE_SRC}
+     GROUP BY d.destination, COALESCE(dp.origin, d.source)`),
+  // normalize accumulated counts -> ln(1+count), rowid-chunked (all rows so far are count edges).
+  ...rowidWindows.map(([lo, hi]) =>
+    `UPDATE graph_edges SET w = LN(1 + w) WHERE rowid > ${lo} AND rowid <= ${hi}`),
+  // bipartite asset -> issuer (a grail flows to whoever issued it). Constant weight; post-normalize.
   `INSERT INTO graph_edges (src, dst, w)
-   SELECT d.destination, COALESCE(dp.origin, d.source), LN(1 + COUNT(*))
-   FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash = d.dispenser_tx_hash
-   WHERE d.destination IS NOT NULL AND COALESCE(dp.origin, d.source) IS NOT NULL
-     AND d.destination <> COALESCE(dp.origin, d.source)
-     AND d.destination NOT IN ${EXCLUDE_SRC}
-   GROUP BY d.destination, COALESCE(dp.origin, d.source)`,
-  // bipartite holder -> asset (a trusted holder's demand reaches the asset).
-  `INSERT INTO graph_edges (src, dst, w)
-   SELECT b.holder, '${ASSET_PREFIX}' || b.asset, ${BIP_W} FROM balances b
-   WHERE b.holder_type = 'address' AND CAST(b.quantity AS INTEGER) > 0 AND b.holder IS NOT NULL
-     AND b.holder NOT IN ${EXCLUDE_SRC}
-   GROUP BY b.holder, b.asset`,
-  // bipartite asset -> holder (a grail seed flows to its holders -> what those holders hold).
-  `INSERT INTO graph_edges (src, dst, w)
-   SELECT '${ASSET_PREFIX}' || b.asset, b.holder, ${BIP_W} FROM balances b
-   WHERE b.holder_type = 'address' AND CAST(b.quantity AS INTEGER) > 0 AND b.holder IS NOT NULL
-   GROUP BY b.asset, b.holder`,
-  // bipartite asset -> issuer (a grail flows to whoever issued it).
-  `INSERT INTO graph_edges (src, dst, w)
-   SELECT '${ASSET_PREFIX}' || asset, issuer, ${BIP_W} FROM assets WHERE issuer IS NOT NULL`,
+   SELECT '${ASSET_PREFIX}' || asset, issuer, ${BIP_W} FROM assets WHERE issuer IS NOT NULL
+   ON CONFLICT(src, dst) DO NOTHING`,
   // bipartite issuer -> asset (a trusted issuer flows to their catalog — how address seeds reach assets).
   `INSERT INTO graph_edges (src, dst, w)
    SELECT issuer, '${ASSET_PREFIX}' || asset, ${BIP_W} FROM assets
-   WHERE issuer IS NOT NULL AND issuer NOT IN ${EXCLUDE_SRC}`,
+   WHERE issuer IS NOT NULL AND issuer NOT IN ${EXCLUDE_SRC}
+   ON CONFLICT(src, dst) DO NOTHING`,
 ];
 
 // NB: the `WHERE true` before ON CONFLICT disambiguates the upsert clause from a join constraint — required by
