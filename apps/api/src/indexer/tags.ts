@@ -82,20 +82,13 @@ const COMPUTED_RULES: Rule[] = [...ADDR_RULES, ...ASSET_RULES, ...ASSET_TYPE_RUL
 const ADDR_BEHAVIORAL_TAGS = ADDR_RULES.map((r) => `'${r.tag}'`).join(",");
 const ASSET_BEHAVIORAL_TAGS = ASSET_RULES.map((r) => `'${r.tag}'`).join(",");
 
-// Curated/labeled set — the validation anchors (source='curated'). Seed; expand by hand. These are the
-// "known good/known bad" the harness/face-validity checks measure against. Keep high-confidence only.
-// Grail validation set — known-iconic assets, the ground truth we test the objective score against (NOT a
-// score override; the score stays objective). LESSON (2026-06-28): liquid grails (FDCARD/SATOSHICARD ~p98)
-// the model ranks well, but ultra-rare 1/1 grails (WINKELPEPE 3 holders/3 trades, p62) are objectively
-// indistinguishable from dead assets in CP data — grail-ness there = series membership, which must come from
-// the canonical Rare Pepe / Fake Rare directories (off-chain but authoritative), imported as tags later.
-const CURATED_TAGS: { type: string; id: string; tag: string }[] = [
-  { type: "asset", id: "FDCARD", tag: "grail" }, { type: "asset", id: "SATOSHICARD", tag: "grail" },
-  { type: "asset", id: "RAREPEPE", tag: "grail" }, { type: "asset", id: "DARKPILLPEPE", tag: "grail" },
-  { type: "asset", id: "WINKELPEPE", tag: "grail" }, { type: "asset", id: "PEPEALASSAD", tag: "grail" },
-  { type: "asset", id: "TEST", tag: "grail" }, { type: "asset", id: "NINJASUIT", tag: "grail" },
-  { type: "asset", id: "PEPECASH", tag: "grail" }, { type: "asset", id: "FAKERARE", tag: "grail" },
-];
+// Curated grail labels (source='curated') now live in the `curated` table (kind='grail', migration 0022),
+// editable via /admin/curated. They are the validation anchors — known-iconic assets, the ground truth we
+// test the objective score against (NOT a score override; the score stays objective). LESSON (2026-06-28):
+// liquid grails (FDCARD/SATOSHICARD ~p98) the model ranks well, but ultra-rare 1/1 grails (WINKELPEPE 3
+// holders/3 trades, p62) are objectively indistinguishable from dead assets in CP data — grail-ness there =
+// series membership, which must come from the canonical Rare Pepe / Fake Rare directories (off-chain but
+// authoritative), imported as tags later. Read straight from the table in buildTags below.
 
 const KEY_CHUNK = 800; // dirty keys per statement (SQLite var limit is 999)
 const chunk = <T>(a: T[], n: number): T[][] => { const o: T[][] = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
@@ -117,12 +110,13 @@ export async function buildTags(env: Env): Promise<any> {
     await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql.replace(/\{TIP\}/g, String(tip))}`).run();
     rules++;
   }
-  // upsert curated labels (idempotent)
-  for (const t of CURATED_TAGS) {
-    await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) VALUES (?,?,?,'curated')`).bind(t.type, t.id, t.tag).run();
+  // upsert curated grail labels from the curated table (source='curated'; idempotent)
+  const grails = await env.DB.prepare(`SELECT key FROM curated WHERE kind='grail'`).all<{ key: string }>();
+  for (const g of grails.results) {
+    await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) VALUES ('asset',?,'grail','curated')`).bind(g.key).run();
   }
   const n = await env.DB.prepare(`SELECT COUNT(*) c FROM tags`).first<{ c: number }>();
-  return { rules, curated: CURATED_TAGS.length, total_tags: n?.c ?? 0 };
+  return { rules, curated: grails.results.length, total_tags: n?.c ?? 0 };
 }
 
 /**

@@ -13,12 +13,21 @@ import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { buildTrades } from "./indexer/trades";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
+import { curatedList, curatedUpsert, curatedDelete } from "./queries/curated";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
-// every route is gated by the shared admin token (?token=…).
+// Pull the admin token from `Authorization: Bearer <token>` (preferred) or the legacy `?token=` query
+// param. TODO: drop the ?token= fallback once ops scripts have migrated to the Bearer header.
+const adminToken = (c: { req: { header(name: string): string | undefined; query(name: string): string | undefined } }): string | undefined => {
+  const auth = c.req.header("Authorization");
+  if (auth?.startsWith("Bearer ")) return auth.slice(7).trim();
+  return c.req.query("token");
+};
+
+// every route is gated by the shared admin token (Bearer header, or deprecated ?token=).
 admin.use("/admin/*", async (c, next) => {
-  if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
+  if (adminToken(c) !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
   await next();
 });
 
@@ -138,4 +147,30 @@ admin.post("/admin/signal-test", async (c) => {
   } catch (e: any) {
     return c.json({ error: String(e?.message ?? e).slice(0, 200), sql }, 400);
   }
+});
+
+// CURATED-LIST CRUD — edit the `curated` table (kind='lowq'|'burn'|'exchange'|'exchange_name'|'grail', …)
+// without a redeploy. Changes take effect on the next signals/tags rebuild (lowq/burn/exchange) or next
+// /v2/exchanges request (exchange_name). See queries/curated.ts + migration 0022.
+//   GET    /admin/curated?kind=lowq                 — list rows of a kind
+//   POST   /admin/curated  {kind,key,value?,note?}  — upsert one row
+//   DELETE /admin/curated?kind=lowq&key=SCAMCOIN    — remove one row
+admin.get("/admin/curated", async (c) => {
+  const kind = c.req.query("kind");
+  if (!kind) return c.json({ error: "need ?kind=" }, 400);
+  return c.json({ kind, rows: await curatedList(c.env.DB, kind) });
+});
+
+admin.post("/admin/curated", async (c) => {
+  const body = await c.req.json<{ kind?: string; key?: string; value?: string | null; note?: string | null }>().catch(() => null);
+  if (!body?.kind || !body?.key) return c.json({ error: "need {kind,key}" }, 400);
+  await curatedUpsert(c.env.DB, { kind: body.kind, key: body.key, value: body.value, note: body.note });
+  return c.json({ ok: true, kind: body.kind, key: body.key });
+});
+
+admin.delete("/admin/curated", async (c) => {
+  const kind = c.req.query("kind"), key = c.req.query("key");
+  if (!kind || !key) return c.json({ error: "need ?kind= and ?key=" }, 400);
+  const r = await curatedDelete(c.env.DB, kind, key);
+  return c.json({ ok: true, kind, key, deleted: r.meta?.changes ?? 0 });
 });
