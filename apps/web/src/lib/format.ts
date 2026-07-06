@@ -1,5 +1,5 @@
 // Small display helpers shared across explorer routes.
-export const short = (s?: string, head = 8, tail = 6) =>
+export const short = (s?: string | null, head = 8, tail = 6) =>
   !s ? "" : s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 
 export const commas = (v?: string | number | null) => {

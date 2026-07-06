@@ -1,16 +1,23 @@
 "use client";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import useSWR from "swr";
-import { apiUrl } from "@/lib/api";
+import type { DispenseRow, DispenserRow, IssuanceRow, OrderRow } from "@xcp/shared/records";
+import type { FeaturedAsset } from "@xcp/shared/assets";
+import { apiUrl, type Envelope } from "@/lib/api";
 import { useStats, useBlocks, useIndex, useMempool } from "@/lib/hooks";
 import { usePrices } from "@/lib/prices";
-import { Card, Stat, Table, Row, Cell, Skeleton, Empty, AssetIcon, AssetArt } from "@/components/ui";
+import { Card, Stat } from "@/components/ui/card";
+import { Table, Row, Cell, type Head } from "@/components/ui/table";
+import { Skeleton, Empty } from "@/components/ui/feedback";
+import { AssetIcon } from "@/components/ui/badges";
+import { AssetArt } from "@/components/asset-art";
 import { ActivityChart } from "@/components/activity-chart";
 import { SearchBox } from "@/components/search-box";
 import { commas, ts } from "@/lib/format";
 import { orderView } from "@/lib/trading-pair";
 
-function Feed({ title, href, rows, head, render }: { title: string; href: string; rows: any[]; head: any[]; render: (r: any, i: number) => React.ReactNode }) {
+function Feed<T>({ title, href, rows, head, render }: { title: string; href: string; rows: T[]; head: Head[]; render: (r: T, i: number) => ReactNode }) {
   return (
     <Card title={title}>
       <Link href={href} className="absolute right-4 top-4 text-xs !text-zinc-500 hover:!text-zinc-300">View all →</Link>
@@ -18,21 +25,21 @@ function Feed({ title, href, rows, head, render }: { title: string; href: string
     </Card>
   );
 }
-const assetCell = (asset: string, name?: string) => (
+const assetCell = (asset: string, name?: string | null) => (
   <Link href={`/asset/${asset}`} className="flex items-center gap-2"><AssetIcon asset={asset} size={16} />{name || asset}</Link>
 );
 
 export default function Home() {
   const { item: stats } = useStats();
   const { xcp, xcpChange } = usePrices();
-  const { rows: issuances } = useIndex("issuances", 0, 8);
-  const { rows: dispenses } = useIndex("dispenses", 0, 8);
-  const { rows: orders } = useIndex("orders", 0, 8);
-  const { rows: dispensers } = useIndex("dispensers", 0, 8);
+  const { rows: issuances } = useIndex<IssuanceRow>("issuances", 0, 8);
+  const { rows: dispenses } = useIndex<DispenseRow>("dispenses", 0, 8);
+  const { rows: orders } = useIndex<OrderRow>("orders", 0, 8);
+  const { rows: dispensers } = useIndex<DispenserRow>("dispensers", 0, 8);
   const { rows: blocks } = useBlocks(0, 8);
   const { rows: mempool } = useMempool();
   // Featured = top-quality assets that actually have art (has_media). 12-wide grid; only real art shows.
-  const { data: featuredData } = useSWR<{ result: any[] }>(apiUrl("/v2/featured?limit=12"));
+  const { data: featuredData } = useSWR<Envelope<FeaturedAsset[]>>(apiUrl("/v2/featured?limit=12"));
   const featured = featuredData?.result ?? [];
 
   return (
@@ -67,7 +74,7 @@ export default function Home() {
           head={["Asset", { label: "Quantity", numeric: true }, "Issuer"]}
           render={(r, i) => (
             <Row key={i}>
-              <Cell primary>{assetCell(r.asset, r.asset_longname || r.asset)}</Cell>
+              <Cell primary>{assetCell(r.asset!, r.asset_longname || r.asset)}</Cell>
               <Cell numeric>{commas(r.quantity_normalized)}</Cell>
               <Cell muted><Link href={`/address/${r.issuer}`} className="font-mono">{r.issuer}</Link></Cell>
             </Row>
@@ -76,7 +83,7 @@ export default function Home() {
           head={["Asset", { label: "Quantity", numeric: true }, "Buyer"]}
           render={(r, i) => (
             <Row key={i}>
-              <Cell primary>{assetCell(r.asset)}</Cell>
+              <Cell primary>{assetCell(r.asset!)}</Cell>
               <Cell numeric>{commas(r.dispense_quantity_normalized)}</Cell>
               <Cell muted><Link href={`/address/${r.destination}`} className="font-mono">{r.destination}</Link></Cell>
             </Row>
@@ -101,7 +108,7 @@ export default function Home() {
           head={["Asset", { label: "Remaining", numeric: true }, "Source"]}
           render={(r, i) => (
             <Row key={i}>
-              <Cell primary>{assetCell(r.asset)}</Cell>
+              <Cell primary>{assetCell(r.asset!)}</Cell>
               <Cell numeric>{commas(r.give_remaining_normalized)}</Cell>
               <Cell muted><Link href={`/address/${r.source}`} className="font-mono">{r.source}</Link></Cell>
             </Row>
@@ -116,7 +123,7 @@ export default function Home() {
           </span>
           {mempool.length === 0 ? <Empty what="pending transactions" /> : (
             <Table head={["Type", "Asset", "Source"]}>
-              {mempool.slice(0, 8).map((m: any, i: number) => (
+              {mempool.slice(0, 8).map((m, i) => (
                 <Row key={`${m.tx_hash ?? "x"}-${i}`}>
                   <Cell muted>{String(m.event || "").toLowerCase().replace(/_/g, " ")}</Cell>
                   <Cell primary>{m.asset ? assetCell(m.asset) : "—"}</Cell>
@@ -144,7 +151,7 @@ export default function Home() {
         <h2 className="text-sm font-semibold text-zinc-300 mb-3">Featured <span className="text-zinc-600 font-normal">— top quality, with art</span></h2>
         {featured.length === 0 ? <Skeleton rows={2} /> : (
           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2">
-            {featured.map((a: any) => (
+            {featured.map((a) => (
               <Link key={a.asset} href={`/asset/${a.asset}`} title={a.asset_longname || a.asset} className="group">
                 <AssetArt asset={a.asset} className="w-full aspect-[5/7] rounded-lg border border-zinc-800 group-hover:border-[--color-xcp] transition-colors" />
                 <div className="mt-1 text-[10px] text-zinc-500 truncate group-hover:text-zinc-300">{a.asset_longname || a.asset}</div>

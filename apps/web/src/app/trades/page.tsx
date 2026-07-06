@@ -2,9 +2,11 @@
 import { useState } from "react";
 import type { TradeRow } from "@xcp/shared/trades";
 import { useTrades, useTradeStats } from "@/lib/hooks";
-import { type Col, blockCell, txCell, addrCell, assetCell, timeCell } from "@/lib/columns";
+import { type Col, blockCell, txCell, addrCell, assetCell, timeCell } from "@/lib/cells";
 import { commas, compact } from "@/lib/format";
-import { Card, Loading, ErrorBox, Empty, SecondaryButton, Stat } from "@/components/ui";
+import { Card, Stat } from "@/components/ui/card";
+import { SecondaryButton } from "@/components/ui/buttons";
+import { AsyncContent } from "@/components/ui/async-content";
 import { RecordTable } from "@/components/record-table";
 
 // Unified sales feed across every venue — DEX order-matches, dispenser sales, Emblem-vault NFT sales.
@@ -79,15 +81,13 @@ export default function TradesPage() {
             </button>
           ))}
         </div>
-        {isLoading ? <Loading /> : error ? <ErrorBox error={error} /> : rows.length === 0 ? <Empty what="trades" /> : (
-          <>
-            <RecordTable cols={TRADE_COLS} rows={rows} />
-            <div className="flex gap-2 mt-4">
-              <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
-              <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
-            </div>
-          </>
-        )}
+        <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="trades">
+          <RecordTable cols={TRADE_COLS} rows={rows} />
+          <div className="flex gap-2 mt-4">
+            <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
+            <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
+          </div>
+        </AsyncContent>
       </Card>
     </>
   );

@@ -1,31 +1,17 @@
 "use client";
 import Link from "next/link";
 import useSWR from "swr";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { apiUrl, type Envelope } from "@/lib/api";
-import { Card, AssetIcon, Skeleton } from "@/components/ui";
+import { AssetIcon } from "@/components/ui/badges";
+import { Board } from "@/components/board";
 import { commas } from "@/lib/format";
-
-function Board({ title, rows, render }: { title: string; rows: any[]; render: (r: any) => ReactNode }) {
-  return (
-    <Card title={title}>
-      {rows.length === 0 ? <Skeleton rows={6} /> : (
-        <ol className="text-sm">
-          {rows.map((r, i) => (
-            <li key={i} className="flex items-center gap-3 py-1.5 border-b border-zinc-900 last:border-0">
-              <span className="w-5 shrink-0 text-right text-zinc-600 font-mono text-xs">{i + 1}</span>
-              {render(r)}
-            </li>
-          ))}
-        </ol>
-      )}
-    </Card>
-  );
-}
 
 export default function LeaderboardsPage() {
   const [showLowQ, setShowLowQ] = useState(false);
-  const { data } = useSWR<Envelope<any>>(apiUrl("/v2/leaderboards", showLowQ ? { include_hidden: 1 } : {}));
+  // The leaderboards payload is a bag of ad-hoc board rows whose columns vary per board (see the
+  // Leaderboards DTO) — kept deliberately loose so each board's render can read its own metric field.
+  const { data } = useSWR<Envelope<Record<string, any[]>>>(apiUrl("/v2/leaderboards", showLowQ ? { include_hidden: 1 } : {}));
   const d = data?.result ?? {};
 
   const Addr = (a: string) => <Link href={`/address/${a}`} className="font-mono flex-1 min-w-0 break-all">{a}</Link>;

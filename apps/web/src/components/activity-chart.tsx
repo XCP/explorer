@@ -2,7 +2,8 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api";
-import { Card, AreaChart } from "@/components/ui";
+import { Card } from "@/components/ui/card";
+import { AreaChart } from "@/components/ui/charts";
 
 const SERIES = [
   ["transactions", "Transactions"], ["issuances", "Issuances"], ["trades", "Trades"], ["dispenses", "Dispenses"],

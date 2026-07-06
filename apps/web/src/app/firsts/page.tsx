@@ -2,7 +2,9 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api";
-import { Card, AssetIcon, Skeleton } from "@/components/ui";
+import { Card } from "@/components/ui/card";
+import { AssetIcon } from "@/components/ui/badges";
+import { Skeleton } from "@/components/ui/feedback";
 import { short, commas } from "@/lib/format";
 
 interface First { key: string; label: string; block: number; time: number; date: string; ref: string; type: string }

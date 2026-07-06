@@ -2,9 +2,9 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api";
-import { Skeleton, Empty } from "@/components/ui";
+import { Skeleton, Empty } from "@/components/ui/feedback";
 import { RecordTable } from "@/components/record-table";
-import type { Col } from "@/lib/columns";
+import type { Col } from "@/lib/cells";
 
 export type TabDef = { label: string; path: string; cols: Col[] };
 
@@ -13,7 +13,7 @@ export type TabDef = { label: string; path: string; cols: Col[] };
 export function DetailTabs({ tabs }: { tabs: TabDef[] }) {
   const [active, setActive] = useState(0);
   const tab = tabs[active];
-  const { data, isLoading } = useSWR<Envelope<any[]>>(apiUrl(tab.path, { limit: 50 }));
+  const { data, isLoading } = useSWR<Envelope<unknown[]>>(apiUrl(tab.path, { limit: 50 }));
   const rows = data?.result ?? [];
 
   return (

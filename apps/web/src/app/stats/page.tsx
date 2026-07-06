@@ -1,11 +1,12 @@
 "use client";
 import useSWR from "swr";
+import type { NetworkStats } from "@xcp/shared/stats";
 import { apiUrl, type Envelope } from "@/lib/api";
-import { Card, Stat } from "@/components/ui";
+import { Card, Stat } from "@/components/ui/card";
 import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";
 
-const COUNTS: [string, string][] = [
+const COUNTS: [keyof NetworkStats, string][] = [
   ["transactions", "Transactions"], ["assets", "Assets"], ["sends", "Sends"], ["issuances", "Issuances"],
   ["orders", "Orders"], ["order_matches", "Order matches"], ["dispensers", "Dispensers"], ["dispenses", "Dispenses"],
   ["sweeps", "Sweeps"], ["broadcasts", "Broadcasts"], ["dividends", "Dividends"], ["fairmints", "Fairmints"],
@@ -13,8 +14,8 @@ const COUNTS: [string, string][] = [
 ];
 
 export default function StatsPage() {
-  const { data } = useSWR<Envelope<any>>(apiUrl("/v2/stats"));
-  const s = data?.result ?? {};
+  const { data } = useSWR<Envelope<NetworkStats>>(apiUrl("/v2/stats"));
+  const s = data?.result;
   return (
     <>
       <div>
@@ -23,9 +24,9 @@ export default function StatsPage() {
       </div>
       {/* deflation headline — XCP is destroyed by fees; this is the lifetime burn */}
       <div className="grid sm:grid-cols-3 gap-3">
-        <Stat label="XCP destroyed (all-time)" value={s.xcp_destroyed != null ? commas(Math.round(s.xcp_destroyed)) : "—"} />
-        <Stat label="BTC fees paid (all-time)" value={s.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
-        <Stat label="Tip block" value={commas(s.tip)} />
+        <Stat label="XCP destroyed (all-time)" value={s?.xcp_destroyed != null ? commas(Math.round(s.xcp_destroyed)) : "—"} />
+        <Stat label="BTC fees paid (all-time)" value={s?.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
+        <Stat label="Tip block" value={commas(s?.tip)} />
       </div>
       <ActivityChart />
       <Card title="Counterparty totals">
@@ -33,7 +34,7 @@ export default function StatsPage() {
           {COUNTS.map(([k, label]) => (
             <div key={k} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
               <span className="text-zinc-500">{label}</span>
-              <span className="font-mono text-zinc-200">{commas(s[k])}</span>
+              <span className="font-mono text-zinc-200">{commas(s?.[k])}</span>
             </div>
           ))}
         </div>

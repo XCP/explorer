@@ -1,7 +1,9 @@
 "use client";
 import useSWR from "swr";
-import { ShieldCheck, Stamp, Wallet, Store, Building2, Coins, Crown, ArrowDownToLine, Flame } from "lucide-react";
-import { Card, Skeleton } from "@/components/ui";
+import { ShieldCheck, Stamp, Wallet, Store, Building2, Coins, Crown, ArrowDownToLine, Flame, type LucideIcon } from "lucide-react";
+import type { AddressReputation } from "@xcp/shared/addresses";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/feedback";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { commas } from "@/lib/format";
 
@@ -17,10 +19,10 @@ const BAND: Record<string, { color: string; ring: string; bg: string }> = {
   Exchange: { color: "text-violet-300", ring: "ring-violet-500/30", bg: "bg-violet-500/10" },
   "Exchange deposit": { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
 };
-const TAG_ICON: Record<string, any> = { OG: Crown, Creator: Stamp, Collector: Wallet, Merchant: Store, Exchange: Building2, Whale: Coins, "Exchange deposit": ArrowDownToLine, Burner: Flame };
+const TAG_ICON: Record<string, LucideIcon> = { OG: Crown, Creator: Stamp, Collector: Wallet, Merchant: Store, Exchange: Building2, Whale: Coins, "Exchange deposit": ArrowDownToLine, Burner: Flame };
 
 export function ReputationHeader({ address }: { address: string }) {
-  const { data, isLoading } = useSWR<Envelope<any>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`));
+  const { data, isLoading } = useSWR<Envelope<AddressReputation>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`));
   const r = data?.result;
   if (isLoading) return <Card><Skeleton rows={2} /></Card>;
   if (!r) return null;

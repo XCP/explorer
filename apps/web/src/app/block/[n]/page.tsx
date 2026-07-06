@@ -1,10 +1,12 @@
 "use client";
 import { use } from "react";
 import Link from "next/link";
+import type { BlockTxSummary } from "@xcp/shared/chain";
 import { useBlock } from "@/lib/hooks";
-import { Card, KV, Empty, Loading, ErrorBox } from "@/components/ui";
+import { Card, KV } from "@/components/ui/card";
+import { Empty, Loading, ErrorBox } from "@/components/ui/feedback";
 import { RecordTable } from "@/components/record-table";
-import { txCell, addrCell } from "@/lib/columns";
+import { type Col, txCell, addrCell } from "@/lib/cells";
 import { commas, short, ts } from "@/lib/format";
 
 export default function BlockPage({ params }: { params: Promise<{ n: string }> }) {
@@ -15,11 +17,11 @@ export default function BlockPage({ params }: { params: Promise<{ n: string }> }
   if (!item) return <Empty what="block" />;
 
   const txs = item.transactions ?? [];
-  const cols = [
-    { label: "Tx", cell: (r: any) => txCell(r.tx_hash) },
-    { label: "Source", cell: (r: any) => addrCell(r.source) },
-    { label: "Destination", cell: (r: any) => addrCell(r.destination) },
-    { label: "Fee", numeric: true, cell: (r: any) => (r.fee ? <span className="font-mono">{r.fee}</span> : "—") },
+  const cols: Col<BlockTxSummary>[] = [
+    { label: "Tx", cell: (r) => txCell(r.tx_hash) },
+    { label: "Source", cell: (r) => addrCell(r.source) },
+    { label: "Destination", cell: (r) => addrCell(r.destination) },
+    { label: "Fee", numeric: true, cell: (r) => (r.fee ? <span className="font-mono">{r.fee}</span> : "—") },
   ];
 
   return (

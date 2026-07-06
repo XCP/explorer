@@ -1,5 +1,5 @@
-import { Table, Row, Cell } from "@/components/ui";
-import { HIDE, type Col } from "@/lib/columns";
+import { Table, Row, Cell } from "@/components/ui/table";
+import { HIDE, type Col } from "@/lib/cells";
 
 // Single source of truth for rendering a record list. One responsive table: dense on desktop, and on
 // narrow screens LOW-PRIORITY columns drop out (`hideBelow`) so the identity + key metric stay scannable;

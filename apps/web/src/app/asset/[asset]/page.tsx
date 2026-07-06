@@ -2,21 +2,26 @@
 import { use } from "react";
 import Link from "next/link";
 import useSWR from "swr";
+import type { AssetMarket } from "@xcp/shared/assets";
 import { useAsset } from "@/lib/hooks";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Flame, Landmark, Hammer, Key } from "lucide-react";
-import { Card, KV, AssetArt, LockBadge, Loading, ErrorBox, Empty } from "@/components/ui";
+import { Card, KV } from "@/components/ui/card";
+import { LockBadge } from "@/components/ui/badges";
+import { Loading, ErrorBox, Empty } from "@/components/ui/feedback";
+import { AssetArt } from "@/components/asset-art";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { AssetCohort, HolderQuality } from "@/components/relationships";
 import { HolderMakeup } from "@/components/holder-makeup";
-import { blockCell, txCell, addrCell, assetCell, timeCell, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/columns";
+import { blockCell, txCell, addrCell, assetCell, timeCell } from "@/lib/cells";
+import { ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/registry";
 import { commas, short } from "@/lib/format";
 
 // Live market chip from xcpdex (cross-app composition) — only renders if the asset trades.
 function MarketChip({ asset }: { asset: string }) {
   // XCP/BTC have no meaningful self-market (priced in XCP); skip the chip for native assets.
   const native = asset === "XCP" || asset === "BTC";
-  const { data } = useSWR<Envelope<any>>(native ? null : apiUrl(`/v2/assets/${encodeURIComponent(asset)}/market`));
+  const { data } = useSWR<Envelope<AssetMarket>>(native ? null : apiUrl(`/v2/assets/${encodeURIComponent(asset)}/market`));
   const m = data?.result;
   if (!m || m.last_price == null) return null;
   const chg = m.price_change_7d;

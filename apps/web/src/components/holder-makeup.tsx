@@ -1,7 +1,8 @@
 "use client";
 import useSWR from "swr";
+import type { AssetHolderMakeup } from "@xcp/shared/assets";
 import { apiUrl, type Envelope } from "@/lib/api";
-import { Card } from "@/components/ui";
+import { Card } from "@/components/ui/card";
 import { commas } from "@/lib/format";
 
 // "Who holds this?" — composition of the holder base by reputation tier (a real asset skews OG/Established;
@@ -11,11 +12,11 @@ const TIER_COLOR: Record<string, string> = {
 };
 
 export function HolderMakeup({ asset }: { asset: string }) {
-  const { data } = useSWR<Envelope<any>>(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/holder-makeup`));
+  const { data } = useSWR<Envelope<AssetHolderMakeup>>(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/holder-makeup`));
   const d = data?.result;
   if (!d || !d.holders) return null;
-  const tiers: any[] = (d.tiers ?? []).filter((t: any) => t.pct_supply > 0);
-  const a = d.archetypes ?? {};
+  const tiers = (d.tiers ?? []).filter((t) => t.pct_supply > 0);
+  const a = d.archetypes;
   return (
     <Card title="Holder makeup">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 mb-3">

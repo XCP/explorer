@@ -2,7 +2,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useAssets } from "@/lib/hooks";
-import { Card, Table, Row, Cell, Skeleton, ErrorBox, Empty, AssetIcon, LockBadge, SecondaryButton } from "@/components/ui";
+import { Card } from "@/components/ui/card";
+import { Table, Row, Cell } from "@/components/ui/table";
+import { Skeleton, ErrorBox, Empty } from "@/components/ui/feedback";
+import { AssetIcon, LockBadge } from "@/components/ui/badges";
+import { SecondaryButton } from "@/components/ui/buttons";
 import { commas } from "@/lib/format";
 
 export default function AssetsPage() {
@@ -21,7 +25,7 @@ export default function AssetsPage() {
       {isLoading ? <Skeleton /> : error ? <ErrorBox error={error} /> : rows.length === 0 ? <Empty what="assets" /> : (
         <>
           <Table head={["Asset", "Description", { label: "Supply", numeric: true }, "Issuer", "Lock"]}>
-            {rows.map((a: any) => (
+            {rows.map((a) => (
               <Row key={a.asset}>
                 <Cell primary>
                   <Link href={`/asset/${a.asset}`} className="flex items-center gap-2">

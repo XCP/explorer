@@ -2,7 +2,8 @@
 import { use } from "react";
 import Link from "next/link";
 import { useTx } from "@/lib/hooks";
-import { Card, KV, Loading, ErrorBox, Empty } from "@/components/ui";
+import { Card, KV } from "@/components/ui/card";
+import { Loading, ErrorBox, Empty } from "@/components/ui/feedback";
 import { commas, ts } from "@/lib/format";
 
 export default function TxPage({ params }: { params: Promise<{ hash: string }> }) {
