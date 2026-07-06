@@ -24,7 +24,7 @@ const RECORDS: NavGroup[] = [
   { heading: "Chain", links: [["Transactions", "/transactions"], ["Broadcasts", "/broadcasts"]] },
 ];
 const DISCOVER: NavGroup[] = [
-  { links: [["Mempool", "/mempool"], ["Leaderboards", "/leaderboards"], ["Firsts", "/firsts"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Network Stats", "/stats"]] },
+  { links: [["Mempool", "/mempool"], ["Collections", "/collections"], ["Leaderboards", "/leaderboards"], ["Firsts", "/firsts"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Network Stats", "/stats"]] },
 ];
 
 function Ticker({ label, v, chg }: { label: string; v: number | null; chg: number | null }) {

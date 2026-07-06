@@ -9,6 +9,7 @@
     "./chain": "./src/chain.ts",
     "./mempool": "./src/mempool.ts",
     "./assets": "./src/assets.ts",
+    "./tags": "./src/tags.ts",
     "./addresses": "./src/addresses.ts",
     "./trades": "./src/trades.ts",
     "./stats": "./src/stats.ts",

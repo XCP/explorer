@@ -6,6 +6,7 @@ import type { BlockDetail, BlockRow, TxDetail } from "@xcp/shared/chain";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import type { StatsOverview } from "@xcp/shared/stats";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
+import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { apiUrl, type Envelope } from "./api";
 
 // Generic list/detail hooks over the explorer read API. Pagination via offset.
@@ -62,4 +63,14 @@ export const useTrades = (filter: { venue?: string; currency?: string; asset?: s
 export function useTradeStats() {
   const { data } = useSWR<Envelope<TradeVenueStats[]>>(apiUrl("/v2/trades/stats"));
   return { venues: data?.result ?? [] };
+}
+
+// Tag scores — the population aggregate (the /collections scoreboard) + a single tag's aggregate + members.
+export function useTags() {
+  const { data, error, isLoading } = useSWR<Envelope<TagStatsRow[]>>(apiUrl("/v2/tags"));
+  return { rows: data?.result ?? [], error, isLoading };
+}
+export function useTag(tag: string, offset = 0, limit = 50) {
+  const { data, error, isLoading } = useSWR<Envelope<TagDetail>>(apiUrl(`/v2/tags/${encodeURIComponent(tag)}`, { offset, limit }));
+  return { detail: data?.result, nextOffset: data?.next_offset, error, isLoading };
 }

@@ -13,6 +13,7 @@ const EXPLORE: FooterLink[] = [
   ["All records", "/transactions"],
 ];
 const DISCOVER: FooterLink[] = [
+  ["Collections", "/collections"],
   ["Leaderboards", "/leaderboards"],
   ["Firsts", "/firsts"],
   ["Vaults", "/vaults"],
