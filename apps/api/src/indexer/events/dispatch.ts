@@ -1,5 +1,5 @@
 /**
- * Event router. Merges every message type's handler map and dispatches one CP event to the right handler.
+ * Event router. Merges every message type's handler map and dispatches one Counterparty event to the right handler.
  * This is the single place to see exactly which events we mirror — `HANDLED_EVENTS` is the source of truth
  * for the fetch filter, so coverage can't silently drift from the handlers.
  */

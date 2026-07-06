@@ -1,7 +1,7 @@
 /**
  * Emblem vault SALES history — the full secondary-market history of the Ethereum NFTs that wrap Counterparty
  * cards. Source: Alchemy getNFTSales per Emblem contract (every ETH-marketplace sale, not just the last one).
- * Each sale is attributed to the wrapped CP asset via emblem_vaults(token_id -> btc_address -> its balance).
+ * Each sale is attributed to the wrapped Counterparty asset via emblem_vaults(token_id -> btc_address -> its balance).
  * Feeds the unified sales stream as the 'emblem' venue (priced in ETH). Resumable per-contract pageKey cursor.
  */
 import type { Env } from "../index";

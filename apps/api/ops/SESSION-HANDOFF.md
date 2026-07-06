@@ -61,7 +61,7 @@ live**; there is an **in-progress reindex that left the live site degraded** —
 
 ### EMBLEM — do not destroy
 - **NEVER delete the `emblem_vaults` table** (currently 59,721 rows). It's built by a slow Alchemy crawl and is
-  NOT derivable from CP events. The reindex wipe in `sync.ts` (the `lastIdx < 0` block) **correctly excludes it**
+  NOT derivable from Counterparty events. The reindex wipe in `sync.ts` (the `lastIdx < 0` block) **correctly excludes it**
   and its crawl cursors. Keep it that way. Everything else (mirror tables, balances, signals) is rebuildable.
 
 ---

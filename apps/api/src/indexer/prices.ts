@@ -94,7 +94,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
 const USD_WINDOW = 200_000; // rows per apply call (rowid-windowed — contiguous across venues)
 
 /** Map each (day, currency) trade onto the price calendar. Windowed by rowid (venue-agnostic and gap-free,
- *  unlike block_index which mixes CP blocks with huge ETH block numbers). Leaves USDC (already set) and any
+ *  unlike block_index which mixes Counterparty blocks with huge ETH block numbers). Leaves USDC (already set) and any
  *  day with no price untouched. Resumable via usd_cur; wraps to re-sweep for late prices / freshly added rows. */
 export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;

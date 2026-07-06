@@ -86,7 +86,7 @@ const ASSET_BEHAVIORAL_TAGS = ASSET_RULES.map((r) => `'${r.tag}'`).join(",");
 // editable via /admin/curated. They are the validation anchors — known-iconic assets, the ground truth we
 // test the objective score against (NOT a score override; the score stays objective). LESSON (2026-06-28):
 // liquid grails (FDCARD/SATOSHICARD ~p98) the model ranks well, but ultra-rare 1/1 grails (WINKELPEPE 3
-// holders/3 trades, p62) are objectively indistinguishable from dead assets in CP data — grail-ness there =
+// holders/3 trades, p62) are objectively indistinguishable from dead assets in Counterparty data — grail-ness there =
 // series membership, which must come from the canonical Rare Pepe / Fake Rare directories (off-chain but
 // authoritative), imported as tags later. Read straight from the table in buildTags below.
 

@@ -1,4 +1,4 @@
-/** NEW_TRANSACTION: the raw CP transaction envelope. `data` is intentionally not stored (blob; can be
+/** NEW_TRANSACTION: the raw Counterparty transaction envelope. `data` is intentionally not stored (blob; can be
  *  megabytes for stamps — images live in R2). */
 import type { Handler } from "./context";
 

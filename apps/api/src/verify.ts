@@ -1,15 +1,15 @@
 /**
  * /admin/verify — evaluate the D1 mirror against the live Counterparty API.
- * D1 counts are local (cheap); CP result_counts are fetched in parallel and diffed. Run once the
+ * D1 counts are local (cheap); Counterparty result_counts are fetched in parallel and diffed. Run once the
  * backfill is caught up (tip parity) — see VERIFICATION.md for methodology + thresholds.
  */
 import { Hono } from "hono";
 import type { Env } from "./index";
-import { parseCpJson } from "./indexer/codec";
+import { parseCounterpartyJson } from "./indexer/codec";
 
 export const verify = new Hono<{ Bindings: Env }>();
 
-// our table -> CP /v2 list endpoint (result_count = CP's total for that model)
+// our table -> Counterparty /v2 list endpoint (result_count = Counterparty's total for that model)
 const MODELS: { table: string; cp: string }[] = [
   { table: "assets", cp: "assets" },
   { table: "blocks", cp: "blocks" },
@@ -32,19 +32,19 @@ const MODELS: { table: string; cp: string }[] = [
 ];
 const SUPPLY_ASSETS = ["XCP", "PEPECASH", "RAREPEPE"];
 
-async function cpJson<T = unknown>(base: string, path: string): Promise<T | null> {
+async function counterpartyJson<T = unknown>(base: string, path: string): Promise<T | null> {
   try {
     const r = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(20000) });
-    return r.ok ? (parseCpJson(await r.text()) as T) : null; // preserve >2^53 integers (supply parity)
+    return r.ok ? (parseCounterpartyJson(await r.text()) as T) : null; // preserve >2^53 integers (supply parity)
   } catch { return null; }
 }
 
 // /admin/diag — localize row drops: sample N blocks in [from,to], compare our per-block row counts
-// to CP's per-block event counts (NEW_TRANSACTION->transactions, ASSET_ISSUANCE->issuances,
-// NEW_FAIRMINT->fairmints). Returns blocks where ours < CP so we can scope the rescue.
+// to Counterparty's per-block event counts (NEW_TRANSACTION->transactions, ASSET_ISSUANCE->issuances,
+// NEW_FAIRMINT->fairmints). Returns blocks where ours < Counterparty so we can scope the rescue.
 verify.get("/admin/diag", async (c) => {
   if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
-  const base = c.env.CP_API_BASE;
+  const base = c.env.COUNTERPARTY_API_BASE;
   const explicit = (c.req.query("blocks") || "").split(",").map((s) => parseInt(s, 10)).filter(Number.isFinite);
   const from = parseInt(c.req.query("from") || "280000", 10);
   const to = parseInt(c.req.query("to") || "955000", 10);
@@ -55,7 +55,7 @@ verify.get("/admin/diag", async (c) => {
 
   const out: Array<{ block: number; tx: number[]; iss: number[]; fm: number[]; short: boolean }> = [];
   for (const b of blocks) {
-    const cnt = await cpJson<{ result?: Array<{ event: string; event_count: number }> }>(base, `blocks/${b}/events/counts`);
+    const cnt = await counterpartyJson<{ result?: Array<{ event: string; event_count: number }> }>(base, `blocks/${b}/events/counts`);
     const m: Record<string, number> = {};
     (cnt?.result || []).forEach((e) => (m[e.event] = e.event_count));
     const our = (await c.env.DB.prepare(
@@ -73,9 +73,9 @@ verify.get("/admin/diag", async (c) => {
   return c.json({ from, to, step, short_blocks: out.filter((x) => x.short).map((x) => x.block), samples: out });
 });
 
-// /admin/shortblocks — self-contained drop localizer: blocks.transaction_count is CP's reported
+// /admin/shortblocks — self-contained drop localizer: blocks.transaction_count is Counterparty's reported
 // tx-count per block (from BLOCK_PARSED); compare to our actual transactions rows per block.
-// Any block where actual < reported lost rows. No CP calls, no sampling — finds ALL of them.
+// Any block where actual < reported lost rows. No Counterparty calls, no sampling — finds ALL of them.
 verify.get("/admin/shortblocks", async (c) => {
   if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
   const totals = (await c.env.DB.prepare(
@@ -98,7 +98,7 @@ verify.get("/admin/shortblocks", async (c) => {
 
 verify.get("/admin/verify", async (c) => {
   if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
-  const base = c.env.CP_API_BASE;
+  const base = c.env.COUNTERPARTY_API_BASE;
 
   // 1) our counts (single query) + invariants
   const sel = MODELS.map((m) => `(SELECT COUNT(*) FROM ${m.table}) "${m.table}"`).join(",\n    ");
@@ -109,27 +109,27 @@ verify.get("/admin/verify", async (c) => {
             (SELECT COUNT(*) FROM balances WHERE CAST(quantity AS INTEGER) < 0) negative_balances`
   ).first<{ tip: number | null; null_block_hash: number; negative_balances: number }>())!;
 
-  // 2) CP counts (parallel) + CP tip
+  // 2) Counterparty counts (parallel) + Counterparty tip
   const cpCounts: Record<string, number | null> = {};
   await Promise.all(
     MODELS.map(async (m) => {
-      const j = await cpJson<{ result_count?: number }>(base, `${m.cp}?limit=1`);
+      const j = await counterpartyJson<{ result_count?: number }>(base, `${m.cp}?limit=1`);
       cpCounts[m.table] = j?.result_count ?? null;
     })
   );
-  const cpTip = (await cpJson<{ result?: Array<{ block_index?: number }> }>(base, `blocks?limit=1`))?.result?.[0]?.block_index ?? null;
+  const cpTip = (await counterpartyJson<{ result?: Array<{ block_index?: number }> }>(base, `blocks?limit=1`))?.result?.[0]?.block_index ?? null;
 
-  // 3) diffs (ours - cp). Small +/- near tip is fine (CP may be a few blocks ahead until caught up).
+  // 3) diffs (ours - cp). Small +/- near tip is fine (Counterparty may be a few blocks ahead until caught up).
   const counts = MODELS.map((m) => {
     const o = Number(ours[m.table] ?? 0), cp = cpCounts[m.table];
     return { model: m.table, ours: o, cp, diff: cp == null ? null : o - cp, pct: cp ? +(o / cp * 100).toFixed(2) : null };
   });
 
-  // 4) sample-asset supply parity (cheap: our assets row vs CP asset detail)
+  // 4) sample-asset supply parity (cheap: our assets row vs Counterparty asset detail)
   const supply = await Promise.all(
     SUPPLY_ASSETS.map(async (a) => {
       const our = await c.env.DB.prepare(`SELECT supply_normalized FROM assets WHERE asset=?`).bind(a).first<{ supply_normalized: string | null }>();
-      const cp = await cpJson<{ result?: { supply_normalized?: string | null } }>(base, `assets/${a}?verbose=true`);
+      const cp = await counterpartyJson<{ result?: { supply_normalized?: string | null } }>(base, `assets/${a}?verbose=true`);
       return { asset: a, ours: our?.supply_normalized ?? null, cp: cp?.result?.supply_normalized ?? null };
     })
   );

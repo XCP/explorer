@@ -1,9 +1,9 @@
 /**
- * Deterministic asset supply — computed from our own mirrored ledger, NOT refetched from CP.
+ * Deterministic asset supply — computed from our own mirrored ledger, NOT refetched from Counterparty.
  *
- * Counterparty supply is a pure function of the event stream we replay. Verified 1:1 against CP
+ * Counterparty supply is a pure function of the event stream we replay. Verified 1:1 against Counterparty
  * (XCP exact to the satoshi; 252,466/252,475 assets exact — the rest were legacy float-precision
- * corruption, healed by re-index). The formulas are CP's own (lib/ledger/supplies.py):
+ * corruption, healed by re-index). The formulas are Counterparty's own (lib/ledger/supplies.py):
  *
  *   asset_supply(asset) = Σ(issuances.quantity) − Σ(destructions.quantity)        [status='valid']
  *   xcp_supply          = Σ(burns.earned)                                          [status='valid']

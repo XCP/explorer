@@ -31,9 +31,9 @@ const issuance: Handler = ({ ev, p, b, bt }, ctx) => {
          WHERE excluded.last_issuance_block_index >= assets.last_issuance_block_index`
     ).bind(p.asset, p.asset_longname ?? null, type, p.issuer ?? null, p.issuer ?? null, p.divisible ? 1 : 0, p.locked ? 1 : 0,
            p.description_locked ? 1 : 0, null, null, cap(p.description), p.mime_type ?? null, b, b, bt, bt));
-    // Bitcoin Stamp classification (DERIVED awareness, not a CP field) -> tags, written at ingest with
+    // Bitcoin Stamp classification (DERIVED awareness, not a Counterparty field) -> tags, written at ingest with
     // source='protocol' so the computed-tag rebuild never wipes them. SRC-20/721 are meta-protocols layered
-    // on Counterparty; we only note that a CP asset is USED for one (categorical) — we don't index the
+    // on Counterparty; we only note that a Counterparty asset is USED for one (categorical) — we don't index the
     // protocol's own token registry (e.g. the SRC-20 tick), which is not Counterparty data.
     const st = classifyStamp(p.description);
     if (st) {

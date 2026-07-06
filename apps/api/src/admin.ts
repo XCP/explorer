@@ -104,7 +104,7 @@ admin.post("/admin/crawl-emblem-sales", async (c) => {
 });
 
 // Materialize the polymorphic `trades` ledger (dex + dispense + emblem). Loop until {done:true}; on-chain
-// venues advance a CP-block window per call, Emblem is re-folded whole each pass.
+// venues advance a Counterparty-block window per call, Emblem is re-folded whole each pass.
 admin.post("/admin/build-trades", async (c) => {
   return c.json(await buildTrades(c.env));
 });

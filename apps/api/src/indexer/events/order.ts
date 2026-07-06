@@ -1,5 +1,5 @@
 /** The DEX: OPEN_ORDER + lifecycle (ORDER_UPDATE/FILLED/CANCEL/EXPIRATION), ORDER_MATCH and its
- *  status-only updates, and BTC_PAY (completes a BTC-leg match). CP's *_UPDATE events carry only changed
+ *  status-only updates, and BTC_PAY (completes a BTC-leg match). Counterparty's *_UPDATE events carry only changed
  *  fields, so they UPDATE — never re-INSERT (which would wipe the row). Escrow/settlement balances flow
  *  through CREDIT/DEBIT (balance.ts). */
 import { type Handler, str } from "./context";

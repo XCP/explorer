@@ -3,9 +3,9 @@
 /** One row per sale across every venue — DEX order-matches, dispenses, Emblem-vault NFT sales. */
 export interface TradeRow {
   venue: "dex" | "dispense" | "emblem" | string;
-  asset: string | null; // the CP card (null if unattributable)
+  asset: string | null; // the Counterparty card (null if unattributable)
   block_time: number | null;
-  block_index: number | null; // CP block, or ETH block_number for Emblem
+  block_index: number | null; // Counterparty block, or ETH block_number for Emblem
   quantity: number | null;
   currency: "XCP" | "BTC" | "ETH" | "USDC" | string | null;
   total: number | null; // in `currency` units
@@ -20,7 +20,7 @@ export interface TradeRow {
 export interface TradeVenueStats {
   venue: string;
   trades: number;
-  assets: number; // distinct CP assets sold on this venue
+  assets: number; // distinct Counterparty assets sold on this venue
   last_time: number | null; // unix seconds of the most recent trade
   usd_known: number | null; // SUM(usd_value) over rows where USD is known
 }

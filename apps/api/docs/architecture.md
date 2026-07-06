@@ -40,7 +40,7 @@ See `docs/refactor-proposal.md` (repo root) for the migration plan toward the ta
 ## The four concerns
 
 ### A. Ingest — raw 1:1 Counterparty capture (Layer 1)
-The `src/indexer/events/` handlers replay the CP event stream chronologically and write:
+The `src/indexer/events/` handlers replay the Counterparty event stream chronologically and write:
 - **One mirror table per event/state type** — `issuances, sends, destructions, burns, dividends, sweeps,
   broadcasts, btcpays, cancels, orders, order_matches, dispensers, dispenses, dispenser_refills,
   bets/bet_matches/bet_match_resolutions, rps/rps_matches, fairminters, fairmints, pools/pool_*`, plus

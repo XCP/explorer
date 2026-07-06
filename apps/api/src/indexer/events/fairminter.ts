@@ -1,5 +1,5 @@
 /** Fairminters (fair-launch mints): NEW_FAIRMINTER defines the campaign; NEW_FAIRMINT is one mint (and
- *  CP also emits a real ASSET_ISSUANCE per fairmint, so issuance.ts keeps supply correct — we just enqueue
+ *  Counterparty also emits a real ASSET_ISSUANCE per fairmint, so issuance.ts keeps supply correct — we just enqueue
  *  the asset for recompute); FAIRMINTER_UPDATE flips status. */
 import { type Handler, str, cap } from "./context";
 

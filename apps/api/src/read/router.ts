@@ -1,5 +1,5 @@
 /**
- * Explorer read API — serves the D1 Counterparty mirror as clean JSON for apps/web (and as a CP-style
+ * Explorer read API — serves the D1 Counterparty mirror as clean JSON for apps/web (and as a Counterparty-style
  * read mirror for any consumer). Composes the per-domain routers; the domains carry non-overlapping
  * path prefixes, so mount order is not significant. Balances already store raw + normalized, so no
  * divisibility joins are needed at read time.

@@ -11,7 +11,7 @@ type VaultSummary = NonNullable<VaultsPayload["summary"]>;
 type VaultTopAsset = VaultsPayload["top_assets"][number];
 type VaultTopAddr = VaultsPayload["top_funders"][number];
 
-// a funded vault box: an Emblem vault BTC address currently holding a positive CP balance.
+// a funded vault box: an Emblem vault BTC address currently holding a positive Counterparty balance.
 const inVault = `emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`;
 
 /** Vault records + funded/assets-vaulted counts + funder/cracker tag counts. */

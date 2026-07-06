@@ -5,7 +5,7 @@
  * follows a `stamp:` prefix in the issuance description: optional `mimetype;` then base64. Decode it —
  * if it's JSON with a "p" field in {SRC-20, SRC-721, SRC-101} it's that sub-protocol; otherwise it's a
  * classic image → STAMP. (btc_stamps additionally gates validity on `keyburn`, a raw-BTC-tx property we
- * can't see from CP — so this is a TYPE tag, the strongest signal available from the Counterparty side.)
+ * can't see from Counterparty — so this is a TYPE tag, the strongest signal available from the Counterparty side.)
  */
 
 const SRC_PROTOCOLS = new Set(["SRC-20", "SRC-721", "SRC-101"]);

@@ -16,7 +16,7 @@ const open: Handler = ({ p, b, bt, div }, ctx) => {
 };
 
 const update: Handler = ({ p, b }, ctx) => {
-  // Use CP's scheduled close_block_index when present (delayed CLOSING -> CLOSED), else stamp this
+  // Use Counterparty's scheduled close_block_index when present (delayed CLOSING -> CLOSED), else stamp this
   // event's block on any close (status>=10).
   ctx.stmts.push((db) => db.prepare(
     `UPDATE dispensers SET status=COALESCE(?,status), give_remaining=COALESCE(?,give_remaining),

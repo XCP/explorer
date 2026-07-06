@@ -78,7 +78,7 @@ export function networkTotals(db: D1Database): Promise<NetworkTotals | null> {
 export type MetricName =
   | "transactions" | "issuances" | "dispenses" | "trades" | "sends" | "btc_fees" | "xcp_burned";
 
-// transactions come from blocks (cheap: 1 row/block carries CP's tx_count); issuances/dispenses/trades/
+// transactions come from blocks (cheap: 1 row/block carries Counterparty's tx_count); issuances/dispenses/trades/
 // sends by daily count; btc_fees = daily BTC miner fees; xcp_burned = daily XCP destroyed (deflation).
 const METRIC_SQL: Record<MetricName, string> = {
   transactions: `SELECT block_time/86400 d, SUM(transaction_count) v FROM blocks WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,

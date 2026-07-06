@@ -1,5 +1,5 @@
 /** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards, mempool. */
-import { parseCpJson } from "../indexer/codec";
+import { parseCounterpartyJson } from "../indexer/codec";
 import { router, J, cached } from "./respond";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
@@ -7,7 +7,7 @@ import {
   homeOverview, networkCounts, networkTotals, metricSeries, maxBlock, leaderboards, type MetricName,
 } from "../queries/stats";
 
-// Minimal shape of a CP mempool event — only the fields the passthrough reads.
+// Minimal shape of a Counterparty mempool event — only the fields the passthrough reads.
 interface MempoolParams {
   source?: string | null; destination?: string | null;
   asset?: string | null; quantity_normalized?: string | null;
@@ -70,13 +70,13 @@ stats.get("/v2/leaderboards", async (c) => {
   });
 });
 
-/* ---------- mempool (live "what's happening now") — cached read-through to CP, not mirrored ---------- */
+/* ---------- mempool (live "what's happening now") — cached read-through to Counterparty, not mirrored ---------- */
 stats.get("/v2/mempool", async (c) => {
   try {
-    const r = await fetch(`${c.env.CP_API_BASE}/mempool/events?limit=40&verbose=true`, { signal: AbortSignal.timeout(8000) });
+    const r = await fetch(`${c.env.COUNTERPARTY_API_BASE}/mempool/events?limit=40&verbose=true`, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) return J(c, { result: [] }, 5);
     // preserve >2^53 quantities in pending tx params
-    const j = parseCpJson(await r.text()) as { result?: MempoolEvent[] };
+    const j = parseCounterpartyJson(await r.text()) as { result?: MempoolEvent[] };
     // keep one meaningful ACTION row per pending tx; skip ledger/parse noise
     const NOISE = new Set(["TRANSACTION_PARSED", "NEW_TRANSACTION", "CREDIT", "DEBIT", "ASSET_CREATION", "BLOCK_PARSED", "NEW_BLOCK"]);
     const seen = new Set<string>();
@@ -93,6 +93,6 @@ stats.get("/v2/mempool", async (c) => {
         asset: p.asset ?? null, quantity_normalized: p.quantity_normalized ?? null, timestamp: e.timestamp ?? null,
       });
     }
-    return J(c, { result: rows }, 10); // 10s edge cache shields CP from the home's traffic
+    return J(c, { result: rows }, 10); // 10s edge cache shields Counterparty from the home's traffic
   } catch { return J(c, { result: [] }, 5); }
 });

@@ -2,9 +2,9 @@
  * api.xcp.io — Counterparty read-mirror + wallet-extension compatibility worker.
  *
  * Composition root: defines the Env bindings, mounts the route modules, and runs the scheduled cron.
- *   read     -> explorer read API (/v2/*)            verify -> mirror-vs-CP evaluation harness (/admin/verify)
+ *   read     -> explorer read API (/v2/*)            verify -> mirror-vs-Counterparty evaluation harness (/admin/verify)
  *   legacy   -> app.xcp.io/api/v1 wallet endpoints   admin  -> operational routes (/admin/*)
- * The scheduled handler advances the CP event mirror, then (only while caught up) steps the reputation
+ * The scheduled handler advances the Counterparty event mirror, then (only while caught up) steps the reputation
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance — so catch-up never contends.
  */
 import { Hono } from "hono";
@@ -26,7 +26,7 @@ import { admin } from "./admin";
 export interface Env {
   DB: D1Database;
   XCPDEX: Fetcher;              // service binding -> xcpdex-api worker (swap market data)
-  CP_API_BASE: string;          // https://api.counterparty.io:4000/v2
+  COUNTERPARTY_API_BASE: string;          // https://api.counterparty.io:4000/v2
   XCPDEX_API: string;           // https://xcpdex-api.me-bbe.workers.dev (fallback/ref)
   CONSOLIDATION_API: string;    // Hetzner consolidation origin (api.xcp.io today; grey-cloud origin after cutover)
   ADMIN_TOKEN: string;
@@ -91,7 +91,7 @@ const app = new Hono<{ Bindings: Env }>();
 app.get("/", (c) => c.text("api.xcp.io ok"));
 app.get("/health", (c) => c.text("ok"));
 app.route("/", read);     // explorer read API: /v2/assets, /v2/addresses/{a}/balances, /v2/blocks, ...
-app.route("/", verify);   // /admin/verify — mirror-vs-CP evaluation harness
+app.route("/", verify);   // /admin/verify — mirror-vs-Counterparty evaluation harness
 app.route("/", legacy);   // /api/v1/* — wallet-extension compatibility surface
 app.route("/", admin);    // /admin/* — operational routes (token-gated)
 
@@ -116,7 +116,7 @@ export default {
         const p = await env.DB.prepare("SELECT value FROM indexer_state WHERE key='cron_paused'").first<{ value: string }>();
         if (p?.value === "1") return;
       } catch (e) { console.error("cron_paused check", e); }
-      // assets (incl. supply) are maintained deterministically from the event stream — no CP refetch.
+      // assets (incl. supply) are maintained deterministically from the event stream — no Counterparty refetch.
       let caughtUp = false;
       try { const r = await syncEvents(env, { maxEvents: 10000 }); caughtUp = !!r?.caught_up; } catch (e) { console.error("syncEvents", e); }
       // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
@@ -149,7 +149,7 @@ export default {
         try { await maybeCrawlCollections(env); } catch (e) { console.error("crawlCollections", e); }
         // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
         try { await maybeCrawlEmblemSales(env); } catch (e) { console.error("crawlEmblemSales", e); }
-        // Materialize the unified trades ledger: dex + dispense advance by CP-block cursor, emblem re-folded.
+        // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
         try { await buildTrades(env); } catch (e) { console.error("buildTrades", e); }
         // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).
         try { await maybeCrawlPrices(env); } catch (e) { console.error("crawlPrices", e); }

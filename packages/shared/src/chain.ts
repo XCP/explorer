@@ -46,7 +46,7 @@ export interface TxDetail {
   utxos_info: string | null;
 }
 
-/** GET /v2/mempool — pending "what's happening now" rows (read-through to CP, not mirrored). */
+/** GET /v2/mempool — pending "what's happening now" rows (read-through to Counterparty, not mirrored). */
 export interface MempoolRow {
   tx_hash: string | null;
   event: string;

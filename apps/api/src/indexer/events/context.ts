@@ -13,8 +13,8 @@ export type Stmt = (db: D1Database) => D1PreparedStatement;
 export interface Ev {
   event_index: number;
   event: string;
-  // Decoded CP event payload — intrinsically dynamic (shape varies per event type) and consumed field-by-field
-  // by the 20 message handlers; typing it would mean transcribing CP's whole event schema, so it stays `any`.
+  // Decoded Counterparty event payload — intrinsically dynamic (shape varies per event type) and consumed field-by-field
+  // by the 20 message handlers; typing it would mean transcribing Counterparty's whole event schema, so it stays `any`.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params: any;
   tx_hash: string | null;
@@ -33,7 +33,7 @@ export interface Ctx {
 // A decoded event handed to a handler: the raw event plus the fields every handler pulls off it.
 export interface Msg {
   ev: Ev;
-  // ev.params — same intrinsically-dynamic CP payload as Ev.params (see above); the handler seam.
+  // ev.params — same intrinsically-dynamic Counterparty payload as Ev.params (see above); the handler seam.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   p: any;            // ev.params
   b: number;         // block_index

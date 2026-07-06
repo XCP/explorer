@@ -45,19 +45,19 @@ const pickBtc = (addrs: unknown): string | null => {
   return x?.address ?? null;
 };
 
-// Legacy Emblem contracts of interest that aren't in /curated (early/CP vaults). Add lowercased
+// Legacy Emblem contracts of interest that aren't in /curated (early/Counterparty vaults). Add lowercased
 // mainnet addresses here; they're merged with the live curated set. The is_emblem_vault join only
-// labels addresses that actually appear in our Counterparty ledger, so a non-CP contract here is harmless.
+// labels addresses that actually appear in our Counterparty ledger, so a non-Counterparty contract here is harmless.
 const LEGACY_CONTRACTS: string[] = [
   "0x82c7a8f707110f5fbb16184a5933e9f78a34c6ab", // Emblem Vault V4 (the main "emblem-vault" collection; ERC-721,
                                                 // ~40k tokens incl. Rare Pepe). Alchemy metadata lacks addresses
-                                                // here, so these resolve via /meta. Non-CP vaults are filtered by the join.
-  // emblem-vault-matic is on Polygon — needs a polygon-mainnet Alchemy endpoint (follow-up if CP vaults exist there).
+                                                // here, so these resolve via /meta. Non-Counterparty vaults are filtered by the join.
+  // emblem-vault-matic is on Polygon — needs a polygon-mainnet Alchemy endpoint (follow-up if Counterparty vaults exist there).
 ];
 
 // Counterparty-bearing Emblem contracts (collectionChain 'xcp' / addressChain BTC / nativeAssets ⊇ XCP|BTC)
 // from /curated, merged with the legacy set above.
-async function cpContracts(): Promise<string[]> {
+async function counterpartyContracts(): Promise<string[]> {
   const out = new Set<string>(LEGACY_CONTRACTS.map((a) => a.toLowerCase()));
   try {
     const list = (await (await fetch(CURATED, { signal: AbortSignal.timeout(15000) })).json()) as Array<{
@@ -129,7 +129,7 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
   const out: Record<string, unknown> = { enumerated: 0, resolved: 0 };
 
   let contracts: string[] = JSON.parse((await getState(env, "emblem_contracts")) || "null") || [];
-  if (!contracts.length) { contracts = await cpContracts(); if (contracts.length) await setState(env, "emblem_contracts", JSON.stringify(contracts)); }
+  if (!contracts.length) { contracts = await counterpartyContracts(); if (contracts.length) await setState(env, "emblem_contracts", JSON.stringify(contracts)); }
 
   if (contracts.length && (ak || ek)) {
     let ci = parseInt((await getState(env, "emblem_contract_idx")) || "0", 10);

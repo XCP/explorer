@@ -38,7 +38,7 @@ export function emblemAssets(db: D1Database, p: Page): Promise<EmblemAssetRow[]>
   );
 }
 
-/** The vaults themselves: token id + contract + BTC address, and whether they currently hold CP value. */
+/** The vaults themselves: token id + contract + BTC address, and whether they currently hold Counterparty value. */
 export function emblemVaults(db: D1Database, p: Page): Promise<EmblemVaultRow[]> {
   return q<EmblemVaultRow>(
     db,

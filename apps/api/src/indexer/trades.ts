@@ -2,9 +2,9 @@
  * `trades` — the polymorphic sales ledger. One row per trade across every venue (DEX order-matches, dispenses,
  * Emblem-vault NFT sales), normalized to a common shape so the unified feed is a flat read, not a runtime union:
  *
- *   venue · asset (the CP card) · block_time · quantity · currency · total · price(gen) · usd_value · buyer · seller · tx
+ *   venue · asset (the Counterparty card) · block_time · quantity · currency · total · price(gen) · usd_value · buyer · seller · tx
  *
- * Materialized incrementally from the source tables (on-chain venues by CP block cursor; Emblem re-folded from
+ * Materialized incrementally from the source tables (on-chain venues by Counterparty block cursor; Emblem re-folded from
  * the emblem_sales staging table each pass — idempotent via INSERT OR IGNORE on the (venue,ref) key). `usd_value`
  * is filled here only where it's free (USDC sales); XCP/BTC/ETH→USD backfill is a later pass over a price feed.
  */
@@ -22,7 +22,7 @@ const ETH_TOKENS = [
 ];
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
-const WINDOW = 250_000; // CP blocks materialized per on-chain venue per call
+const WINDOW = 250_000; // Counterparty blocks materialized per on-chain venue per call
 
 async function getState(env: Env, k: string): Promise<number> {
   return parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) || "0", 10);
@@ -61,7 +61,7 @@ function dispenseSql(lo: number, hi: number) {
     WHERE d.btc_amount > 0 AND d.block_index > ${lo} AND d.block_index <= ${hi}`;
 }
 
-/** Emblem: NFT sale (qty 1 vault) → the wrapped CP card via emblem_vaults.btc_address → its primary balance.
+/** Emblem: NFT sale (qty 1 vault) → the wrapped Counterparty card via emblem_vaults.btc_address → its primary balance.
  *  ETH block→time is approximated (piecewise around the merge); price/currency from the token map. */
 function emblemSql() {
   const eth = ETH_TOKENS.map((t) => `'${t}'`).join(",");
@@ -93,7 +93,7 @@ export interface TradesBuildProgress {
   done: boolean;
 }
 
-/** Advance the trades materialization one bounded step. On-chain venues walk a CP-block window per call;
+/** Advance the trades materialization one bounded step. On-chain venues walk a Counterparty-block window per call;
  *  Emblem is re-folded whole (small, idempotent). Loop until dex_done && dispense_done. */
 export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;

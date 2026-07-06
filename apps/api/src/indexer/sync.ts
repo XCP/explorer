@@ -20,7 +20,7 @@ import type { Env } from "../index";
 import { normalize } from "./codec";
 import { type Ev, type Stmt, type Ctx, bi } from "./events/context";
 import { dispatch } from "./events/dispatch";
-import { cpJson } from "./cp";
+import { counterpartyJson } from "./counterparty";
 
 const CHUNK = 1000;                 // events per API page
 const MAX_EVENTS_PER_RUN = 50_000;  // cap per invocation (backfill driven by repeated calls)
@@ -57,25 +57,25 @@ async function enqueueSupply(db: D1Database, assets: string[]): Promise<void> {
   await setStateStmt(db, "asset_supply_queue", JSON.stringify(capped)).run();
 }
 
-/* ---------- CP stream helpers ---------- */
+/* ---------- Counterparty stream helpers ---------- */
 
 /** tip event_index = result_count - 1 */
 async function tipEventIndex(api: string): Promise<number> {
-  const d = await cpJson<{ result_count?: number }>(api, `/events?limit=1`);
+  const d = await counterpartyJson<{ result_count?: number }>(api, `/events?limit=1`);
   return (d.result_count ?? 0) - 1;
 }
 /** ascending chunk [from, from+CHUNK): request cursor=from+CHUNK-1 desc, reverse. */
 async function fetchAsc(api: string, from: number): Promise<Ev[]> {
-  const d = await cpJson<{ result?: Ev[] }>(api, `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`);
+  const d = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`);
   const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from);
   rows.sort((a, b) => a.event_index - b.event_index);
   return rows;
 }
 async function blockHash(api: string, n: number): Promise<string | null> {
-  try { return (await cpJson<{ result?: { block_hash?: string } }>(api, `/blocks/${n}`)).result?.block_hash ?? null; } catch { return null; }
+  try { return (await counterpartyJson<{ result?: { block_hash?: string } }>(api, `/blocks/${n}`)).result?.block_hash ?? null; } catch { return null; }
 }
 async function currentBlock(api: string): Promise<number> {
-  const d = await cpJson<{ result?: { block_index?: number } }>(api, `/blocks/last`); return d.result?.block_index ?? 0;
+  const d = await counterpartyJson<{ result?: { block_index?: number } }>(api, `/blocks/last`); return d.result?.block_index ?? 0;
 }
 
 /* ---------- balances: apply netted deltas for a chunk ---------- */
@@ -117,7 +117,7 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
 /* ---------- main replay loop ---------- */
 
 export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): Promise<Record<string, unknown>> {
-  const api = env.CP_API_BASE;
+  const api = env.COUNTERPARTY_API_BASE;
   const now = Math.floor(Date.now() / 1000);
 
   // advisory lock
@@ -244,7 +244,7 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
   const tip = await tipEventIndex(api);
   let probe = parseInt((await getState(env.DB, "last_event_index")) || String(tip), 10);
   for (let i = 0; i < 20; i++) {
-    const d = await cpJson<{ result?: Ev[] }>(api, `/events?cursor=${probe}&limit=${CHUNK}&verbose=true`);
+    const d = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${probe}&limit=${CHUNK}&verbose=true`);
     const rows: Ev[] = d.result || [];
     const firstAfter = [...rows].reverse().find((e) => e.block_index > rollbackTo);
     if (firstAfter) { await env.DB.batch([setStateStmt(env.DB, "last_event_index", String(firstAfter.event_index - 1))]); return; }
