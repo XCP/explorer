@@ -73,3 +73,14 @@ optionally holder↔asset edges), out-degree normalized. k seed subsets from `cu
 UPDATE-JOIN passes per seed subset as a weekly `heavyEveryBlocks`-style job (minutes, bounded);
 reverse pass from scam seeds; store `graph_trust`, `graph_distrust`, tier by threshold. All
 rebuildable, Layer-2 rules apply (derived, never contaminates mirrors).
+
+## H4 verdict (2026-07-06, first prod cycle — experiment closed)
+
+Tested adding `ln(1+graph_trust×1e6)` to ASSET_FACTORS at w ∈ {0.6, 1.0} against the money-flow
+baseline, read-only. Grails are unusable as the gauge (they're seeds — axiom trust makes the margin
+circular), so the independent vaulted label decides: mean gap 22.90 → 23.38 (w=0.6, +2.1%) → 23.70
+(w=1.0, +3.5%); mean ratio degrades 2.18 → 1.96 (shared-offset compression). **Below the
+pre-registered incremental bar → graph trust takes NO score weight.** Its production value is the
+displayed tier trait + the distrust curation queue (first harvest: 14 assets curated 2026-07-06,
+which feed back as seeds). Re-run this experiment only if the edge model changes materially
+(e.g. the bipartite variant) — same gauge, same bar.
