@@ -2,7 +2,7 @@
  *  assets, and the relationship reads (connections graph, sweep-based identity lineage). SQL lives in
  *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
  *  reputation logic, not SQL. */
-import { router, J, lim, off, round } from "./shared";
+import { router, J, lim, off, round } from "./respond";
 import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, ADDRESS_FACTORS } from "../reputation/score";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
 import {

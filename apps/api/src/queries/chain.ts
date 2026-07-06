@@ -1,7 +1,8 @@
 /**
- * Chain queries — the only place that knows the SQL for the chain primitives (blocks, transactions) and
- * the recent-first index feeds. Handlers call these and wrap the result in the envelope; the row shapes
- * are the wire contract (@xcp/shared/chain; the generic feeds pass through their SELECTed columns).
+ * Chain queries — the only place that knows the SQL for the chain primitives: recent blocks, one block's
+ * detail, a block's transaction summaries, and one transaction's full row. Handlers call these and wrap
+ * the result in the envelope; the row shapes are the wire contract (@xcp/shared/chain). The generic
+ * recent-first record feeds live next door in queries/records.ts.
  */
 import type { BlockRow, BlockDetail, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
 import { q, one } from "../db";
@@ -30,19 +31,4 @@ export function blockTransactions(db: D1Database, n: number): Promise<BlockTxSum
 /** One transaction's full row. */
 export function getTransaction(db: D1Database, hash: string): Promise<TxDetail | null> {
   return one<TxDetail>(db, `SELECT * FROM transactions WHERE tx_hash=?`, hash);
-}
-
-/**
- * Generic recent-first index feed. The per-table SELECT is data-driven (one registered route per record
- * kind), so this wraps the execution behind a single typed query path. `orderCol` lets the orders feed
- * disambiguate its aliased join (o.block_index); every other feed orders on the bare block_index index.
- */
-export function listRecords<T = Record<string, unknown>>(
-  db: D1Database,
-  select: string,
-  limit: number,
-  offset: number,
-  orderCol = "block_index"
-): Promise<T[]> {
-  return q<T>(db, `${select} ORDER BY ${orderCol} DESC LIMIT ? OFFSET ?`, limit, offset);
 }

@@ -5,7 +5,7 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { ExchangesPayload, ExchangeRow } from "@xcp/shared/addresses";
-import { router, cached } from "./shared";
+import { router, cached } from "./respond";
 import { exchangeWallets, exchangeTopAssets, exchangeSummary } from "../queries/exchanges";
 
 // operator names for the curated exchange addresses (from curated.ts comments — facts, not heuristics).

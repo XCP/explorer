@@ -5,38 +5,16 @@
  *
  * The config-driven reputation SQL (rawSqlExpr output + tier thresholds) is passed IN as opaque string
  * fragments by the handler — this file never imports the reputation config, and never builds a score.
- * Likewise ORDER_SELECT / the active-balance filter are passed in so queries/ carries no dependency on
- * the read layer.
+ * The per-asset orders tab reuses the records-owned ORDER_SELECT projection (a query→query import); the
+ * active-balance predicate is written inline where it's needed.
  */
 import type {
   AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
 } from "@xcp/shared/assets";
 import type { SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow } from "@xcp/shared/records";
-import type { AssetSignalsRow } from "../schema";
+import type { AssetSignalsRow, AssetRow } from "../schema";
 import { q, one } from "../db";
-
-/** Storage mirror of the `assets` table (migration 0001). Lives here — next to the query that owns the
- *  `SELECT *` — because the detail response spreads the whole row and this module can't touch schema.ts. */
-export interface AssetRow {
-  asset: string;
-  asset_longname: string | null;
-  asset_id: string | null;
-  type: string;
-  issuer: string | null;
-  owner: string | null;
-  divisible: 0 | 1;
-  locked: 0 | 1;
-  description_locked: 0 | 1;
-  supply: string | null;
-  supply_normalized: string | null;
-  description: string | null;
-  mime_type: string | null;
-  first_issuance_block_index: number | null;
-  last_issuance_block_index: number | null;
-  first_issuance_block_time: number | null;
-  last_issuance_block_time: number | null;
-  updated_at: number;
-}
+import { ORDER_SELECT } from "./records";
 
 /* ---------- index + search ---------- */
 
@@ -134,7 +112,9 @@ export async function assetTags(db: D1Database, asset: string): Promise<string[]
 
 /* ---------- holder makeup ---------- */
 
+// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
 export type HolderTierRow = { tier: string; holders: number; pct_supply: number };
+// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
 export type HolderArchetypes = { creators: number; whales: number; collectors: number; holders: number };
 
 /** Chain tip (max block) — substituted into the address-decay term of the reputation expression. */
@@ -186,9 +166,11 @@ export function assetTop1Pct(db: D1Database, asset: string): Promise<{ t: number
 
 /* ---------- asset-quality calibration (parallel to /v2/reputation/review) ---------- */
 
+// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
 export interface AssetReviewDistribution {
   n: number; mean: number; max: number; min: number; top1pct: number; top10pct: number;
 }
+// TODO(wire): belongs in @xcp/shared/assets once the web wave lands
 export interface AssetReviewTopRow {
   asset: string; asset_longname: string | null; holders: number; trades: number; raw: number;
 }
@@ -265,12 +247,11 @@ export function listAssetDispenses(db: D1Database, asset: string, limit: number,
   );
 }
 
-/** Orders touching an asset on either side. `orderSelect` is the shared ORDER_SELECT fragment (normalized
- *  give/get), passed in by the handler so this module carries no dependency on the read layer. */
-export function listAssetOrders(db: D1Database, orderSelect: string, asset: string, limit: number, offset: number): Promise<OrderRow[]> {
+/** Orders touching an asset on either side — the records-owned ORDER_SELECT projection (normalized give/get). */
+export function listAssetOrders(db: D1Database, asset: string, limit: number, offset: number): Promise<OrderRow[]> {
   return q<OrderRow>(
     db,
-    `${orderSelect} WHERE o.give_asset=? OR o.get_asset=? ORDER BY o.block_index DESC LIMIT ? OFFSET ?`,
+    `${ORDER_SELECT} WHERE o.give_asset=? OR o.get_asset=? ORDER BY o.block_index DESC LIMIT ? OFFSET ?`,
     asset, asset, limit, offset
   );
 }
@@ -285,15 +266,15 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
   );
 }
 
-/** Collector cohort: assets most co-held with this one. `activeFilter` = the active-balance predicate for the
- *  b1 alias, passed in by the handler. Excludes XCP (currency everyone holds). */
-export function assetCohort(db: D1Database, activeFilter: string, asset: string, limit: number): Promise<AssetCohortRow[]> {
+/** Collector cohort: assets most co-held with this one. Excludes XCP (currency everyone holds); the b1
+ *  side is filtered to real, non-dust address holders. */
+export function assetCohort(db: D1Database, asset: string, limit: number): Promise<AssetCohortRow[]> {
   return q<AssetCohortRow>(
     db,
     `SELECT b2.asset, a.asset_longname, COUNT(*) shared
      FROM balances b1 JOIN balances b2 ON b1.holder=b2.holder
      LEFT JOIN assets a ON a.asset=b2.asset
-     WHERE b1.asset=? AND ${activeFilter}
+     WHERE b1.asset=? AND b1.holder_type='address' AND CAST(b1.quantity AS INTEGER)>0
        AND b2.asset<>? AND b2.asset<>'XCP' AND CAST(b2.quantity AS INTEGER)>0
      GROUP BY b2.asset ORDER BY shared DESC LIMIT ?`,
     asset, asset, limit

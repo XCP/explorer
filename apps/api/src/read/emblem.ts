@@ -3,7 +3,7 @@
  * vaults, the vault records themselves, and the funded/cracked/deposit segmentation. Contents are always
  * derived from our OWN Counterparty ledger — Emblem is never trusted for what's inside.
  */
-import { router, J, lim, off } from "./shared";
+import { router, J, lim, off } from "./respond";
 import { emblemStats, emblemAssets, emblemVaults } from "../queries/emblem";
 
 export const emblem = router();

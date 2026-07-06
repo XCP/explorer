@@ -3,9 +3,10 @@
  * the result in the envelope. List-row shapes are the wire contract (@xcp/shared/addresses); the
  * reputation row is the internal signals row (../schema) the scorer consumes.
  *
- * NOTE (layering debt, per the refactor handoff): `activeBalance` is a shared SQL fragment still imported
- * from ../read/shared. The reputation-review expression/filter strings are composed in the handler from
- * reputation/config (config-derived, not user input) and passed in — the query owns the surrounding SQL.
+ * NOTE: the "real, non-dust address holder" predicate (holder_type='address' AND quantity>0) is written
+ * inline in the two reads that need it — an honest one-line duplication, not a shared exported fragment.
+ * The reputation-review expression/filter strings are composed in the handler from reputation/config
+ * (config-derived, not user input) and passed in — the query owns the surrounding SQL.
  */
 import type {
   AddressBalanceRow, AddressSendRow, AddressIssuanceRow, AddressDispenserRow,
@@ -14,7 +15,6 @@ import type {
 } from "@xcp/shared/addresses";
 import type { AddressSignalsRow } from "../schema";
 import { q, one } from "../db";
-import { activeBalance } from "../read/shared";
 
 export interface Page { limit: number; offset: number; }
 
@@ -28,7 +28,7 @@ export function listBalances(db: D1Database, addr: string, p: Page): Promise<Add
     `SELECT b.asset, b.quantity, b.quantity_normalized, a.divisible, a.asset_longname,
             EXISTS(SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=b.asset AND t.tag='stamp') stamp
      FROM balances b LEFT JOIN assets a ON a.asset=b.asset
-     WHERE b.holder=? AND ${activeBalance("b.")}
+     WHERE b.holder=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0
      ORDER BY b.asset LIMIT ? OFFSET ?`,
     addr, p.limit, p.offset
   );
@@ -87,7 +87,7 @@ export function addressSummary(db: D1Database, addr: string): Promise<AddressSum
   return one<AddressSummary>(
     db,
     `SELECT (SELECT quantity_normalized FROM balances WHERE holder=? AND asset='XCP') xcp,
-            (SELECT COUNT(*) FROM balances WHERE holder=? AND ${activeBalance()}) assets,
+            (SELECT COUNT(*) FROM balances WHERE holder=? AND holder_type='address' AND CAST(quantity AS INTEGER)>0) assets,
             (SELECT COUNT(*) FROM assets WHERE issuer=?) issued,
             (SELECT COUNT(*) FROM dispensers WHERE source=?) dispensers,
             (SELECT COUNT(*) FROM dispensers WHERE source=? AND status=0) open_dispensers,

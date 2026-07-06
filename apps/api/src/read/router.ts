@@ -4,7 +4,7 @@
  * path prefixes, so mount order is not significant. Balances already store raw + normalized, so no
  * divisibility joins are needed at read time.
  */
-import { router } from "./shared";
+import { router } from "./respond";
 import { stats } from "./stats";
 import { assets } from "./assets";
 import { addresses } from "./addresses";

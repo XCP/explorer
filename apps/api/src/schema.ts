@@ -5,6 +5,30 @@
  * there, not in a migration) and migrations 0012/0015/0016/0017/0019.
  */
 
+/** Mirror of the `assets` table (migration 0001). The asset-detail handler spreads the whole row, so the
+ *  shape lives here with the other storage rows (never sent to a client as-is — the handler derives the
+ *  wire AssetDetail from it). */
+export interface AssetRow {
+  asset: string;
+  asset_longname: string | null;
+  asset_id: string | null;
+  type: string;
+  issuer: string | null;
+  owner: string | null;
+  divisible: 0 | 1;
+  locked: 0 | 1;
+  description_locked: 0 | 1;
+  supply: string | null;
+  supply_normalized: string | null;
+  description: string | null;
+  mime_type: string | null;
+  first_issuance_block_index: number | null;
+  last_issuance_block_index: number | null;
+  first_issuance_block_time: number | null;
+  last_issuance_block_time: number | null;
+  updated_at: number;
+}
+
 /** Mirror of the `asset_signals` table (ASSET_DDL + migrations 0015-0019). */
 export interface AssetSignalsRow {
   asset: string;

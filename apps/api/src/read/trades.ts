@@ -7,7 +7,7 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
-import { router, J, cached, lim, off } from "./shared";
+import { router, J, cached, lim, off } from "./respond";
 import { listTrades, tradeVenueStats } from "../queries/trades";
 
 export const trades = router();
@@ -40,7 +40,7 @@ trades.get("/v2/assets/:asset/trades", async (c) => {
   return J(c, body);
 });
 
-// Global aggregation → D1-cached (low-cardinality key, per the cached() contract in shared.ts).
+// Global aggregation → D1-cached (low-cardinality key, per the cached() contract in respond.ts).
 trades.get("/v2/trades/stats", (c) =>
   cached(c, "trades:stats", { ttl: 120 }, async (): Promise<Envelope<TradeVenueStats[]>> => {
     return { result: await tradeVenueStats(c.env.DB) };

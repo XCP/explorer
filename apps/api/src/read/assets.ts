@@ -3,7 +3,7 @@
  *  parse → query (queries/assets.ts owns the SQL) → respond. The BigInt supply derivation and the
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
 import type { AssetDetail } from "@xcp/shared/assets";
-import { router, J, lim, off, ORDER_SELECT, activeBalance, round, cached } from "./shared";
+import { router, J, lim, off, round, cached } from "./respond";
 import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 import {
@@ -142,7 +142,7 @@ assets.get("/v2/assets/:asset/dispenses", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/orders", async (c) => {
-  const rows = await listAssetOrders(c.env.DB, ORDER_SELECT, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const rows = await listAssetOrders(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
   return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
@@ -168,7 +168,7 @@ assets.get("/v2/assets/:asset/subassets", async (c) => {
 // Collector cohort: "holders of X also collect…" — the holders-also-hold graph. Excludes XCP (currency,
 // held by everyone). Returns related assets ranked by shared-holder count, with art-ready names.
 assets.get("/v2/assets/:asset/cohort", async (c) => {
-  const rows = await assetCohort(c.env.DB, activeBalance("b1."), c.req.param("asset").toUpperCase(), lim(c, 18, 36));
+  const rows = await assetCohort(c.env.DB, c.req.param("asset").toUpperCase(), lim(c, 18, 36));
   return J(c, { result: rows }, 300);
 });
 

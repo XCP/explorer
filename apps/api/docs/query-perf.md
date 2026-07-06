@@ -44,7 +44,7 @@ short-circuit on LIMIT — fine for shallow pages.
 
 Two tiers:
 - **Edge** (`cache-control: max-age`, via `J()` / the `edge` option) — per-colo browser/CDN cache.
-- **D1 response cache** (`cached()` in `src/read/shared.ts`, backed by the `cache` table) — PERSISTS across
+- **D1 response cache** (`cached()` in `src/read/respond.ts`, backed by the `cache` table) — PERSISTS across
   colos and cold edge, with **stale-while-revalidate**: a stale hit is served immediately while a fresh value is
   recomputed in the background via `waitUntil`, so no user ever blocks on the heavy aggregation. A given heavy
   query runs at most once per `ttl` globally.
