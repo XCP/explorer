@@ -299,10 +299,11 @@ The 06-28 re-dial made realized value dominant but measured it **per rail** (`ma
   median 48.9 (n=4,801) vs non-vaulted **29.3** / median 28.8 (n=18,048) — a **+19–20 raw** gap. Under a realized-value-
   dominant model, absolute/median separation is the better convergent-validity gauge than the mean ratio; the `lift`
   watch-line (≥2.5) should be read with that caveat (or the endpoint switched to report the median gap).
-- **Watch / follow-ups:** (1) the thin single-large-sale whales (PEPEMILLION etc.) are still floated into the top of
+- **Watch / follow-ups** — items (1) and (2) below are now IMPLEMENTED; see "Buyer gate + hard low-quality cap" further down.
+  (1) [RESOLVED] the thin single-large-sale whales (PEPEMILLION etc.) are still floated into the top of
   Established by one big `max_realized_usd`; the true fix is a **distinct-buyer GATE on realized value** (like
   durability's `dt/(dt+3)` trader gate) so a single sale with ~no distinct buyers can't dominate — a new `__special`
-  factor, deferred. (2) **the flat `low_quality` penalty (−6) is now demonstrably under-powered on the ~2.7× scale:**
+  factor, deferred. (2) [RESOLVED via hard cap] **the flat `low_quality` penalty (−6) is now demonstrably under-powered on the ~2.7× scale:**
   curated-junk **OXBT** (`low_quality=1`, a bridge token — 0 DEX trades, 18.7k dispenses, $9M realized, 15k holders)
   still lands **Established at raw 85.2** — a wash/bridge asset in the top ~10%. A bigger additive constant can't fix
   this cleanly (it'd need ≈−60 to sink OXBT below Active, which would over-punish borderline assets); the right fix is
@@ -340,6 +341,35 @@ and the address merchant attribution keyed on the wrong address; corrected via a
 - **Related, not changed:** `distinct_dispensers` (asset breadth, weight 1.0) still counts distinct dispenser *sources*,
   so a creator opening N empty-address dispensers reads as N operators — the same origin-vs-source over-count. Out of
   the addendum's scope; flagged for a follow-up if breadth needs to reflect distinct operators.
+
+### Buyer gate + hard low-quality cap (Phase B FINAL, 2026-07-06)
+The two Watch follow-ups above are now IMPLEMENTED (commit "Scoring Phase B final"), closing the thin-whale vector and
+the under-powered-penalty problem:
+- **Distinct-buyer GATE on realized value.** `max_realized_usd` is replaced by `__realized_usd` = log(USD) value ×
+  `B/(B+3)`, where `B = distinct_traders + distinct_dispense_buyers` — mirroring `__durability`'s trader gate. A single
+  huge sale to 1–2 buyers is heavily damped; broad demand passes at ~full strength. Wired in BOTH `factorValue` and
+  `rawSqlExpr` (weight 4.5, the primary value factor). Effect on the thin-whale set (read-only, gated expr):
+  PEPEMILLION 90.9→75.4, GRIMPEPE 86.6→75.0, TECHNOPEPE 86.4→77.6 — all sink into the scam band on buyer-thinness
+  alone. DEXTERPEPE resists (91.5→87.9): it has ~43 real DEX traders (B≈46), not a thin whale.
+- **Hard low-quality tier cap.** `assetTier()` now takes `lowQuality` and returns Speculative regardless of raw —
+  low_quality is a CLASSIFICATION, not a score component (parallel to the infra address states). This is the fix the
+  Watch note called for: on the Phase-B scale the flat −6 penalty can't demote (OXBT rode $9M of flow to raw 85), so
+  the cap does the tiering. The −6 penalty is KEPT but now only orders raws among low_quality assets.
+- **PEPEMILLION (Watch item 3) — investigated, resolved.** NOT an origin-wash: its two big dispenses (16 BTC ≈ $896k,
+  15 BTC) go to genuinely distinct buyers (destination ≠ dispenser source, ≠ origin, ≠ issuer). The hardened origin
+  guard doesn't touch it; the distinct-buyer GATE is what correctly demotes it (2 dispense buyers + ~7 traders → B≈9,
+  gate 0.75 → raw 90.9→75.4). (Off-chain collusion between those buyers can't be ruled out from the mirror, but it is
+  not the on-chain self-deal shape.)
+- **FINAL calibration** (gated expr, 22,849 market assets @ tip 956,949): `ASSET_PCT` p50=20.19, p90=45.86, p99=68.73,
+  max=105.48 — the gate pulls the mid DOWN vs the ungated read (thin-buyer assets lose most of the USD term); the
+  broad-demand top is barely touched. `ASSET_TIERS` Bluechip=**92** (7 clean elite assets — a clean break in the
+  4.4-pt gap between SHITCOINCARD 94.0 and DARKPILLPEPE 89.6; the grail DARKPILLPEPE lands top-Established, honest for
+  its thin ~48-buyer base). Established/Active = p90/p50.
+- **Validation (post-gate):** grail margin **+12.7** (the 4 strong grails ≥89.6 clear the scam set ≤76.9 — lower than
+  the pre-gate +16.1 because the gate also trims grails and the popularity-scam PEPEONMUSK has a high B, but now
+  gaming-resistant). Vaulted lift RESTORED by the gate: mean-ratio 1.66→**2.18** (≈ the old 2.20 baseline), median-gap
+  **+25.2** (vaulted median 42.2 vs non-vaulted 17.0) — the gate removed the shared USD offset that was compressing the
+  mean ratio. `/v2/reputation/asset-validation` now reports BOTH, with median-gap the primary gauge.
 
 ## Open decisions
 - **age:** further options if longevity still over-rewards — lower the weight below 2.0, or require a minimum
