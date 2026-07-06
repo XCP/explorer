@@ -1,45 +1,80 @@
-# xcp.io Explorer — Design Logic
+# xcp.io — Design Direction (v2)
 
-Converged from the three sibling codebases so the explorer feels native in the XCP product family:
-- **xcpdex** (`exchange/apps/web`) — dark zinc-950 terminal, Geist mono tables, dense financial data.
-- **XCP Wallet extension** (`extension/`) — Headless UI, rounded, focus rings, blue-500 accent, light.
-- **Original explorer** (`xcp.io`, Catalyst) — zinc palette, Headless UI, **brand `xcp: #ec1550`**, lock badges.
+## What kind of product this is
 
-## Decision
-**Base = xcpdex's dark zinc-950 terminal** (explorer + exchange = one family) **+ the `#ec1550` xcp brand
-accent** (identity from the original explorer) **+ Headless UI interaction patterns** (continuity with the
-extension). Dark-first; light mode is a later add via a `class` strategy.
+Reference species considered: Etherscan (infrastructure utility — works only on high-volume
+chains), GeckoTerminal (degen trading terminal — wrong energy for a historic chain), DefiLlama
+(analytics authority), GONDI (art marketplace — neutral chrome, the art provides the color),
+Tokenscan (the raw mirror — already exists; competing on table-dumps is a losing game).
 
-## Tokens (Tailwind v4 `@theme`)
+**xcp.io is the market and the museum: an intelligence layer over a historic art chain.**
+Its unique holdings — the things no other Counterparty surface has:
+
+1. The unified cross-venue **trades ledger with USD values** (DEX + dispensers + Emblem).
+2. The **quality/reputation intelligence** (scores, tiers, holder makeup).
+3. The **art**, curated (featured scoring + has_media + collections).
+4. Twelve years of **history** (Firsts, provenance, OG reputation).
+
+Every layout decision serves those four. "What just sold, for how many real dollars" is the most
+compelling sentence this product can say; "look at the art" is the most beautiful one.
+
+## Design principles
+
+1. **The art and the money first.** Lead surfaces show sales (USD) and artwork, not plumbing.
+   Blocks/transactions are utility reached via search and links — never the hero.
+2. **Chrome is neutral; content provides the color.** Asset art and market deltas are the only
+   saturated things on a screen. The UI itself stays zinc.
+3. **AA contrast floor.** No informational text below 4.5:1 on its background. On zinc-950 that
+   means: muted text is `zinc-400`, never `zinc-500`; `zinc-500` is the floor for decorative-only.
+4. **Red and green are market semantics, exclusively.** Up/down, buy/sell, open/locked. Red never
+   decorates, accents, or focuses — that's what makes it legible as a signal.
+5. **Brand is a mark, not a paint.** Crimson `#ec1550` appears on the logo and the single primary
+   CTA (Connect Wallet). Nothing else. Scarcity is what makes it premium instead of alarming.
+6. **Mono for data.** Numbers, quantities, hashes, addresses, heights: Geist Mono + tabular-nums.
+7. **Density follows data.** Counterparty is low-volume: dense tables where data is genuinely
+   dense (records, holders), air and imagery where it isn't (home, asset pages).
+
+## Tokens (Tailwind v4 `@theme` — globals.css is the source of truth)
+
 | Token | Value | Use |
 |---|---|---|
-| `--color-background` | `#09090b` (zinc-950) | page bg |
-| surface | `zinc-900` `#18181b` / `zinc-900/40` | cards, panels, sticky thead |
-| border | `zinc-800` `#27272a` | dividers, card/table borders |
-| text primary | `zinc-100` `#f4f4f5` | headings, asset names, key values |
-| text muted | `zinc-500` `#71717a` | labels, secondary cells, timestamps |
-| `--color-xcp` (brand) | `#ec1550` | links, active nav, primary buttons, logo |
-| success / up / unlocked | `green-500` `#22c55e` | positive deltas, open dispensers |
-| danger / down / locked | `red-500` `#ef4444` | negative deltas, locked badges |
-| font sans | Geist Sans | UI text |
-| font mono | Geist Mono | **all numbers, quantities, hashes, addresses, block heights** |
+| `--color-background` | `#09090b` zinc-950 | page bg |
+| surface | `zinc-900/50` on `zinc-950`, 1px `zinc-800` border | cards, panels |
+| text primary | `zinc-100` | headings, names, key values |
+| text secondary | `zinc-300` | body, table values |
+| text muted | `zinc-400` (**AA floor for information**) | labels, timestamps, secondary cells |
+| text decorative | `zinc-500` | placeholders, dividers, purely-cosmetic |
+| `--color-brand` | `#ec1550` | logo + Connect Wallet ONLY |
+| `--color-accent` | `#38bdf8` sky-400 | links hover, active nav/tabs, focus ring, charts, selection |
+| `--color-up` | `green-400` | positive deltas, buys, open |
+| `--color-down` | `red-400` | negative deltas, sells, locked |
+| font sans / mono | Geist / Geist Mono | UI / all data |
 
-## Component recipes (copy-paste)
-- **Page shell**: `max-w-6xl mx-auto p-4 space-y-6`, bg `#09090b`.
-- **Card/panel**: `rounded-lg border border-zinc-800 bg-zinc-900/40 p-4`; title `text-sm font-semibold text-zinc-300 mb-3`.
-- **Table** (the explorer's core — from xcpdex): `w-full text-sm whitespace-nowrap`
-  - `thead`: `sticky top-0 bg-zinc-950 z-10`; header `tr`: `text-zinc-500 border-b border-zinc-800`; `th`: `text-left font-normal px-3 py-2` (numeric: `text-right`).
-  - body `tr`: `border-b border-zinc-900 hover:bg-zinc-900 transition-colors`.
-  - `td`: `px-3 py-2`; numeric/hash cells: `text-right font-mono text-zinc-300`; muted: `text-zinc-500`.
-  - primary link cell: `text-zinc-100 font-medium hover:text-[--color-xcp]`.
-- **Link**: `text-[--color-xcp] hover:brightness-125` (brand) — replaces the scaffold's sky-400.
-- **Primary button** (`color="xcp"`): `bg-[--color-xcp] text-white font-medium rounded px-4 py-2 hover:brightness-110 focus-visible:ring-2 focus-visible:ring-[--color-xcp] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950`.
-- **Secondary button**: `border border-zinc-700 text-zinc-200 rounded px-3 py-1.5 hover:bg-zinc-900`.
-- **Badge/pill**: `inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset`; locked → `bg-red-400/10 text-red-400 ring-red-400/20`, unlocked → `bg-green-400/10 text-green-400 ring-green-400/20` (matches Catalyst lock badges, recolored to the dark theme).
-- **Delta**: `font-mono` + `text-green-500` / `text-red-500`.
-- **Mono everywhere it's data**: addresses, tx hashes, block heights, quantities, prices → `font-mono`.
+## Home page hierarchy (the species decision, applied)
+
+1. Tight hero: identity line + search.
+2. **Recent sales** — trades ledger, USD-first ("RAREPEPE · $114 · dispenser · 2m").
+3. **Featured art grid** — quality-scored assets with media; the museum face.
+4. Vitals as one slim stat strip (tip · mempool · assets · transactions), not hero cards.
+5. Activity chart — secondary, drawn in accent (a red activity chart reads as an incident).
+6. Compact record feeds last.
+
+## Component recipes
+
+- **Page shell**: `max-w-6xl mx-auto p-4 space-y-6`.
+- **Card**: `rounded-lg border border-zinc-800 bg-zinc-900/40 p-4`; title `text-sm font-semibold text-zinc-300`.
+- **Table**: `text-sm whitespace-nowrap`; thead sticky `bg-zinc-950`, header text `zinc-400`;
+  row `border-b border-zinc-900 hover:bg-zinc-900`; numeric cells `text-right font-mono tabular-nums text-zinc-300`.
+- **Link**: `zinc-300`, hover → `--color-accent`. (Table links stay calm; accent on interaction.)
+- **Primary button**: brand bg, white text, `focus-visible` ring in accent.
+- **Secondary button**: `border-zinc-700 text-zinc-200 hover:bg-zinc-900`.
+- **Badge**: `ring-1 ring-inset` pattern; locked → down-red tint, open → up-green tint.
+- **Focus**: global `:focus-visible` 2px `--color-accent` outline (never brand red — a red focus
+  ring reads as a validation error).
 
 ## Cross-app continuity
-- **Asset icons**: `https://cdn.xcp.io/img/icon/{asset}` (square, `rounded`/`rounded-sm`).
-- **Wallet connect** button uses the xcp brand + Headless UI button so the handoff to `window.xcpwallet` feels continuous with the extension.
-- **Deep-links**: "Trade" → xcpdex; NFT/collection → digirare — styled as secondary buttons/links.
+
+- Asset icons `https://cdn.xcp.io/img/icon/{asset}`; full art `/img/full/{asset}`.
+- Wallet connect → `window.xcpwallet`; Trade → xcpdex; collections → digirare.
+- xcpdex stays green-accented (trading = up/down world); the explorer's sky accent is deliberate
+  differentiation within the family: dex = trade, explorer = knowledge.
