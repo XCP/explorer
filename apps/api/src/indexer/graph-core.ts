@@ -55,25 +55,32 @@ export function graphTier(trust: number, distrust: number): GraphTier {
 export function passStatements(slot: number, reverse: boolean, alpha = ALPHA): string[] {
   const tele = 1 - alpha;
   const reset = `UPDATE graph_rank SET rn = ${tele} * s WHERE slot = ${slot}`;
-  const inflow = reverse
-    ? `UPDATE graph_rank AS g SET rn = g.rn + ${alpha} * f.inflow
-       FROM (SELECT e.src AS node, SUM(e.w / n.insum * rr.r) AS inflow
-             FROM graph_edges e
-             JOIN graph_node n ON n.id = e.dst
-             JOIN graph_rank rr ON rr.node = e.dst AND rr.slot = ${slot}
-             WHERE n.insum > 0 AND rr.r <> 0
-             GROUP BY e.src) AS f
-       WHERE g.slot = ${slot} AND g.node = f.node`
-    : `UPDATE graph_rank AS g SET rn = g.rn + ${alpha} * f.inflow
-       FROM (SELECT e.dst AS node, SUM(e.w / n.outsum * rr.r) AS inflow
-             FROM graph_edges e
-             JOIN graph_node n ON n.id = e.src
-             JOIN graph_rank rr ON rr.node = e.src AND rr.slot = ${slot}
-             WHERE n.outsum > 0 AND rr.r <> 0
-             GROUP BY e.dst) AS f
-       WHERE g.slot = ${slot} AND g.node = f.node`;
+  // The inflow aggregation is CHUNKED by edge rowid windows (a single full-edge UPDATE-JOIN exceeded
+  // D1's per-op CPU limit on the ~2.5M-edge prod graph): each chunk accumulates degree-normalized
+  // inflow into graph_inflow (ON CONFLICT ADD), then one small apply-join updates graph_rank. The
+  // chunk grid is fixed (empty windows no-op) so the statement list is deterministic across calls
+  // and identical between D1 and the node:sqlite harness.
+  const inflowChunks = rowidWindows.map(([lo, hi]) => reverse
+    ? `INSERT INTO graph_inflow (node, v)
+       SELECT e.src, SUM(e.w / n.insum * rr.r)
+       FROM graph_edges e
+       JOIN graph_node n ON n.id = e.dst
+       JOIN graph_rank rr ON rr.node = e.dst AND rr.slot = ${slot}
+       WHERE e.rowid > ${lo} AND e.rowid <= ${hi} AND n.insum > 0 AND rr.r <> 0
+       GROUP BY e.src
+       ON CONFLICT(node) DO UPDATE SET v = graph_inflow.v + excluded.v`
+    : `INSERT INTO graph_inflow (node, v)
+       SELECT e.dst, SUM(e.w / n.outsum * rr.r)
+       FROM graph_edges e
+       JOIN graph_node n ON n.id = e.src
+       JOIN graph_rank rr ON rr.node = e.src AND rr.slot = ${slot}
+       WHERE e.rowid > ${lo} AND e.rowid <= ${hi} AND n.outsum > 0 AND rr.r <> 0
+       GROUP BY e.dst
+       ON CONFLICT(node) DO UPDATE SET v = graph_inflow.v + excluded.v`);
+  const apply = `UPDATE graph_rank AS g SET rn = g.rn + ${alpha} * f.v
+       FROM graph_inflow AS f WHERE g.slot = ${slot} AND g.node = f.node`;
   const commit = `UPDATE graph_rank SET r = rn WHERE slot = ${slot}`;
-  return [reset, inflow, commit];
+  return [reset, `DELETE FROM graph_inflow`, ...inflowChunks, apply, commit];
 }
 
 /** Write graph_rank -> the signals tables. trust = MIN over the k trust slots; distrust = the reverse slot. */

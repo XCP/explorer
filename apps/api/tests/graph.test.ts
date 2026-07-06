@@ -31,6 +31,7 @@ function freshDb(): DatabaseSync {
     CREATE TABLE graph_node (id TEXT PRIMARY KEY, outsum REAL DEFAULT 0, insum REAL DEFAULT 0);
     CREATE TABLE graph_rank (node TEXT NOT NULL, slot INTEGER NOT NULL, s REAL DEFAULT 0, r REAL DEFAULT 0, rn REAL DEFAULT 0, PRIMARY KEY (node, slot));
     CREATE TABLE graph_seed (node TEXT NOT NULL, slot INTEGER NOT NULL, s REAL NOT NULL, PRIMARY KEY (node, slot));
+    CREATE TABLE graph_inflow (node TEXT PRIMARY KEY, v REAL NOT NULL);
   `);
   return db;
 }
