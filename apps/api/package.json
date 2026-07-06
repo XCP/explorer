@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "test": "tsc -p tsconfig.test.json && node --test \".test-dist/tests/**/*.test.js\"",
+    "test:contract": "tsc -p tsconfig.test.json && node tests/contract-runner.mjs",
     "deploy": "wrangler deploy",
     "migrate:local": "wrangler d1 migrations apply xcpio --local",
     "migrate:remote": "wrangler d1 migrations apply xcpio --remote"

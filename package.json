@@ -10,6 +10,7 @@
     "dev:api": "npm run dev -w xcpdex-api",
     "dev:web": "npm run dev -w xcp-explorer-web",
     "test": "npm run test -w xcpdex-api",
+    "test:contract": "npm run test:contract -w xcpdex-api",
     "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint && node scripts/check-structure.mjs",

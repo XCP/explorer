@@ -1,6 +1,11 @@
 // Minimal ambient declarations for the node:test runner + assert (we don't pull in full @types/node).
 declare module "node:test" {
-  type TestFn = () => void | Promise<void>;
+  // The per-test context — only the members our tests use (skip is how contract.test.ts stays hermetic).
+  interface TestContext {
+    skip(message?: string): void;
+    diagnostic(message: string): void;
+  }
+  type TestFn = (t: TestContext) => void | Promise<void>;
   export function test(name: string, fn: TestFn): void;
   export function describe(name: string, fn: () => void): void;
   export function it(name: string, fn: TestFn): void;
@@ -12,7 +17,11 @@ declare module "node:assert/strict" {
     notEqual(actual: unknown, expected: unknown, message?: string): void;
     deepEqual(actual: unknown, expected: unknown, message?: string): void;
     strictEqual(actual: unknown, expected: unknown, message?: string): void;
+    ok(value: unknown, message?: string): void;
+    match(value: string, regexp: RegExp, message?: string): void;
   }
   const assert: Assert;
   export default assert;
 }
+// process is not in @cloudflare/workers-types; contract.test.ts reads process.env.LIVE_API to stay hermetic.
+declare const process: { env: Record<string, string | undefined> };
