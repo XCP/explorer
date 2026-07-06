@@ -9,3 +9,9 @@ binding = "ASSETS"
 
 [vars]
 NEXT_PUBLIC_API_BASE = "https://xcp-api.me-bbe.workers.dev"
+
+# Server components can't fetch a sibling worker's public workers.dev URL from inside Cloudflare
+# (same issue the API works around for xcpdex) — server-side reads go through this binding.
+[[services]]
+binding = "API_WORKER"
+service = "xcp-api"

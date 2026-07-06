@@ -29,13 +29,30 @@ export class NotFoundError extends Error {
   }
 }
 
+// A worker on Cloudflare cannot fetch a sibling worker's public workers.dev URL — server-side reads
+// must go through the API_WORKER service binding (apps/web/wrangler.toml). Outside Cloudflare
+// (next dev, next build) the binding doesn't exist and plain fetch works fine.
+type WorkerBinding = { fetch(input: string | URL | Request, init?: RequestInit): Promise<Response> };
+
+async function serverFetch(url: string, init: RequestInit & { next?: { revalidate?: number } }): Promise<Response> {
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const binding = (getCloudflareContext().env as { API_WORKER?: WorkerBinding }).API_WORKER;
+    if (binding) return binding.fetch(url, init);
+  } catch {
+    // not on Cloudflare (dev/build) — fall through to plain fetch
+  }
+  return fetch(url, init);
+}
+
 /**
- * Server-side read of the API (React Server Components / route handlers). Plain fetch against the
- * same API_BASE, cached by Next's data cache (`next: { revalidate }`, seconds). Throws NotFoundError
- * on a 404 so pages can catch it and call notFound(); other non-2xx statuses throw a generic error.
+ * Server-side read of the API (React Server Components / route handlers). Uses the API_WORKER
+ * service binding on Cloudflare, plain fetch elsewhere; Next's data cache applies where supported
+ * (`next: { revalidate }`, seconds). Throws NotFoundError on a 404 so pages can catch it and call
+ * notFound(); other non-2xx statuses throw a generic error.
  */
 export async function getJson<T>(path: string, opts: { revalidate?: number } = {}): Promise<T> {
-  const res = await fetch(API_BASE + path, { next: { revalidate: opts.revalidate ?? 30 } });
+  const res = await serverFetch(API_BASE + path, { next: { revalidate: opts.revalidate ?? 30 } });
   if (res.status === 404) throw new NotFoundError(path);
   if (!res.ok) throw new Error(`API ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
