@@ -23,12 +23,12 @@ export function ActivityChart() {
       <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-1">
         {SERIES.map(([k, lbl]) => (
           <button key={k} onClick={() => setS(k)}
-            className={`text-xs px-2 py-0.5 rounded transition-colors ${s === k ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}>{lbl}</button>
+            className={`text-xs px-2 py-0.5 rounded transition-colors ${s === k ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}>{lbl}</button>
         ))}
         <button onClick={() => setCum((v) => !v)} title="Cumulative"
-          className={`text-xs px-2 py-0.5 rounded transition-colors ${cum ? "bg-[--color-xcp] text-white" : "text-zinc-500 hover:text-zinc-300 border border-zinc-700"}`}>Σ</button>
+          className={`text-xs px-2 py-0.5 rounded transition-colors ${cum ? "bg-[--color-accent] text-zinc-950" : "text-zinc-400 hover:text-zinc-200 border border-zinc-700"}`}>Σ</button>
       </div>
-      <div className="text-xs text-zinc-500 mb-2">{cum ? "Cumulative" : "Daily"} {label} · last {series.length} days indexed</div>
+      <div className="text-xs text-zinc-400 mb-2">{cum ? "Cumulative" : "Daily"} {label} · last {series.length} days indexed</div>
       <AreaChart data={series} height={200} />
     </Card>
   );

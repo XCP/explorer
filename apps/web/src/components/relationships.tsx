@@ -23,7 +23,7 @@ export function AssetCohort({ asset }: { asset: string }) {
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {rows.map((r) => (
             <Link key={r.asset} href={`/asset/${r.asset}`}
-              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-[--color-xcp] transition-colors">
+              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-[--color-accent] transition-colors">
               <AssetArt asset={r.asset} className="w-full aspect-[3/4] group-hover:scale-105 transition-transform" />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pt-6 pb-1.5">
                 <div className="text-[11px] font-medium text-zinc-100 truncate">{r.asset_longname || r.asset}</div>
@@ -59,10 +59,10 @@ export function HolderQuality({ asset }: { asset: string }) {
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             {(q.burned_pct ?? 0) > 0 && <span className="inline-flex items-center gap-1 rounded-md bg-orange-500/10 text-orange-400 px-2 py-1 ring-1 ring-inset ring-orange-500/20"><Flame className="size-3" />{q.burned_pct}% of supply burned</span>}
-            {strong && <span className="inline-flex items-center gap-1 rounded-md bg-green-500/10 text-green-400 px-2 py-1 ring-1 ring-inset ring-green-500/20"><ShieldCheck className="size-3" />Established community · broad collectors</span>}
+            {strong && <span className="inline-flex items-center gap-1 rounded-md bg-green-400/10 text-green-400 px-2 py-1 ring-1 ring-inset ring-green-400/20"><ShieldCheck className="size-3" />Established community · broad collectors</span>}
             {thin && <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 text-amber-400 px-2 py-1 ring-1 ring-inset ring-amber-500/20"><ShieldAlert className="size-3" />Thin / concentrated holder base</span>}
             {q.wash_suspect
-              ? <span className="inline-flex items-center gap-1 rounded-md bg-red-500/10 text-red-400 px-2 py-1 ring-1 ring-inset ring-red-500/20"><ShieldAlert className="size-3" />Low trading integrity · {q.self_trade_pct}% self-trades</span>
+              ? <span className="inline-flex items-center gap-1 rounded-md bg-red-400/10 text-red-400 px-2 py-1 ring-1 ring-inset ring-red-400/20"><ShieldAlert className="size-3" />Low trading integrity · {q.self_trade_pct}% self-trades</span>
               : q.trades > 0 && <span className="inline-flex items-center gap-1 rounded-md bg-zinc-800 text-zinc-300 px-2 py-1 ring-1 ring-inset ring-white/5"><ShieldCheck className="size-3" />Organic trading · {commas(q.trades)} trades</span>}
           </div>
         </>
@@ -84,7 +84,7 @@ export function AddressConnections({ address }: { address: string }) {
         <ul className="space-y-1">
           {rows.map((r) => (
             <li key={r.cp} className="relative rounded overflow-hidden">
-              <div className="absolute inset-y-0 left-0 bg-[--color-xcp]/10" style={{ width: `${Math.max(3, (Number(r.interactions) / max) * 100)}%` }} />
+              <div className="absolute inset-y-0 left-0 bg-[--color-accent]/10" style={{ width: `${Math.max(3, (Number(r.interactions) / max) * 100)}%` }} />
               <div className="relative flex items-center justify-between px-2 py-1.5 text-sm">
                 <span className="truncate">{addrCell(r.cp)}</span>
                 <span className="font-mono text-xs text-zinc-400 shrink-0 ml-2">{commas(r.interactions)}×</span>
@@ -107,11 +107,11 @@ export function AddressLineage({ address }: { address: string }) {
     <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-2.5 text-sm flex items-start gap-2.5">
       <GitBranch className="size-4 text-amber-400 mt-0.5 shrink-0" />
       <div className="flex flex-col gap-0.5">
-        <span className="text-zinc-200 font-medium">Identity lineage <span className="text-zinc-500 font-normal">· linked by sweep (same owner)</span></span>
+        <span className="text-zinc-200 font-medium">Identity lineage <span className="text-zinc-400 font-normal">· linked by sweep (same owner)</span></span>
         {rows.map((r, i) => (
           <span key={i} className="text-zinc-400">
             {r.direction === "out" ? "swept all assets → " : "received sweep ← "}
-            {addrCell(r.counterparty)} <span className="text-zinc-600">· block {commas(r.block_index)}</span>
+            {addrCell(r.counterparty)} <span className="text-zinc-500">· block {commas(r.block_index)}</span>
           </span>
         ))}
       </div>

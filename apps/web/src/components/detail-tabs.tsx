@@ -28,7 +28,7 @@ export function DetailTabs({ tabs, pageSize = 50 }: { tabs: TabDef[]; pageSize?:
         {tabs.map((t, i) => (
           <button key={t.label} onClick={() => select(i)}
             className={`whitespace-nowrap px-3 py-2 text-sm rounded-t -mb-px border-b-2 transition-colors ${
-              i === active ? "border-[--color-xcp] text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"
+              i === active ? "border-[--color-accent] text-zinc-100" : "border-transparent text-zinc-400 hover:text-zinc-200"
             }`}>{t.label}</button>
         ))}
       </div>

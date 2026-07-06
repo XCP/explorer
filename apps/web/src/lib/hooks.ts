@@ -18,7 +18,18 @@ function useDetail<T>(path: string | null) {
   return { item: data?.result, error, isLoading };
 }
 
-export const useStats = () => useDetail<StatsOverview>("/v2/");
+// The home summary + footer heartbeat both read this; poll every 60s so the tip height stays current.
+export const useStats = () => {
+  const { data, error, isLoading } = useSWR<Envelope<StatsOverview>>(apiUrl("/v2/"), { refreshInterval: 60_000 });
+  return { item: data?.result, error, isLoading };
+};
+// Distinct pending-tx count for the footer heartbeat — the same /v2/mempool feed as useMempool, but
+// polled at a lazier 60s (the heartbeat is a trust signal, not the live "now" view).
+export function useMempoolCount() {
+  const { data } = useSWR<Envelope<MempoolActionRow[]>>(apiUrl("/v2/mempool"), { refreshInterval: 60_000 });
+  const rows = data?.result ?? [];
+  return new Set(rows.map((r) => r.tx_hash)).size;
+}
 // Mempool hooks poll every 10s (the "now" view). Protocol-wide, plus per-entity feeds that render nothing
 // when the entity has no pending actions. A null/undefined entity disables the fetch (SWR skips a null key).
 export function useMempool() {

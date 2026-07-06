@@ -30,9 +30,9 @@ const DISCOVER: NavGroup[] = [
 function Ticker({ label, v, chg }: { label: string; v: number | null; chg: number | null }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-zinc-500">{label}</span>
+      <span className="text-xs text-zinc-400">{label}</span>
       <span className="text-xs text-zinc-300 font-mono tabular-nums">{v != null ? `$${v < 10 ? v.toFixed(2) : v.toLocaleString()}` : "—"}</span>
-      {chg != null && <span className={`text-[10px] font-mono tabular-nums ${chg >= 0 ? "text-green-500" : "text-red-500"}`}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>}
+      {chg != null && <span className={`text-[10px] font-mono tabular-nums ${chg >= 0 ? "text-[--color-up]" : "text-[--color-down]"}`}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>}
     </div>
   );
 }
@@ -83,14 +83,14 @@ export function TopBar() {
         {/* desktop nav */}
         <nav aria-label="Primary" className="hidden sm:flex items-center gap-4 text-xs">
           {PRIMARY.map(([label, href]) => (
-            <Link key={href} href={href} className={`!no-underline transition-colors ${active(href) ? "!text-zinc-100" : "!text-zinc-500 hover:!text-zinc-200"}`}>{label}</Link>
+            <Link key={href} href={href} className={`!no-underline transition-colors border-b-2 pb-0.5 ${active(href) ? "!text-zinc-100 border-[--color-accent]" : "!text-zinc-400 border-transparent hover:!text-zinc-200"}`}>{label}</Link>
           ))}
           <NavMenu label="Records" id="nav-records" groups={RECORDS} />
           <NavMenu label="Discover" id="nav-discover" groups={DISCOVER} />
         </nav>
 
         {/* desktop search */}
-        <div className="hidden sm:block ml-auto sm:ml-2 flex-1 max-w-md"><SearchBox autoFocusKey /></div>
+        <div className="hidden sm:block ml-auto sm:ml-2 flex-1 max-w-md xl:max-w-lg"><SearchBox autoFocusKey /></div>
 
         {/* desktop right */}
         <div className="hidden sm:flex items-center gap-4 shrink-0">
@@ -120,7 +120,7 @@ export function TopBar() {
           </div>
           {[{ title: "Records", groups: RECORDS }, { title: "Discover", groups: DISCOVER }].map(({ title, groups }) => (
             <div key={title}>
-              <div className="pb-1 text-[10px] uppercase tracking-wider text-zinc-600">{title}</div>
+              <div className="pb-1 text-[10px] uppercase tracking-wider text-zinc-500">{title}</div>
               <div className="grid grid-cols-2 gap-x-4">
                 {groups.flatMap((g) => g.links).map(([label, href]) => (
                   <Link key={href} href={href} className={`!no-underline py-1.5 text-sm ${active(href) ? "!text-zinc-100" : "!text-zinc-400"}`}>{label}</Link>

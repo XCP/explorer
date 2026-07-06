@@ -1,4 +1,5 @@
-// Dependency-free SVG charts (brand crimson) for the home/stats time-series.
+// Dependency-free SVG charts (sky accent) for the home/stats time-series. Charts are drawn in accent,
+// never brand/market red — a red activity chart reads as an incident.
 
 // Area chart with a date axis — for daily time-series.
 export function AreaChart({ data, height = 200 }: { data: { t: number; v: number }[]; height?: number }) {
@@ -15,15 +16,15 @@ export function AreaChart({ data, height = 200 }: { data: { t: number; v: number
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height }} preserveAspectRatio="none">
         <defs>
           <linearGradient id="xcpArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-xcp)" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="var(--color-xcp)" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d={area} fill="url(#xcpArea)" />
-        <path d={line} fill="none" stroke="var(--color-xcp)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
       </svg>
-      <div className="flex justify-between text-[10px] text-zinc-600 mt-1 font-mono">
-        <span>{day(data[0].t)}</span><span className="text-zinc-500">peak {max.toLocaleString()}</span><span>{day(data[n - 1].t)}</span>
+      <div className="flex justify-between text-[10px] text-zinc-500 mt-1 font-mono">
+        <span>{day(data[0].t)}</span><span className="text-zinc-400">peak {max.toLocaleString()}</span><span>{day(data[n - 1].t)}</span>
       </div>
     </div>
   );
@@ -37,7 +38,7 @@ export function Sparkline({ data, height = 36 }: { data: number[]; height?: numb
     <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
       {data.map((v, i) => {
         const bh = Math.max(1, (v / max) * (height - 2));
-        return <rect key={i} x={i * bw} y={height - bh} width={Math.max(0.5, bw * 0.7)} height={bh} rx={0.5} className="fill-[--color-xcp]" opacity={0.55} />;
+        return <rect key={i} x={i * bw} y={height - bh} width={Math.max(0.5, bw * 0.7)} height={bh} rx={0.5} className="fill-[--color-accent]" opacity={0.55} />;
       })}
     </svg>
   );

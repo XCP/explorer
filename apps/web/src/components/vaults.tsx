@@ -26,7 +26,7 @@ export function Vaults() {
     <>
       <div>
         <h1 className="text-xl font-semibold text-zinc-100">Emblem Vaults</h1>
-        <p className="text-sm text-zinc-500 mt-1">Counterparty assets wrapped as Ethereum NFTs — a custody bridge. What gets vaulted, and who funds and cracks them.</p>
+        <p className="text-sm text-zinc-400 mt-1">Counterparty assets wrapped as Ethereum NFTs — a custody bridge. What gets vaulted, and who funds and cracks them.</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat label="Funded vaults" value={commas(s?.funded_vaults)} />

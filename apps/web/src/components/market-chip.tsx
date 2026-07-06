@@ -15,10 +15,10 @@ export function MarketChip({ asset }: { asset: string }) {
   const chg = m.price_change_7d;
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
-      <span className="text-xs text-zinc-500">Market · xcpdex</span>
-      <span className="font-mono text-zinc-100">{m.last_price} <span className="text-zinc-500 text-xs">XCP</span></span>
+      <span className="text-xs text-zinc-400">Market · xcpdex</span>
+      <span className="font-mono text-zinc-100">{m.last_price} <span className="text-zinc-400 text-xs">XCP</span></span>
       {m.volume_7d != null && <span className="font-mono text-xs text-zinc-400">vol {commas(m.volume_7d)} (7d)</span>}
-      {chg != null && <span className={`font-mono text-xs ${chg >= 0 ? "text-green-500" : "text-red-500"}`}>{chg >= 0 ? "+" : ""}{Number(chg).toFixed(1)}% 7d</span>}
+      {chg != null && <span className={`font-mono text-xs ${chg >= 0 ? "text-[--color-up]" : "text-[--color-down]"}`}>{chg >= 0 ? "+" : ""}{Number(chg).toFixed(1)}% 7d</span>}
     </div>
   );
 }

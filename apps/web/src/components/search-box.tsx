@@ -24,7 +24,7 @@ export function SearchBox({ big = false, autoFocusKey = false }: { big?: boolean
         name="q" autoComplete="off" spellCheck={false} enterKeyHint="search"
         aria-label="Search asset, address, transaction, or block"
         placeholder="Search assets, addresses, txs, blocks…"
-        className={`w-full rounded bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-[--color-xcp] ${
+        className={`w-full rounded bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-[--color-accent] ${
           big ? "pl-4 pr-10 py-3 text-base" : "pl-3 pr-14 py-1.5 text-sm"
         }`}
       />
@@ -32,7 +32,7 @@ export function SearchBox({ big = false, autoFocusKey = false }: { big?: boolean
       {autoFocusKey && !big && !q && (
         <kbd aria-hidden="true" className="absolute right-8 top-1/2 -translate-y-1/2 rounded border border-zinc-700 bg-zinc-800/80 px-1.5 text-[10px] leading-4 text-zinc-500">/</kbd>
       )}
-      <button type="submit" aria-label="Search" className={`absolute top-1/2 -translate-y-1/2 text-zinc-500 hover:text-[--color-xcp] ${big ? "right-3" : "right-2"}`}>
+      <button type="submit" aria-label="Search" className={`absolute top-1/2 -translate-y-1/2 text-zinc-400 hover:text-[--color-accent] ${big ? "right-3" : "right-2"}`}>
         <svg aria-hidden="true" className={big ? "size-5" : "size-3.5"} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
         </svg>

@@ -27,4 +27,4 @@ export const txCell = (h?: string | null) => (h ? <Link href={`/tx/${h}`}>{mono(
 export const addrCell = (a?: string | null) => (a ? <Link href={`/address/${a}`}>{mono(a)}</Link> : "—");
 export const assetCell = (a?: string | null) =>
   a ? <Link href={`/asset/${a}`} className="inline-flex items-center gap-1.5"><AssetIcon asset={a} size={16} />{a}</Link> : "—";
-export const timeCell = (t?: number | null) => <span className="text-zinc-500">{ts(t)}</span>;
+export const timeCell = (t?: number | null) => <span className="text-zinc-400">{ts(t)}</span>;

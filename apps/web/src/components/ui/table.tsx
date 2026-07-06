@@ -8,7 +8,7 @@ export function Table({ head, children }: { head: Head[]; children: ReactNode })
     <div className="overflow-x-auto">
       <table className="w-full text-sm whitespace-nowrap">
         <thead className="sticky top-0 bg-zinc-950 z-10">
-          <tr className="text-zinc-500 border-b border-zinc-800">
+          <tr className="text-zinc-400 border-b border-zinc-800">
             {head.map((h) => {
               const label = typeof h === "string" ? h : h.label;
               const numeric = typeof h === "object" && h.numeric;
@@ -30,7 +30,7 @@ export const Cell = ({ children, numeric, muted, primary, hide }: { children: Re
   <td className={[
     "px-3 py-2",
     numeric ? "text-right font-mono tabular-nums" : "",
-    muted ? "text-zinc-500" : numeric ? "text-zinc-300" : "",
+    muted ? "text-zinc-400" : numeric ? "text-zinc-300" : "",
     primary ? "text-zinc-100 font-medium" : "",
     hide ?? "",
   ].filter(Boolean).join(" ")}>{children}</td>

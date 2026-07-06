@@ -14,8 +14,8 @@ const BAND: Record<string, { color: string; ring: string; bg: string }> = {
   Proven: { color: "text-sky-400", ring: "ring-sky-500/30", bg: "bg-sky-500/10" },
   Active: { color: "text-zinc-300", ring: "ring-zinc-600", bg: "bg-zinc-800" },
   Quiet: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
-  New: { color: "text-zinc-500", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
-  "No history": { color: "text-zinc-600", ring: "ring-zinc-800", bg: "bg-zinc-900/60" },
+  New: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
+  "No history": { color: "text-zinc-500", ring: "ring-zinc-800", bg: "bg-zinc-900/60" },
   Exchange: { color: "text-violet-300", ring: "ring-violet-500/30", bg: "bg-violet-500/10" },
   "Exchange deposit": { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
 };
@@ -45,13 +45,13 @@ export function ReputationHeader({ address }: { address: string }) {
       <div className="flex items-start gap-4 flex-wrap">
         <div className={`shrink-0 rounded-xl ${b.bg} ring-1 ring-inset ${b.ring} px-5 py-3 text-center min-w-[88px]`}>
           <div className={`text-3xl font-bold tabular-nums ${b.color}`}>{r.score ?? "—"}</div>
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">reputation</div>
+          <div className="text-[10px] uppercase tracking-wider text-zinc-400">reputation</div>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <ShieldCheck className={`size-4 ${b.color}`} />
             <span className={`font-semibold ${b.color}`}>{r.band}</span>
-            {ev?.span_years ? <span className="text-xs text-zinc-500">· active {ev.span_years} yrs</span> : null}
+            {ev?.span_years ? <span className="text-xs text-zinc-400">· active {ev.span_years} yrs</span> : null}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
             {(r.tags || []).map((t: string) => {
@@ -62,18 +62,18 @@ export function ReputationHeader({ address }: { address: string }) {
                 </span>
               );
             })}
-            {(!r.tags || r.tags.length === 0) && <span className="text-xs text-zinc-600">No track record yet</span>}
+            {(!r.tags || r.tags.length === 0) && <span className="text-xs text-zinc-400">No track record yet</span>}
           </div>
         </div>
       </div>
       {lines.length > 0 && (
         <div className="mt-4 border-t border-zinc-800 pt-3">
-          <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-2">Why · the evidence</div>
+          <div className="text-[11px] uppercase tracking-wider text-zinc-400 mb-2">Why · the evidence</div>
           <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1">
             {lines.map(([txt, label], i) => (
               <div key={i} className="flex items-center justify-between text-sm gap-2">
                 <span className="text-zinc-300 truncate">{txt}</span>
-                <span className="text-[10px] uppercase tracking-wide text-zinc-600 shrink-0">{label}</span>
+                <span className="text-[10px] uppercase tracking-wide text-zinc-500 shrink-0">{label}</span>
               </div>
             ))}
           </div>

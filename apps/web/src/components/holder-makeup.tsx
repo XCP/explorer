@@ -37,7 +37,7 @@ export function HolderMakeup({ asset }: { asset: string }) {
           <div key={t.tier} className="flex items-center gap-2 min-w-0">
             <span className={`size-2.5 rounded-sm shrink-0 ${TIER_COLOR[t.tier] || "bg-zinc-700"}`} />
             <span className="text-zinc-300">{t.tier}</span>
-            <span className="text-zinc-500 truncate">{commas(t.holders)} · {t.pct_supply}%</span>
+            <span className="text-zinc-400 truncate">{commas(t.holders)} · {t.pct_supply}%</span>
           </div>
         ))}
       </div>

@@ -50,11 +50,11 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
         {(s?.issued ?? 0) > 0 && <Chip><Stamp className="size-3" />Issuer · {commas(s?.issued)} assets</Chip>}
         {(s?.dispensers ?? 0) > 0 && <Chip><Store className="size-3" />Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
         {(s?.open_orders ?? 0) > 0 && <Chip><ArrowLeftRight className="size-3" />Active trader · {s?.open_orders} open</Chip>}
-        {xcp >= 50000 && <Chip><Coins className="size-3 text-[--color-xcp]" />XCP whale</Chip>}
+        {xcp >= 50000 && <Chip><Coins className="size-3 text-[--color-accent]" />XCP whale</Chip>}
         {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip><Wallet className="size-3" />Holder</Chip>}
       </div>
       {s?.first_block != null && (
-        <div className="text-xs text-zinc-500 mt-2">
+        <div className="text-xs text-zinc-400 mt-2">
           First active <Link href={`/block/${s.first_block}`}>block {commas(s.first_block)}</Link>
           {" · "}last active <Link href={`/block/${s.last_block}`}>block {commas(s.last_block)}</Link>
         </div>

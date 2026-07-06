@@ -27,15 +27,15 @@ export function Leaderboards() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100">Leaderboards</h1>
-          <p className="text-sm text-zinc-500 mt-1">Derived across the whole chain — who builds, who collects, what endures. Reputation signals, not just balances.</p>
+          <p className="text-sm text-zinc-400 mt-1">Derived across the whole chain — who builds, who collects, what endures. Reputation signals, not just balances.</p>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer shrink-0 mt-1">
-          <input type="checkbox" checked={!showLowQ} onChange={(e) => setShowLowQ(!e.target.checked)} className="accent-[--color-xcp] w-3.5 h-3.5" />
+          <input type="checkbox" checked={!showLowQ} onChange={(e) => setShowLowQ(!e.target.checked)} className="accent-[--color-accent] w-3.5 h-3.5" />
           Hide low quality
         </label>
       </div>
 
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mt-2">People</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-2">People</h2>
       <div className="grid lg:grid-cols-3 gap-6">
         <Board title="Top creators" rows={d.top_creators ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.survived_assets)} assets that landed`)}</>)} />
         <Board title="Top collectors" rows={d.top_collectors ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.assets_held)} held`)}</>)} />
@@ -46,7 +46,7 @@ export function Leaderboards() {
         <Board title="Top creator hits" rows={d.top_hits ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.assets_hits)} hits (50+ holders)`)}</>)} />
       </div>
 
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mt-4">Assets</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Assets</h2>
       <div className="grid lg:grid-cols-3 gap-6">
         <Board title="Most held" rows={d.most_held ?? []} render={(r) => (<>{Asset(r.asset, r.asset_longname)}{val(`${commas(r.holders)} holders`)}</>)} />
         <Board title="Most traded" rows={d.most_traded ?? []} render={(r) => (<>{Asset(r.asset, r.asset_longname)}{val(`${commas(r.trades)} trades`)}</>)} />
@@ -56,13 +56,13 @@ export function Leaderboards() {
         <Board title="Most creator-held" rows={d.most_creator_held ?? []} render={(r) => (<>{Asset(r.asset, r.asset_longname)}{val(`${r.pct_creator_holders}% creators`)}</>)} />
       </div>
 
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mt-4">Reputation</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Reputation</h2>
       <div className="grid lg:grid-cols-3 gap-6">
         <Board title="Highest reputation (OG)" rows={d.top_reputation ?? []} render={(r) => (<>{Addr(r.addr)}{val(`score ${r.score}`)}</>)} />
         <Board title="Highest quality (Bluechip)" rows={d.top_quality ?? []} render={(r) => (<>{Asset(r.asset, r.asset_longname)}{val(`score ${r.score}`)}</>)} />
       </div>
 
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mt-4">Bitcoin Stamps</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Bitcoin Stamps</h2>
       <div className="grid lg:grid-cols-3 gap-6">
         <Board title="Top stamp creators" rows={d.top_stamp_creators ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.stamps_created)} stamps`)}</>)} />
         <Board title="Top stamp collectors" rows={d.top_stamp_collectors ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.stamps_collected)} held`)}</>)} />

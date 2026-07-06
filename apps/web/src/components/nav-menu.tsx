@@ -51,7 +51,7 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={id}
-        className={`transition-colors ${active || open ? "text-zinc-100" : "text-zinc-500"} hover:text-zinc-200`}
+        className={`transition-colors ${active || open ? "text-[--color-accent]" : "text-zinc-400 hover:text-zinc-200"}`}
       >
         {label} <span aria-hidden="true" className="text-[9px]">▾</span>
       </button>
@@ -62,7 +62,7 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
             {groups.map((g, i) => (
               <div key={g.heading ?? i} className="min-w-28">
                 {g.heading && (
-                  <div className="pb-1 text-[10px] uppercase tracking-wider text-zinc-600">{g.heading}</div>
+                  <div className="pb-1 text-[10px] uppercase tracking-wider text-zinc-500">{g.heading}</div>
                 )}
                 <div className="flex flex-col">
                   {g.links.map(([l, href]) => (

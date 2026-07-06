@@ -26,3 +26,13 @@ export const compact = (v?: string | number | null) => {
 
 export const ts = (sec?: number | null) =>
   sec ? new Date(sec * 1000).toISOString().replace("T", " ").slice(0, 19) + "Z" : "—";
+
+// Relative "time ago" for freshness-first surfaces (the home "now" feeds) — coarse buckets, terse.
+export const timeAgo = (sec?: number | null) => {
+  if (!sec) return "—";
+  const diff = Math.max(0, Math.floor(Date.now() / 1000 - sec));
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+};

@@ -19,7 +19,7 @@ export function Holdings({ address }: { address: string }) {
   const [view, setView] = useState<"gallery" | "table">("gallery");
   const rows = (data?.result ?? []).slice().sort((a, b) => Number(b.quantity_normalized) - Number(a.quantity_normalized));
   const tab = (k: typeof view, label: string) => (
-    <button onClick={() => setView(k)} className={`text-xs px-2 py-0.5 rounded transition-colors ${view === k ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}>{label}</button>
+    <button onClick={() => setView(k)} className={`text-xs px-2 py-0.5 rounded transition-colors ${view === k ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}>{label}</button>
   );
   return (
     <Card title={`Holdings${rows.length ? ` · ${rows.length}` : ""}`}>
@@ -29,7 +29,7 @@ export function Holdings({ address }: { address: string }) {
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {rows.map((b) => (
             <Link key={b.asset} href={`/asset/${b.asset}`}
-              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-[--color-xcp] transition-colors">
+              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-[--color-accent] transition-colors">
               <AssetArt asset={b.asset} stamp={!!b.stamp} className="w-full aspect-[3/4] group-hover:scale-105 transition-transform" />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pt-6 pb-1.5">
                 <div className="text-[11px] font-medium text-zinc-100 truncate">{b.asset_longname || b.asset}</div>

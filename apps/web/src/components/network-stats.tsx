@@ -22,7 +22,7 @@ export function NetworkStats() {
     <>
       <div>
         <h1 className="text-xl font-semibold text-zinc-100">Network stats</h1>
-        <p className="text-sm text-zinc-500 mt-1">Counterparty totals across the whole chain, including its lifetime deflation.</p>
+        <p className="text-sm text-zinc-400 mt-1">Counterparty totals across the whole chain, including its lifetime deflation.</p>
       </div>
       {/* deflation headline — XCP is destroyed by fees; this is the lifetime burn */}
       <div className="grid sm:grid-cols-3 gap-3">
@@ -35,7 +35,7 @@ export function NetworkStats() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
           {COUNTS.map(([k, label]) => (
             <div key={k} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
-              <span className="text-zinc-500">{label}</span>
+              <span className="text-zinc-400">{label}</span>
               <span className="font-mono text-zinc-200">{commas(s?.[k])}</span>
             </div>
           ))}

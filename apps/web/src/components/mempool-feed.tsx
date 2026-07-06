@@ -29,10 +29,10 @@ export function MempoolFeed() {
 
   return (
     <Card title="Mempool">
-      <span className="absolute right-5 top-4 flex items-center gap-1.5 text-xs text-zinc-500">
-        <span className="size-1.5 rounded-full bg-green-500 animate-pulse" /> live
+      <span className="absolute right-5 top-4 flex items-center gap-1.5 text-xs text-zinc-400">
+        <span className="size-1.5 rounded-full bg-[--color-up] animate-pulse" /> live
       </span>
-      <p className="-mt-2 mb-3 text-xs text-zinc-500">
+      <p className="-mt-2 mb-3 text-xs text-zinc-400">
         {rows.length === 0
           ? "Unconfirmed Counterparty actions in the Bitcoin mempool."
           : `${commas(rows.length)} pending action${rows.length === 1 ? "" : "s"} across ${commas(txs)} transaction${txs === 1 ? "" : "s"}.`}

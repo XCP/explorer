@@ -20,7 +20,7 @@ export function ExchangeDirectory() {
     <>
       <div>
         <h1 className="text-xl font-semibold text-zinc-100">Exchanges</h1>
-        <p className="text-sm text-zinc-500 mt-1">The CEX side of Counterparty history — the custody/deposit wallets of the exchanges that listed XCP-era tokens, and what flowed onto them.</p>
+        <p className="text-sm text-zinc-400 mt-1">The CEX side of Counterparty history — the custody/deposit wallets of the exchanges that listed XCP-era tokens, and what flowed onto them.</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Stat label="Known exchange wallets" value={commas(s?.exchanges)} />
@@ -30,12 +30,12 @@ export function ExchangeDirectory() {
       <Card title="Exchange wallets">
         {ex.length === 0 ? <Skeleton rows={8} /> : (
           <div className="text-sm">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 text-[10px] uppercase tracking-wider text-zinc-600 pb-1 border-b border-zinc-800">
+            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 text-[10px] uppercase tracking-wider text-zinc-400 pb-1 border-b border-zinc-800">
               <span>Operator / wallet</span><span className="text-right">Assets</span><span className="text-right">Senders</span>
             </div>
             {ex.map((e) => (
               <div key={e.addr} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1.5 border-b border-zinc-900 last:border-0">
-                <span className="flex items-center gap-2 min-w-0"><span className="text-zinc-200">{e.name}</span><Link href={`/address/${e.addr}`} className="font-mono text-xs text-zinc-500 break-all">{e.addr}</Link></span>
+                <span className="flex items-center gap-2 min-w-0"><span className="text-zinc-200">{e.name}</span><Link href={`/address/${e.addr}`} className="font-mono text-xs text-zinc-400 break-all">{e.addr}</Link></span>
                 <span className="text-right font-mono text-zinc-400 text-xs">{commas(e.assets_received)}</span>
                 <span className="text-right font-mono text-zinc-400 text-xs">{commas(e.in_peers)}</span>
               </div>
