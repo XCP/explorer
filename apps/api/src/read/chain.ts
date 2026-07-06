@@ -1,30 +1,27 @@
-/** Chain primitives + the recent-first index feeds (one per explorer index page). */
+/** Chain primitives + the recent-first index feeds (one per explorer index page). SQL lives in queries/chain.ts. */
 import { router, J, lim, off, ORDER_SELECT } from "./shared";
+import { listBlocks, getBlock, blockTransactions, getTransaction, listRecords } from "../queries/chain";
 
 export const chain = router();
 
 /* ---------- blocks ---------- */
 chain.get("/v2/blocks", async (c) => {
-  const rows = await c.env.DB.prepare(
-    `SELECT block_index, block_hash, block_time, transaction_count FROM blocks ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) }, 15);
+  const l = lim(c), o = off(c);
+  const rows = await listBlocks(c.env.DB, l, o);
+  return J(c, { result: rows, next_offset: o + l }, 15);
 });
 
 chain.get("/v2/blocks/:n", async (c) => {
   const n = parseInt(c.req.param("n"), 10);
-  const b = await c.env.DB.prepare(`SELECT * FROM blocks WHERE block_index=?`).bind(n).first<any>();
+  const b = await getBlock(c.env.DB, n);
   if (!b) return c.json({ error: "Block not found" }, 404);
-  const txs = await c.env.DB.prepare(
-    `SELECT tx_hash, tx_index, source, destination, fee FROM transactions WHERE block_index=? LIMIT 500`
-  ).bind(n).all();
-  return J(c, { result: { ...b, transactions: txs.results } });
+  const transactions = await blockTransactions(c.env.DB, n);
+  return J(c, { result: { ...b, transactions } });
 });
 
 /* ---------- transactions ---------- */
 chain.get("/v2/transactions/:hash", async (c) => {
-  const h = c.req.param("hash");
-  const t = await c.env.DB.prepare(`SELECT * FROM transactions WHERE tx_hash=?`).bind(h).first<any>();
+  const t = await getTransaction(c.env.DB, c.req.param("hash"));
   if (!t) return c.json({ error: "Transaction not found" }, 404);
   return J(c, { result: t });
 });
@@ -35,8 +32,8 @@ chain.get("/v2/transactions/:hash", async (c) => {
 const listRoute = (path: string, sql: string) =>
   chain.get(path, async (c) => {
     const l = lim(c), o = off(c);
-    const rows = await c.env.DB.prepare(`${sql} ORDER BY block_index DESC LIMIT ? OFFSET ?`).bind(l, o).all();
-    return J(c, { result: rows.results, next_offset: rows.results.length === l ? o + l : null });
+    const rows = await listRecords(c.env.DB, sql, l, o);
+    return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
   });
 listRoute("/v2/transactions", `SELECT tx_hash,tx_index,block_index,block_time,source,destination,btc_amount,fee,supported FROM transactions`);
 listRoute("/v2/sends", `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status FROM sends`);
@@ -45,8 +42,8 @@ listRoute("/v2/dispensers", `SELECT tx_hash,block_index,block_time,source,asset,
 listRoute("/v2/dispenses", `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized,dispenser_tx_hash FROM dispenses`);
 chain.get("/v2/orders", async (c) => {
   const l = lim(c), o = off(c);
-  const rows = await c.env.DB.prepare(`${ORDER_SELECT} ORDER BY o.block_index DESC LIMIT ? OFFSET ?`).bind(l, o).all();
-  return J(c, { result: rows.results, next_offset: rows.results.length === l ? o + l : null });
+  const rows = await listRecords(c.env.DB, ORDER_SELECT, l, o, "o.block_index");
+  return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
 });
 listRoute("/v2/order_matches", `SELECT id,block_index,block_time,tx0_hash,tx1_hash,tx0_address,tx1_address,forward_asset,forward_quantity,backward_asset,backward_quantity,status FROM order_matches`);
 listRoute("/v2/sweeps", `SELECT tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status FROM sweeps`);

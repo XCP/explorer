@@ -1,25 +1,23 @@
 /** Asset surfaces: index, detail (with derived supply/burned/circulating), per-asset record tabs,
- *  market data (xcpdex), and the research reads (collector cohort, holder quality). */
+ *  market data (xcpdex), and the research reads (collector cohort, holder quality). Handlers stay thin:
+ *  parse → query (queries/assets.ts owns the SQL) → respond. The BigInt supply derivation and the
+ *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
+import type { AssetDetail } from "@xcp/shared/assets";
 import { router, J, lim, off, ORDER_SELECT, activeBalance, round, cached } from "./shared";
 import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
+import {
+  listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText,
+  assetSignalsRow, assetTags, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
+  assetReviewDistribution, assetReviewTop, listAssetBalances, listAssetIssuances, listAssetSends,
+  listAssetDispensers, listAssetDispenses, listAssetOrders, listSubassets, assetCohort, assetQualitySignals,
+} from "../queries/assets";
 
 export const assets = router();
 
 assets.get("/v2/assets", async (c) => {
-  const q = (c.req.query("query") || "").trim();
-  const where = q ? `WHERE a.asset LIKE ? OR a.asset_longname LIKE ?` : "";
-  const binds = q ? [q.toUpperCase() + "%", q + "%"] : [];
-  const rows = await c.env.DB.prepare(
-    // description is truncated server-side (the list only shows a clamped single line); the full text is on
-    // the single-asset detail endpoint. mime_type isn't rendered in the list, so it's omitted.
-    `SELECT a.asset, a.asset_longname, a.type, a.issuer, a.owner, a.divisible, a.locked, a.supply_normalized,
-            substr(a.description,1,140) description,
-            EXISTS(SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=a.asset AND t.tag='stamp') stamp,
-            a.first_issuance_block_time, a.last_issuance_block_index
-     FROM assets a ${where} ORDER BY a.last_issuance_block_index DESC LIMIT ? OFFSET ?`
-  ).bind(...binds, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssets(c.env.DB, { query: c.req.query("query"), limit: lim(c), offset: off(c) });
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 // Featured grid — highest-quality MARKET assets that actually have art (the has_media tag). Powers a
@@ -28,20 +26,13 @@ assets.get("/v2/featured", async (c) => {
   const n = lim(c, 12, 144);
   return cached(c, `featured:${n}`, { ttl: 600, edge: 120 }, async () => {
     const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    const rows = await c.env.DB.prepare(
-      `SELECT s.asset, s.asset_longname, ROUND((${expr}),1) score
-       FROM asset_signals s JOIN tags t ON t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='has_media'
-       WHERE (s.trades>0 OR s.dispenses>0) AND COALESCE(s.low_quality,0)=0
-       ORDER BY (${expr}) DESC LIMIT ?`
-    ).bind(n).all();
-    return { result: rows.results };
+    return { result: await featuredAssets(c.env.DB, expr, n) };
   });
 });
 
 assets.get("/v2/assets/:asset", async (c) => {
   const a = c.req.param("asset");
-  const r = await c.env.DB.prepare(`SELECT * FROM assets WHERE asset=? OR asset_longname=?`)
-    .bind(a.toUpperCase(), a).first<any>();
+  const r = await getAsset(c.env.DB, a);
   if (!r) {
     // XCP and BTC are native assets with no issuance row. XCP supply = proof-of-burn minus all XCP
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
@@ -49,40 +40,28 @@ assets.get("/v2/assets/:asset", async (c) => {
     if (A === "XCP" || A === "BTC") {
       let supply_normalized: string | null = null;
       if (A === "XCP") {
-        const sup: any = await c.env.DB.prepare(
-          `SELECT (SELECT COALESCE(SUM(CAST(earned AS INTEGER)),0) FROM burns)
-                - (SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) FROM destructions WHERE asset='XCP' AND status LIKE 'valid%')
-                - (SELECT COALESCE(SUM(CAST(amt AS INTEGER)),0) FROM (
-                    SELECT fee_paid amt FROM issuances WHERE status LIKE 'valid%' AND fee_paid IS NOT NULL
-                    UNION ALL SELECT fee_paid FROM sweeps WHERE fee_paid IS NOT NULL
-                    UNION ALL SELECT fee_paid FROM dividends WHERE fee_paid IS NOT NULL)) supply`
-        ).first();
+        const sup = await xcpNativeSupply(c.env.DB);
         supply_normalized = (Number(sup?.supply ?? 0) / 1e8).toFixed(8);
       }
-      const h: any = await c.env.DB.prepare(`SELECT COUNT(*) c FROM balances WHERE asset=? AND CAST(quantity AS INTEGER)>0`).bind(A).first();
-      return J(c, { result: {
+      const holder_count = await holderCount(c.env.DB, A);
+      const body: AssetDetail = {
         asset: A, asset_longname: null, type: "native", divisible: 1, locked: 1,
         description: A === "XCP" ? "Counterparty native currency" : "Bitcoin",
-        issuer: null, owner: null, supply_normalized, holder_count: h?.c ?? 0,
-      } });
+        issuer: null, owner: null, supply_normalized, holder_count,
+      };
+      return J(c, { result: body });
     }
     return c.json({ error: "Asset not found" }, 404);
   }
-  const holders = await c.env.DB.prepare(`SELECT COUNT(*) c FROM balances WHERE asset=? AND CAST(quantity AS INTEGER)>0`).bind(r.asset).first<any>();
+  const holder_count = await holderCount(c.env.DB, r.asset);
   // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
   // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
   // supplies > 2^53 (e.g. PEPECASH ~1e17 minor-units). The SUM itself is exact int64 inside SQLite.
-  const sup = await c.env.DB.prepare(
-    `SELECT CAST((SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) FROM issuances WHERE asset=? AND status LIKE 'valid%')
-              - (SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) FROM destructions WHERE asset=? AND status LIKE 'valid%') AS TEXT) supply`
-  ).bind(r.asset, r.asset).first<any>();
+  const sup = await assetSupplyText(c.env.DB, r.asset);
   const raw = BigInt(sup?.supply ?? 0);
-  // Burned = supply sitting in known burn addresses; circulating = total issued minus that. CAST AS TEXT
-  // for the same precision reason. Canonical supply is left intact — burned/circulating sit alongside.
-  const burn = await c.env.DB.prepare(
-    `SELECT CAST(COALESCE(SUM(CAST(b.quantity AS INTEGER)),0) AS TEXT) burned
-     FROM balances b JOIN address_signals s ON s.addr=b.holder WHERE b.asset=? AND s.is_burn=1`
-  ).bind(r.asset).first<any>();
+  // Burned = supply sitting in known burn addresses; circulating = total issued minus that. Canonical
+  // supply is left intact — burned/circulating sit alongside.
+  const burn = await assetBurnedText(c.env.DB, r.asset);
   const burnedRaw = BigInt(burn?.burned ?? 0);
   const circRaw = raw - burnedRaw;
   // exact BigInt -> normalized decimal string (pure string math; no float, preserves >2^53 precision).
@@ -92,21 +71,24 @@ assets.get("/v2/assets/:asset", async (c) => {
     return (neg ? "-" : "") + s.slice(0, -8) + "." + s.slice(-8);
   };
   // composed asset quality score (config-driven, src/reputation) from the precomputed asset_signals row
-  const sig = await c.env.DB.prepare(`SELECT * FROM asset_signals WHERE asset=?`).bind(r.asset).first<any>().catch(() => null);
-  const q = sig ? scoreAsset(sig) : null;
+  const sig = await assetSignalsRow(c.env.DB, r.asset).catch(() => null);
+  const scored = sig ? scoreAsset(sig) : null;
   // market state: ranked into a tier only if it ever traded/dispensed; else Untraded (held) / Dormant (no holders).
   const state: MarketState = sig && ((sig.trades ?? 0) > 0 || (sig.dispenses ?? 0) > 0) ? "market"
     : sig && (sig.holders ?? 0) > 0 ? "held" : "none";
-  const score = q && state === "market" ? assetScore(q.raw) : null; // score = percentile among market assets only
+  const score = scored && state === "market" ? assetScore(scored.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
-  const tags: string[] = await c.env.DB.prepare(`SELECT tag FROM tags WHERE entity_type='asset' AND entity_id=?`).bind(r.asset).all().then((x) => x.results.map((t: any) => String(t.tag))).catch(() => []);
-  return J(c, { result: {
-    ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count: holders?.c ?? 0,
+  const tags = await assetTags(c.env.DB, r.asset).catch(() => []);
+  const body: AssetDetail = {
+    ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count,
     burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),
     circulating: circRaw.toString(), circulating_normalized: norm(circRaw),
-    quality: q ? { tier: assetTier(q.raw, state), score, raw: round(q.raw, 2), breakdown: q.breakdown, low_quality: sig.low_quality === 1 } : { tier: "Dormant", score: null },
+    quality: scored && sig
+      ? { tier: assetTier(scored.raw, state), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
+      : { tier: "Dormant", score: null },
     tags,
-  } });
+  };
+  return J(c, { result: body });
 });
 
 // Holder makeup — "who holds this asset?" by reputation tier + archetype + concentration. Surfaces the
@@ -114,33 +96,14 @@ assets.get("/v2/assets/:asset", async (c) => {
 // wallets — e.g. MINTS is ~94% Casual). Infra holders (exchange/vault/burn) are bucketed out.
 assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const a = c.req.param("asset").toUpperCase();
-  const tip = Number((await c.env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<any>())?.m) || 0;
+  const tip = await chainTip(c.env.DB);
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
   const [og, est, act] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const where = `b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`;
-  const rows = await c.env.DB.prepare(
-    `WITH h AS (
-       SELECT CAST(b.quantity AS REAL) q,
-         (sg.is_exchange=1 OR sg.is_deposit=1 OR sg.is_burn=1 OR sg.is_emblem_vault=1 OR sg.likely_service=1) infra,
-         (${expr}) raw, sg.survived_assets surv, sg.assets_held held
-       FROM balances b JOIN address_signals sg ON sg.addr=b.holder WHERE ${where}),
-     tot AS (SELECT SUM(q) s FROM h)
-     SELECT CASE WHEN infra THEN 'Infra' WHEN raw>=${og} THEN 'OG' WHEN raw>=${est} THEN 'Established'
-                 WHEN raw>=${act} THEN 'Active' ELSE 'Casual' END tier,
-       COUNT(*) holders, ROUND(100.0*SUM(q)/(SELECT s FROM tot),1) pct_supply
-     FROM h GROUP BY tier`
-  ).bind(a).all().then((x) => x.results).catch(() => []);
-  // archetype counts among holders + concentration (top holder share from the precomputed signal)
-  const arche = await c.env.DB.prepare(
-    `SELECT SUM(CASE WHEN sg.survived_assets>=20 THEN 1 ELSE 0 END) creators,
-            SUM(CASE WHEN sg.assets_held>=500 THEN 1 ELSE 0 END) whales,
-            SUM(CASE WHEN sg.assets_held>=100 THEN 1 ELSE 0 END) collectors,
-            COUNT(*) holders
-     FROM balances b JOIN address_signals sg ON sg.addr=b.holder WHERE ${where}`
-  ).bind(a).first<any>().catch(() => null);
-  const top1 = await c.env.DB.prepare(`SELECT ROUND(top1_pct,1) t FROM asset_signals WHERE asset=?`).bind(a).first<any>().catch(() => null);
+  const rows = await holderTiers(c.env.DB, a, expr, og, est, act).catch(() => []);
+  const arche = await holderArchetypes(c.env.DB, a).catch(() => null);
+  const top1 = await assetTop1Pct(c.env.DB, a).catch(() => null);
   const order = ["OG", "Established", "Active", "Casual", "Infra"];
-  const tiers = (rows as any[]).sort((x, y) => order.indexOf(x.tier) - order.indexOf(y.tier));
+  const tiers = rows.sort((x, y) => order.indexOf(x.tier) - order.indexOf(y.tier));
   return J(c, { result: { asset: a, holders: arche?.holders ?? 0, tiers, archetypes: { creators: arche?.creators ?? 0, collectors: arche?.collectors ?? 0, whales: arche?.whales ?? 0 }, top_holder_pct: top1?.t ?? null } }, 300);
 });
 
@@ -148,72 +111,39 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
 // distribution + top/bottom for face-validity after a weight change.
 assets.get("/v2/reputation/asset-review", async (c) => {
   const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-  const dist = await c.env.DB.prepare(
-    `WITH r AS (SELECT (${expr}) raw FROM asset_signals)
-     SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max, ROUND(MIN(raw),2) min,
-       SUM(CASE WHEN raw>=16 THEN 1 ELSE 0 END) top1pct, SUM(CASE WHEN raw>=9 THEN 1 ELSE 0 END) top10pct FROM r`
-  ).first<any>().catch(() => null);
-  const top = await c.env.DB.prepare(
-    `SELECT asset, asset_longname, holders, trades, ROUND((${expr}),2) raw FROM asset_signals ORDER BY (${expr}) DESC LIMIT 20`
-  ).all().then((x) => x.results).catch(() => []);
+  const dist = await assetReviewDistribution(c.env.DB, expr).catch(() => null);
+  const top = await assetReviewTop(c.env.DB, expr).catch(() => []);
   return J(c, { result: { distribution: dist, top } }, 60);
 });
 
 assets.get("/v2/assets/:asset/balances", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `SELECT b.holder, b.holder_type, b.quantity, b.quantity_normalized,
-            COALESCE(s.is_burn,0) is_burn, COALESCE(s.is_exchange,0) is_exchange
-     FROM balances b LEFT JOIN address_signals s ON s.addr=b.holder
-     WHERE b.asset=? AND CAST(b.quantity AS INTEGER)>0 ORDER BY CAST(b.quantity AS INTEGER) DESC LIMIT ? OFFSET ?`
-  ).bind(a, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssetBalances(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 assets.get("/v2/assets/:asset/issuances", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash, block_index, block_time, source, issuer, transfer, quantity_normalized, status
-     FROM issuances WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(a, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssetIssuances(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 assets.get("/v2/assets/:asset/sends", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status FROM sends WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(a, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssetSends(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 assets.get("/v2/assets/:asset/dispensers", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  // operator_trust = the source operator's precomputed dispenser track-record score (longevity-weighted),
-  // so competing dispensers for the same asset are comparable.
-  const rows = await c.env.DB.prepare(
-    `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.asset,d.give_quantity_normalized,d.give_remaining_normalized,
-            d.satoshirate,d.satoshirate_normalized,d.dispense_count,d.status, ROUND(COALESCE(sg.disp_trust,0),1) operator_trust
-     FROM dispensers d LEFT JOIN address_signals sg ON sg.addr=d.source
-     WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`
-  ).bind(a, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssetDispensers(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 assets.get("/v2/assets/:asset/dispenses", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized FROM dispenses WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(a, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssetDispenses(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 assets.get("/v2/assets/:asset/orders", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `${ORDER_SELECT} WHERE o.give_asset=? OR o.get_asset=? ORDER BY o.block_index DESC LIMIT ? OFFSET ?`
-  ).bind(a, a, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listAssetOrders(c.env.DB, ORDER_SELECT, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 // market data for an asset (vs XCP) from xcpdex — cross-app composition via the service binding
@@ -222,7 +152,7 @@ assets.get("/v2/assets/:asset/market", async (c) => {
   try {
     const res = await c.env.XCPDEX.fetch(`https://xcpdex-api/pair/${encodeURIComponent(a)}_XCP`);
     if (!res.ok) return J(c, { result: null }, 120);
-    const p: any = await res.json();
+    const p = await res.json<{ last_price?: number | null; volume_7d?: number | null; trade_count_7d?: number | null; price_change_7d?: number | null }>();
     return J(c, { result: {
       pair: `${a}/XCP`, last_price: p.last_price ?? null, volume_7d: p.volume_7d ?? null,
       trades_7d: p.trade_count_7d ?? null, price_change_7d: p.price_change_7d ?? null,
@@ -231,27 +161,15 @@ assets.get("/v2/assets/:asset/market", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/subassets", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
-     WHERE asset_longname LIKE ? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`
-  ).bind(a + ".%", lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const rows = await listSubassets(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: off(c) + lim(c) });
 });
 
 // Collector cohort: "holders of X also collect…" — the holders-also-hold graph. Excludes XCP (currency,
 // held by everyone). Returns related assets ranked by shared-holder count, with art-ready names.
 assets.get("/v2/assets/:asset/cohort", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const rows = await c.env.DB.prepare(
-    `SELECT b2.asset, a.asset_longname, COUNT(*) shared
-     FROM balances b1 JOIN balances b2 ON b1.holder=b2.holder
-     LEFT JOIN assets a ON a.asset=b2.asset
-     WHERE b1.asset=? AND ${activeBalance("b1.")}
-       AND b2.asset<>? AND b2.asset<>'XCP' AND CAST(b2.quantity AS INTEGER)>0
-     GROUP BY b2.asset ORDER BY shared DESC LIMIT ?`
-  ).bind(a, a, lim(c, 18, 36)).all();
-  return J(c, { result: rows.results }, 300);
+  const rows = await assetCohort(c.env.DB, activeBalance("b1."), c.req.param("asset").toUpperCase(), lim(c, 18, 36));
+  return J(c, { result: rows }, 300);
 });
 
 // Holder quality (aggregate, non-creepy) + trading integrity for an asset — the "is this cap table
@@ -259,10 +177,7 @@ assets.get("/v2/assets/:asset/cohort", async (c) => {
 // low-quality flag (self-trade% wash + curated), NOT trades-per-trader (which mistakes genuine liquidity
 // like PEPECASH/XCP for manipulation).
 assets.get("/v2/assets/:asset/quality", async (c) => {
-  const a = c.req.param("asset").toUpperCase();
-  const r: any = await c.env.DB.prepare(
-    `SELECT holders, top1_pct, trades, self_trade_pct, low_quality, holder_breadth, pct_creator_holders, burned_pct FROM asset_signals WHERE asset=?`
-  ).bind(a).first();
+  const r = await assetQualitySignals(c.env.DB, c.req.param("asset").toUpperCase());
   if (!r) return J(c, { result: { holders: 0, trades: 0, low_quality: 0 } }, 300);
   return J(c, { result: {
     holders: r.holders ?? 0,

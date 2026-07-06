@@ -1,55 +1,41 @@
 /** Address surfaces: holdings + record tabs, the composed reputation score, account summary, issued
- *  assets, and the relationship reads (connections graph, sweep-based identity lineage). */
-import { router, J, lim, off, activeBalance, round } from "./shared";
+ *  assets, and the relationship reads (connections graph, sweep-based identity lineage). SQL lives in
+ *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
+ *  reputation logic, not SQL. */
+import { router, J, lim, off, round } from "./shared";
 import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, ADDRESS_FACTORS } from "../reputation/score";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
+import {
+  listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued,
+  addressSummary, addressReputationRow, addressConnections, addressLineage,
+  maxBlockIndex, reputationDistribution, reputationTop,
+} from "../queries/addresses";
 
 export const addresses = router();
 
 addresses.get("/v2/addresses/:addr/balances", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT b.asset, b.quantity, b.quantity_normalized, a.divisible, a.asset_longname,
-            EXISTS(SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=b.asset AND t.tag='stamp') stamp
-     FROM balances b LEFT JOIN assets a ON a.asset=b.asset
-     WHERE b.holder=? AND ${activeBalance("b.")}
-     ORDER BY b.asset LIMIT ? OFFSET ?`
-  ).bind(h, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const result = await listBalances(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: off(c) + lim(c) });
 });
 
 addresses.get("/v2/addresses/:addr/sends", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash, block_index, block_time, source, destination, asset, quantity_normalized, send_type, status
-     FROM sends WHERE source=? OR destination=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(h, h, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const result = await listSends(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: off(c) + lim(c) });
 });
 
 addresses.get("/v2/addresses/:addr/issuances", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash, block_index, block_time, asset, quantity_normalized, transfer, status
-     FROM issuances WHERE source=? OR issuer=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(h, h, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const result = await listIssuances(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: off(c) + lim(c) });
 });
 
 addresses.get("/v2/addresses/:addr/dispensers", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status FROM dispensers WHERE source=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(h, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const result = await listDispensers(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: off(c) + lim(c) });
 });
 
 addresses.get("/v2/addresses/:addr/dispenses", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized FROM dispenses WHERE source=? OR destination=? ORDER BY block_index DESC LIMIT ? OFFSET ?`
-  ).bind(h, h, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const result = await listDispenses(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: off(c) + lim(c) });
 });
 
 // Address reputation — composed, intrinsic, earned-only score from precomputed address_signals.
@@ -57,13 +43,9 @@ addresses.get("/v2/addresses/:addr/dispenses", async (c) => {
 // and the EVIDENCE behind it (so it's explainable, not a black box). New/quiet addresses read neutral.
 addresses.get("/v2/addresses/:addr/reputation", async (c) => {
   const h = c.req.param("addr");
-  const r: any = await c.env.DB.prepare(
-    `SELECT sg.*, (SELECT CAST(quantity_normalized AS REAL) FROM balances WHERE holder=? AND asset='XCP') xcp,
-            (SELECT MAX(block_index) FROM blocks) tip
-     FROM address_signals sg WHERE sg.addr=?`
-  ).bind(h, h).first();
+  const r = await addressReputationRow(c.env.DB, h);
   if (!r || !r.first_blk) return J(c, { result: { score: null, tier: "No history", band: "No history", tier_meaning: ADDRESS_TIER_MEANING["No history"], tags: [], evidence: null } }, 300);
-  const n = (v: any) => Number(v) || 0;
+  const n = (v: unknown) => Number(v) || 0;
   const T = TAG;
   const xcp = n(r.xcp), first = n(r.first_blk), last = n(r.last_blk), tip = n(r.tip);
   // all scoring math lives in src/reputation/* (config + generic engine) — tune weights there.
@@ -114,57 +96,30 @@ addresses.get("/v2/addresses/:addr/reputation", async (c) => {
 // recalibrate the percentile anchors (set pct.p50/p90/p99 to where the population actually lands). Cheap:
 // one GROUP BY (no window sort). Excludes infra (exchange/deposit/burn/vault) — they aren't user scores.
 addresses.get("/v2/reputation/review", async (c) => {
-  const tip = Number((await c.env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<any>())?.m) || 0;
+  const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip); // built from the SAME factor config as the read scorer
   // same population the read endpoint ranks: real users only (infra + passive throwaways excluded)
   const notInfra = `is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 AND first_blk IS NOT NULL AND (assets_held>0 OR survived_assets>0 OR dex_trades>0 OR dispenses>0 OR btc_fees>0 OR assets_issued>0 OR dividends>0)`;
   const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const dist = await c.env.DB.prepare(
-    `WITH r AS (SELECT (${expr}) raw FROM address_signals WHERE ${notInfra})
-     SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max,
-       SUM(CASE WHEN raw>=${vetCut} THEN 1 ELSE 0 END) og,
-       SUM(CASE WHEN raw>=${estCut} AND raw<${vetCut} THEN 1 ELSE 0 END) established,
-       SUM(CASE WHEN raw>=${actCut} AND raw<${estCut} THEN 1 ELSE 0 END) active,
-       SUM(CASE WHEN raw<${actCut} THEN 1 ELSE 0 END) casual
-     FROM r`
-  ).first<any>().catch(() => null);
-  // top of the table — spot-check that high scorers are credible (face validity)
-  const top = await c.env.DB.prepare(
-    `SELECT addr, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
-     FROM address_signals WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`
-  ).all().then((x) => x.results).catch(() => []);
+  const distribution = await reputationDistribution(c.env.DB, expr, notInfra, vetCut, estCut, actCut).catch(() => null);
+  const top = await reputationTop(c.env.DB, expr, notInfra).catch(() => []);
   return J(c, {
     result: {
       factors: ADDRESS_FACTORS.filter((f) => f.weight).map((f) => ({ key: f.key, weight: f.weight, transform: f.transform })),
       anchors_in_use: { note: "set pct anchors in reputation/config.ts to match 'distribution' below" },
-      distribution: dist, top,
+      distribution, top,
     },
   }, 60);
 });
 
 addresses.get("/v2/addresses/:addr/summary", async (c) => {
-  const h = c.req.param("addr");
-  const s = await c.env.DB.prepare(
-    `SELECT (SELECT quantity_normalized FROM balances WHERE holder=? AND asset='XCP') xcp,
-            (SELECT COUNT(*) FROM balances WHERE holder=? AND ${activeBalance()}) assets,
-            (SELECT COUNT(*) FROM assets WHERE issuer=?) issued,
-            (SELECT COUNT(*) FROM dispensers WHERE source=?) dispensers,
-            (SELECT COUNT(*) FROM dispensers WHERE source=? AND status=0) open_dispensers,
-            (SELECT COUNT(*) FROM orders WHERE source=? AND status='open') open_orders,
-            (SELECT MIN(block_index) FROM sends WHERE source=? OR destination=?) first_block,
-            (SELECT MAX(block_index) FROM sends WHERE source=? OR destination=?) last_block,
-            (SELECT ROUND(disp_trust,1) FROM address_signals WHERE addr=?) dispenser_trust`
-  ).bind(h, h, h, h, h, h, h, h, h, h, h).first();
-  return J(c, { result: s }, 30);
+  const result = await addressSummary(c.env.DB, c.req.param("addr"));
+  return J(c, { result }, 30);
 });
 
 addresses.get("/v2/addresses/:addr/issued", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
-     WHERE issuer=? OR owner=? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`
-  ).bind(h, h, lim(c), off(c)).all();
-  return J(c, { result: rows.results, next_offset: off(c) + lim(c) });
+  const result = await listIssued(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: off(c) + lim(c) });
 });
 
 // Address connections: top counterparties merged across sends + dispenses + DEX order matches.
@@ -174,34 +129,13 @@ addresses.get("/v2/addresses/:addr/issued", async (c) => {
 // exchange's "connections" but ~0% of a real user's), so they bury genuine relationships. is_exchange
 // counterparties are KEPT (a real "uses this exchange" signal) and flagged so the UI can badge them.
 addresses.get("/v2/addresses/:addr/connections", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT g.cp, g.interactions, COALESCE(sg.is_exchange,0) is_exchange FROM (
-        SELECT cp, SUM(n) interactions FROM (
-          SELECT CASE WHEN source=? THEN destination ELSE source END cp, COUNT(*) n
-            FROM sends WHERE (source=? OR destination=?) AND destination IS NOT NULL GROUP BY cp
-          UNION ALL
-          SELECT CASE WHEN source=? THEN destination ELSE source END cp, COUNT(*) n
-            FROM dispenses WHERE source=? OR destination=? GROUP BY cp
-          UNION ALL
-          SELECT CASE WHEN tx0_address=? THEN tx1_address ELSE tx0_address END cp, COUNT(*) n
-            FROM order_matches WHERE tx0_address=? OR tx1_address=? GROUP BY cp
-        ) WHERE cp IS NOT NULL AND cp<>? GROUP BY cp
-     ) g LEFT JOIN address_signals sg ON sg.addr=g.cp
-     WHERE COALESCE(sg.is_deposit,0)=0 ORDER BY g.interactions DESC LIMIT ?`
-  ).bind(h, h, h, h, h, h, h, h, h, h, lim(c, 12, 24)).all();
-  return J(c, { result: rows.results }, 120);
+  const result = await addressConnections(c.env.DB, c.req.param("addr"), lim(c, 12, 24));
+  return J(c, { result }, 120);
 });
 
 // Identity lineage via sweeps — a SWEEP moves all assets+ownership to another address (strongest
 // "same person" signal on chain). Returns swept-to / swept-from links to chain identity clusters.
 addresses.get("/v2/addresses/:addr/lineage", async (c) => {
-  const h = c.req.param("addr");
-  const rows = await c.env.DB.prepare(
-    `SELECT 'out' direction, destination counterparty, block_index, block_time FROM sweeps WHERE source=?
-     UNION ALL
-     SELECT 'in' direction, source counterparty, block_index, block_time FROM sweeps WHERE destination=?
-     ORDER BY block_index`
-  ).bind(h, h).all();
-  return J(c, { result: rows.results }, 300);
+  const result = await addressLineage(c.env.DB, c.req.param("addr"));
+  return J(c, { result }, 300);
 });

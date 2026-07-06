@@ -28,6 +28,12 @@ export interface EmblemStats {
   empty: number;
 }
 
+/** GET /v2/emblem/assets (list row) — an asset locked inside vault boxes, by vault count. */
+export interface EmblemAssetRow {
+  asset: string;
+  vaults: number;
+}
+
 /** GET /v2/emblem/vaults (list row). */
 export interface EmblemVaultRow {
   token_id: string;

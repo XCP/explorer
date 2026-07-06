@@ -3,6 +3,7 @@ import { parseCpJson } from "../indexer/codec";
 import { router, J, cached, xcpDestroyed } from "./shared";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
+import { homeOverview, networkCounts, networkTotals, metricSeries, maxBlock, board } from "../queries/stats";
 
 export const stats = router();
 
@@ -11,20 +12,14 @@ export const stats = router();
 // most once/ttl globally instead of once per colo. Edge stays short so `tip`/`indexed_block` feel live.
 stats.get("/v2/", async (c) =>
   cached(c, "home", { ttl: 60, edge: 15 }, async () => ({
-    result: await c.env.DB.prepare(
-      `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-              (SELECT COUNT(*) FROM assets) assets,
-              (SELECT COUNT(*) FROM transactions) transactions,
-              (SELECT COUNT(*) FROM balances) balances,
-              (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`
-    ).first<any>(),
+    result: await homeOverview(c.env.DB),
   })));
 
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
   const days = Math.min(365, Math.max(7, parseInt(c.req.query("days") || "90", 10)));
   return cached(c, `metrics:${days}`, { ttl: 1800, edge: 300 }, async () => {
-  const series = async (sql: string) => (await c.env.DB.prepare(sql).bind(days).all<{ d: number; v: number }>()).results
+  const series = async (sql: string) => (await metricSeries(c.env.DB, sql, days))
     .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
   // transactions from blocks (cheap: 1 row/block carries CP's tx_count); issuances + dispenses by count
   const transactions = await series(`SELECT block_time/86400 d, SUM(transaction_count) v FROM blocks WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`);
@@ -44,27 +39,8 @@ stats.get("/v2/metrics", async (c) => {
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) =>
   cached(c, "stats", { ttl: 3600, edge: 120 }, async () => {
-  const counts: any = await c.env.DB.prepare(
-    `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            (SELECT COUNT(*) FROM assets) assets,
-            (SELECT COUNT(*) FROM transactions) transactions,
-            (SELECT COUNT(*) FROM sends) sends,
-            (SELECT COUNT(*) FROM issuances) issuances,
-            (SELECT COUNT(*) FROM dispensers) dispensers,
-            (SELECT COUNT(*) FROM dispenses) dispenses,
-            (SELECT COUNT(*) FROM orders) orders,
-            (SELECT COUNT(*) FROM order_matches) order_matches,
-            (SELECT COUNT(*) FROM sweeps) sweeps,
-            (SELECT COUNT(*) FROM broadcasts) broadcasts,
-            (SELECT COUNT(*) FROM dividends) dividends,
-            (SELECT COUNT(*) FROM fairmints) fairmints,
-            (SELECT COUNT(*) FROM destructions) destructions,
-            (SELECT COUNT(*) FROM balances WHERE CAST(quantity AS INTEGER)>0) holders`
-  ).first();
-  const totals: any = await c.env.DB.prepare(
-    `SELECT (SELECT COALESCE(SUM(CAST(fee AS REAL)),0)/100000000.0 FROM transactions) btc_fees,
-            (SELECT COALESCE(SUM(CAST(amt AS REAL)),0)/100000000.0 FROM (${xcpDestroyed()})) xcp_destroyed`
-  ).first();
+  const counts = await networkCounts(c.env.DB);
+  const totals = await networkTotals(c.env.DB, xcpDestroyed());
   return { result: { ...counts, ...totals } };
   }));
 
@@ -78,9 +54,9 @@ stats.get("/v2/leaderboards", async (c) => {
   const dispCol = incl ? "dispense_btc" : "clean_dispense_btc";
   const spendCol = incl ? "btc_spent" : "clean_btc_spent";
   const lowqF = incl ? "" : " AND COALESCE(low_quality,0)=0";
-  const q = (sql: string) => c.env.DB.prepare(sql).all().then((r) => r.results).catch(() => []);
+  const q = (sql: string) => board(c.env.DB, sql);
   // reputation/quality boards — the composed score (same config as the read scorer). tip for age terms.
-  const tip = Number((await c.env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<any>())?.m) || 0;
+  const tip = await maxBlock(c.env.DB);
   const addrExpr = rawSqlExpr(ADDRESS_FACTORS, tip);
   const assetExpr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
   const [topCreators, topCollectors, topMerchants, bigSpenders, richXcp, mostHeld, mostTraded, durable, topDispensed,

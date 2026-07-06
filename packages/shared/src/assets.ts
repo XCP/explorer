@@ -32,8 +32,9 @@ export interface AssetDetail {
   first_issuance_block_time?: number | null;
   last_issuance_block_time?: number | null;
   updated_at?: number;
-  // derived (BigInt-exact strings; overrides the raw assets.supply columns)
-  supply: string;
+  // derived (BigInt-exact strings; overrides the raw assets.supply columns).
+  // supply is ABSENT on the native XCP/BTC reduced path — hence optional.
+  supply?: string;
   supply_normalized: string | null;
   burned?: string;
   burned_normalized?: string;
@@ -42,6 +43,37 @@ export interface AssetDetail {
   holder_count: number;
   quality?: AssetQuality;
   tags?: string[];
+}
+
+/** GET /v2/assets — the asset index / search row. description is clamped to a single line server-side
+ *  (full text is on the detail endpoint); mime_type is omitted; stamp is a computed EXISTS flag. */
+export interface AssetIndexRow {
+  asset: string;
+  asset_longname: string | null;
+  type: string; // native | numeric | subasset | asset
+  issuer: string | null;
+  owner: string | null;
+  divisible: 0 | 1;
+  locked: 0 | 1;
+  supply_normalized: string | null;
+  description: string | null; // truncated to ~140 chars
+  stamp: 0 | 1;
+  first_issuance_block_time: number | null;
+  last_issuance_block_index: number | null;
+}
+
+/** GET /v2/featured — the curated media grid: top-quality market assets that have art. */
+export interface FeaturedAsset {
+  asset: string;
+  asset_longname: string | null;
+  score: number;
+}
+
+/** GET /v2/assets/:asset/cohort — "holders of X also collect…" ranked by shared-holder count. */
+export interface AssetCohortRow {
+  asset: string;
+  asset_longname: string | null;
+  shared: number;
 }
 
 /** Asset-list rows (GET /v2/addresses/:a/issued, /v2/assets/:a/subassets, from-issuer). */
