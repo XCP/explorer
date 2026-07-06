@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useAssets } from "@/lib/hooks";
 import { Card } from "@/components/ui/card";
 import { Table, Row, Cell } from "@/components/ui/table";
-import { Skeleton, ErrorBox, Empty } from "@/components/ui/feedback";
+import { Skeleton } from "@/components/ui/feedback";
+import { AsyncContent } from "@/components/ui/async-content";
 import { AssetIcon, LockBadge } from "@/components/ui/badges";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { commas } from "@/lib/format";
@@ -24,7 +25,7 @@ export function AssetIndex() {
         placeholder="Filter assets…"
         className="mb-4 w-full max-w-sm rounded bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-[--color-xcp]"
       />
-      {isLoading ? <Skeleton /> : error ? <ErrorBox error={error} /> : rows.length === 0 ? <Empty what="assets" /> : (
+      <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="assets" loading={<Skeleton />}>
         <>
           <Table head={["Asset", "Description", { label: "Supply", numeric: true }, "Issuer", "Lock"]}>
             {rows.map((a) => (
@@ -47,7 +48,7 @@ export function AssetIndex() {
             <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
           </div>
         </>
-      )}
+      </AsyncContent>
     </Card>
   );
 }

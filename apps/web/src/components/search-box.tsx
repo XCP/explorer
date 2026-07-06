@@ -21,6 +21,7 @@ export function SearchBox({ big = false, autoFocusKey = false }: { big?: boolean
     <form onSubmit={go} className="relative w-full" data-search={autoFocusKey ? "" : undefined}>
       <input
         ref={ref} value={q} onChange={(e) => setQ(e.target.value)}
+        aria-label="Search asset, address, transaction, or block"
         placeholder="Search asset / address / tx / block"
         className={`w-full rounded bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-[--color-xcp] ${
           big ? "pl-4 pr-10 py-3 text-base" : "pl-3 pr-8 py-1.5 text-sm"

@@ -5,7 +5,8 @@ import useSWR from "swr";
 import type { AddressBalanceRow } from "@xcp/shared/addresses";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { Card } from "@/components/ui/card";
-import { Skeleton, Empty } from "@/components/ui/feedback";
+import { Skeleton } from "@/components/ui/feedback";
+import { AsyncContent } from "@/components/ui/async-content";
 import { AssetArt } from "@/components/asset-art";
 import { RecordTable } from "@/components/record-table";
 import { assetCell } from "@/lib/cells";
@@ -23,7 +24,8 @@ export function Holdings({ address }: { address: string }) {
   return (
     <Card title={`Holdings${rows.length ? ` · ${rows.length}` : ""}`}>
       <div className="absolute right-4 top-4 flex gap-1">{tab("gallery", "Gallery")}{tab("table", "Table")}</div>
-      {isLoading ? <Skeleton rows={3} /> : rows.length === 0 ? <Empty what="holdings" /> : view === "gallery" ? (
+      <AsyncContent isLoading={isLoading} empty={rows.length === 0} emptyWhat="holdings" loading={<Skeleton rows={3} />}>
+        {view === "gallery" ? (
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {rows.map((b) => (
             <Link key={b.asset} href={`/asset/${b.asset}`}
@@ -41,7 +43,8 @@ export function Holdings({ address }: { address: string }) {
           { label: "Asset", cell: (r) => assetCell(r.asset) },
           { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
         ]} />
-      )}
+        )}
+      </AsyncContent>
     </Card>
   );
 }

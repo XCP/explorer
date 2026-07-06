@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { BlockDetail, BlockTxSummary } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
-import { Empty } from "@/components/ui/feedback";
+import { AsyncContent } from "@/components/ui/async-content";
 import { RecordTable } from "@/components/record-table";
 import { type Col, txCell, addrCell } from "@/lib/cells";
 import { commas, short, ts } from "@/lib/format";
@@ -58,7 +58,9 @@ export default async function BlockPage({ params }: { params: Promise<{ n: strin
         </div>
       </Card>
       <Card title="Transactions">
-        {txs.length === 0 ? <Empty what="transactions" /> : <RecordTable cols={cols} rows={txs} />}
+        <AsyncContent empty={txs.length === 0} emptyWhat="transactions">
+          <RecordTable cols={cols} rows={txs} />
+        </AsyncContent>
       </Card>
     </>
   );

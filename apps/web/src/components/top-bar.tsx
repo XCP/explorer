@@ -60,6 +60,13 @@ export function TopBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => { setMenuOpen(false); }, [pathname]); // close drawer on navigation
+  // Escape closes the mobile drawer
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur-sm">
@@ -96,7 +103,7 @@ export function TopBar() {
         </div>
 
         {/* mobile hamburger */}
-        <button onClick={() => setMenuOpen((o) => !o)} aria-label="Menu"
+        <button onClick={() => setMenuOpen((o) => !o)} aria-label="Menu" aria-expanded={menuOpen} aria-controls="mobile-menu"
           className="sm:hidden ml-auto flex items-center justify-center size-8 rounded border border-zinc-800 bg-zinc-900 text-zinc-300">
           <span className="text-base leading-none">{menuOpen ? "✕" : "≡"}</span>
         </button>
@@ -107,7 +114,7 @@ export function TopBar() {
 
       {/* mobile drawer — full nav, no functionality lost */}
       {menuOpen && (
-        <div className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-3">
+        <div id="mobile-menu" className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4"><Ticker label="BTC" v={btc} chg={btcChange} /><Ticker label="XCP" v={xcp} chg={xcpChange} /></div>
           </div>
