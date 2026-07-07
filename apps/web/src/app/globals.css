@@ -147,17 +147,71 @@ main > .ctxband { margin-bottom:10px; }
 .standin-note { border:1px dashed #34404f; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); color:var(--t4); background:rgba(56,189,248,.03); }
 .standin-note b { color:var(--t3); }
 
-/* ── explorer zone: dense ledger table + holders table — ported VERBATIM from
-   design-lab/v17-exact.html / v19-banner.html (same classnames, same values) ── */
-.xtable { border:1px solid var(--border2); border-radius:8px; background:var(--panel); overflow:hidden; }
-.xt-row { display:grid; grid-template-columns:30px minmax(0,1.1fr) 150px 110px minmax(0,1fr) 76px; align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
-.xt-row:last-child { border-bottom:none; }
-.xt-head { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--t4); background:var(--panel2); border-bottom:1px solid var(--border2); padding:8px 14px; }
-.xt-head .r { text-align:right; }
-.xt-icon { width:28px; height:28px; border-radius:5px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
-.xt-name { font-family:var(--mono); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.xt-price { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; }
-.xt-price small { display:block; font-size:var(--fs-2xs); color:var(--t4); font-weight:400; }
+/* ── THE RECORD TABLE — ported VERBATIM from design-lab/v20-tables.html (owner-approved
+   acceptance reference). Time FIRST · Block SECOND · payload per type · status where earned ·
+   quiet View at the row end. One line per row, no exceptions. Units in headers, never cells. ── */
+.rt { border:1px solid var(--border2); border-radius:8px; background:var(--panel); overflow:hidden; }
+.tr { display:grid; align-items:center; gap:12px; padding:8px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
+.tr > * { min-width:0; }
+.tr:last-child { border-bottom:none; }
+.tr.th { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--t4); background:var(--panel2); border-bottom:1px solid var(--border2); padding:8px 14px; white-space:nowrap; }
+.tr.th > * { overflow:hidden; text-overflow:ellipsis; }
+/* hover + focus row highlight — THE place-keeper. No zebra, no flashing. */
+.tr:not(.th):hover, .tr:not(.th):focus-within { background:rgba(255,255,255,.028); }
+.r { text-align:right; }
+
+/* time + block — the leading pair, both left, mono, muted */
+.time, .blk { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t4); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* asset / pair anchor — icon + mono name, one line */
+.asset { display:flex; align-items:center; gap:8px; min-width:0; }
+.aicon { width:22px; height:22px; border-radius:5px; border:1px solid var(--border2); background:#14171d; object-fit:cover; flex-shrink:0; }
+.aname { font-family:var(--mono); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.aname:hover { color:var(--accent); }
+
+/* numbers — right-aligned tabular numerals, fixed recipe per column */
+.qty { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; white-space:nowrap; overflow:hidden; }
+.num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t2); white-space:nowrap; overflow:hidden; }
+.num.usd { color:var(--t3); }
+.dim { opacity:.55; }
+
+/* addresses — single-line CSS ellipsis over the FULL string (long prefix stays
+   visible); the complete address lives in title. NEVER 4+4, never wrapping. */
+.addr { display:block; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+a.addr:hover { color:var(--accent); }
+
+.desc { font-size:var(--fs-xs); color:var(--t4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* View — the quiet row-end action */
+.view { text-align:right; font-size:var(--fs-2xs); color:var(--t4); font-weight:500; white-space:nowrap; }
+a.view:hover { color:var(--accent); }
+
+/* side words — the ONLY green/red text on the page (lock polarity excepted) */
+.side { font-family:var(--mono); font-size:var(--fs-xs); font-weight:600; white-space:nowrap; }
+.side.buy { color:var(--up); }
+.side.sell { color:var(--down); }
+
+/* status pills — earned, never decorative; the text label is the redundant channel */
+.pill { display:inline-flex; align-items:center; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid; white-space:nowrap; }
+.pill.open      { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+.pill.filled    { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+.pill.expired   { color:#fca5a5; border-color:#96312e; background:rgba(127,29,29,.15); }
+.pill.cancelled { color:var(--t3); border-color:#34404f; background:rgba(121,131,154,.10); }
+
+/* type chips — EXCEPTIONS ONLY (attach/move); a plain send gets nothing */
+.tchip { display:inline-flex; align-items:center; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--t3); white-space:nowrap; }
+
+/* issuance action badges — neutral set; only Lock takes color (lock polarity) */
+.abadge { display:inline-flex; align-items:center; gap:5px; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--t3); white-space:nowrap; }
+.abadge svg { flex-shrink:0; }
+.abadge.lock { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+
+/* lock polarity — locked = green closed padlock · unlocked = amber open padlock */
+.lockstate { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.04em; white-space:nowrap; }
+.lockstate svg { flex-shrink:0; }
+.lockstate.locked { color:var(--up); }
+.lockstate.unlocked { color:var(--amber); }
+
 .venue { justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; padding:1px 8px; border-radius:99px; border:1px solid; }
 .venue.dex { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
 .venue.disp { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
@@ -191,8 +245,6 @@ main > .ctxband { margin-bottom:10px; }
   .gallery { grid-template-columns:repeat(3,1fr); }
 }
 @media (max-width:760px){
-  .xt-row { grid-template-columns:30px minmax(0,1.2fr) 130px 72px; }
-  .xt-row > :nth-child(4), .xt-row > :nth-child(5) { display:none; } /* venue + buyer */
   .ht-row { grid-template-columns:30px minmax(0,1.2fr) 110px; }
   .ht-row > :nth-child(4) { display:none; } /* % of supply */
 }
@@ -221,33 +273,24 @@ main > .ctxband { margin-bottom:10px; }
 /* app glue: quiet .btn2 rendered as <a> keeps its text color under the global a:hover accent */
 a.btn2:hover { color:var(--t2); }
 
-/* ── app extensions: generic record tables on the ported .xtable bones. The lab hardcodes one
-   grid-template per table; RecordTable feeds its per-table track lists through custom properties
-   (--xtc = all columns, --xtc-4/-3/-2 = the templates after priority 4/3/2 columns drop), and marks
-   droppable cells .xt-p4/.xt-p3/.xt-p2 (priority 1 never drops). data-cols scopes all of it so the
-   verbatim lab rules above stay untouched for any fixed-layout usage. ── */
-.xtable[data-cols] .xt-row { grid-template-columns:var(--xtc); }
-/* neutralize the lab's fixed nth-child hiding (priorities drive dropping). Every row is EXACTLY one
-   line tall: cells never wrap — overflow ellipsizes (full values live in title attrs / detail pages). */
-.xtable[data-cols] .xt-row > * { display:revert; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-@media (max-width:1000px){
-  .xtable[data-cols] .xt-row { grid-template-columns:var(--xtc-4,var(--xtc)); }
-  .xtable[data-cols] .xt-row > .xt-p4 { display:none; }
-}
+/* ── app extensions on the v20 grammar (NOT in the lab file, each earns its place):
+   the lab hardcodes one grid template per table; RecordTable feeds per-table track lists
+   through custom properties (--rtc desktop, --rtc-3 ≤760px, --rtc-1 ≤420px) and marks
+   droppable cells .p3/.p2 (priority 1 never drops) — reproducing v20's hand-tuned drops
+   generically. Plus the framework floor: sticky header, empty state, scroll fallback. ── */
+.rt .tr { grid-template-columns:var(--rtc); }
+.rt { overflow-x:auto; } /* floor: nothing is ever unreachable */
+.rt .tr.th { position:sticky; top:0; z-index:1; } /* floor: header anchors ~half of fixations */
+.rt-empty { padding:18px 14px; text-align:center; font-size:var(--fs-xs); color:var(--t4); }
+/* USD sub-line inside a numeric cell (trades tape Total) — the old .xt-price small recipe */
+.qty small, .num small { display:block; font-size:var(--fs-2xs); color:var(--t4); font-weight:400; }
+/* app pill extension: pending/empty/closing states (amber caution family) */
+.pill.pending { color:var(--amber); border-color:#8a6420; background:rgba(120,86,27,.12); }
 @media (max-width:760px){
-  .xtable[data-cols] .xt-row { grid-template-columns:var(--xtc-3,var(--xtc)); }
-  .xtable[data-cols] .xt-row > .xt-p3, .xtable[data-cols] .xt-row > .xt-p4 { display:none; }
+  .rt .tr { grid-template-columns:var(--rtc-3,var(--rtc)); }
+  .rt .tr > .p3 { display:none; }
 }
-@media (max-width:560px){
-  .xtable[data-cols] .xt-row { grid-template-columns:var(--xtc-2,var(--xtc)); }
-  .xtable[data-cols] .xt-row > .xt-p2, .xtable[data-cols] .xt-row > .xt-p3, .xtable[data-cols] .xt-row > .xt-p4 { display:none; }
+@media (max-width:420px){
+  .rt .tr { gap:9px; padding:8px 10px; grid-template-columns:var(--rtc-1,var(--rtc)); }
+  .rt .tr > .p2, .rt .tr > .p3 { display:none; }
 }
-/* hover + keyboard-focus row highlight — the primary place-keeper (R11); no zebra, no flashing */
-.xtable .xt-row:not(.xt-head):hover, .xtable .xt-row:not(.xt-head):focus-within { background:rgba(255,255,255,.03); }
-/* addresses: single line, CSS ellipsis (long visible prefix — R5's sanctioned fallback, never 4+4);
-   the full address travels in the title attr and the link target */
-.xt-addr { display:block; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-/* trailing View action — right-aligned, accent, sr-only header */
-.xt-view { text-align:right; font-size:var(--fs-xs); font-weight:500; white-space:nowrap; }
-.xt-view a { color:var(--accent); }
-.xt-view a:hover { color:#7dd3fc; }
