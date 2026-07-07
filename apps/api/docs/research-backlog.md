@@ -115,6 +115,34 @@ Maintenance: none for the historic value (it's frozen history); ongoing XCP/USD 
 systems"): the migration path is owned by the Bitcoin indexer plan, since its follow-daemon and
 the consolidation service's MonitorBlockchainJob are the same per-block loop.
 
+### C. Thin-market pricing methodology (deep-research verified, 2026-07-07; all findings 3-0
+adversarially confirmed against primary sources)
+1. **Kill indefinite forward-fill** (Lo-MacKinlay 1990; Getmansky-Lo-Makarov JFE 2004): last-print
+   extrapolation is the textbook stale-price defect — understated volatility, spurious
+   autocorrelation, and a rate that lags the BTC/USD anchor it multiplies. Even 3-period smoothing
+   distorts beta -67% / Sharpe +73%. Policy: forward-fill up to a staleness horizon, then NULL.
+2. **Daily volume-weighted MEDIAN, not VWAP** (CME CF Bitcoin Reference Rate pattern: partition
+   window → volume-weighted median per partition → equal-weight average). A single wash print
+   can't move a volume-weighted median unless it carries >50% of bucket volume. Pure SQL.
+3. **Local-level Kalman filter = optional upgrade, bounded batch job** (Durbin-Koopman):
+   forward-fill is exactly the q→∞ degenerate case; a fitted q buys shrinkage of lone prints,
+   two-sided smoothing across gaps, and a gap-widening variance band that IS a self-calibrating
+   staleness cutoff. Worth it for the admission signal; not transformative for point estimates
+   once 1+2 are in.
+4. **Measure edge staleness from returns alone** — lag-1 autocorrelation (≈ nontrading
+   probability), GLM smoothing index, or simplest: regression beta of the pair's returns on
+   LAGGED anchor returns (a fresh XCP/BTC series shouldn't be predictable from yesterday's BTC
+   move). Compute on trade-date-only returns, never on the filled calendar. KEY REFINEMENT to the
+   derivation-depth rule: **edge staleness dominates hop count** — a depth-2 chain through two
+   fresh edges beats a depth-1 stale edge. Keep depth ≤ 2 as the structural gate; make the
+   per-edge floor a staleness+liquidity test.
+5. **Never publish model-corrected prices; NULL is the literature-aligned choice** (Fisher-
+   Geltner-Webb bias per Cho-Kawaguchi-Shilling 2003; aggregation failure per Couts-Goncalves-
+   Rossi RFS 2024; window instability per Gohs et al. 2022). And Qian (JFQA 2011): the cost of
+   published stale prices isn't bias, it's EXPLOITABILITY — directly relevant to reputation
+   scoring, where a stale USD value is a gameable target. Unsmoothing/Kalman machinery is for
+   internal admission signals and uncertainty bands only.
+
 ## Standing constraints
 
 - New factors: implement in BOTH `factorValue` and `rawSqlExpr` (config-driven parity), recalibrate
