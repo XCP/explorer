@@ -36,9 +36,11 @@ a Counterparty user) get *represented* — recorded as endpoints — without bei
 LOCAL (your machine, one-time ~1TB disk)
   bitcoind (full node)
   + Fulcrum          — address index, needed for the BACKFILL phase (histories per address)
-  + follow-daemon    — small script: on each new block, getblock verbosity=2 (one RPC = every tx,
-                       fully decoded), intersect vin/vout addresses with the follow set, derive
-                       rows, push batches to the cloud. 6-confirmation lag for reorg safety.
+  + follow-daemon    — small script: on each new block, getblock verbosity=3 (Core ≥25; one RPC =
+                       every tx fully decoded INCLUDING prevout addresses for inputs — no extra
+                       lookups to resolve senders), intersect vin/vout addresses with the follow
+                       set, derive rows, push batches to the cloud. 6-confirmation lag for reorg
+                       safety; idempotent upserts keyed (txid, addr, direction) so replays are safe.
         │  one-way HTTPS push (Bearer), batched
         ▼
 CLOUD (new, SEPARATE D1 database `xcpio-btc`, own binding — protects the main DB's headroom)
@@ -76,6 +78,21 @@ CLOUD (new, SEPARATE D1 database `xcpio-btc`, own binding — protects the main 
   node but ~120 paginated calls per block against anyone's public API. The Counterparty /v2/bitcoin
   endpoints serve as fallback/gap-heal if the local daemon is down, not as the primary.
 
+## Sizing (measured, 2026-07-07 — 100-address random sample vs Esplora)
+
+Hypothesis tested: "non-Counterparty txs ≈ 10% of an address's Counterparty txs." Result: right
+shape for the median, wrong for the tail — the distribution is violently heavy-tailed:
+
+- Per-address nonCP/CP ratio: p25 0.83 · **median 1.0** · p75 3.0 · p90 170 · max 3,716.
+- Aggregate ratio 8.4× — dominated by generic wallets with 1-3 CP txs and 850-3,700 BTC txs.
+- 53/100 followed addresses originated ZERO CP txs (receive-only holders): the follow set is
+  majority-passive.
+
+**Rule derived: the per-address flow cap is load-bearing.** Full flows only up to ~1,000 BTC txs
+per address; beyond that → summary-only + `overflow` flag (one CP touch among thousands of BTC txs
+is a generic wallet, not a Counterparty participant — its full history is noise for our purposes).
+With the cap, expected flow volume ≈ 2-3× the CP mirror's 3.4M txs ≈ 7-10M rows ≈ ~1GB. In budget.
+
 ## Phases
 
 | Phase | What | Where | Effort |
@@ -94,13 +111,45 @@ Esplora-mode exporter are all Phase 0/2 pieces and remain valid under this desig
 amendments before committing: they target the separate `xcpio-btc` database (new binding), and the
 exporter gains the Fulcrum mode as the primary bulk path (Esplora mode stays for testing/gap-fill).
 
-## Open decisions
+## Decisions (proposed 2026-07-07 — accept/veto individually)
 
-1. Separate `xcpio-btc` D1 database (recommended, for the 10GB headroom + independent lifecycle)
-   vs. same DB. Recommendation: separate.
-2. Follow set = all mirror-seen addresses (~500k+) vs. real-users filter (~262k). Recommendation:
-   all mirror-seen minus infra — "ever touched Counterparty" is the honest definition of our world.
-3. `btc_flows` retention: full flows forever vs. rolling window + aggregates. Start full, measure
-   growth against the 10GB budget, decide with data.
-4. Local daemon host: your machine vs. the Hetzner box (if disk allows). Either works; one-way push
-   means no exposure difference.
+1. **Database: separate `xcpio-btc` — DECIDED separate.** Three independent reasons, any one
+   sufficient: (a) headroom — the main DB is 5.6/10GB and flows grow with the chain forever;
+   (b) contention isolation — measured today: the graph build's write passes degraded production
+   reads from ~100ms to 19-30s; a per-block ingest writing every ~10 minutes must never queue
+   behind mirror reads, or vice versa; (c) lifecycle — flows are rebuildable from the chain, so
+   the whole DB can be dropped and rebuilt without risking the mirror. No cross-DB joins are
+   needed: reads are per-address point lookups the Worker stitches with `Promise.all` across
+   bindings, and the follow-set metadata (`btc_watch`) lives in `xcpio-btc` anyway. D1 bills by
+   usage, not by database — a second DB costs nothing extra.
+
+2. **Follow set: all mirror-seen minus infra (~500k) — DECIDED broad.** The sizing sample settles
+   this: 53% of followed addresses are receive-only holders. The narrow "real users" filter
+   (~262k) would delete most of the world — and precisely the holders that the vaulted/holder
+   features care about. Breadth is affordable because the cap rule (below) bounds the tail, which
+   is where the cost lives regardless of breadth. And "in the mirror = followed" is one crisp rule
+   with zero classifier drift; Tier-2 promotion stays trivial.
+
+3. **Retention: full flows forever, bounded by the measured per-address cap — DECIDED
+   start-full.** A rolling time window would violate the coverage-fairness rule (windowed data
+   biases every derived feature against old activity — and this ecosystem's value IS 2015-2017
+   provenance). The per-address cap (~1,000 BTC txs, summary-only + `overflow` beyond) is the
+   right bound because the sample shows volume lives in generic-wallet tails, not in history
+   depth. Flows are deterministic derivatives, so this is reversible either direction. Watch
+   trigger: revisit if `xcpio-btc` passes 6GB.
+
+4. **Host: split by phase — the two phases have different requirements. DECIDED: backfill local,
+   steady-state on the always-on box.**
+   - *Backfill (one-time)* needs an address index → Fulcrum → an unpruned node (~800GB incl.
+     Fulcrum's ~130GB). That's the local machine's job — the ~1TB disk is needed exactly once.
+   - *Steady-state* needs only the chain tip: `getblock verbosity=3` works fine on a **pruned**
+     node (`prune=50000` ≈ 60-70GB total footprint) — no Fulcrum, no archive. That fits the
+     Hetzner box cheaply and runs 24/7; a desktop that sleeps/reboots would lean on gap-heal as
+     the routine path instead of the exception, which is backwards.
+   - *Hosted-RPC alternative (Sandshrew/subfrost, key on hand):* could replace BOTH phases —
+     summary backfill fits the 100k req/day quota in ~5-10 days, and maintenance is ~144
+     `getblock` calls/day (trivial). Currently blocked: their documented v1 endpoint is
+     decommissioned (404 for any key) and the issued key is inactive on v2 ("sign up at
+     api.subfrost.io"). If the key activates, prefer it for Phase 3 maintenance (and drop the
+     pruned node); the Fulcrum backfill decision stands regardless, since paginated per-address
+     history for 500k addresses is quota-hostile (~weeks) vs. one local weekend.
