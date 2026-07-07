@@ -19,7 +19,7 @@ export function IndexPage<K extends RecordKind>({ name }: { name: K }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h1 className="text-xl font-semibold text-zinc-100">{def.title}</h1>
+      <div className="pagehead"><h1>{def.title}</h1></div>
       <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat={def.title.toLowerCase()}>
         <RecordTable cols={def.cols} rows={rows} context={{ tip: tip ?? undefined, offset }} />
         <div className="flex gap-2 mt-1">

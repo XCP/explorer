@@ -54,14 +54,24 @@ html { overflow-x: clip; }
 :root {
   --bg:#0a0b0d; --panel:#101216; --panel2:#0d0f13; --border:#262a33; --border2:#1a1d24;
   --t1:#f2f4f7; --t2:#ccd2db; --t3:#a3adbc; --t4:#79839a;
-  --brand:#ec1550; --accent:#38bdf8; --up:#4ade80; --amber:#e3b34c;
+  --brand:#ec1550; --accent:#38bdf8; --up:#4ade80; --down:#f87171; --amber:#e3b34c;
   /* type scale — INTEGER sizes only (subpixel fuzz fix) */
   --fs-base:14px; --fs-sm:13px; --fs-xs:12px; --fs-2xs:11px; --fs-h1:22px; --fs-stat:17px;
-  /* lab data-font switcher → hardcoded to the app's Geist pair */
+}
+/* lab data-font switcher → hardcoded to the app's Geist pair. Declared on body (not :root):
+   next/font sets --font-geist-* via the body className, and referencing them from html scope
+   left --sans/--mono unresolvable — the entire table typography silently fell back. */
+body {
   --sans:var(--font-geist-sans),ui-sans-serif,system-ui,sans-serif;
   --mono:var(--font-geist-mono),ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+/* page head (v20) — index page title + description */
+.pagehead { margin:4px 0 24px; }
+.pagehead h1 { font-size:var(--fs-h1); font-weight:700; color:var(--t1); letter-spacing:-.01em; line-height:normal; /* preflight leak */ }
+.pagehead p { margin-top:7px; font-size:var(--fs-xs); color:var(--t4); max-width:92ch; line-height:1.55; }
+.pagehead p b { color:var(--t3); font-weight:500; }
 
 /* section header — asset flavor. ONE tab bar: Overview + the feeds. */
 .section-head { border-bottom:1px solid var(--border); background:var(--panel2); }
@@ -279,6 +289,7 @@ a.btn2:hover { color:var(--t2); }
    droppable cells .p3/.p2 (priority 1 never drops) — reproducing v20's hand-tuned drops
    generically. Plus the framework floor: sticky header, empty state, scroll fallback. ── */
 .rt .tr { grid-template-columns:var(--rtc); }
+.rt { line-height:normal; } /* the reference renders at browser-normal; Tailwind preflight otherwise leaks 1.5 */
 .rt { overflow-x:auto; } /* floor: nothing is ever unreachable */
 .rt .tr.th { position:sticky; top:0; z-index:1; } /* floor: header anchors ~half of fixations */
 .rt-empty { padding:18px 14px; text-align:center; font-size:var(--fs-xs); color:var(--t4); }
