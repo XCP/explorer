@@ -63,7 +63,7 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
   if (s?.first_block != null) {
     stats.push({ label: "First block", value: <Link href={`/block/${s.first_block}`}>{commas(s.first_block)}</Link> });
   }
-  stats.push({ label: "XCP balance", value: commas(s?.xcp), hideOnMobile: true });
+  stats.push({ label: "XCP balance", value: commas(Math.round(Number(s?.xcp) || 0)), hideOnMobile: true });
   stats.push({ label: "Dispensers", value: commas(s?.dispensers), hideOnMobile: true });
   return (
     <SectionHeader flush>
