@@ -88,6 +88,19 @@ async function maybeCrawlPrices(env: Env): Promise<void> {
 
 const app = new Hono<{ Bindings: Env }>();
 
+// D1 Sessions API: route every /v2 read through a replica-aware session ("first-unconstrained" —
+// nearest replica; the whole read surface is stale-tolerant by design, already edge-cached 10-600s).
+// Writes inside a session (the response-cache upsert) route to the primary automatically. A no-op
+// until read replication is enabled on the database (Dashboard -> D1 -> xcpio -> enable replication).
+// Deliberately NOT paired with Smart Placement: placement pins the worker near the primary, which
+// would defeat replica-local reads (the docs call this out for replicated resources).
+// The cast bridges workers-types predating withSession; D1DatabaseSession shares prepare()/batch().
+app.use("/v2/*", async (c, next) => {
+  const db = c.env.DB as unknown as { withSession?: (mode?: string) => D1Database };
+  if (typeof db.withSession === "function") c.env = { ...c.env, DB: db.withSession("first-unconstrained") };
+  await next();
+});
+
 app.get("/", (c) => c.text("api.xcp.io ok"));
 app.get("/health", (c) => c.text("ok"));
 app.route("/", read);     // explorer read API: /v2/assets, /v2/addresses/{a}/balances, /v2/blocks, ...

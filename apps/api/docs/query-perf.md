@@ -64,3 +64,21 @@ Audited the web consumer (`apps/web`) for field usage. Trims applied:
 
 Already lean (no action): the mirror tables don't store raw `data`/`unpacked_data`/`params` blobs, and list
 feeds select `*_normalized` columns without the integer twins.
+
+## D1 platform audit (2026-07-07, vs official docs + community reports)
+
+- **Sessions API adopted** (`index.ts` /v2 middleware, `first-unconstrained`): read replication is GA;
+  once enabled on the database (Dashboard toggle — no wrangler/API path with OAuth) every read is
+  served from the nearest of 6 replica regions instead of the single ENAM primary. Our read surface
+  is uniformly stale-tolerant (everything edge-cached 10-600s), so no bookmark plumbing is needed.
+- **Smart Placement: considered and REJECTED** — docs state it doesn't help replicated resources;
+  pinning the worker near the primary would defeat replica-local reads. Re-evaluate only if
+  replication is ever turned off.
+- **Multiple-round-trip anti-pattern**: asset detail ran 5 independent reads sequentially — now
+  concurrent (Promise.all). Full db.batch() (1 round trip) noted as the deeper cut if profiling
+  ever demands it.
+- **EXPLAIN discipline addition**: also watch for `USE TEMP B-TREE` (sort lacking an index), not
+  just SCAN. If full-text asset search is ever built, use FTS5, never `LIKE '%q%'` (current prefix
+  `LIKE 'Q%'` is index-friendly and fine).
+- Community-reported D1 latencies (200-500ms cross-region) are the no-replication, multi-round-trip
+  shape; with edge cache + D1 response cache + sessions + concurrency we sidestep all four causes.

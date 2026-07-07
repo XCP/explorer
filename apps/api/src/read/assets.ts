@@ -53,15 +53,21 @@ assets.get("/v2/assets/:asset", async (c) => {
     }
     return c.json({ error: "Asset not found" }, 404);
   }
-  const holder_count = await holderCount(c.env.DB, r.asset);
-  // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
-  // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
-  // supplies > 2^53 (e.g. PEPECASH ~1e17 minor-units). The SUM itself is exact int64 inside SQLite.
-  const sup = await assetSupplyText(c.env.DB, r.asset);
+  // The five reads below are independent — run them concurrently (wall-time = slowest, not the sum;
+  // the sequential version was the classic multiple-round-trips D1 anti-pattern).
+  const [holder_count, sup, burn, sigRes, tagsRes] = await Promise.all([
+    holderCount(c.env.DB, r.asset),
+    // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
+    // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
+    // supplies > 2^53 (e.g. PEPECASH ~1e17 minor-units). The SUM itself is exact int64 inside SQLite.
+    assetSupplyText(c.env.DB, r.asset),
+    // Burned = supply sitting in known burn addresses; circulating = total issued minus that. Canonical
+    // supply is left intact — burned/circulating sit alongside.
+    assetBurnedText(c.env.DB, r.asset),
+    assetSignalsRow(c.env.DB, r.asset).catch(() => null),
+    assetTags(c.env.DB, r.asset).catch(() => []),
+  ]);
   const raw = BigInt(sup?.supply ?? 0);
-  // Burned = supply sitting in known burn addresses; circulating = total issued minus that. Canonical
-  // supply is left intact — burned/circulating sit alongside.
-  const burn = await assetBurnedText(c.env.DB, r.asset);
   const burnedRaw = BigInt(burn?.burned ?? 0);
   const circRaw = raw - burnedRaw;
   // exact BigInt -> normalized decimal string (pure string math; no float, preserves >2^53 precision).
@@ -71,14 +77,14 @@ assets.get("/v2/assets/:asset", async (c) => {
     return (neg ? "-" : "") + s.slice(0, -8) + "." + s.slice(-8);
   };
   // composed asset quality score (config-driven, src/reputation) from the precomputed asset_signals row
-  const sig = await assetSignalsRow(c.env.DB, r.asset).catch(() => null);
+  const sig = sigRes;
   const scored = sig ? scoreAsset(sig) : null;
   // market state: ranked into a tier only if it ever traded/dispensed; else Untraded (held) / Dormant (no holders).
   const state: MarketState = sig && ((sig.trades ?? 0) > 0 || (sig.dispenses ?? 0) > 0) ? "market"
     : sig && (sig.holders ?? 0) > 0 ? "held" : "none";
   const score = scored && state === "market" ? assetScore(scored.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
-  const tags = await assetTags(c.env.DB, r.asset).catch(() => []);
+  const tags = tagsRes;
   const body: AssetDetail = {
     ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count,
     burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),
