@@ -146,10 +146,15 @@ exporter gains the Fulcrum mode as the primary bulk path (Esplora mode stays for
      node (`prune=50000` ≈ 60-70GB total footprint) — no Fulcrum, no archive. That fits the
      Hetzner box cheaply and runs 24/7; a desktop that sleeps/reboots would lean on gap-heal as
      the routine path instead of the exception, which is backwards.
-   - *Hosted-RPC alternative (Sandshrew/subfrost, key on hand):* could replace BOTH phases —
-     summary backfill fits the 100k req/day quota in ~5-10 days, and maintenance is ~144
-     `getblock` calls/day (trivial). Currently blocked: their documented v1 endpoint is
-     decommissioned (404 for any key) and the issued key is inactive on v2 ("sign up at
-     api.subfrost.io"). If the key activates, prefer it for Phase 3 maintenance (and drop the
-     pruned node); the Fulcrum backfill decision stands regardless, since paginated per-address
-     history for 500k addresses is quota-hostile (~weeks) vs. one local weekend.
+   - *Hosted-RPC alternative — Sandshrew, VERIFIED WORKING 2026-07-07.* Live endpoint is
+     `https://mainnet.subfrost.io/v2/<key>` (JSON-RPC; the docs' sandshrew.io/v1 examples are
+     stale — v1 is decommissioned). Key in `apps/api/sandshrew.tok` (gitignored). Free tier:
+     100k requests/day. Verified against the plan's needs: `esplora_address` (chain_stats
+     summaries), `esplora_address::txs` (full paginated history incl. vin prevouts),
+     `btc_getblock` verbosity=3 (tested: block 956900, 4,546 txs, 13.6MB, prevout sender
+     addresses present). This REPLACES the pruned Hetzner node for Phase 3 maintenance (~144
+     block calls/day — trivial quota) and covers the Phase 2 SUMMARY backfill (1 req/address ≈
+     5-6 days of quota for 500k). Full-FLOWS backfill via paginated history is feasible but slow
+     (~1-2 weeks of continuous quota grinding) — the local Fulcrum weekend remains the preferred
+     bulk path, with Sandshrew as the no-hardware fallback. Net: the local node is now an
+     accelerator, not a dependency.
