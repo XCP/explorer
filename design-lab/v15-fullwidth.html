@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en" data-font="geist" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v15 · Full-width bands — xcp.io design lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#0a0b0d; --panel:#101216; --panel2:#0d0f13; --border:#262a33; --border2:#1a1d24;
+    --t1:#f2f4f7; --t2:#ccd2db; --t3:#a3adbc; --t4:#79839a;
+    --brand:#ec1550; --accent:#38bdf8; --up:#4ade80; --amber:#e3b34c;
+    /* type scale — INTEGER sizes only (subpixel fuzz fix) */
+    --fs-base:14px; --fs-sm:13px; --fs-xs:12px; --fs-2xs:11px; --fs-h1:22px; --fs-stat:17px;
+  }
+  html[data-density="compact"] { --fs-base:13px; --fs-sm:12px; --fs-xs:11px; --fs-2xs:10px; --fs-h1:20px; --fs-stat:16px; }
+
+  /* font themes — switch live with the control bar */
+  html[data-font="inter"]  { --sans:Inter,system-ui,sans-serif;            --mono:"JetBrains Mono",Consolas,monospace; }
+  html[data-font="geist"]  { --sans:Geist,system-ui,sans-serif;            --mono:"Geist Mono",Consolas,monospace; }
+  html[data-font="system"] { --sans:"Segoe UI",system-ui,sans-serif;       --mono:Cascadia Code,Consolas,monospace; }
+
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--t2); font-family:var(--sans); font-size:var(--fs-base); }
+  a { color:inherit; text-decoration:none; } a:hover { color:var(--accent); }
+  .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+  /* control bar (lab-only) */
+  .lab-controls { position:fixed; top:10px; right:10px; z-index:99; display:flex; gap:6px; background:#14171d; border:1px solid #303540; border-radius:99px; padding:5px 8px; font-size:11px; box-shadow:0 4px 16px rgba(0,0,0,.5); }
+  .lab-controls button { background:none; border:1px solid transparent; color:#a3adbc; font-size:11px; padding:3px 9px; border-radius:99px; cursor:pointer; font-family:inherit; }
+  .lab-controls button.on { color:#fff; border-color:#38bdf8; }
+  .lab-controls .sep { width:1px; background:#303540; margin:0 2px; }
+
+  /* status strip — chain left, market right */
+  .statusbar { border-bottom:1px solid var(--border2); background:var(--panel2); font-size:var(--fs-2xs); font-family:var(--mono); }
+  .statusbar .in { max-width:1200px; margin:0 auto; padding:5px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; white-space:nowrap; overflow:hidden; }
+  .cluster { display:flex; align-items:center; }
+  .cluster .cell { padding:0 13px; border-right:1px solid var(--border2); }
+  .cluster .cell:first-child { padding-left:0; } .cluster .cell:last-child { border-right:none; padding-right:0; }
+  .statusbar .k { color:var(--t4); } .statusbar b { color:var(--t2); font-weight:500; }
+  .ok { color:var(--up); } .warn { color:var(--amber); }
+
+  /* global header — SOLID bg (no backdrop-filter = no rasterized text) */
+  header.global { position:sticky; top:0; z-index:50; border-bottom:1px solid var(--border); background:#0a0b0d; }
+  .hrow { max-width:1200px; margin:0 auto; display:flex; align-items:center; gap:20px; padding:10px 16px; }
+  .brand { font-family:var(--mono); font-weight:700; font-size:15px; letter-spacing:.05em; color:var(--t1); }
+  .brand b { color:var(--brand); }
+  nav.primary { display:flex; gap:4px; font-size:var(--fs-sm); font-weight:500; }
+  nav.primary a { color:var(--t3); padding:6px 11px; border-radius:6px; }
+  nav.primary a.active { color:var(--t1); background:var(--panel); }
+  nav.primary a:hover { color:var(--t1); }
+  .search { flex:1; max-width:460px; margin-left:auto; display:flex; align-items:center; gap:9px; background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:7px 11px; }
+  .search:focus-within { border-color:var(--accent); }
+  .search .lens { color:var(--t4); }
+  .search input { flex:1; background:none; border:none; outline:none; color:var(--t1); font-family:inherit; font-size:var(--fs-sm); }
+  .search input::placeholder { color:var(--t4); }
+  .search .kbd { font-size:10px; color:var(--t4); border:1px solid var(--border2); border-radius:3px; padding:0 5px; font-family:var(--mono); }
+  .cta { background:var(--brand); border:none; color:#fff; font-family:inherit; font-size:var(--fs-sm); font-weight:600; padding:7px 14px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  .hamburger { display:none; margin-left:auto; width:34px; height:34px; border:1px solid var(--border); border-radius:6px; background:var(--panel); color:var(--t2); font-size:16px; }
+
+  /* section header — asset flavor. Band CLOSES after the stats: no tabs here. */
+  .section-head { border-bottom:1px solid var(--border); background:var(--panel2); }
+  .sh-in { max-width:1200px; margin:0 auto; padding:18px 16px 18px; }
+  .sh-top { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .sh-top img.icon { width:52px; height:52px; border-radius:8px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
+  .sh-name { font-size:var(--fs-h1); font-weight:700; color:var(--t1); letter-spacing:0; font-family:var(--mono); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
+  .chip.grail { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
+  .chip.trusted { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+  .chip.locked { color:#fca5a5; border-color:#96312e; background:rgba(127,29,29,.15); }
+  .sh-actions { margin-left:auto; display:flex; gap:8px; }
+  .btn2 { background:none; border:1px solid var(--border); color:var(--t2); font-family:inherit; font-size:var(--fs-xs); font-weight:500; padding:7px 12px; border-radius:6px; cursor:pointer; }
+  .btn2:hover { border-color:var(--t4); }
+  .btn2.primary { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .sh-stats { display:flex; margin-top:16px; overflow-x:auto; }
+  .sh-stat { padding:0 22px; border-right:1px solid var(--border2); flex-shrink:0; }
+  .sh-stat:first-child { padding-left:0; } .sh-stat:last-child { border-right:none; }
+  .sh-stat .l { font-size:var(--fs-2xs); letter-spacing:.07em; text-transform:uppercase; color:var(--t4); white-space:nowrap; }
+  .sh-stat .v { font-size:var(--fs-stat); color:var(--t1); font-weight:600; margin-top:3px; white-space:nowrap; }
+  .sh-stat .v small { font-size:var(--fs-2xs); color:var(--t3); font-weight:400; }
+
+  main { max-width:1200px; margin:0 auto; padding:18px 16px; display:flex; flex-direction:column; gap:12px; }
+
+  /* ── zone labels — the two-register boundary ── */
+  .zone-label { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--t4); }
+  .zone-label::after { content:""; flex:1; height:1px; background:var(--border2); }
+  .zone-label.gap { margin-top:16px; }
+
+  /* ── shallow full-width bands: label cell + content, one line each ── */
+  .band { border:1px solid var(--border2); border-radius:8px; background:var(--panel); padding:12px 16px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+  .band .bl { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); width:118px; flex-shrink:0; }
+
+  /* holder-makeup tier bar, inline */
+  .mbar { display:flex; height:10px; border-radius:99px; overflow:hidden; background:#14171d; flex:2; min-width:220px; }
+  .mleg { display:flex; flex-wrap:wrap; gap:5px 14px; font-size:var(--fs-2xs); color:var(--t3); flex:3; min-width:260px; }
+  .mleg b { color:var(--t1); font-family:var(--mono); font-variant-numeric:tabular-nums; font-weight:500; }
+  .sw { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:0; }
+
+  /* inline stat cells (quality / market bands) — sh-stat register, shallower */
+  .bcells { display:flex; overflow-x:auto; flex:1; }
+  .bcell { padding:0 22px; border-right:1px solid var(--border2); flex-shrink:0; }
+  .bcell:first-child { padding-left:0; } .bcell:last-child { border-right:none; }
+  .bcell .l { font-size:var(--fs-2xs); letter-spacing:.07em; text-transform:uppercase; color:var(--t4); white-space:nowrap; }
+  .bcell .v { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-stat); color:var(--t1); font-weight:600; margin-top:3px; white-space:nowrap; }
+  .bcell .v small { font-size:var(--fs-2xs); color:var(--t3); font-weight:400; }
+
+  /* ── same-collection strip (v12 variant-A gallery cards, one 6-up row) ── */
+  .strip-title { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin:6px 0 10px; }
+  .gallery { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+  .g-card { display:block; border:1px solid var(--border2); border-radius:8px; background:var(--panel); overflow:hidden; }
+  .g-card:hover { border-color:var(--border); color:inherit; }
+  .g-art { aspect-ratio:3/4.2; background:#14171d; border-bottom:1px solid var(--border2); }
+  .g-art img { width:100%; height:100%; object-fit:cover; display:block; }
+  .g-meta { padding:9px 10px 10px; }
+  .g-name { font-family:var(--mono); font-size:var(--fs-sm); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .g-why { font-size:var(--fs-2xs); color:var(--t4); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .g-why b { color:var(--t3); font-weight:500; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+  /* ── explorer zone: full-width tab bar + dense ledger table ── */
+  .xtabs { display:flex; gap:2px; border-bottom:1px solid var(--border); overflow-x:auto; }
+  .xtabs a { padding:10px 14px; font-size:var(--fs-base); font-weight:500; color:var(--t3); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+  .xtabs a.active { color:var(--t1); border-color:var(--accent); }
+  .xtabs a:hover { color:var(--t1); }
+  .xtabs .count { font-family:var(--mono); font-size:var(--fs-2xs); color:var(--t4); margin-left:6px; }
+  .xtable { border:1px solid var(--border2); border-top:none; border-radius:0 0 8px 8px; background:var(--panel); overflow:hidden; }
+  .xt-row { display:grid; grid-template-columns:30px minmax(0,1.1fr) 150px 110px minmax(0,1fr) 76px; align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
+  .xt-row:last-child { border-bottom:none; }
+  .xt-head { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--t4); background:var(--panel2); border-bottom:1px solid var(--border2); padding:8px 14px; }
+  .xt-head .r { text-align:right; }
+  .xt-icon { width:28px; height:28px; border-radius:5px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
+  .xt-name { font-family:var(--mono); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .xt-price { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; }
+  .xt-price small { display:block; font-size:var(--fs-2xs); color:var(--t4); font-weight:400; }
+  .venue { justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; padding:1px 8px; border-radius:99px; border:1px solid; }
+  .venue.dex { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+  .venue.disp { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+  .venue.emblem { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
+  .xt-buyer { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .xt-time { text-align:right; color:var(--t4); font-size:var(--fs-xs); font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+  .demo-note { max-width:1200px; margin:34px auto 0; padding:0 16px; }
+  .demo-note .inner { border:1px dashed #34404f; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); color:var(--t4); background:rgba(56,189,248,.03); }
+  .demo-note b { color:var(--t3); }
+
+  footer { border-top:1px solid var(--border); margin-top:44px; background:var(--panel2); }
+  .frow { max-width:1200px; margin:0 auto; padding:34px 16px; }
+  .fcols { display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr; gap:22px 30px; }
+  @media (max-width:760px){ .fcols { grid-template-columns:repeat(2,1fr); } }
+  footer h3 { font-size:var(--fs-2xs); font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--t3); margin-bottom:10px; }
+  footer ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:6px; }
+  footer li a { font-size:var(--fs-xs); color:var(--t3); }
+  .fabout { font-size:var(--fs-xs); color:var(--t4); line-height:1.6; max-width:34ch; }
+  .fbrand { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border2); margin-top:26px; padding-top:18px; flex-wrap:wrap; gap:10px; font-size:var(--fs-2xs); color:var(--t4); }
+  .fbrand b { color:var(--t3); }
+  .dotg { display:inline-block; width:6px; height:6px; border-radius:99px; background:var(--up); margin-right:5px; }
+
+  @media (max-width:1000px){
+    .gallery { grid-template-columns:repeat(3,1fr); }
+  }
+  @media (max-width:880px){
+    nav.primary, .cta.desk { display:none; }
+    .hamburger { display:block; }
+    .search { max-width:none; order:10; flex-basis:100%; }
+    .hrow { flex-wrap:wrap; gap:10px; }
+    .statusbar .cluster.market { display:none; }
+    .sh-stat { padding:0 14px; }
+    .sh-stat.mobile-hide { display:none; }  /* cap the mobile stat strip */
+  }
+  @media (max-width:760px){
+    .band .bl { width:100%; }
+    .bcell { padding:0 14px; }
+    .xt-row { grid-template-columns:30px minmax(0,1.2fr) 130px 72px; }
+    .xt-row > :nth-child(4), .xt-row > :nth-child(5) { display:none; } /* venue + buyer */
+  }
+  @media (max-width:620px){
+    .gallery { grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="lab-controls" role="group" aria-label="Lab type controls">
+  <button data-set="font:geist" class="on">Geist</button>
+  <button data-set="font:inter">Inter</button>
+  <button data-set="font:system">System</button>
+  <span class="sep"></span>
+  <button data-set="density:comfortable" class="on">14px</button>
+  <button data-set="density:compact">13px</button>
+</div>
+
+<div class="statusbar">
+  <div class="in">
+    <span class="cluster">
+      <span class="cell"><span class="ok">●</span> <b>synced</b></span>
+      <span class="cell"><span class="k">block</span> <b>956,990</b> <span class="k">+34s</span></span>
+      <span class="cell"><span class="k">mempool</span> <b class="warn">3</b></span>
+    </span>
+    <span class="cluster market">
+      <span class="cell"><span class="k">BTC</span> <b>$63,273</b> <span class="ok">+0.3%</span></span>
+      <span class="cell"><span class="k">XCP</span> <b>$1.17</b> <span class="ok">+0.9%</span></span>
+      <span class="cell"><span class="k">24h vol</span> <b>$18,402</b></span>
+    </span>
+  </div>
+</div>
+
+<header class="global">
+  <div class="hrow">
+    <a class="brand" href="#">XCP<b>.io</b></a>
+    <nav class="primary">
+      <a class="active" href="#">Assets</a><a href="#">Trades</a><a href="#">Blocks</a><a href="#">Explore ▾</a><a href="#">Discover ▾</a>
+    </nav>
+    <div class="search"><span class="lens">⌕</span><input placeholder="Search assets, addresses, txs, blocks…"><span class="kbd">/</span></div>
+    <button class="cta desk">Connect</button>
+    <button class="hamburger" aria-label="Menu">≡</button>
+  </div>
+</header>
+
+<div class="section-head">
+  <div class="sh-in">
+    <div class="sh-top">
+      <img class="icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" alt="">
+      <div>
+        <div class="sh-name">RAREPEPE</div>
+        <div class="chips" style="margin-top:5px">
+          <span class="chip grail">GRAIL</span><span class="chip trusted">TRUSTED</span><span class="chip locked">LOCKED</span>
+        </div>
+      </div>
+      <div class="sh-actions">
+        <button class="btn2">Watch</button>
+        <button class="btn2">Trade on xcpdex ↗</button>
+        <button class="btn2 primary">Collect ↗</button>
+      </div>
+    </div>
+    <div class="sh-stats mono">
+      <div class="sh-stat"><div class="l">Score</div><div class="v">97.9 <small>Bluechip</small></div></div>
+      <div class="sh-stat"><div class="l">Holders</div><div class="v">1,257</div></div>
+      <div class="sh-stat"><div class="l">Supply</div><div class="v">300</div></div>
+      <div class="sh-stat"><div class="l">Realized</div><div class="v">$3.2M <small>lifetime</small></div></div>
+      <div class="sh-stat mobile-hide"><div class="l">Last sale</div><div class="v">$114 <small>2h ago</small></div></div>
+      <div class="sh-stat mobile-hide"><div class="l">Issued</div><div class="v">2016 <small>blk 428,919</small></div></div>
+    </div>
+  </div>
+</div>
+
+<main>
+
+  <!-- ══ HIGHLIGHT ZONE — stacked shallow bands, zero interaction ══ -->
+
+  <div class="band">
+    <span class="bl">Holder makeup</span>
+    <div class="mbar">
+      <span style="width:39%;background:#c4b5fd"></span><span style="width:23%;background:#7dd3fc"></span><span style="width:9%;background:#4ade80"></span><span style="width:8%;background:#79839a"></span><span style="width:21%;background:#e3b34c"></span>
+    </div>
+    <div class="mleg">
+      <span><span class="sw" style="background:#c4b5fd"></span>OG <b>39%</b></span>
+      <span><span class="sw" style="background:#7dd3fc"></span>Established <b>23%</b></span>
+      <span><span class="sw" style="background:#4ade80"></span>Active <b>9%</b></span>
+      <span><span class="sw" style="background:#79839a"></span>Casual <b>8%</b></span>
+      <span><span class="sw" style="background:#e3b34c"></span>Infra <b>21%</b></span>
+    </div>
+  </div>
+
+  <div class="band">
+    <span class="bl">Holder quality</span>
+    <div class="bcells">
+      <div class="bcell"><div class="l">Holders</div><div class="v">208</div></div>
+      <div class="bcell"><div class="l">Holder breadth</div><div class="v">213 <small>incl. vaults</small></div></div>
+      <div class="bcell"><div class="l">Creator holders</div><div class="v">10.6% <small>of supply</small></div></div>
+      <div class="bcell"><div class="l">Top holder</div><div class="v">6.1% <small>of supply</small></div></div>
+    </div>
+  </div>
+
+  <div class="band">
+    <span class="bl">Market</span>
+    <div class="bcells">
+      <div class="bcell"><div class="l">Price</div><div class="v">1,700 XCP <small>$1,989</small></div></div>
+      <div class="bcell"><div class="l">7d volume</div><div class="v">5,940 XCP <small>$6,950</small></div></div>
+      <div class="bcell"><div class="l">Last sale</div><div class="v">$176K <small>9h ago</small></div></div>
+      <div class="bcell"><div class="l">Realized</div><div class="v">$12.5M <small>lifetime</small></div></div>
+    </div>
+  </div>
+
+  <!-- ══ EXPLORER ZONE — the full ledger, different register ══ -->
+  <div class="zone-label gap">Explore the ledger</div>
+  <section>
+    <nav class="xtabs">
+      <a class="active" href="#">Sales <span class="count">1,412</span></a>
+      <a href="#">Holders <span class="count">208</span></a>
+      <a href="#">Issuances <span class="count">3</span></a>
+      <a href="#">Dispensers <span class="count">12</span></a>
+      <a href="#">Dispenses <span class="count">96</span></a>
+      <a href="#">Orders <span class="count">341</span></a>
+      <a href="#">Sends <span class="count">2,871</span></a>
+    </nav>
+    <div class="xtable">
+      <div class="xt-row xt-head"><span></span><span>Asset</span><span class="r">Price</span><span>Venue</span><span>Buyer</span><span class="r">Time</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">1,700 XCP<small>$1,989</small></span><span class="venue dex">DEX</span><span class="xt-buyer">1Ez4wpKY7v2mHqTt…kR2m</span><span class="xt-time">2h ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">$176,000<small>vault sale</small></span><span class="venue emblem">EMBLEM</span><span class="xt-buyer">mikeinspace</span><span class="xt-time">9h ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">1,650 XCP<small>$1,931</small></span><span class="venue dex">DEX</span><span class="xt-buyer">1Ping4FsQxUvZ9wD…Q7vQ</span><span class="xt-time">1d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">0.0299 BTC<small>$1,890</small></span><span class="venue disp">DISPENSER</span><span class="xt-buyer">1BcDeLM9sKw2fRnH…9fGh</span><span class="xt-time">2d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">1,700 XCP<small>$1,989</small></span><span class="venue dex">DEX</span><span class="xt-buyer">1KanyeW3stHodLr4…tR8s</span><span class="xt-time">4d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">61,500 PEPECASH<small>$1,740</small></span><span class="venue dex">DEX</span><span class="xt-buyer">1Joe7NmBqVdE2xLp…2xWd</span><span class="xt-time">9d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">$148,500<small>vault sale</small></span><span class="venue emblem">EMBLEM</span><span class="xt-buyer">rarepepewhale</span><span class="xt-time">12d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">1,580 XCP<small>$1,849</small></span><span class="venue dex">DEX</span><span class="xt-buyer">1QwErT9uIoPzXcVb…pL4d</span><span class="xt-time">15d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">0.0324 BTC<small>$2,040</small></span><span class="venue disp">DISPENSER</span><span class="xt-buyer">1FreedomKq8wZuYt…8jUu</span><span class="xt-time">18d ago</span></div>
+      <div class="xt-row"><img class="xt-icon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><span class="xt-name">RAREPEPE</span><span class="xt-price">1,500 XCP<small>$1,755</small></span><span class="venue dex">DEX</span><span class="xt-buyer">1SatSt4ckerVn3mQ…c6Vn</span><span class="xt-time">22d ago</span></div>
+    </div>
+  </section>
+
+  <!-- same-collection: one 6-up row — last content on the page, the exit ramp -->
+  <div>
+    <div class="strip-title">Same collection · Rare Pepe series</div>
+    <div class="gallery">
+      <a class="g-card" href="#"><div class="g-art"><img src="https://cdn.xcp.io/img/full/FAKEASF" loading="lazy" alt=""></div><div class="g-meta"><div class="g-name">FAKEASF</div><div class="g-why"><b>23%</b> of holders co-hold</div></div></a>
+      <a class="g-card" href="#"><div class="g-art"><img src="https://cdn.xcp.io/img/full/PEPECASH" loading="lazy" alt=""></div><div class="g-meta"><div class="g-name">PEPECASH</div><div class="g-why"><b>41%</b> of holders co-hold</div></div></a>
+      <a class="g-card" href="#"><div class="g-art"><img src="https://cdn.xcp.io/img/full/DANKMEMECASH" loading="lazy" alt=""></div><div class="g-meta"><div class="g-name">DANKMEMECASH</div><div class="g-why"><b>19%</b> of holders co-hold</div></div></a>
+      <a class="g-card" href="#"><div class="g-art"><img src="https://cdn.xcp.io/img/full/SHITCOINCARD" loading="lazy" alt=""></div><div class="g-meta"><div class="g-name">SHITCOINCARD</div><div class="g-why"><b>21%</b> of holders co-hold</div></div></a>
+      <a class="g-card" href="#"><div class="g-art"><img src="https://cdn.xcp.io/img/full/DARKPILLPEPE" loading="lazy" alt=""></div><div class="g-meta"><div class="g-name">DARKPILLPEPE</div><div class="g-why"><b>17%</b> of holders co-hold</div></div></a>
+      <a class="g-card" href="#"><div class="g-art"><img src="https://cdn.xcp.io/img/full/TRUMPRARE" loading="lazy" alt=""></div><div class="g-meta"><div class="g-name">TRUMPRARE</div><div class="g-why"><b>18%</b> of holders co-hold</div></div></a>
+    </div>
+  </div>
+
+</main>
+
+<div class="demo-note">
+  <div class="inner"><b>v15 — Full-width bands.</b> No columns anywhere: makeup (bar + inline legend), quality (one row of cells), and market (one row) stack as shallow full-width bands above the explorer zone; the 6-up collection strip closes the page. The bet: maximum scanability and zero interaction beat spatial grouping.</div>
+</div>
+
+<footer>
+  <div class="frow">
+    <div class="fcols">
+      <div>
+        <div class="brand" style="font-size:14px; margin-bottom:10px">XCP<b>.io</b></div>
+        <p class="fabout">The reference explorer for Counterparty — the unified sales ledger, reputation intelligence, and twelve years of provenance on Bitcoin.</p>
+      </div>
+      <div><h3>Explore</h3><ul><li><a href="#">Assets</a></li><li><a href="#">Trades</a></li><li><a href="#">Blocks</a></li><li><a href="#">Mempool</a></li><li><a href="#">All records</a></li></ul></div>
+      <div><h3>Discover</h3><ul><li><a href="#">Collections</a></li><li><a href="#">Leaderboards</a></li><li><a href="#">Firsts</a></li><li><a href="#">Vaults</a></li><li><a href="#">Exchanges</a></li></ul></div>
+      <div><h3>Ecosystem</h3><ul><li><a href="#">xcpdex&nbsp;↗</a></li><li><a href="#">Digirare&nbsp;↗</a></li><li><a href="#">XCP Wallet&nbsp;↗</a></li><li><a href="#">counterparty.io&nbsp;↗</a></li></ul></div>
+      <div><h3>Data</h3><ul><li><a href="#">API</a></li><li><a href="#">GitHub repo&nbsp;↗</a></li><li><a href="#">Network stats</a></li></ul></div>
+    </div>
+    <div class="fbrand">
+      <span class="mono"><span class="dotg"></span>synced to block <b>956,990</b> · 3 pending</span>
+      <span>Counterparty blockchain explorer — on Bitcoin since 2014.</span>
+    </div>
+  </div>
+</footer>
+
+<a href="index.html" style="position:fixed;bottom:16px;right:16px;font-size:11px;color:#79839a;border:1px solid #262a33;border-radius:99px;padding:6px 12px;background:rgba(10,11,13,.95)">↩ lab index · v15 fullwidth</a>
+
+<script>
+  document.querySelectorAll(".lab-controls button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var kv = btn.dataset.set.split(":");
+      document.documentElement.dataset[kv[0]] = kv[1];
+      btn.parentElement.querySelectorAll('[data-set^="' + kv[0] + ':"]').forEach(function (b) { b.classList.toggle("on", b === btn); });
+    });
+  });
+</script>
+</body>
+</html>
