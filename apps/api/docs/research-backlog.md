@@ -152,3 +152,58 @@ adversarially confirmed against primary sources)
   weight experiment only per its documented re-run rule.
 - Heavy computations follow the bounded-resumable-job pattern (graph.ts) with per-op D1 limits in
   mind (chunk by rowid/block windows; ~100 bound params max; throttle against read contention).
+
+## Holders also collect — relevance spec (2026-07-07)
+
+Replaces the current most-held cohort query behind the asset page's "Holders also collect"
+section (which today surfaces XCP and airdrop spam — assets everyone holds say nothing about
+what THIS asset's collectors collect). Demo: `design-lab/v12-also-collect.html`.
+
+**Signal.** For anchor asset A and candidate B:
+
+    lift(B | A) = P(holds B | holds A) / P(holds B)
+                = (coHolders(A,B) / holders(A)) / (holders(B) / population)
+
+computed over `balances` (quantity > 0). Minimum co-holder floor: `coHolders(A,B) >= 5` —
+below that, lift is noise.
+
+**Population hygiene (machines don't collect).**
+- Exclude holder addresses curated as exchange or burn addresses from both numerator and
+  denominator — a CEX hot wallet "co-holds" everything.
+- Exclude candidate assets with `low_quality = 1` and graph-distrusted assets (asset_signals).
+- Exclude A itself and its subassets.
+
+**Tag boost (shared collection).** `score = lift × (1 + boost)` where boost ≈ 0.4 when A and B
+share a collection/series tag (tags table); shared-tag neighbors are what a collector means by
+"also collect", so ties break toward the collection.
+
+**Sorts.** relevance (default, score desc) · same-collection (tag match first, then co-holder
+share) · recently-sold (last sale recency, unified sales ledger) · most-held (holders desc —
+kept as an explicit escape hatch, never the default).
+
+**Bounded SQL sketch** — two indexed aggregates over balances plus one join; no cross product:
+
+    -- 1. co-holder counts for holders of A (indexed scan on balances(asset), then by address)
+    WITH a_holders AS (
+      SELECT address FROM balances WHERE asset = :A AND quantity > 0
+        AND address NOT IN (SELECT address FROM curated_addresses WHERE kind IN ('exchange','burn'))
+    ),
+    co AS (
+      SELECT b.asset, COUNT(*) AS co_holders
+      FROM balances b JOIN a_holders h ON h.address = b.address
+      WHERE b.quantity > 0 AND b.asset != :A
+      GROUP BY b.asset HAVING COUNT(*) >= 5
+    )
+    -- 2. join global holder counts + signals/tags for lift, quality filter, tag boost
+    SELECT co.asset, co.co_holders, s.holder_count, s.last_sale_usd, s.last_sale_block,
+           (co.co_holders * 1.0 / :holdersOfA) / (s.holder_count * 1.0 / :population) AS lift,
+           (t.tag IS NOT NULL) AS same_collection
+    FROM co
+    JOIN asset_signals s ON s.asset = co.asset AND s.low_quality = 0 AND s.graph_distrusted = 0
+    LEFT JOIN tags t ON t.asset = co.asset AND t.tag IN (SELECT tag FROM tags WHERE asset = :A)
+    ORDER BY lift * (1 + 0.4 * (t.tag IS NOT NULL)) DESC
+    LIMIT 24;
+
+Cost is bounded by holders(A) × avg assets per holder for the first aggregate (fan-out only
+over A's holder set, not the whole table) — cache per asset alongside the other derived
+builders; rebuildable from raw per the mirror rule.
