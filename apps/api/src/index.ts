@@ -16,6 +16,7 @@ import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags, buildTagsScoped } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
+import { crawlScarceSales } from "./indexer/scarce-sales";
 import { buildTrades } from "./indexer/trades";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 import { read } from "./read/router";
@@ -162,6 +163,8 @@ export default {
         try { await maybeCrawlCollections(env); } catch (e) { console.error("crawlCollections", e); }
         // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
         try { await maybeCrawlEmblemSales(env); } catch (e) { console.error("crawlEmblemSales", e); }
+        // Continue the Scarce.city sales sweep (Bitcoin-native marketplace; one bounded asset batch per tick).
+        try { await crawlScarceSales(env); } catch (e) { console.error("crawlScarceSales", e); }
         // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
         try { await buildTrades(env); } catch (e) { console.error("buildTrades", e); }
         // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).

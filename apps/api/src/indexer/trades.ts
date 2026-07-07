@@ -83,6 +83,14 @@ function emblemSql() {
       AND es.token_addr IN (${eth}, '${USDC}')`;
 }
 
+/** Scarce.city: a Bitcoin-native card sale (qty 1) priced in BTC. No on-chain tx/block — sold_at IS
+ *  the time; block_index left 0. buyer/seller aren't in the API. usd_value filled later via BTC/USD. */
+function scarceSql() {
+  return `INSERT OR IGNORE INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,buyer,seller,tx_hash)
+    SELECT 'scarce.city', s.asset || '_' || s.sold_at, s.asset, s.sold_at, 0, 1.0, 'BTC', s.price_btc, NULL, NULL, NULL
+    FROM scarce_city_sales s`;
+}
+
 export interface TradesBuildProgress {
   tip: number;
   dex?: { from: number; to: number };
@@ -119,6 +127,8 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
 
   // Emblem: re-fold the staging table every pass (idempotent; grows as the sales backfill continues).
   await env.DB.prepare(emblemSql()).run();
+  // Scarce.city: re-fold the staging table every pass (idempotent; grows as the sweep continues).
+  await env.DB.prepare(scarceSql()).run();
 
   const counts = await env.DB.prepare(`SELECT venue, COUNT(*) n FROM trades GROUP BY venue`).all<{ venue: string; n: number }>();
   out.counts = Object.fromEntries((counts.results || []).map((r) => [r.venue, r.n]));

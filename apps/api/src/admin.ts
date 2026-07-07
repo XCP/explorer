@@ -11,6 +11,7 @@ import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
+import { crawlScarceSales } from "./indexer/scarce-sales";
 import { buildTrades } from "./indexer/trades";
 import { buildGraphTrust } from "./indexer/graph";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
@@ -109,6 +110,8 @@ admin.post("/admin/verify-signals", async (c) => {
 // Advance the Emblem Vault crawl one step: enumerate token ids (Alchemy, per-contract pageKey cursor) +
 // resolve BTC addresses (keyless /meta). Stores only (contract, token id, btc address); contents come
 // from our own Counterparty ledger. Loop this to backfill.
+admin.post("/admin/crawl-scarce", async (c) => c.json(await crawlScarceSales(c.env)));
+
 admin.post("/admin/crawl-emblem", async (c) => {
   return c.json(await crawlEmblemStep(c.env));
 });
