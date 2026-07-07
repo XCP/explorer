@@ -7,7 +7,7 @@ import { commas } from "@/lib/format";
 // The address detail page's tabbed activity (sends, issuances, dispensers, …). A client island: the
 // column `cell` renderers are functions (can't cross the server→client boundary) and the direction/
 // counterparty cells close over `address`, so the tabs are built here for the interactive DetailTabs.
-export function AddressTabs({ address }: { address: string }) {
+export function AddressTabs({ address, inBand = false }: { address: string; inBand?: boolean }) {
   const base = `/v2/addresses/${encodeURIComponent(address)}`;
   const tabs: TabDef[] = [
     { label: "Sends", path: `${base}/sends`, cols: [
@@ -34,5 +34,5 @@ export function AddressTabs({ address }: { address: string }) {
     ]},
     { label: "Issued", path: `${base}/issued`, cols: ASSET_LIST_COLS },
   ];
-  return <DetailTabs tabs={tabs} />;
+  return <DetailTabs tabs={tabs} inBand={inBand} />;
 }

@@ -52,7 +52,8 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
     stats.push({ label: "Last block", value: <Link href={`/block/${s.last_block}`}>{commas(s.last_block)}</Link>, hideOnMobile: true });
   }
   return (
-    <SectionHeader>
+    <>
+    <SectionHeader flush>
       <SectionIdentity
         name={address}
         chips={<>
@@ -66,8 +67,10 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
         </>}
         actions={<CopyButton value={address} />}
       />
-      <div className="pb-5"><SectionStats stats={stats} /></div>
+      <SectionStats stats={stats} />
     </SectionHeader>
+    <AddressTabs address={address} inBand />
+    </>
   );
 }
 
@@ -83,7 +86,6 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
       <PendingActions address={address} />
       <Holdings address={address} />
       <AddressConnections address={address} />
-      <AddressTabs address={address} />
     </>
   );
 }

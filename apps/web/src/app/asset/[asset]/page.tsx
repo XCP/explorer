@@ -5,8 +5,8 @@ import { Flame, Hammer, Key } from "lucide-react";
 import type { AssetDetail } from "@xcp/shared/assets";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
-import { AssetIcon, LockBadge } from "@/components/ui/badges";
-import { SectionHeader, SectionIdentity, SectionStats, type SectionStat } from "@/components/section-header";
+import { AssetIcon } from "@/components/ui/badges";
+import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
 import { AssetArt } from "@/components/asset-art";
 import { MarketChip } from "@/components/market-chip";
 import { AssetTabs } from "@/components/asset-tabs";
@@ -72,20 +72,22 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
 
   return (
     <>
-      <SectionHeader>
+      <SectionHeader flush>
         <SectionIdentity
           visual={<AssetIcon asset={item.asset} size={48} />}
           name={item.asset_longname || item.asset}
           chips={<>
-            <LockBadge locked={item.locked} />
+            {item.tags?.includes("grail") && <SectionChip variant="grail">grail</SectionChip>}
+            <SectionChip variant={item.locked ? "locked" : "open"}>{item.locked ? "locked" : "open"}</SectionChip>
             <GraphTrustChip kind="assets" id={item.asset} />
           </>}
           actions={
-            <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="rounded border border-zinc-700 px-2 py-1 text-xs !text-zinc-300 hover:!text-zinc-100 !no-underline">Trade on xcpdex ↗</a>
+            <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium !text-zinc-200 hover:!text-zinc-100 hover:border-zinc-500 !no-underline">Trade on xcpdex ↗</a>
           }
         />
-        <div className="pb-5"><SectionStats stats={assetStats(item)} /></div>
+        <SectionStats stats={assetStats(item)} />
       </SectionHeader>
+      <AssetTabs asset={item.asset} issuer={item.issuer} inBand />
       <Card>
         <div className="flex flex-col sm:flex-row gap-5">
           <AssetArt asset={item.asset} natural stamp={item.tags?.includes("stamp")} className="w-36 sm:w-44 rounded-lg border border-zinc-800 shrink-0 mx-auto sm:mx-0" />
@@ -106,7 +108,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
       <HolderMakeup asset={item.asset} />
       <HolderQuality asset={item.asset} />
       <AssetCohort asset={item.asset} />
-      <AssetTabs asset={item.asset} issuer={item.issuer} />
+
     </>
   );
 }

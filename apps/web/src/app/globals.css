@@ -39,3 +39,6 @@ a, button, [role="button"], input, select { touch-action: manipulation; -webkit-
 ::-webkit-scrollbar-track { background: #09090b; }
 ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+/* Full-bleed section bands use 100vw breakout; clip stops the scrollbar-width overflow. */
+html { overflow-x: clip; }

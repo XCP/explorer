@@ -6,11 +6,33 @@ import type { ReactNode } from "react";
  * simple. Composition: identity row (visual · name+chips · actions), stat strip, tab bar.
  * Server component; interactive bits (watch buttons, live chips) arrive via the slots.
  */
-export function SectionHeader({ children }: { children: ReactNode }) {
+/** Full-bleed breakout: escapes the layout's centered, padded <main> so the band reads as CHROME
+ *  (background + border spanning the viewport), not as a card. -mt-4 cancels main's top padding. */
+export const FULL_BLEED = "w-screen ml-[calc(50%-50vw)] -mt-4";
+
+export function SectionHeader({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
   return (
-    <div className="border-b border-zinc-800 bg-[#0c0c0e]">
-      <div className="mx-auto max-w-6xl px-4 pt-5">{children}</div>
+    <div className={`${FULL_BLEED} bg-[#0c0c0e] ${flush ? "" : "border-b border-zinc-800"}`}>
+      <div className="mx-auto max-w-6xl px-4 pt-5 pb-5">{children}</div>
     </div>
+  );
+}
+
+/** The band's chip language: uppercase mono pills, tinted border + wash. One family, one look. */
+const CHIP_VARIANTS = {
+  grail: "text-amber-300 border-amber-700/60 bg-amber-900/15",
+  trusted: "text-sky-300 border-sky-700/60 bg-sky-900/15",
+  locked: "text-red-300 border-red-800/60 bg-red-900/15",
+  open: "text-green-300 border-green-800/60 bg-green-900/15",
+  og: "text-violet-300 border-violet-700/60 bg-violet-900/15",
+  neutral: "text-zinc-300 border-zinc-700 bg-zinc-800/30",
+} as const;
+
+export function SectionChip({ variant = "neutral", children }: { variant?: keyof typeof CHIP_VARIANTS; children: ReactNode }) {
+  return (
+    <span className={`rounded-full border px-2.5 py-px font-mono text-[11px] font-semibold uppercase tracking-wide ${CHIP_VARIANTS[variant]}`}>
+      {children}
+    </span>
   );
 }
 

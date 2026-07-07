@@ -8,7 +8,7 @@ import { commas, short } from "@/lib/format";
 // The asset detail page's tabbed activity (holders, issuances, dispensers, …). A client island
 // because the column `cell` renderers are functions — they can't cross the server→client boundary, so
 // the whole tab definition is built here and handed to the interactive (SWR/pagination) DetailTabs.
-export function AssetTabs({ asset, issuer }: { asset: string; issuer: string | null }) {
+export function AssetTabs({ asset, issuer, inBand = false }: { asset: string; issuer: string | null; inBand?: boolean }) {
   const base = `/v2/assets/${encodeURIComponent(asset)}`;
   const tabs: TabDef[] = [
     { label: "Holders", path: `${base}/balances`, cols: [
@@ -41,5 +41,5 @@ export function AssetTabs({ asset, issuer }: { asset: string; issuer: string | n
     { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS },
     ...(issuer ? [{ label: "From issuer", path: `/v2/addresses/${issuer}/issued`, cols: ASSET_LIST_COLS }] : []),
   ];
-  return <DetailTabs tabs={tabs} />;
+  return <DetailTabs tabs={tabs} inBand={inBand} />;
 }
