@@ -22,7 +22,7 @@ export function exchangeWallets(db: D1Database): Promise<ExchangeWalletRow[]> {
 export function exchangeTopAssets(db: D1Database): Promise<ExchangeTopAsset[]> {
   return q<ExchangeTopAsset>(
     db,
-    `SELECT s.asset, a.asset_longname, COUNT(DISTINCT s.source) depositors FROM sends s JOIN address_signals e ON e.addr=s.destination AND e.is_exchange=1 LEFT JOIN assets a ON a.asset=s.asset WHERE s.asset NOT IN ('XCP','BTC') GROUP BY s.asset ORDER BY depositors DESC LIMIT 15`
+    `SELECT s.asset, a.asset_longname, COUNT(DISTINCT s.source) depositors FROM sends s JOIN address_signals e ON e.addr=s.destination AND e.is_exchange=1 LEFT JOIN assets a ON a.asset=s.asset GROUP BY s.asset ORDER BY depositors DESC LIMIT 15`
   );
 }
 
