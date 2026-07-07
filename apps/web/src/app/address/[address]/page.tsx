@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Coins, Store, ArrowLeftRight, Flame, Wallet, Stamp } from "lucide-react";
 import type { AddressSummary } from "@xcp/shared/addresses";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
-import { SectionHeader, SectionIdentity, SectionStats, type SectionStat } from "@/components/section-header";
+import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
 import { CopyButton } from "@/components/copy-button";
 import { GraphTrustChip } from "@/components/graph-trust-chip";
 import { AddressTabs } from "@/components/address-tabs";
@@ -15,8 +14,7 @@ import { PendingActions } from "@/components/pending-actions";
 import { commas, short } from "@/lib/format";
 
 const BURN_ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
-const Chip = ({ children }: { children: React.ReactNode }) =>
-  <span className="inline-flex items-center gap-1 rounded-md bg-zinc-800 text-zinc-200 px-2 py-1 text-xs font-medium ring-1 ring-inset ring-white/5">{children}</span>;
+const Chip = ({ children }: { children: React.ReactNode }) => <SectionChip>{children}</SectionChip>;
 
 // Deterministic identity visual (v11 reference): 2-3 hues hashed from the address chars, blended as a
 // 135° gradient — every address gets a stable face without any asset art. Server-safe (pure string math).
@@ -75,12 +73,12 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
         name={address}
         chips={<>
           <GraphTrustChip kind="addresses" id={address} />
-          {address === BURN_ADDRESS && <Chip><Flame className="size-3 text-orange-400" />Burn address</Chip>}
-          {(s?.issued ?? 0) > 0 && <Chip><Stamp className="size-3" />Issuer · {commas(s?.issued)} assets</Chip>}
-          {(s?.dispensers ?? 0) > 0 && <Chip><Store className="size-3" />Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
-          {(s?.open_orders ?? 0) > 0 && <Chip><ArrowLeftRight className="size-3" />Active trader · {s?.open_orders} open</Chip>}
-          {xcp >= 50000 && <Chip><Coins className="size-3 text-(--color-accent)" />XCP whale</Chip>}
-          {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip><Wallet className="size-3" />Holder</Chip>}
+          {address === BURN_ADDRESS && <Chip>Burn address</Chip>}
+          {(s?.issued ?? 0) > 0 && <Chip>Issuer · {commas(s?.issued)} assets</Chip>}
+          {(s?.dispensers ?? 0) > 0 && <Chip>Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
+          {(s?.open_orders ?? 0) > 0 && <Chip>Active trader · {s?.open_orders} open</Chip>}
+          {xcp >= 50000 && <Chip>XCP whale</Chip>}
+          {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip>Holder</Chip>}
         </>}
         actions={<CopyButton value={address} />}
       />

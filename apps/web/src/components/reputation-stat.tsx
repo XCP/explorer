@@ -8,5 +8,11 @@ import { apiUrl } from "@/lib/api";
  *  can lead with the composed score. Null score (new/quiet/infra address) reads as a dash. */
 export function ReputationStat({ address }: { address: string }) {
   const { data } = useSWR<Envelope<AddressReputation>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`));
-  return <>{data?.result?.score ?? "—"}</>;
+  const r = data?.result;
+  return (
+    <>
+      {r?.score ?? "—"}
+      {r?.tier && <span className="ml-1.5 text-[11px] font-normal text-zinc-400">{r.tier}</span>}
+    </>
+  );
 }
