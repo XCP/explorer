@@ -1,84 +1,132 @@
 import Link from "next/link";
 import type { PoolRow,
-  RecordKind, RecordRowMap, OrderRow, DispenserRow, FairmintRow, DividendRow, DestructionRow,
+  RecordKind, RecordRowMap, OrderRow, OrderMatchRow, DispenserRow, FairmintRow, DividendRow, DestructionRow,
 } from "@xcp/shared/records";
 import type { AssetListRow } from "@xcp/shared/assets";
-import { commas, compact, short } from "@/lib/format";
-import { orderView } from "@/lib/trading-pair";
-import { AssetIcon } from "@/components/ui/badges";
-import { type Col, blockCell, txCell, addrCell, assetCell, timeCell } from "@/lib/cells";
+import { commas, compact, short, fromSats } from "@/lib/format";
+import { orderView, matchView } from "@/lib/trading-pair";
+import {
+  type Col, type RecordContext, blockCell, txCell, addrCell, assetCell, assetChip, timeCell, viewCell,
+  signedQty, statusPill, dispenserPill, sendTypeChip, actionBadge, sweepFlagsBadge, betTypeBadge, chip,
+} from "@/lib/cells";
 
 // The record catalog — for each RecordKind the explorer serves as a list feed, its URL slug, page
 // title, and column layout. Keyed by RecordKind so the API's list routes and the web's index pages
-// share one source of truth; column cells are typed to the feed's row (Col<RecordRowMap[K]>). The
-// five kinds with no page (bet_matches, rps, rps_matches, pool_matches) simply have no entry.
-// Pools have no index page yet, but the asset page's Pools tab renders them (payload first: the
-// pair and its reserves; the LP token is the pool's identity on Counterparty).
+// share one source of truth; column cells are typed to the feed's row (Col<RecordRowMap[K]>).
+//
+// Column grammar (TABLES.md): payload first, then the fixed trailing run Status? · Block · Time ·
+// View (Status only where the record has state worth showing; state tables — orders, dispensers,
+// fairminters, bets — drop Time from the run per their spec stanzas). Contextual suppression via
+// omitOn; quantities sign from the page subject's perspective on address tabs.
 export const POOL_COLS: Col<PoolRow>[] = [
-  { label: "Pair", cell: (r) => <span className="font-mono text-zinc-100">{r.pair ?? `${r.asset_a ?? "?"}/${r.asset_b ?? "?"}`}</span> },
-  { label: "Reserves", numeric: true, cell: (r) => <span className="font-mono tabular-nums">{compact(r.reserve_a)} / {compact(r.reserve_b)}</span> },
-  { label: "LP token", cell: (r) => assetCell(r.lp_asset) },
-  { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
+  { label: "Pair", priority: 1, cell: (r) => <span className="font-mono text-zinc-100">{r.pair ?? `${r.asset_a ?? "?"}/${r.asset_b ?? "?"}`}</span> },
+  { label: "Reserves", numeric: true, priority: 1, w: "170px", cell: (r) => <span className="font-mono tabular-nums">{compact(r.reserve_a)} / {compact(r.reserve_b)}</span> },
+  { label: "LP token", priority: 2, cell: (r) => assetChip(r.lp_asset) },
+  { label: "Block", numeric: true, priority: 3, w: "90px", cell: (r) => blockCell(r.block_index), omitOn: "block" },
 ]
 
+// The trailing locator run (T1/T4). Block links + comma-groups, suppressed on block pages; Time is
+// relative with the absolute UTC in title; View is the row's single action with an sr-only header.
+const cBlock: Col = { label: "Block", numeric: true, priority: 3, w: "90px", omitOn: "block", cell: (r) => blockCell(r.block_index) };
+const cTime: Col = { label: "Time", numeric: true, priority: 1, w: "76px", cell: (r) => timeCell(r.block_time) };
+const cView: Col = { label: "View", srOnly: true, priority: 1, w: "44px", cell: (r) => viewCell(r.tx_hash) };
+const cStatus: Col = { label: "Status", priority: 2, w: "84px", cell: (r) => statusPill(r.status) };
+const cSource: Col = { label: "Source", priority: 2, w: "minmax(0,1.3fr)", omitOn: "address", cell: (r) => addrCell(r.source) };
+const cDest: Col = { label: "Destination", priority: 3, w: "minmax(0,1.3fr)", cell: (r) => addrCell(r.destination) };
 
-// Shared columns. Low-priority ones carry hideBelow so they drop first on narrow screens, leaving the
-// identity + key metric. Block stays (primary locator); Time/Status/Destination/Tx yield on mobile.
-const cBlock: Col = { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) };
-const cTime: Col = { label: "Time", cell: (r) => timeCell(r.block_time), hideBelow: "md" };
-const cTx: Col = { label: "Tx", cell: (r) => txCell(r.tx_hash), hideBelow: "sm" };
-const cSource: Col = { label: "Source", cell: (r) => addrCell(r.source) };
-const cDest: Col = { label: "Destination", cell: (r) => addrCell(r.destination), hideBelow: "md" };
-const cStatus: Col = { label: "Status", cell: (r) => r.status, hideBelow: "sm" };
-
-// order display via base/quote: pair (base linked + quote), side, price (in quote), amount (base)
+// order display via base/quote: pair (base linked + quote), side, price (in quote), amount (base).
+// Price precision follows the exchange recipe; the unit is answered by the Pair column (R6).
 const fmtPrice = (n: number) => (n === 0 ? "—" : n >= 1 ? commas(n.toFixed(4)) : n.toPrecision(3));
 const side = (d: "buy" | "sell") => <span className={d === "buy" ? "text-green-400" : "text-red-400"}>{d}</span>;
-const pairCell = (r: OrderRow) => {
-  const v = orderView(r);
-  return <span className="inline-flex items-center gap-1"><Link href={`/asset/${v.base}`}>{v.base}</Link><span className="text-zinc-600">/{v.quote}</span></span>;
+const pairCell = (base: string, quote: string) => (
+  <span className="inline-flex max-w-full items-center gap-1 font-mono"><Link href={`/asset/${base}`} className="text-zinc-100 truncate">{base}</Link><span className="text-zinc-600 shrink-0">/{quote}</span></span>
+);
+// Filled % from give-side fill progress; Expires as blocks-left against the context's chain tip.
+const filledPct = (r: OrderRow) => {
+  if (!r.give_quantity_normalized || !Number.isFinite(r.give_remaining_normalized)) return "—";
+  const pct = Math.min(100, Math.max(0, (1 - r.give_remaining_normalized / r.give_quantity_normalized) * 100));
+  return `${pct.toFixed(1)}%`;
+};
+const expiresCell = (r: OrderRow, ctx: RecordContext) => {
+  if (r.status !== "open" || r.expire_index == null) return "—";
+  if (!ctx.tip) return commas(r.expire_index);
+  const blocks = r.expire_index - ctx.tip;
+  if (blocks <= 0) return "due";
+  const label = blocks < 6 ? `~${blocks * 10}m` : blocks < 144 ? `~${Math.round(blocks / 6)}h` : `~${Math.round(blocks / 144)}d`;
+  return <span title={`block ${commas(r.expire_index)}`}>{label}</span>;
 };
 export const ORDER_COLS: Col<OrderRow>[] = [
-  cBlock,
-  { label: "Pair", cell: pairCell },
-  { label: "Side", cell: (r) => side(orderView(r).direction) },
-  { label: "Price", numeric: true, cell: (r) => { const v = orderView(r); return v.price ? `${fmtPrice(v.price)} ${v.quote}` : "—"; } },
-  { label: "Amount", numeric: true, cell: (r) => commas(orderView(r).baseQty) },
-  cStatus,
-  cTx,
+  { label: "Pair", priority: 1, w: "minmax(150px,1fr)", cell: (r) => { const v = orderView(r); return pairCell(v.base, v.quote); } },
+  { label: "Side", priority: 1, w: "44px", cell: (r) => side(orderView(r).direction) },
+  { label: "Price", numeric: true, priority: 2, cell: (r) => { const v = orderView(r); return v.price ? fmtPrice(v.price) : "—"; } },
+  { label: "Amount", numeric: true, priority: 2, cell: (r) => commas(orderView(r).baseQty) },
+  { label: "Total", numeric: true, priority: 4, cell: (r) => commas(orderView(r).quoteQty) },
+  { label: "Filled", numeric: true, priority: 3, w: "70px", cell: filledPct },
+  { label: "Expires", numeric: true, priority: 4, w: "80px", cell: expiresCell },
+  { label: "Maker", priority: 4, w: "minmax(0,1.6fr)", omitOn: "address", cell: (r) => addrCell(r.source) },
+  cStatus, cBlock, cView,
 ];
 
 // asset-list rows (subassets, assets-by-issuer, an address's issued assets)
 export const ASSET_LIST_COLS: Col<AssetListRow>[] = [
-  { label: "Asset", cell: (r) => <Link href={`/asset/${r.asset}`} className="inline-flex items-center gap-2"><AssetIcon asset={r.asset} size={16} />{r.asset_longname || r.asset}</Link> },
-  { label: "Locked", cell: (r) => (r.locked ? "locked" : "open") },
-  { label: "Created", numeric: true, cell: (r) => blockCell(r.first_issuance_block_index) },
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", cell: (r) => assetCell(r.asset, r.asset_longname) },
+  { label: "Locked", priority: 2, w: "76px", cell: (r) => (r.locked ? statusPill("locked") : statusPill("open")) },
+  { label: "Created", numeric: true, priority: 1, w: "90px", cell: (r) => blockCell(r.first_issuance_block_index) },
 ];
 
-// dispenser price is the BTC paid per unit (satoshirate). Show BTC, or sats when it's tiny.
-const btcPrice = (n?: string | number | null) => { const v = Number(n); if (!v) return "—"; return v < 0.0001 ? `${Math.round(v * 1e8).toLocaleString()} sats` : `${v} BTC`; };
+// One denomination per column, matching the header exactly (owner rule): BTC columns hold fixed
+// 8dp; sats columns hold comma-grouped integers.
+const btc8 = (n?: string | number | null) => { const v = Number(n); return n != null && n !== "" && Number.isFinite(v) ? v.toFixed(8) : "—"; };
+const sats = (n?: number | null) => (n != null && Number.isFinite(n) ? Math.round(n).toLocaleString() : "—");
 export const DISPENSER_COLS: Col<DispenserRow>[] = [
-  cBlock,
-  { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-  { label: "Price", numeric: true, cell: (r) => btcPrice(r.satoshirate_normalized) },
-  { label: "Remaining", numeric: true, cell: (r) => commas(r.give_remaining_normalized) },
-  { label: "Sales", numeric: true, cell: (r) => compact(r.dispense_count) },
-  cSource, cTx,
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
+  { label: "Price (BTC)", numeric: true, priority: 1, cell: (r) => btc8(r.satoshirate_normalized) },
+  { label: "Available", numeric: true, priority: 2, cell: (r) => commas(r.give_remaining_normalized) },
+  { label: "Sales", numeric: true, priority: 3, w: "70px", cell: (r) => compact(r.dispense_count) },
+  { label: "Source", priority: 4, omitOn: "address", cell: (r) => (
+    <span className="inline-flex items-center gap-1.5 min-w-0">{addrCell(r.source)}
+      {r.operator_trust != null && r.operator_trust > 0 ? <span className="text-[10px] text-zinc-500 shrink-0" title="operator track record">trust {r.operator_trust}</span> : null}
+    </span>
+  ) },
+  { label: "Status", priority: 1, w: "76px", cell: (r) => dispenserPill(r.status, r.give_remaining_normalized) },
+  cBlock, cView,
 ];
 
 // fairmint / dividend / destruction rows — also reused by the per-asset feed tabs (asset-tabs.tsx)
 export const FAIRMINT_COLS: Col<FairmintRow>[] = [
-  cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-  { label: "Earned", numeric: true, cell: (r) => commas(r.earn_quantity) }, cSource, cTx,
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
+  { label: "Earned", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.earn_quantity, r.divisible)) },
+  { label: "Paid (XCP)", numeric: true, priority: 2, cell: (r) => commas(fromSats(r.paid_quantity)) },
+  { label: "Minter", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
+  cBlock, cTime, cView,
 ];
 export const DIVIDEND_COLS: Col<DividendRow>[] = [
-  cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) }, { label: "Dividend", cell: (r) => assetCell(r.dividend_asset) },
-  { label: "Per Unit", numeric: true, cell: (r) => commas(r.quantity_per_unit_normalized) }, cSource, cTx,
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
+  { label: "Dividend", priority: 2, w: "minmax(0,0.8fr)", cell: (r) => assetChip(r.dividend_asset) },
+  { label: "Per Unit", numeric: true, priority: 1, cell: (r) => commas(r.quantity_per_unit_normalized) },
+  { label: "Source", priority: 3, omitOn: "address", cell: (r) => addrCell(r.source) },
+  cBlock, cTime, cView,
 ];
 export const DESTRUCTION_COLS: Col<DestructionRow>[] = [
-  cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-  { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-  { label: "Tag", hideBelow: "md", cell: (r) => <span className="text-zinc-400">{short(r.tag, 16, 0)}</span> }, cSource, cTx,
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
+  { label: "Quantity", numeric: true, priority: 1, cell: (r, ctx) => signedQty(r.quantity_normalized, ctx, true) },
+  { label: "Tag", priority: 3, cell: (r) => <span className="block truncate text-zinc-400">{short(r.tag, 16, 0) || "—"}</span> },
+  { label: "Source", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
+  cBlock, cTime, cView,
+];
+
+// order matches rendered as trades (xcpdex OrderMatches grammar): pair, side, price, quantity,
+// total, both parties. Side/price are from tx0's perspective via the shared base/quote pairing.
+const ORDER_MATCH_COLS: Col<OrderMatchRow>[] = [
+  { label: "Pair", priority: 1, w: "minmax(150px,1fr)", cell: (r) => { const v = matchView(r); return pairCell(v.base, v.quote); } },
+  { label: "Side", priority: 1, w: "44px", cell: (r) => side(matchView(r).direction) },
+  { label: "Price", numeric: true, priority: 2, cell: (r) => { const v = matchView(r); return v.price ? fmtPrice(v.price) : "—"; } },
+  { label: "Quantity", numeric: true, priority: 2, cell: (r) => commas(matchView(r).baseQty) },
+  { label: "Total", numeric: true, priority: 4, cell: (r) => commas(matchView(r).quoteQty) },
+  { label: "Buyer", priority: 3, w: "minmax(0,1.5fr)", cell: (r) => { const v = matchView(r); return addrCell(v.direction === "buy" ? r.tx0_address : r.tx1_address); } },
+  { label: "Seller", priority: 4, w: "minmax(0,1.5fr)", cell: (r) => { const v = matchView(r); return addrCell(v.direction === "buy" ? r.tx1_address : r.tx0_address); } },
+  cStatus, cBlock, cTime,
+  { label: "View", srOnly: true, priority: 1, w: "44px", cell: (r) => viewCell(r.tx1_hash ?? r.tx0_hash) },
 ];
 
 type RegistryEntry<K extends RecordKind> = { slug: string; title: string; cols: Col<RecordRowMap[K]>[] };
@@ -86,58 +134,98 @@ type Registry = { [K in RecordKind]?: RegistryEntry<K> };
 
 export const REGISTRY: Registry = {
   transactions: { slug: "transactions", title: "Transactions", cols: [
-    cBlock, cTime, cTx, cSource, cDest,
+    { label: "Tx", weight: "primary", priority: 1, w: "minmax(130px,1fr)", cell: (r) => txCell(r.tx_hash) },
+    { label: "Source", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
+    cDest, cBlock, cTime, cView,
   ] },
   sends: { slug: "sends", title: "Sends", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-    { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-    cSource, cDest, cTx,
+    { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
+    { label: "Quantity", numeric: true, priority: 1, cell: (r, ctx) => signedQty(r.quantity_normalized, ctx, r.source === ctx.address) },
+    { label: "Type", priority: 3, w: "70px", cell: (r) => sendTypeChip(r.send_type) },
+    cSource, cDest, cBlock, cTime, cView,
   ] },
   issuances: { slug: "issuances", title: "Issuances", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset_longname || r.asset) },
-    { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-    { label: "Issuer", cell: (r) => addrCell(r.issuer) }, cStatus, cTx,
+    { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset, r.asset_longname) },
+    { label: "Quantity", numeric: true, priority: 2, cell: (r) => commas(r.quantity_normalized) },
+    { label: "Action", priority: 1, w: "110px", cell: (r) => actionBadge(r.asset_events) },
+    { label: "Issuer", priority: 2, omitOn: "address", cell: (r) => addrCell(r.issuer) },
+    { label: "Description", priority: 4, cell: (r) => <span className="block truncate text-zinc-400">{short(r.description, 50, 0) || "—"}</span> },
+    cStatus, cBlock, cTime, cView,
   ] },
   orders: { slug: "orders", title: "Orders", cols: ORDER_COLS },
-  order_matches: { slug: "matches", title: "Order Matches", cols: [
-    cBlock, { label: "Forward", cell: (r) => assetCell(r.forward_asset) }, { label: "Backward", cell: (r) => assetCell(r.backward_asset) },
-    cStatus, { label: "Party A", cell: (r) => addrCell(r.tx0_address) },
-  ] },
+  order_matches: { slug: "matches", title: "Order Matches", cols: ORDER_MATCH_COLS },
   dispensers: { slug: "dispensers", title: "Dispensers", cols: DISPENSER_COLS },
   dispenses: { slug: "dispenses", title: "Dispenses", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-    { label: "Quantity", numeric: true, cell: (r) => commas(r.dispense_quantity_normalized) },
-    cSource, cDest, cTx,
+    { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
+    { label: "Quantity", numeric: true, priority: 1, cell: (r, ctx) => signedQty(r.dispense_quantity_normalized, ctx, r.source === ctx.address) },
+    // per-unit price in sats (mined convention — integers, one denomination), linked to the machine
+    // that sold (dispenser_tx_hash); the total carries the trades-ledger USD valuation in title.
+    { label: "Price (sats)", numeric: true, priority: 2, cell: (r) => {
+      const paid = Number(r.btc_amount); const qty = Number(r.dispense_quantity_normalized);
+      if (!Number.isFinite(paid) || !paid || !qty) return "—";
+      const unit = sats(paid / qty);
+      return r.dispenser_tx_hash ? <Link href={`/tx/${r.dispenser_tx_hash}`} title="the dispenser that sold">{unit}</Link> : unit;
+    } },
+    { label: "Total (BTC)", numeric: true, priority: 2, cell: (r) => (
+      <span title={r.usd_value != null ? `≈ $${commas(r.usd_value.toFixed(2))}` : undefined}>{btc8(fromSats(r.btc_amount))}</span>
+    ) },
+    { label: "Source", priority: 3, w: "minmax(0,1.3fr)", omitOn: "address", cell: (r) => addrCell(r.source) },
+    { label: "Buyer", priority: 4, w: "minmax(0,1.3fr)", cell: (r) => addrCell(r.destination) },
+    cBlock, cTime, cView,
   ] },
   sweeps: { slug: "sweeps", title: "Sweeps", cols: [
-    cBlock, cSource, cDest,
-    { label: "Memo", hideBelow: "md", cell: (r) => <span className="text-zinc-400">{short(r.memo, 18, 0)}</span> }, cTx,
+    cSource, { label: "Destination", priority: 1, cell: (r) => addrCell(r.destination) },
+    { label: "Sweep", priority: 2, w: "150px", cell: (r) => sweepFlagsBadge(r.flags) },
+    { label: "Fee Paid (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSats(r.fee_paid)) },
+    { label: "Memo", priority: 4, cell: (r) => <span className="block truncate text-zinc-400">{short(r.memo, 18, 0) || "—"}</span> },
+    cBlock, cTime, cView,
   ] },
   broadcasts: { slug: "broadcasts", title: "Broadcasts", cols: [
-    cBlock, cSource, { label: "Value", numeric: true, cell: (r) => r.value },
-    { label: "Text", hideBelow: "sm", cell: (r) => <span className="text-zinc-400">{short(r.text, 28, 0)}</span> }, cTx,
+    { label: "Source", priority: 1, omitOn: "address", cell: (r) => (
+      <span className="inline-flex items-center gap-1.5 min-w-0">{addrCell(r.source)}{r.locked ? chip("locked", "amber") : null}</span>
+    ) },
+    { label: "Text", priority: 1, w: "minmax(0,1.4fr)", cell: (r) => <span className="block truncate text-zinc-300">{short(r.text, 50, 0) || "—"}</span> },
+    { label: "Value", numeric: true, priority: 4, cell: (r) => (r.value != null && Number(r.value) !== -1 ? commas(r.value) : "—") },
+    cBlock, cTime, cView,
   ] },
   burns: { slug: "burns", title: "Burns", cols: [
-    cBlock, cSource,
-    { label: "Burned (BTC)", numeric: true, cell: (r) => commas(r.burned_normalized) },
-    { label: "Earned (XCP)", numeric: true, cell: (r) => commas(r.earned_normalized) }, cTx,
+    { label: "Source", priority: 1, omitOn: "address", cell: (r) => addrCell(r.source) },
+    { label: "Burned (BTC)", numeric: true, priority: 1, cell: (r) => btc8(r.burned_normalized) },
+    { label: "Earned (XCP)", numeric: true, priority: 2, cell: (r) => commas(r.earned_normalized) },
+    cBlock, cTime, cView,
   ] },
   dividends: { slug: "dividends", title: "Dividends", cols: DIVIDEND_COLS },
   bets: { slug: "bets", title: "Bets", cols: [
-    cBlock, cSource, { label: "Feed", cell: (r) => addrCell(r.feed_address) },
-    { label: "Wager", numeric: true, cell: (r) => commas(r.wager_quantity) },
-    cStatus, cTx,
+    { label: "Source", priority: 1, omitOn: "address", cell: (r) => addrCell(r.source) },
+    { label: "Type", priority: 1, w: "96px", cell: (r) => betTypeBadge(r.bet_type) },
+    { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.wager_quantity)) },
+    { label: "Counterwager (XCP)", numeric: true, priority: 2, w: "140px", cell: (r) => commas(fromSats(r.counterwager_quantity)) },
+    { label: "Target", numeric: true, priority: 3, w: "80px", cell: (r) => (r.target_value != null ? commas(r.target_value) : "—") },
+    // some historical feeds stored non-timestamp deadlines; only render plausible unix seconds
+    { label: "Deadline", numeric: true, priority: 4, w: "80px", cell: (r) => (r.deadline && r.deadline > 1e9 ? timeCell(r.deadline) : <span className="xt-time">—</span>) },
+    { label: "Feed", priority: 4, cell: (r) => addrCell(r.feed_address) },
+    cStatus, cBlock, cView,
   ] },
   fairminters: { slug: "fairminters", title: "Fairminters", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset_longname || r.asset) },
-    { label: "Price", numeric: true, cell: (r) => commas(r.price) },
-    { label: "Hard Cap", numeric: true, cell: (r) => compact(r.hard_cap) },
-    cStatus, cSource,
+    { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset, r.asset_longname) },
+    { label: "Price (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.price)) },
+    { label: "Minted", numeric: true, priority: 2, w: "70px", cell: (r) => {
+      const cap = Number(r.hard_cap), earned = Number(r.earned_quantity);
+      if (!cap || !Number.isFinite(earned)) return "—";
+      const pct = Math.min(100, (earned / cap) * 100);
+      return pct > 0 && pct < 0.1 ? "<0.1%" : `${pct.toFixed(1)}%`;
+    } },
+    { label: "Hard Cap", numeric: true, priority: 3, cell: (r) => (Number(r.hard_cap) ? compact(fromSats(r.hard_cap, r.divisible)) : "—") },
+    { label: "Source", priority: 4, omitOn: "address", cell: (r) => addrCell(r.source) },
+    cStatus, cBlock, cView,
   ] },
   fairmints: { slug: "fairmints", title: "Fairmints", cols: FAIRMINT_COLS },
   destructions: { slug: "destructions", title: "Destructions", cols: DESTRUCTION_COLS },
   btcpays: { slug: "btcpays", title: "BTCPays", cols: [
-    cBlock, cSource, cDest,
-    { label: "BTC", numeric: true, cell: (r) => commas(r.btc_amount_normalized) }, cTx,
+    cSource, { label: "Destination", priority: 2, cell: (r) => addrCell(r.destination) },
+    { label: "BTC", numeric: true, priority: 1, cell: (r) => btc8(r.btc_amount_normalized) },
+    { label: "Order Match", priority: 3, w: "130px", cell: (r) =>
+      r.order_match_id ? <Link href={`/tx/${r.order_match_id.split("_")[0]}`} className="font-mono">{short(r.order_match_id, 8, 6)}</Link> : "—" },
+    cBlock, cTime, cView,
   ] },
 };

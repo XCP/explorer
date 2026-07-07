@@ -19,12 +19,12 @@ const isScoreboard = (t: TagStatsRow) =>
 const usd = (v: number) => (v > 0 ? `$${compact(v)}` : "—");
 
 const COLS: Col<TagStatsRow>[] = [
-  { label: "Tag", cell: (r) => <Link href={`/tag/${encodeURIComponent(r.tag)}`} className="font-medium">{r.tag}</Link> },
-  { label: "Members", numeric: true, cell: (r) => commas(r.n_assets) },
-  { label: "Median score", cell: (r) => (r.median_tier ? <ScoreBadge tier={r.median_tier} score={r.median_score} /> : "—") },
-  { label: "% low-quality", numeric: true, hideBelow: "sm", cell: (r) => (r.pct_low_quality != null ? `${r.pct_low_quality}%` : "—") },
-  { label: "Realized USD", numeric: true, cell: (r) => usd(r.total_realized_usd) },
-  { label: "Holders", numeric: true, hideBelow: "md", cell: (r) => commas(r.total_holders) },
+  { label: "Tag", weight: "primary", priority: 1, cell: (r) => <Link href={`/tag/${encodeURIComponent(r.tag)}`} className="font-medium">{r.tag}</Link> },
+  { label: "Members", numeric: true, priority: 2, w: "90px", cell: (r) => commas(r.n_assets) },
+  { label: "Median score", priority: 1, w: "130px", cell: (r) => (r.median_tier ? <ScoreBadge tier={r.median_tier} score={r.median_score} /> : "—") },
+  { label: "% low-quality", numeric: true, priority: 3, cell: (r) => (r.pct_low_quality != null ? `${r.pct_low_quality}%` : "—") },
+  { label: "Realized USD", numeric: true, priority: 1, cell: (r) => usd(r.total_realized_usd) },
+  { label: "Holders", numeric: true, priority: 4, cell: (r) => commas(r.total_holders) },
 ];
 
 export function Collections() {

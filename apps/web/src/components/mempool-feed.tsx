@@ -2,7 +2,7 @@
 import { useState } from "react";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import { useMempool } from "@/lib/hooks";
-import { type Col, addrCell, assetCell, txCell, timeCell } from "@/lib/cells";
+import { type Col, addrCell, assetCell, timeCell, viewCell } from "@/lib/cells";
 import { eventChip, kindOf, MEMPOOL_KINDS, type MempoolKind } from "@/lib/mempool";
 import { commas } from "@/lib/format";
 import { Card } from "@/components/ui/card";
@@ -12,13 +12,13 @@ import { RecordTable } from "@/components/record-table";
 // Protocol-wide live view of unconfirmed Counterparty actions. Client island (10s polling + kind filter)
 // rendered by the thin server page that owns the static metadata — the reference idiom (see app/trades).
 const COLS: Col<MempoolActionRow>[] = [
-  { label: "Time", cell: (r) => timeCell(r.timestamp) },
-  { label: "Event", cell: (r) => eventChip(r.event) },
-  { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset ?? undefined) },
-  { label: "Quantity", numeric: true, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
-  { label: "From", cell: (r) => addrCell(r.source ?? undefined), hideBelow: "sm" },
-  { label: "To", cell: (r) => addrCell(r.destination ?? undefined), hideBelow: "md" },
-  { label: "Tx", cell: (r) => txCell(r.tx_hash ?? undefined), hideBelow: "sm" },
+  { label: "Time", numeric: true, priority: 1, w: "76px", cell: (r) => timeCell(r.timestamp) },
+  { label: "Event", priority: 1, w: "130px", cell: (r) => eventChip(r.event) },
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.2fr)", cell: (r) => assetCell(r.asset ?? undefined) },
+  { label: "Quantity", numeric: true, priority: 2, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
+  { label: "From", priority: 3, cell: (r) => addrCell(r.source ?? undefined) },
+  { label: "To", priority: 4, cell: (r) => addrCell(r.destination ?? undefined) },
+  { label: "View", srOnly: true, priority: 2, w: "44px", cell: (r) => viewCell(r.tx_hash ?? undefined) },
 ];
 
 export function MempoolFeed() {

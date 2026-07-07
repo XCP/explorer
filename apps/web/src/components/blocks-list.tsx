@@ -11,11 +11,12 @@ import { RecordTable } from "@/components/record-table";
 
 const PAGE = 25;
 
+// Block-first is correct here — blocks are the table's subject (R1's exception).
 const BLOCK_COLS: Col<BlockRow>[] = [
-  { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
-  { label: "Time", cell: (r) => timeCell(r.block_time ?? undefined) },
-  { label: "Txs", numeric: true, cell: (r) => commas(r.transaction_count ?? 0) },
-  { label: "Hash", hideBelow: "sm", cell: (r) => mono(short(r.block_hash)) },
+  { label: "Block", numeric: true, priority: 1, w: "90px", cell: (r) => blockCell(r.block_index) },
+  { label: "Txs", numeric: true, priority: 1, w: "70px", cell: (r) => commas(r.transaction_count ?? 0) },
+  { label: "Hash", priority: 3, weight: "muted", cell: (r) => mono(short(r.block_hash)) },
+  { label: "Time", numeric: true, priority: 1, w: "76px", cell: (r) => timeCell(r.block_time ?? undefined) },
 ];
 
 export function BlocksList() {

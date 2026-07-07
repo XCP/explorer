@@ -6,7 +6,8 @@ import { Skeleton } from "@/components/ui/feedback";
 import { AsyncContent } from "@/components/ui/async-content";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { RecordTable } from "@/components/record-table";
-import type { Col } from "@/lib/cells";
+import type { Col, RecordContext } from "@/lib/cells";
+import { useStats } from "@/lib/hooks";
 
 /** A tab is either a record feed (path + columns + optional mono count) or a self-contained panel
  *  (e.g. the asset Related tab) that mounts only while selected. */
@@ -77,8 +78,10 @@ function useTabOverflow(tabCount: number) {
 // the RSC page passes the ReactNode across the client boundary as a prop.
 // `banner` (optional, inBand only) renders between the tab-bar band and the panel — the v19
 // contextual band slot; it persists across tabs.
-export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, banner }: {
-  tabs: TabDef[]; pageSize?: number; inBand?: boolean; overview?: ReactNode; banner?: ReactNode;
+// `context` is the page subject (asset/address) — RecordTable suppresses the columns the page
+// already answers and signs quantities from the subject's perspective (R4).
+export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, banner, context }: {
+  tabs: TabDef[]; pageSize?: number; inBand?: boolean; overview?: ReactNode; banner?: ReactNode; context?: RecordContext;
 }) {
   const hasOverview = overview != null;
   const [active, setActive] = useState(0);
@@ -88,6 +91,7 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
   const current = entries[active] ?? null;
   const feed = current && "path" in current ? current : null;
   const { data, isLoading } = useSWR<Envelope<unknown[]>>(feed ? apiUrl(feed.path, { limit: pageSize, offset }) : null);
+  const tip = useStats().item?.tip;
   const rows = data?.result ?? [];
   const nextOffset = data?.next_offset;
   const select = (i: number) => { setActive(i); setOffset(0); };
@@ -147,10 +151,12 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
     </nav>
   );
 
-  // Feed panels render the record table inside a v19 .card (the dense .xtable styling is a later pass).
+  // Feed panels render the dense v19 .xtable directly (it brings its own card chrome). The page
+  // context travels with the current offset so rank columns can count from it; the chain tip feeds
+  // lifetime cells (order Expires) — same SWR key as the footer heartbeat, so it's deduped.
   const feedPanel = feed && (
     <AsyncContent isLoading={isLoading} empty={rows.length === 0} emptyWhat={feed.label.toLowerCase()} loading={<Skeleton />}>
-      <div className="card"><div className="body"><RecordTable cols={feed.cols} rows={rows} /></div></div>
+      <RecordTable cols={feed.cols} rows={rows} context={{ ...context, tip: tip ?? undefined, offset }} />
       <div className="flex gap-2">
         <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Prev</SecondaryButton>
         <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>

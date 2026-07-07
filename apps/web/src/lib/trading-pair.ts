@@ -21,15 +21,48 @@ export function pair(give: string, get: string): [string, string] {
   return give < get ? [give, get] : [get, give];
 }
 
-// order needs: give_asset, get_asset, give_quantity_normalized, get_quantity_normalized
-export function orderView(o: any) {
-  const [base, quote] = pair(o.give_asset, o.get_asset);
-  const giveIsBase = o.give_asset === base;
+/** A give/get order resolved to market terms: base/quote, quantities, price, and the maker's side. */
+export interface MarketView {
+  base: string;
+  quote: string;
+  baseQty: number;
+  quoteQty: number;
+  price: number;
+  direction: "buy" | "sell";
+}
+
+interface OrderLike {
+  give_asset: string | null;
+  get_asset: string | null;
+  give_quantity_normalized: number | string | null;
+  get_quantity_normalized: number | string | null;
+}
+
+export function orderView(o: OrderLike): MarketView {
+  const give = o.give_asset ?? "?", get = o.get_asset ?? "?";
+  const [base, quote] = pair(give, get);
+  const giveIsBase = give === base;
   const baseQty = Number(giveIsBase ? o.give_quantity_normalized : o.get_quantity_normalized) || 0;
   const quoteQty = Number(giveIsBase ? o.get_quantity_normalized : o.give_quantity_normalized) || 0;
   return {
     base, quote, baseQty, quoteQty,
     price: baseQty ? quoteQty / baseQty : 0,
-    direction: o.give_asset === quote ? ("buy" as const) : ("sell" as const), // giving the quote => buying the base
+    direction: give === quote ? ("buy" as const) : ("sell" as const), // giving the quote => buying the base
   };
+}
+
+/** An order match resolved the same way — tx0 gave the forward asset, so forward/backward map to
+ *  give/get and `direction` is tx0's side of the trade. */
+export function matchView(m: {
+  forward_asset: string | null;
+  backward_asset: string | null;
+  forward_quantity_normalized: number | null;
+  backward_quantity_normalized: number | null;
+}): MarketView {
+  return orderView({
+    give_asset: m.forward_asset,
+    get_asset: m.backward_asset,
+    give_quantity_normalized: m.forward_quantity_normalized,
+    get_quantity_normalized: m.backward_quantity_normalized,
+  });
 }

@@ -74,7 +74,7 @@ html { overflow-x: clip; }
 .chip { font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
 .chip.grail { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
 .chip.trusted { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
-.chip.locked { color:#fca5a5; border-color:#96312e; background:rgba(127,29,29,.15); }
+.chip.locked { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); } /* locked supply = good */
 .sh-actions { margin-left:auto; display:flex; gap:8px; }
 .btn2 { background:none; border:1px solid var(--border); color:var(--t2); font-family:inherit; font-size:var(--fs-xs); font-weight:500; padding:7px 12px; border-radius:6px; cursor:pointer; }
 .btn2:hover { border-color:var(--t4); }
@@ -147,6 +147,33 @@ main > .ctxband { margin-bottom:10px; }
 .standin-note { border:1px dashed #34404f; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); color:var(--t4); background:rgba(56,189,248,.03); }
 .standin-note b { color:var(--t3); }
 
+/* ── explorer zone: dense ledger table + holders table — ported VERBATIM from
+   design-lab/v17-exact.html / v19-banner.html (same classnames, same values) ── */
+.xtable { border:1px solid var(--border2); border-radius:8px; background:var(--panel); overflow:hidden; }
+.xt-row { display:grid; grid-template-columns:30px minmax(0,1.1fr) 150px 110px minmax(0,1fr) 76px; align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
+.xt-row:last-child { border-bottom:none; }
+.xt-head { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--t4); background:var(--panel2); border-bottom:1px solid var(--border2); padding:8px 14px; }
+.xt-head .r { text-align:right; }
+.xt-icon { width:28px; height:28px; border-radius:5px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
+.xt-name { font-family:var(--mono); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.xt-price { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; }
+.xt-price small { display:block; font-size:var(--fs-2xs); color:var(--t4); font-weight:400; }
+.venue { justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; padding:1px 8px; border-radius:99px; border:1px solid; }
+.venue.dex { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+.venue.disp { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+.venue.emblem { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
+.xt-buyer { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.xt-time { text-align:right; color:var(--t4); font-size:var(--fs-xs); font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+/* holders table (v19-banner) */
+.ht-row { display:grid; grid-template-columns:30px minmax(0,1fr) 150px 110px; align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
+.ht-row:last-child { border-bottom:none; }
+.ht-rank { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t4); }
+.ht-addr { font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ht-addr small { color:var(--t4); font-weight:400; margin-left:8px; font-size:var(--fs-2xs); }
+.ht-qty { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; }
+.ht-pct { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t3); font-size:var(--fs-xs); }
+
 /* ── related tab: gallery rows (v12 variant-A cards) — same collection, then also-collect ── */
 .strip-title { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin-bottom:10px; }
 .gallery { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
@@ -162,6 +189,12 @@ main > .ctxband { margin-bottom:10px; }
 /* v19 responsive blocks — only the rules that touch the ported classes */
 @media (max-width:1000px){
   .gallery { grid-template-columns:repeat(3,1fr); }
+}
+@media (max-width:760px){
+  .xt-row { grid-template-columns:30px minmax(0,1.2fr) 130px 72px; }
+  .xt-row > :nth-child(4), .xt-row > :nth-child(5) { display:none; } /* venue + buyer */
+  .ht-row { grid-template-columns:30px minmax(0,1.2fr) 110px; }
+  .ht-row > :nth-child(4) { display:none; } /* % of supply */
 }
 @media (max-width:900px){
   .mag { grid-template-columns:1fr; }
@@ -181,9 +214,40 @@ main > .ctxband { margin-bottom:10px; }
 
 /* ── app extensions to the v19 system (NOT in the lab file) — same chip bones, extra variants the
    app's data needs: open (unlocked assets), og/neutral (address archetypes), distrusted (graph). ── */
-.chip.open { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+.chip.open { color:var(--amber); border-color:#8a6420; background:rgba(120,86,27,.15); } /* unlocked = caution, amber not red */
 .chip.og { color:#c4b5fd; border-color:rgba(109,40,217,.6); background:rgba(76,29,149,.15); }
 .chip.distrusted { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
 .chip.neutral { color:#d4d4d8; border-color:#3f3f46; background:rgba(39,39,42,.3); }
 /* app glue: quiet .btn2 rendered as <a> keeps its text color under the global a:hover accent */
 a.btn2:hover { color:var(--t2); }
+
+/* ── app extensions: generic record tables on the ported .xtable bones. The lab hardcodes one
+   grid-template per table; RecordTable feeds its per-table track lists through custom properties
+   (--xtc = all columns, --xtc-4/-3/-2 = the templates after priority 4/3/2 columns drop), and marks
+   droppable cells .xt-p4/.xt-p3/.xt-p2 (priority 1 never drops). data-cols scopes all of it so the
+   verbatim lab rules above stay untouched for any fixed-layout usage. ── */
+.xtable[data-cols] .xt-row { grid-template-columns:var(--xtc); }
+/* neutralize the lab's fixed nth-child hiding (priorities drive dropping). Every row is EXACTLY one
+   line tall: cells never wrap — overflow ellipsizes (full values live in title attrs / detail pages). */
+.xtable[data-cols] .xt-row > * { display:revert; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+@media (max-width:1000px){
+  .xtable[data-cols] .xt-row { grid-template-columns:var(--xtc-4,var(--xtc)); }
+  .xtable[data-cols] .xt-row > .xt-p4 { display:none; }
+}
+@media (max-width:760px){
+  .xtable[data-cols] .xt-row { grid-template-columns:var(--xtc-3,var(--xtc)); }
+  .xtable[data-cols] .xt-row > .xt-p3, .xtable[data-cols] .xt-row > .xt-p4 { display:none; }
+}
+@media (max-width:560px){
+  .xtable[data-cols] .xt-row { grid-template-columns:var(--xtc-2,var(--xtc)); }
+  .xtable[data-cols] .xt-row > .xt-p2, .xtable[data-cols] .xt-row > .xt-p3, .xtable[data-cols] .xt-row > .xt-p4 { display:none; }
+}
+/* hover + keyboard-focus row highlight — the primary place-keeper (R11); no zebra, no flashing */
+.xtable .xt-row:not(.xt-head):hover, .xtable .xt-row:not(.xt-head):focus-within { background:rgba(255,255,255,.03); }
+/* addresses: single line, CSS ellipsis (long visible prefix — R5's sanctioned fallback, never 4+4);
+   the full address travels in the title attr and the link target */
+.xt-addr { display:block; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+/* trailing View action — right-aligned, accent, sr-only header */
+.xt-view { text-align:right; font-size:var(--fs-xs); font-weight:500; white-space:nowrap; }
+.xt-view a { color:var(--accent); }
+.xt-view a:hover { color:#7dd3fc; }

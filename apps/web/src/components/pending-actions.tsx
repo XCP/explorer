@@ -2,7 +2,7 @@
 import { Clock } from "lucide-react";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import { useAddressMempool, useAssetMempool } from "@/lib/hooks";
-import { type Col, addrCell, assetCell, txCell } from "@/lib/cells";
+import { type Col, addrCell, assetCell, viewCell } from "@/lib/cells";
 import { eventChip } from "@/lib/mempool";
 import { commas } from "@/lib/format";
 import { RecordTable } from "@/components/record-table";
@@ -11,12 +11,12 @@ import { RecordTable } from "@/components/record-table";
 // unconfirmed actions — the common case, so it follows the return-null idiom of the relationship panels.
 // The amber frame marks the rows as unconfirmed / in-mempool. Polls every 10s via the entity hook.
 const COLS: Col<MempoolActionRow>[] = [
-  { label: "Event", cell: (r) => eventChip(r.event) },
-  { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset ?? undefined) },
-  { label: "Quantity", numeric: true, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
-  { label: "From", cell: (r) => addrCell(r.source ?? undefined), hideBelow: "sm" },
-  { label: "To", cell: (r) => addrCell(r.destination ?? undefined), hideBelow: "sm" },
-  { label: "Tx", cell: (r) => txCell(r.tx_hash ?? undefined) },
+  { label: "Event", priority: 1, w: "130px", cell: (r) => eventChip(r.event) },
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.2fr)", cell: (r) => assetCell(r.asset ?? undefined) },
+  { label: "Quantity", numeric: true, priority: 1, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
+  { label: "From", priority: 3, cell: (r) => addrCell(r.source ?? undefined) },
+  { label: "To", priority: 3, cell: (r) => addrCell(r.destination ?? undefined) },
+  { label: "View", srOnly: true, priority: 1, w: "44px", cell: (r) => viewCell(r.tx_hash ?? undefined) },
 ];
 
 export function PendingActions({ address, asset }: { address?: string; asset?: string }) {

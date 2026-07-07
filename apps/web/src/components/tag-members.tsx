@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useState } from "react";
 import type { TagMemberRow } from "@xcp/shared/tags";
 import { useTag } from "@/lib/hooks";
@@ -8,8 +7,7 @@ import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
 import { RecordTable } from "@/components/record-table";
 import { ScoreBadge } from "@/components/ui/score-badge";
-import { AssetIcon } from "@/components/ui/badges";
-import { type Col } from "@/lib/cells";
+import { type Col, assetCell } from "@/lib/cells";
 import { commas, compact } from "@/lib/format";
 
 // A tag's asset members, best composed-quality first — each row's tier/score is computed server-side.
@@ -18,15 +16,11 @@ const PAGE = 50;
 const usd = (v: number) => (v > 0 ? `$${compact(v)}` : "—");
 
 const COLS: Col<TagMemberRow>[] = [
-  { label: "Asset", weight: "primary", cell: (r) => (
-    <Link href={`/asset/${r.asset}`} className="inline-flex items-center gap-2 min-w-0">
-      <AssetIcon asset={r.asset} size={16} /><span className="truncate">{r.asset_longname || r.asset}</span>
-    </Link>
-  ) },
-  { label: "Score", cell: (r) => <ScoreBadge tier={r.tier} score={r.score} flagged={r.low_quality === 1} /> },
-  { label: "Holders", numeric: true, cell: (r) => commas(r.holders) },
-  { label: "Buyers", numeric: true, hideBelow: "sm", cell: (r) => commas(r.buyers) },
-  { label: "Realized USD", numeric: true, cell: (r) => usd(r.max_realized_usd) },
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", cell: (r) => assetCell(r.asset, r.asset_longname) },
+  { label: "Score", priority: 1, w: "130px", cell: (r) => <ScoreBadge tier={r.tier} score={r.score} flagged={r.low_quality === 1} /> },
+  { label: "Holders", numeric: true, priority: 2, cell: (r) => commas(r.holders) },
+  { label: "Buyers", numeric: true, priority: 3, cell: (r) => commas(r.buyers) },
+  { label: "Realized USD", numeric: true, priority: 1, cell: (r) => usd(r.max_realized_usd) },
 ];
 
 export function TagMembers({ tag }: { tag: string }) {

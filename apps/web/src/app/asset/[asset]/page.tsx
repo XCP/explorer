@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { Lock, LockOpen } from "lucide-react";
 import type { AssetDetail, AssetMarket } from "@xcp/shared/assets";
 import type { TagDetail } from "@xcp/shared/tags";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
@@ -134,7 +135,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
           chips={<>
             {item.tags?.includes("grail") && <SectionChip variant="grail">GRAIL</SectionChip>}
             <GraphTrustChip kind="assets" id={item.asset} />
-            <SectionChip variant={item.locked ? "locked" : "open"}>{item.locked ? "LOCKED" : "OPEN"}</SectionChip>
+            <SectionChip variant={item.locked ? "locked" : "open"}>{item.locked ? <><Lock className="size-3" aria-hidden /> LOCKED</> : <><LockOpen className="size-3" aria-hidden /> UNLOCKED</>}</SectionChip>
           </>}
           actions={<>
             <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="btn2">Trade on xcpdex ↗</a>
@@ -147,6 +148,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
         asset={item.asset}
         collection={collection}
         holderCount={item.holder_count}
+        supply={item.supply_normalized != null ? Number(item.supply_normalized) : null}
         feedCounts={item.feed_counts ?? null}
         inBand
         overview={overview}

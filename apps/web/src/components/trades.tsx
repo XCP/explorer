@@ -2,9 +2,9 @@
 import { useState } from "react";
 import type { TradeRow } from "@xcp/shared/trades";
 import { useTrades, useTradeStats } from "@/lib/hooks";
-import { type Col, blockCell, txCell, addrCell, assetCell, timeCell } from "@/lib/cells";
+import { type Col, blockCell, addrCell, assetCell, timeCell, viewCell } from "@/lib/cells";
 import { commas, compact } from "@/lib/format";
-import { Card, Stat } from "@/components/ui/card";
+import { Stat } from "@/components/ui/card";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
 import { RecordTable } from "@/components/record-table";
@@ -21,37 +21,35 @@ const VENUES = [
   { key: "emblem", label: "Emblem" },
 ] as const;
 
-const VENUE_STYLE: Record<string, string> = {
-  dex: "bg-sky-500/10 text-sky-300 ring-sky-500/20",
-  dispense: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/20",
-  emblem: "bg-violet-500/10 text-violet-300 ring-violet-500/20",
-};
-
+// The v19 .venue pill (ported classes — dex / disp / emblem).
+const VENUE_CLASS: Record<string, string> = { dex: "dex", dispense: "disp", emblem: "emblem" };
+const VENUE_LABEL: Record<string, string> = { dex: "DEX", dispense: "DISPENSER", emblem: "EMBLEM" };
 const venueChip = (v: string) => (
-  <span className={`rounded px-1.5 py-0.5 text-[10px] ring-1 ring-inset ${VENUE_STYLE[v] ?? "bg-zinc-800 text-zinc-300 ring-zinc-700"}`}>
-    {v}
-  </span>
+  <span className={`venue ${VENUE_CLASS[v] ?? "dex"}`}>{VENUE_LABEL[v] ?? v.toUpperCase()}</span>
 );
 
 const money = (n: number | null, currency: string | null) => {
   if (n == null) return "—";
-  const v = n >= 1 ? commas(n.toFixed(2)) : n.toPrecision(3);
+  // ≥1: 2dp comma-grouped; small: 3 significant digits; dust: full 8dp (never scientific notation)
+  const v = n >= 1 ? commas(n.toFixed(2)) : n >= 0.0001 ? n.toPrecision(3) : n.toFixed(8).replace(/0+$/, "");
   return `${v} ${currency ?? ""}`.trim();
 };
 
-const usd = (n: number | null) => (n == null ? "—" : `$${commas(n.toFixed(2))}`);
-
-// Exported: the asset page's Sales tab renders the same unified-ledger columns.
+// Exported: the asset page's Sales tab renders the same unified-ledger columns. Trading tape
+// grammar (R15): Time first; the total carries its USD valuation as the v19 .xt-price sub-line.
 export const TRADE_COLS: Col<TradeRow>[] = [
-  { label: "Time", cell: (r) => timeCell(r.block_time ?? undefined) },
-  { label: "Venue", cell: (r) => venueChip(r.venue) },
-  { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset ?? undefined) },
-  { label: "Qty", numeric: true, cell: (r) => (r.quantity != null ? commas(r.quantity) : "—") },
-  { label: "Total", numeric: true, cell: (r) => money(r.total, r.currency) },
-  { label: "USD", numeric: true, cell: (r) => usd(r.usd_value), hideBelow: "sm" },
-  { label: "Buyer", cell: (r) => addrCell(r.buyer ?? undefined), hideBelow: "md" },
-  { label: "Block", numeric: true, cell: (r) => (r.venue === "emblem" ? compact(r.block_index ?? 0) : blockCell(r.block_index as number)), hideBelow: "lg" },
-  { label: "Tx", cell: (r) => (r.venue === "emblem" ? "—" : txCell(r.tx_hash ?? undefined)), hideBelow: "sm" },
+  { label: "Time", numeric: true, priority: 1, w: "76px", cell: (r) => timeCell(r.block_time ?? undefined) },
+  { label: "Venue", priority: 2, w: "96px", cell: (r) => venueChip(r.venue) },
+  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.2fr)", omitOn: "asset", cell: (r) => assetCell(r.asset ?? undefined) },
+  { label: "Price", numeric: true, priority: 3, cell: (r) => money(r.price, r.currency) },
+  { label: "Qty", numeric: true, priority: 2, w: "90px", cell: (r) => (r.quantity != null ? commas(r.quantity) : "—") },
+  { label: "Total", numeric: true, priority: 1, w: "150px", cell: (r) => (
+    <>{money(r.total, r.currency)}{r.usd_value != null && <small>${commas(r.usd_value.toFixed(2))}</small>}</>
+  ) },
+  { label: "Buyer", priority: 3, cell: (r) => addrCell(r.buyer ?? undefined) },
+  { label: "Seller", priority: 4, cell: (r) => addrCell(r.seller ?? undefined) },
+  { label: "Block", numeric: true, priority: 4, w: "90px", omitOn: "block", cell: (r) => (r.venue === "emblem" ? compact(r.block_index ?? 0) : blockCell(r.block_index as number)) },
+  { label: "View", srOnly: true, priority: 2, w: "44px", cell: (r) => (r.venue === "emblem" ? "—" : viewCell(r.tx_hash ?? undefined)) },
 ];
 
 export function Trades() {
@@ -69,8 +67,8 @@ export function Trades() {
           ))}
         </div>
       )}
-      <Card title="Trades">
-        <div className="flex gap-1.5 mb-3">
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-1.5">
           {VENUES.map((v) => (
             <button
               key={v.label}
@@ -85,12 +83,12 @@ export function Trades() {
         </div>
         <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="trades">
           <RecordTable cols={TRADE_COLS} rows={rows} />
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-2 mt-3">
             <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
             <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
           </div>
         </AsyncContent>
-      </Card>
+      </div>
     </>
   );
 }

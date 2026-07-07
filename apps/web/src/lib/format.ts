@@ -1,6 +1,6 @@
 // Small display helpers shared across explorer routes.
 export const short = (s?: string | null, head = 8, tail = 6) =>
-  !s ? "" : s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
+  !s ? "" : s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${tail > 0 ? s.slice(-tail) : ""}`;
 
 export const commas = (v?: string | number | null) => {
   if (v == null || v === "") return "—";
@@ -38,6 +38,15 @@ export const usdCompact = (v?: number | null) => {
 // Collection tags are slugs ("rare-pepe"); surfaces show them as display names ("Rare Pepe").
 export const collectionLabel = (tag: string) =>
   tag.split("-").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+
+// Raw protocol quantity → human units: divide by 1e8 only when divisible (R7 — never render raw
+// satoshi fields). Default divisible=true covers the always-divisible XCP/BTC fields.
+export const fromSats = (v?: string | number | null, divisible: boolean | 0 | 1 = true): number | null => {
+  if (v == null || v === "") return null;
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return null;
+  return divisible ? n / 1e8 : n;
+};
 
 export const ts = (sec?: number | null) =>
   sec ? new Date(sec * 1000).toISOString().replace("T", " ").slice(0, 19) + "Z" : "—";
