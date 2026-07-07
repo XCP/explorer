@@ -50,7 +50,8 @@ export interface AssetDetail {
   holder_count: number;
   quality?: AssetQuality;
   tags?: string[];
-  sales?: AssetSales; // absent on the native XCP/BTC reduced path
+  sales?: AssetSales;
+  collection?: string | null; // curated collection tag (tags.source='collection'), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
 }
 
 /** GET /v2/assets — the asset index / search row. description is clamped to a single line server-side

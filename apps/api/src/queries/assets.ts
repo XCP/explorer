@@ -310,6 +310,12 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
   );
 }
 
+/** The asset's curated collection tag (tags with source='collection'; first wins). */
+export async function assetCollection(db: D1Database, asset: string): Promise<string | null> {
+  const r = await one<{ tag: string }>(db, `SELECT tag FROM tags WHERE asset=? AND source='collection' LIMIT 1`, asset);
+  return r?.tag ?? null;
+}
+
 /** Collector cohort: assets most co-held with this one. Excludes XCP (currency everyone holds); the b1
  *  side is filtered to real, non-dust address holders. */
 export function assetCohort(db: D1Database, asset: string, limit: number): Promise<AssetCohortRow[]> {
