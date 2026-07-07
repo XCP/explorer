@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en" data-font="geist" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v20 · Tables — acceptance reference — xcp.io design lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#0a0b0d; --panel:#101216; --panel2:#0d0f13; --border:#262a33; --border2:#1a1d24;
+    --t1:#f2f4f7; --t2:#ccd2db; --t3:#a3adbc; --t4:#79839a;
+    --brand:#ec1550; --accent:#38bdf8; --up:#4ade80; --down:#f87171; --amber:#e3b34c;
+    /* type scale — INTEGER sizes only (subpixel fuzz fix) */
+    --fs-base:14px; --fs-sm:13px; --fs-xs:12px; --fs-2xs:11px; --fs-h1:22px; --fs-stat:17px;
+  }
+  html[data-density="compact"] { --fs-base:13px; --fs-sm:12px; --fs-xs:11px; --fs-2xs:10px; --fs-h1:20px; --fs-stat:16px; }
+
+  /* font themes — switch live with the control bar */
+  html[data-font="inter"]  { --sans:Inter,system-ui,sans-serif;            --mono:"JetBrains Mono",Consolas,monospace; }
+  html[data-font="geist"]  { --sans:Geist,system-ui,sans-serif;            --mono:"Geist Mono",Consolas,monospace; }
+  html[data-font="system"] { --sans:"Segoe UI",system-ui,sans-serif;       --mono:Cascadia Code,Consolas,monospace; }
+
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--t2); font-family:var(--sans); font-size:var(--fs-base); }
+  a { color:inherit; text-decoration:none; } a:hover { color:var(--accent); }
+  .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+  /* control bar (lab-only) */
+  .lab-controls { position:fixed; top:10px; right:10px; z-index:99; display:flex; gap:6px; background:#14171d; border:1px solid #303540; border-radius:99px; padding:5px 8px; font-size:11px; box-shadow:0 4px 16px rgba(0,0,0,.5); }
+  .lab-controls button { background:none; border:1px solid transparent; color:#a3adbc; font-size:11px; padding:3px 9px; border-radius:99px; cursor:pointer; font-family:inherit; }
+  .lab-controls button.on { color:#fff; border-color:#38bdf8; }
+  .lab-controls .sep { width:1px; background:#303540; margin:0 2px; }
+
+  /* status strip — chain left, market right */
+  .statusbar { border-bottom:1px solid var(--border2); background:var(--panel2); font-size:var(--fs-2xs); font-family:var(--mono); }
+  .statusbar .in { max-width:1200px; margin:0 auto; padding:5px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; white-space:nowrap; overflow:hidden; }
+  .cluster { display:flex; align-items:center; }
+  .cluster .cell { padding:0 13px; border-right:1px solid var(--border2); }
+  .cluster .cell:first-child { padding-left:0; } .cluster .cell:last-child { border-right:none; padding-right:0; }
+  .statusbar .k { color:var(--t4); } .statusbar b { color:var(--t2); font-weight:500; }
+  .ok { color:var(--up); } .warn { color:var(--amber); }
+
+  /* global header — SOLID bg (no backdrop-filter = no rasterized text) */
+  header.global { position:sticky; top:0; z-index:50; border-bottom:1px solid var(--border); background:#0a0b0d; }
+  .hrow { max-width:1200px; margin:0 auto; display:flex; align-items:center; gap:20px; padding:10px 16px; }
+  .brand { font-family:var(--mono); font-weight:700; font-size:15px; letter-spacing:.05em; color:var(--t1); }
+  .brand b { color:var(--brand); }
+  nav.primary { display:flex; gap:4px; font-size:var(--fs-sm); font-weight:500; }
+  nav.primary a { color:var(--t3); padding:6px 11px; border-radius:6px; }
+  nav.primary a.active { color:var(--t1); background:var(--panel); }
+  nav.primary a:hover { color:var(--t1); }
+  .search { flex:1; max-width:460px; margin-left:auto; display:flex; align-items:center; gap:9px; background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:7px 11px; }
+  .search:focus-within { border-color:var(--accent); }
+  .search .lens { color:var(--t4); }
+  .search input { flex:1; background:none; border:none; outline:none; color:var(--t1); font-family:inherit; font-size:var(--fs-sm); }
+  .search input::placeholder { color:var(--t4); }
+  .search .kbd { font-size:10px; color:var(--t4); border:1px solid var(--border2); border-radius:3px; padding:0 5px; font-family:var(--mono); }
+  .cta { background:var(--brand); border:none; color:#fff; font-family:inherit; font-size:var(--fs-sm); font-weight:600; padding:7px 14px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  .hamburger { display:none; margin-left:auto; width:34px; height:34px; border:1px solid var(--border); border-radius:6px; background:var(--panel); color:var(--t2); font-size:16px; }
+
+  main { max-width:1200px; margin:0 auto; padding:18px 16px; }
+
+  .pagehead { margin:4px 0 24px; }
+  .pagehead h1 { font-size:var(--fs-h1); font-weight:700; color:var(--t1); letter-spacing:-.01em; }
+  .pagehead p { margin-top:7px; font-size:var(--fs-xs); color:var(--t4); max-width:92ch; line-height:1.55; }
+  .pagehead p b { color:var(--t3); font-weight:500; }
+
+  .strip-title { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin-bottom:10px; }
+  .rts { margin-top:8px; }
+  .rts + .rts { margin-top:6px; }
+
+  /* ── THE RECORD TABLE — the acceptance grammar. Every rule here is deliberate:
+     Time FIRST (relative, UTC in title) · Block SECOND · both left, mono, muted ·
+     payload per type · status pill where earned · quiet View at the row end.
+     One line per row, no exceptions. Units in headers, never cells. ── */
+  .rt { border:1px solid var(--border2); border-radius:8px; background:var(--panel); overflow:hidden; }
+  .tr { display:grid; align-items:center; gap:12px; padding:8px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
+  .tr > * { min-width:0; }
+  .tr:last-child { border-bottom:none; }
+  .tr.th { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--t4); background:var(--panel2); border-bottom:1px solid var(--border2); padding:8px 14px; white-space:nowrap; }
+  .tr.th > * { overflow:hidden; text-overflow:ellipsis; }
+  /* hover + focus row highlight — THE place-keeper. No zebra, no flashing. */
+  .tr:not(.th):hover, .tr:not(.th):focus-within { background:rgba(255,255,255,.028); }
+  .r { text-align:right; }
+
+  /* time + block — the leading pair, both left, mono, muted */
+  .time, .blk { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t4); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* asset / pair anchor — icon + mono name, one line */
+  .asset { display:flex; align-items:center; gap:8px; min-width:0; }
+  .aicon { width:22px; height:22px; border-radius:5px; border:1px solid var(--border2); background:#14171d; object-fit:cover; flex-shrink:0; }
+  .aname { font-family:var(--mono); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .aname:hover { color:var(--accent); }
+
+  /* numbers — right-aligned tabular numerals, fixed recipe per column */
+  .qty { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; white-space:nowrap; overflow:hidden; }
+  .num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t2); white-space:nowrap; overflow:hidden; }
+  .num.usd { color:var(--t3); }
+  .dim { opacity:.55; }
+
+  /* addresses — single-line CSS ellipsis over the FULL string (long prefix stays
+     visible); the complete address lives in title. NEVER 4+4, never wrapping. */
+  .addr { display:block; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  a.addr:hover { color:var(--accent); }
+
+  .desc { font-size:var(--fs-xs); color:var(--t4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* View — the quiet row-end action */
+  .view { text-align:right; font-size:var(--fs-2xs); color:var(--t4); font-weight:500; white-space:nowrap; }
+  a.view:hover { color:var(--accent); }
+
+  /* side words — the ONLY green/red text on the page (lock polarity excepted) */
+  .side { font-family:var(--mono); font-size:var(--fs-xs); font-weight:600; white-space:nowrap; }
+  .side.buy { color:var(--up); }
+  .side.sell { color:var(--down); }
+
+  /* status pills — earned, never decorative; the text label is the redundant channel */
+  .pill { display:inline-flex; align-items:center; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid; white-space:nowrap; }
+  .pill.open      { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+  .pill.filled    { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+  .pill.expired   { color:#fca5a5; border-color:#96312e; background:rgba(127,29,29,.15); }
+  .pill.cancelled { color:var(--t3); border-color:#34404f; background:rgba(121,131,154,.10); }
+
+  /* type chips — EXCEPTIONS ONLY (attach/move); a plain send gets nothing */
+  .tchip { display:inline-flex; align-items:center; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--t3); white-space:nowrap; }
+
+  /* issuance action badges — neutral set; only Lock takes color (lock polarity) */
+  .abadge { display:inline-flex; align-items:center; gap:5px; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--t3); white-space:nowrap; }
+  .abadge svg { flex-shrink:0; }
+  .abadge.lock { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+
+  /* lock polarity — locked = green closed padlock · unlocked = amber open padlock */
+  .lockstate { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.04em; white-space:nowrap; }
+  .lockstate svg { flex-shrink:0; }
+  .lockstate.locked { color:var(--up); }
+  .lockstate.unlocked { color:var(--amber); }
+
+  /* per-table grids — desktop */
+  .rt-sends .tr      { grid-template-columns:72px 62px minmax(150px,1.2fr) 110px 70px minmax(120px,1fr) minmax(120px,1fr) 44px; }
+  .rt-dispenses .tr  { grid-template-columns:72px 62px minmax(130px,1fr) 88px 92px 100px 80px minmax(115px,1fr) minmax(115px,1fr) 44px; }
+  .rt-orders .tr     { grid-template-columns:72px 62px minmax(140px,1fr) 42px 100px 92px 56px 104px 90px 44px; }
+  .rt-issuances .tr  { grid-template-columns:72px 62px minmax(140px,1.1fr) 100px 96px minmax(110px,.9fr) minmax(130px,1.2fr) 86px 44px; }
+
+  /* dashed lab notes between tables — the rules each table demonstrates */
+  .lab-note { border:1px dashed #34404f; border-radius:8px; padding:10px 14px; font-size:var(--fs-2xs); color:var(--t4); background:rgba(56,189,248,.03); margin:12px 0 30px; line-height:1.6; }
+  .lab-note b { color:var(--t3); }
+
+  .demo-note { max-width:1200px; margin:34px auto 0; padding:0 16px; }
+  .demo-note .inner { border:1px dashed #34404f; border-radius:8px; padding:12px 14px; font-size:var(--fs-xs); color:var(--t4); background:rgba(56,189,248,.03); }
+  .demo-note b { color:var(--t3); }
+  .demo-note ul { list-style:none; padding:0; margin:8px 0 0; display:flex; flex-direction:column; gap:4px; }
+  .demo-note li { padding-left:14px; position:relative; }
+  .demo-note li::before { content:"—"; position:absolute; left:0; color:var(--t3); }
+
+  footer { border-top:1px solid var(--border); margin-top:44px; background:var(--panel2); }
+  .frow { max-width:1200px; margin:0 auto; padding:34px 16px; }
+  .fcols { display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr; gap:22px 30px; }
+  @media (max-width:760px){ .fcols { grid-template-columns:repeat(2,1fr); } }
+  footer h3 { font-size:var(--fs-2xs); font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--t3); margin-bottom:10px; }
+  footer ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:6px; }
+  footer li a { font-size:var(--fs-xs); color:var(--t3); }
+  .fabout { font-size:var(--fs-xs); color:var(--t4); line-height:1.6; max-width:34ch; }
+  .fbrand { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border2); margin-top:26px; padding-top:18px; flex-wrap:wrap; gap:10px; font-size:var(--fs-2xs); color:var(--t4); }
+  .fbrand b { color:var(--t3); }
+  .dotg { display:inline-block; width:6px; height:6px; border-radius:99px; background:var(--up); margin-right:5px; }
+
+  @media (max-width:880px){
+    nav.primary, .cta.desk { display:none; }
+    .hamburger { display:block; }
+    .search { max-width:none; order:10; flex-basis:100%; }
+    .hrow { flex-wrap:wrap; gap:10px; }
+    .statusbar .cluster.market { display:none; }
+  }
+
+  /* ── responsive: COLUMN-DROPPING, never card-stacking.
+     760px — secondary columns go (Block always; per-table extras); Time + the
+     payload anchor survive. 420px — down to the four-column skeleton. ── */
+  @media (max-width:760px){
+    .rt-sends .c-blk, .rt-sends .c-src { display:none; }
+    .rt-sends .tr { grid-template-columns:64px minmax(120px,1.1fr) 92px 64px minmax(110px,1fr) 40px; }
+    .rt-dispenses .c-blk, .rt-dispenses .c-price, .rt-dispenses .c-disp { display:none; }
+    .rt-dispenses .tr { grid-template-columns:64px minmax(115px,1fr) 84px 100px 78px minmax(100px,.9fr) 40px; }
+    .rt-orders .c-blk, .rt-orders .c-qty, .rt-orders .c-exp { display:none; }
+    .rt-orders .tr { grid-template-columns:64px minmax(110px,1fr) 42px 92px 52px 86px 40px; }
+    .rt-issuances .c-blk, .rt-issuances .c-issuer, .rt-issuances .c-desc { display:none; }
+    .rt-issuances .tr { grid-template-columns:64px minmax(120px,1.1fr) 96px 90px 84px 40px; }
+  }
+  @media (max-width:420px){
+    .tr { gap:9px; padding:8px 10px; }
+    .rt-sends .c-type, .rt-sends .c-dst { display:none; }
+    .rt-sends .tr { grid-template-columns:52px minmax(0,1fr) 84px 34px; }
+    .rt-dispenses .c-qty, .rt-dispenses .c-usd, .rt-dispenses .c-buyer { display:none; }
+    .rt-dispenses .tr { grid-template-columns:52px minmax(0,1fr) 92px 34px; }
+    .rt-orders .c-side, .rt-orders .c-filled, .rt-orders .c-status { display:none; }
+    .rt-orders .tr { grid-template-columns:52px minmax(0,1fr) 88px 34px; }
+    .rt-issuances .c-qty, .rt-issuances .c-lock { display:none; }
+    .rt-issuances .tr { grid-template-columns:52px minmax(0,1fr) 92px 34px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="lab-controls" role="group" aria-label="Lab type controls">
+  <button data-set="font:geist" class="on">Geist</button>
+  <button data-set="font:inter">Inter</button>
+  <button data-set="font:system">System</button>
+  <span class="sep"></span>
+  <button data-set="density:comfortable" class="on">14px</button>
+  <button data-set="density:compact">13px</button>
+</div>
+
+<div class="statusbar">
+  <div class="in">
+    <span class="cluster">
+      <span class="cell"><span class="ok">●</span> <b>synced</b></span>
+      <span class="cell"><span class="k">block</span> <b>956,990</b> <span class="k">+34s</span></span>
+      <span class="cell"><span class="k">mempool</span> <b class="warn">3</b></span>
+    </span>
+    <span class="cluster market">
+      <span class="cell"><span class="k">BTC</span> <b>$63,273</b> <span class="ok">+0.3%</span></span>
+      <span class="cell"><span class="k">XCP</span> <b>$1.17</b> <span class="ok">+0.9%</span></span>
+      <span class="cell"><span class="k">24h vol</span> <b>$18,402</b></span>
+    </span>
+  </div>
+</div>
+
+<header class="global">
+  <div class="hrow">
+    <a class="brand" href="#">XCP<b>.io</b></a>
+    <nav class="primary">
+      <a href="#">Assets</a><a href="#">Trades</a><a href="#">Blocks</a><a class="active" href="#">Explore ▾</a><a href="#">Discover ▾</a>
+    </nav>
+    <div class="search"><span class="lens">⌕</span><input placeholder="Search assets, addresses, txs, blocks…"><span class="kbd">/</span></div>
+    <button class="cta desk">Connect</button>
+    <button class="hamburger" aria-label="Menu">≡</button>
+  </div>
+</header>
+
+<main>
+
+  <div class="pagehead">
+    <h1>Record tables — the acceptance reference</h1>
+    <p>Four record types on the v19 frame, each demonstrating the table grammar that every ported
+    record table must keep: <b>Time first</b> (relative, UTC in <span class="mono">title</span>), <b>Block second</b>, payload per
+    type, status pill where earned, a quiet View at the row end. One line per row, always. Resize
+    the window — columns drop at 760px and 420px; rows never wrap, never card-stack.</p>
+  </div>
+
+  <!-- ══ SENDS ══ -->
+  <section class="rts">
+    <div class="strip-title">Sends</div>
+    <div class="rt rt-sends">
+      <div class="tr th">
+        <span>Time</span><span class="c-blk">Block</span><span>Asset</span><span class="r">Quantity</span>
+        <span class="c-type">Type</span><span class="c-src">Source</span><span class="c-dst">Destination</span><span class="r"></span>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 17:09:41 UTC">51m ago</span><span class="blk c-blk">956,985</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/PEPECASH" loading="lazy" alt=""><a class="aname" href="#">PEPECASH</a></span>
+        <span class="qty">250,000</span>
+        <span class="c-type"></span>
+        <a class="addr c-src" href="#" title="1Ez4wpKY7v2mHqTtLXCJXjmqCVWagAUdRT">1Ez4wpKY7v2mHqTtLXCJXjmqCVWagAUdRT</a>
+        <a class="addr c-dst" href="#" title="1KanyeW3stHodLr4Qw9cVfMuTpBjNkAtR8s">1KanyeW3stHodLr4Qw9cVfMuTpBjNkAtR8s</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 16:02:17 UTC">2h ago</span><span class="blk c-blk">956,978</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><a class="aname" href="#">RAREPEPE</a></span>
+        <span class="qty">1</span>
+        <span class="c-type"></span>
+        <a class="addr c-src" href="#" title="1Mike1nSpaceKq9Tz4VnFhWJzXbAoWZeu">1Mike1nSpaceKq9Tz4VnFhWJzXbAoWZeu</a>
+        <a class="addr c-dst" href="#" title="bc1qxu8j5c7svunqcvcjpd23lmrt94wsue5ktg4vqf">bc1qxu8j5c7svunqcvcjpd23lmrt94wsue5ktg4vqf</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 15:11:52 UTC">3h ago</span><span class="blk c-blk">956,971</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/XCP" loading="lazy" alt=""><a class="aname" href="#">XCP</a></span>
+        <span class="qty">12.5</span>
+        <span class="c-type"></span>
+        <a class="addr c-src" href="#" title="1Ping4FsQxUvZ9wDb2NmKjRtY6eHcuQ7vQ">1Ping4FsQxUvZ9wDb2NmKjRtY6eHcuQ7vQ</a>
+        <a class="addr c-dst" href="#" title="1SatSt4ckerVn3mQdF7KpXbTjLwRe9c6Vn">1SatSt4ckerVn3mQdF7KpXbTjLwRe9c6Vn</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 13:04:29 UTC">5h ago</span><span class="blk c-blk">956,959</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/SATOSHICARD" loading="lazy" alt=""><a class="aname" href="#">SATOSHICARD</a></span>
+        <span class="qty">1</span>
+        <span class="c-type"><span class="tchip">attach</span></span>
+        <a class="addr c-src" href="#" title="1FreedomKq8wZuYtMv5JhDp2GxNcAr8jUu">1FreedomKq8wZuYtMv5JhDp2GxNcAr8jUu</a>
+        <a class="addr c-dst" href="#" title="9c41d7aa31f2e08b5c6d4e2f7a9b0c1d3e5f70819a2b3c4d5e6f708192a3b4c5:0">9c41d7aa31f2e08b5c6d4e2f7a9b0c1d3e5f70819a2b3c4d5e6f708192a3b4c5:0</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 09:12:06 UTC">9h ago</span><span class="blk c-blk">956,934</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/BITCRYSTALS" loading="lazy" alt=""><a class="aname" href="#">BITCRYSTALS</a></span>
+        <span class="qty">1,500.25</span>
+        <span class="c-type"></span>
+        <a class="addr c-src" href="#" title="bc1q7kre26cvqdtwkjyeuq3zl4h5j0asns36xkzkmt">bc1q7kre26cvqdtwkjyeuq3zl4h5j0asns36xkzkmt</a>
+        <a class="addr c-dst" href="#" title="1Joe7NmBqVdE2xLpRt6YwKcMfHbs2xWd">1Joe7NmBqVdE2xLpRt6YwKcMfHbs2xWd</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 04:33:48 UTC">14h ago</span><span class="blk c-blk">956,904</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/FAKEASF" loading="lazy" alt=""><a class="aname" href="#">FAKEASF</a></span>
+        <span class="qty">3</span>
+        <span class="c-type"></span>
+        <a class="addr c-src" href="#" title="1QwErT9uIoPzXcVbNm3HgFdSaJkh2pL4d">1QwErT9uIoPzXcVbNm3HgFdSaJkh2pL4d</a>
+        <a class="addr c-dst" href="#" title="1BcDeLM9sKw2fRnHjT8xQpZvWyGm49fGh">1BcDeLM9sKw2fRnHjT8xQpZvWyGm49fGh</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-06 17:48:11 UTC">1d ago</span><span class="blk c-blk">956,845</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/DANKMEMECASH" loading="lazy" alt=""><a class="aname" href="#">DANKMEMECASH</a></span>
+        <span class="qty">10,000</span>
+        <span class="c-type"></span>
+        <a class="addr c-src" href="#" title="1RarePepeWa11etXq2LmVs7BpKtN4d8dKw">1RarePepeWa11etXq2LmVs7BpKtN4d8dKw</a>
+        <a class="addr c-dst" href="#" title="1Ping4FsQxUvZ9wDb2NmKjRtY6eHcuQ7vQ">1Ping4FsQxUvZ9wDb2NmKjRtY6eHcuQ7vQ</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-05 18:22:57 UTC">2d ago</span><span class="blk c-blk">956,701</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/GEMZ" loading="lazy" alt=""><a class="aname" href="#">GEMZ</a></span>
+        <span class="qty">42</span>
+        <span class="c-type"><span class="tchip">move</span></span>
+        <a class="addr c-src" href="#" title="e5d1c0a4f7b83629d1e04c5a9b7f2e6d8c3a1f5b7e9d0c2a4b6e8f0a1c3e5d7:0">e5d1c0a4f7b83629d1e04c5a9b7f2e6d8c3a1f5b7e9d0c2a4b6e8f0a1c3e5d7:0</a>
+        <a class="addr c-dst" href="#" title="4f2a9b6c1d8e3f70a5b2c9d6e1f84a3b0c7d2e9f6a1b8c5d0e7f2a9b4c1d8e3:1">4f2a9b6c1d8e3f70a5b2c9d6e1f84a3b0c7d2e9f6a1b8c5d0e7f2a9b4c1d8e3:1</a>
+        <a class="view" href="#">View</a>
+      </div>
+    </div>
+    <div class="lab-note"><b>SENDS demonstrates —</b> Time first (relative, UTC in <span class="mono">title</span>), Block second, both
+    left/mono/muted · every row exactly one line · type chips ONLY on the exceptions (the
+    <b>attach</b> and <b>move</b> rows — plain sends get nothing) · addresses and UTXOs are one full string
+    under CSS ellipsis, long prefix visible, complete value in <span class="mono">title</span> — never 4+4 · quantities
+    asset-appropriate: divisible 8dp-trimmed (12.5 XCP · 1,500.25 BITCRYSTALS), indivisible integers.
+    At 760px Block + Source drop; at 420px Time · Asset · Quantity · View remain.</div>
+  </section>
+
+  <!-- ══ DISPENSES ══ -->
+  <section class="rts">
+    <div class="strip-title">Dispenses</div>
+    <div class="rt rt-dispenses">
+      <div class="tr th">
+        <span>Time</span><span class="c-blk">Block</span><span>Asset</span><span class="r c-qty">Quantity</span>
+        <span class="r c-price">Price (sats)</span><span class="r">Total (BTC)</span><span class="r c-usd">USD</span>
+        <span class="c-disp">Dispenser</span><span class="c-buyer">Buyer</span><span class="r"></span>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 17:22:33 UTC">38m ago</span><span class="blk c-blk">956,987</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/PEPECASH" loading="lazy" alt=""><a class="aname" href="#">PEPECASH</a></span>
+        <span class="qty c-qty">50,000</span>
+        <span class="num c-price">2</span>
+        <span class="num">0.001</span>
+        <span class="num usd c-usd">$63.27</span>
+        <a class="addr c-disp" href="#" title="1DqXaV7nRb2mKc9TtLp4Jd8YwQe5PzGh6u">1DqXaV7nRb2mKc9TtLp4Jd8YwQe5PzGh6u</a>
+        <a class="addr c-buyer" href="#" title="1KanyeW3stHodLr4Qw9cVfMuTpBjNkAtR8s">1KanyeW3stHodLr4Qw9cVfMuTpBjNkAtR8s</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 16:04:51 UTC">2h ago</span><span class="blk c-blk">956,977</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><a class="aname" href="#">RAREPEPE</a></span>
+        <span class="qty c-qty">1</span>
+        <span class="num c-price">2,990,000</span>
+        <span class="num">0.0299</span>
+        <span class="num usd c-usd">$1,891.86</span>
+        <a class="addr c-disp" href="#" title="1Mike1nSpaceKq9Tz4VnFhWJzXbAoWZeu">1Mike1nSpaceKq9Tz4VnFhWJzXbAoWZeu</a>
+        <a class="addr c-buyer" href="#" title="bc1qxu8j5c7svunqcvcjpd23lmrt94wsue5ktg4vqf">bc1qxu8j5c7svunqcvcjpd23lmrt94wsue5ktg4vqf</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 12:07:19 UTC">6h ago</span><span class="blk c-blk">956,955</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/FAKEASF" loading="lazy" alt=""><a class="aname" href="#">FAKEASF</a></span>
+        <span class="qty c-qty">1</span>
+        <span class="num c-price">850,000</span>
+        <span class="num">0.0085</span>
+        <span class="num usd c-usd">$537.82</span>
+        <a class="addr c-disp" href="#" title="3JvGnEyQr8fWc2xKmA5tUu7NpLd4Hb9Se1">3JvGnEyQr8fWc2xKmA5tUu7NpLd4Hb9Se1</a>
+        <a class="addr c-buyer" href="#" title="1QwErT9uIoPzXcVbNm3HgFdSaJkh2pL4d">1QwErT9uIoPzXcVbNm3HgFdSaJkh2pL4d</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 07:02:44 UTC">11h ago</span><span class="blk c-blk">956,925</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/DANKMEMECASH" loading="lazy" alt=""><a class="aname" href="#">DANKMEMECASH</a></span>
+        <span class="qty c-qty">5,000</span>
+        <span class="num c-price">21</span>
+        <span class="num">0.00105</span>
+        <span class="num usd c-usd">$66.44</span>
+        <a class="addr c-disp" href="#" title="1DqXaV7nRb2mKc9TtLp4Jd8YwQe5PzGh6u">1DqXaV7nRb2mKc9TtLp4Jd8YwQe5PzGh6u</a>
+        <a class="addr c-buyer" href="#" title="1Joe7NmBqVdE2xLpRt6YwKcMfHbs2xWd">1Joe7NmBqVdE2xLpRt6YwKcMfHbs2xWd</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-06 16:58:30 UTC">1d ago</span><span class="blk c-blk">956,842</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/SHITCOINCARD" loading="lazy" alt=""><a class="aname" href="#">SHITCOINCARD</a></span>
+        <span class="qty c-qty">2</span>
+        <span class="num c-price">420,000</span>
+        <span class="num">0.0084</span>
+        <span class="num usd c-usd">$530.66</span>
+        <a class="addr c-disp" href="#" title="3JvGnEyQr8fWc2xKmA5tUu7NpLd4Hb9Se1">3JvGnEyQr8fWc2xKmA5tUu7NpLd4Hb9Se1</a>
+        <a class="addr c-buyer" href="#" title="1BcDeLM9sKw2fRnHjT8xQpZvWyGm49fGh">1BcDeLM9sKw2fRnHjT8xQpZvWyGm49fGh</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-05 17:41:02 UTC">2d ago</span><span class="blk c-blk">956,699</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/DARKPILLPEPE" loading="lazy" alt=""><a class="aname" href="#">DARKPILLPEPE</a></span>
+        <span class="qty c-qty">1</span>
+        <span class="num c-price">199,000</span>
+        <span class="num">0.00199</span>
+        <span class="num usd c-usd">$126.25</span>
+        <a class="addr c-disp" href="#" title="1Ez4wpKY7v2mHqTtLXCJXjmqCVWagAUdRT">1Ez4wpKY7v2mHqTtLXCJXjmqCVWagAUdRT</a>
+        <a class="addr c-buyer" href="#" title="1SatSt4ckerVn3mQdF7KpXbTjLwRe9c6Vn">1SatSt4ckerVn3mQdF7KpXbTjLwRe9c6Vn</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-04 14:29:55 UTC">3d ago</span><span class="blk c-blk">956,551</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/XCPCARD" loading="lazy" alt=""><a class="aname" href="#">XCPCARD</a></span>
+        <span class="qty c-qty">3</span>
+        <span class="num c-price">300,000</span>
+        <span class="num">0.009</span>
+        <span class="num usd c-usd">$567.90</span>
+        <a class="addr c-disp" href="#" title="1DqXaV7nRb2mKc9TtLp4Jd8YwQe5PzGh6u">1DqXaV7nRb2mKc9TtLp4Jd8YwQe5PzGh6u</a>
+        <a class="addr c-buyer" href="#" title="1RarePepeWa11etXq2LmVs7BpKtN4d8dKw">1RarePepeWa11etXq2LmVs7BpKtN4d8dKw</a>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-02 11:15:37 UTC">5d ago</span><span class="blk c-blk">956,270</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/FDCARD" loading="lazy" alt=""><a class="aname" href="#">FDCARD</a></span>
+        <span class="qty c-qty">1</span>
+        <span class="num c-price">610,000</span>
+        <span class="num">0.0061</span>
+        <span class="num usd c-usd">$384.18</span>
+        <a class="addr c-disp" href="#" title="1FreedomKq8wZuYtMv5JhDp2GxNcAr8jUu">1FreedomKq8wZuYtMv5JhDp2GxNcAr8jUu</a>
+        <a class="addr c-buyer" href="#" title="bc1q7kre26cvqdtwkjyeuq3zl4h5j0asns36xkzkmt">bc1q7kre26cvqdtwkjyeuq3zl4h5j0asns36xkzkmt</a>
+        <a class="view" href="#">View</a>
+      </div>
+    </div>
+    <div class="lab-note"><b>DISPENSES demonstrates —</b> one denomination per column, unit in the HEADER only:
+    <b>Price (sats)</b> = comma-grouped integers per unit · <b>Total (BTC)</b> = quantity × price to 8dp, trailing
+    zeros trimmed by the same rule on every row · <b>USD</b> = real dollar values at the day's BTC price,
+    2dp, no dashes · every number right-aligned in tabular numerals. At 760px Block, Price (sats)
+    and Dispenser drop; at 420px the anchor holds: Time · Asset · Total (BTC) · View.</div>
+  </section>
+
+  <!-- ══ ORDERS ══ -->
+  <section class="rts">
+    <div class="strip-title">Orders</div>
+    <div class="rt rt-orders">
+      <div class="tr th">
+        <span>Time</span><span class="c-blk">Block</span><span>Pair</span><span class="c-side">Side</span>
+        <span class="r">Price (XCP)</span><span class="r c-qty">Quantity</span><span class="r c-filled">Filled</span>
+        <span class="r c-exp">Expires (block)</span><span class="c-status">Status</span><span class="r"></span>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 17:36:09 UTC">24m ago</span><span class="blk c-blk">956,988</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/RAREPEPE" loading="lazy" alt=""><a class="aname" href="#">RAREPEPE/XCP</a></span>
+        <span class="side buy c-side">buy</span>
+        <span class="num">1,650.00</span>
+        <span class="num c-qty">1</span>
+        <span class="num c-filled dim">0%</span>
+        <span class="num c-exp" title="≈ 6d 6h from now">957,890</span>
+        <span class="c-status"><span class="pill open">open</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 16:57:26 UTC">1h ago</span><span class="blk c-blk">956,983</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/PEPECASH" loading="lazy" alt=""><a class="aname" href="#">PEPECASH/XCP</a></span>
+        <span class="side sell c-side">sell</span>
+        <span class="num">0.0042</span>
+        <span class="num c-qty">500,000</span>
+        <span class="num c-filled">37%</span>
+        <span class="num c-exp" title="≈ 3d 0h from now">957,420</span>
+        <span class="c-status"><span class="pill open">open</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 14:08:13 UTC">4h ago</span><span class="blk c-blk">956,964</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/FAKEASF" loading="lazy" alt=""><a class="aname" href="#">FAKEASF/XCP</a></span>
+        <span class="side sell c-side">sell</span>
+        <span class="num">210.00</span>
+        <span class="num c-qty">2</span>
+        <span class="num c-filled">100%</span>
+        <span class="num c-exp dim">957,100</span>
+        <span class="c-status"><span class="pill filled">filled</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 10:19:40 UTC">8h ago</span><span class="blk c-blk">956,942</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/BITCRYSTALS" loading="lazy" alt=""><a class="aname" href="#">BITCRYSTALS/XCP</a></span>
+        <span class="side buy c-side">buy</span>
+        <span class="num">0.85</span>
+        <span class="num c-qty">1,000</span>
+        <span class="num c-filled">64%</span>
+        <span class="num c-exp" title="≈ 20h from now">957,110</span>
+        <span class="c-status"><span class="pill open">open</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 02:11:58 UTC">16h ago</span><span class="blk c-blk">956,895</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/SATOSHICARD" loading="lazy" alt=""><a class="aname" href="#">SATOSHICARD/XCP</a></span>
+        <span class="side buy c-side">buy</span>
+        <span class="num">96.50</span>
+        <span class="num c-qty">1</span>
+        <span class="num c-filled dim">0%</span>
+        <span class="num c-exp dim" title="expired ≈ 13h ago">956,910</span>
+        <span class="c-status"><span class="pill expired">expired</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-06 15:44:21 UTC">1d ago</span><span class="blk c-blk">956,848</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/DANKMEMECASH" loading="lazy" alt=""><a class="aname" href="#">DANKMEMECASH/XCP</a></span>
+        <span class="side sell c-side">sell</span>
+        <span class="num">0.011</span>
+        <span class="num c-qty">100,000</span>
+        <span class="num c-filled dim">0%</span>
+        <span class="num c-exp dim">958,000</span>
+        <span class="c-status"><span class="pill cancelled">cancelled</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-04 12:52:35 UTC">3d ago</span><span class="blk c-blk">956,556</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/GEMZ" loading="lazy" alt=""><a class="aname" href="#">GEMZ/XCP</a></span>
+        <span class="side sell c-side">sell</span>
+        <span class="num">3.25</span>
+        <span class="num c-qty">40</span>
+        <span class="num c-filled">100%</span>
+        <span class="num c-exp dim">957,050</span>
+        <span class="c-status"><span class="pill filled">filled</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-03 09:27:14 UTC">4d ago</span><span class="blk c-blk">956,412</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/XCPCARD" loading="lazy" alt=""><a class="aname" href="#">XCPCARD/XCP</a></span>
+        <span class="side buy c-side">buy</span>
+        <span class="num">45.00</span>
+        <span class="num c-qty">3</span>
+        <span class="num c-filled dim">0%</span>
+        <span class="num c-exp" title="≈ 8d 13h from now">958,220</span>
+        <span class="c-status"><span class="pill open">open</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+    </div>
+    <div class="lab-note"><b>ORDERS demonstrates —</b> green/red reserved for the <b>buy</b>/<b>sell</b> words; every other
+    cell neutral · <b>Price (XCP)</b> one denomination, fixed two-tier recipe: ≥1 XCP at 2dp, sub-1 at
+    leading significant digits · <b>Filled</b> integer percent with partial fills (37%, 64%), 0% dimmed ·
+    <b>Expires</b> as a block number, ETA in <span class="mono">title</span>, dimmed once the order is closed · status
+    pills earn their place — open / filled / expired / cancelled, the label is the redundant
+    channel. At 760px Block, Quantity and Expires drop; at 420px Time · Pair · Price · View.</div>
+  </section>
+
+  <!-- ══ ISSUANCES ══ -->
+  <section class="rts">
+    <div class="strip-title">Issuances</div>
+    <div class="rt rt-issuances">
+      <div class="tr th">
+        <span>Time</span><span class="c-blk">Block</span><span>Asset</span><span>Action</span>
+        <span class="r c-qty">Quantity</span><span class="c-issuer">Issuer</span><span class="c-desc">Description</span>
+        <span class="c-lock">Supply</span><span class="r"></span>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 16:49:03 UTC">1h ago</span><span class="blk c-blk">956,984</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/TRUMPRARE" loading="lazy" alt=""><a class="aname" href="#">TRUMPRARE</a></span>
+        <span><span class="abadge">Issue</span></span>
+        <span class="qty c-qty">500</span>
+        <a class="addr c-issuer" href="#" title="1Ping4FsQxUvZ9wDb2NmKjRtY6eHcuQ7vQ">1Ping4FsQxUvZ9wDb2NmKjRtY6eHcuQ7vQ</a>
+        <span class="desc c-desc" title="Series 9, Card 32">Series 9, Card 32</span>
+        <span class="c-lock"><span class="lockstate unlocked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>unlocked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 15:16:47 UTC">3h ago</span><span class="blk c-blk">956,970</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/FDCARD" loading="lazy" alt=""><a class="aname" href="#">FDCARD</a></span>
+        <span><span class="abadge lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Lock</span></span>
+        <span class="qty c-qty dim">0</span>
+        <a class="addr c-issuer" href="#" title="1Ez4wpKY7v2mHqTtLXCJXjmqCVWagAUdRT">1Ez4wpKY7v2mHqTtLXCJXjmqCVWagAUdRT</a>
+        <span class="desc c-desc">—</span>
+        <span class="c-lock"><span class="lockstate locked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>locked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 11:03:28 UTC">7h ago</span><span class="blk c-blk">956,948</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/SATOSHICARD" loading="lazy" alt=""><a class="aname" href="#">SATOSHICARD</a></span>
+        <span><span class="abadge">Issue</span></span>
+        <span class="qty c-qty">1,000</span>
+        <a class="addr c-issuer" href="#" title="1Mike1nSpaceKq9Tz4VnFhWJzXbAoWZeu">1Mike1nSpaceKq9Tz4VnFhWJzXbAoWZeu</a>
+        <span class="desc c-desc" title="Series 2, Card 43 — the original Satoshi tribute">Series 2, Card 43 — the original Satoshi tribute</span>
+        <span class="c-lock"><span class="lockstate unlocked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>unlocked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-07 06:21:55 UTC">12h ago</span><span class="blk c-blk">956,918</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/XCPCARD" loading="lazy" alt=""><a class="aname" href="#">XCPCARD</a></span>
+        <span><span class="abadge">Transfer</span></span>
+        <span class="qty c-qty dim">0</span>
+        <a class="addr c-issuer" href="#" title="1Joe7NmBqVdE2xLpRt6YwKcMfHbs2xWd">1Joe7NmBqVdE2xLpRt6YwKcMfHbs2xWd</a>
+        <span class="desc c-desc">—</span>
+        <span class="c-lock"><span class="lockstate unlocked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>unlocked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-06 14:37:09 UTC">1d ago</span><span class="blk c-blk">956,850</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/SWARM" loading="lazy" alt=""><a class="aname" href="#">SWARM</a></span>
+        <span><span class="abadge">Issue</span></span>
+        <span class="qty c-qty">500,000</span>
+        <a class="addr c-issuer" href="#" title="bc1q7kre26cvqdtwkjyeuq3zl4h5j0asns36xkzkmt">bc1q7kre26cvqdtwkjyeuq3zl4h5j0asns36xkzkmt</a>
+        <span class="desc c-desc" title="Swarm crowdfund token — swarm.fund">Swarm crowdfund token — swarm.fund</span>
+        <span class="c-lock"><span class="lockstate unlocked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>unlocked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-05 16:09:42 UTC">2d ago</span><span class="blk c-blk">956,700</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/GEMZ" loading="lazy" alt=""><a class="aname" href="#">GEMZ</a></span>
+        <span><span class="abadge">Reset</span></span>
+        <span class="qty c-qty dim">0</span>
+        <a class="addr c-issuer" href="#" title="1SatSt4ckerVn3mQdF7KpXbTjLwRe9c6Vn">1SatSt4ckerVn3mQdF7KpXbTjLwRe9c6Vn</a>
+        <span class="desc c-desc">—</span>
+        <span class="c-lock"><span class="lockstate unlocked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>unlocked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-04 10:44:18 UTC">3d ago</span><span class="blk c-blk">956,548</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/DARKPILLPEPE" loading="lazy" alt=""><a class="aname" href="#">DARKPILLPEPE</a></span>
+        <span><span class="abadge lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Lock</span></span>
+        <span class="qty c-qty dim">0</span>
+        <a class="addr c-issuer" href="#" title="1BcDeLM9sKw2fRnHjT8xQpZvWyGm49fGh">1BcDeLM9sKw2fRnHjT8xQpZvWyGm49fGh</a>
+        <span class="desc c-desc">—</span>
+        <span class="c-lock"><span class="lockstate locked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>locked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+      <div class="tr">
+        <span class="time" title="2026-07-02 13:58:26 UTC">5d ago</span><span class="blk c-blk">956,268</span>
+        <span class="asset"><img class="aicon" src="https://cdn.xcp.io/img/icon/BITCRYSTALS" loading="lazy" alt=""><a class="aname" href="#">BITCRYSTALS</a></span>
+        <span><span class="abadge">Issue</span></span>
+        <span class="qty c-qty">1,000,000</span>
+        <a class="addr c-issuer" href="#" title="1RarePepeWa11etXq2LmVs7BpKtN4d8dKw">1RarePepeWa11etXq2LmVs7BpKtN4d8dKw</a>
+        <span class="desc c-desc" title="BitCrystals — Spells of Genesis in-game currency">BitCrystals — Spells of Genesis in-game currency</span>
+        <span class="c-lock"><span class="lockstate unlocked"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0"/></svg>unlocked</span></span>
+        <a class="view" href="#">View</a>
+      </div>
+    </div>
+    <div class="lab-note"><b>ISSUANCES demonstrates —</b> Action badge variety — Issue, Lock, Transfer, Reset — as a
+    neutral badge set; only <b>Lock</b> takes color, because lock polarity has its own rule: locked =
+    green + closed padlock, unlocked = amber + open padlock (the Supply column carries the state
+    on every row) · zero-quantity actions show a dimmed 0, keeping the column's fixed recipe ·
+    Description truncates to one line, full text in <span class="mono">title</span>, never wraps. At 760px Block,
+    Issuer and Description drop; at 420px Time · Asset · Action · View.</div>
+  </section>
+
+</main>
+
+<div class="demo-note">
+  <div class="inner">
+    <b>TOUCHSTONES — the invariants every ported record table keeps.</b>
+    <ul>
+      <li>time + block lead — relative time with the absolute UTC in <span class="mono">title</span>, block second; both left-aligned, mono, muted</li>
+      <li>one-line rows — every cell ellipsizes; nothing ever wraps, nothing card-stacks</li>
+      <li>units in headers — Price (sats), Total (BTC), Price (XCP); cells hold bare numbers, one denomination and one fixed recipe per column</li>
+      <li>chips = exceptions — a plain row gets no chip; green/red only on buy/sell words and signed values (lock polarity is the sanctioned exception)</li>
+      <li>full-address-title ellipsis — one full string under CSS ellipsis with a long visible prefix, complete value in <span class="mono">title</span>; never 4+4</li>
+      <li>hover place-keeping — row highlight on hover and keyboard focus is the only aid; no zebra, no flashing</li>
+    </ul>
+  </div>
+</div>
+
+<footer>
+  <div class="frow">
+    <div class="fcols">
+      <div>
+        <div class="brand" style="font-size:14px; margin-bottom:10px">XCP<b>.io</b></div>
+        <p class="fabout">The reference explorer for Counterparty — the unified sales ledger, reputation intelligence, and twelve years of provenance on Bitcoin.</p>
+      </div>
+      <div><h3>Explore</h3><ul><li><a href="#">Assets</a></li><li><a href="#">Trades</a></li><li><a href="#">Blocks</a></li><li><a href="#">Mempool</a></li><li><a href="#">All records</a></li></ul></div>
+      <div><h3>Discover</h3><ul><li><a href="#">Collections</a></li><li><a href="#">Leaderboards</a></li><li><a href="#">Firsts</a></li><li><a href="#">Vaults</a></li><li><a href="#">Exchanges</a></li></ul></div>
+      <div><h3>Ecosystem</h3><ul><li><a href="#">xcpdex&nbsp;↗</a></li><li><a href="#">Digirare&nbsp;↗</a></li><li><a href="#">XCP Wallet&nbsp;↗</a></li><li><a href="#">counterparty.io&nbsp;↗</a></li></ul></div>
+      <div><h3>Data</h3><ul><li><a href="#">API</a></li><li><a href="#">GitHub repo&nbsp;↗</a></li><li><a href="#">Network stats</a></li></ul></div>
+    </div>
+    <div class="fbrand">
+      <span class="mono"><span class="dotg"></span>synced to block <b>956,990</b> · 3 pending</span>
+      <span>Counterparty blockchain explorer — on Bitcoin since 2014.</span>
+    </div>
+  </div>
+</footer>
+
+<a href="index.html" style="position:fixed;bottom:16px;right:16px;font-size:11px;color:#79839a;border:1px solid #262a33;border-radius:99px;padding:6px 12px;background:rgba(10,11,13,.95)">↩ lab index · v20 tables</a>
+
+<script>
+  document.querySelectorAll(".lab-controls button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var kv = btn.dataset.set.split(":");
+      document.documentElement.dataset[kv[0]] = kv[1];
+      btn.parentElement.querySelectorAll('[data-set^="' + kv[0] + ':"]').forEach(function (b) { b.classList.toggle("on", b === btn); });
+    });
+  });
+</script>
+</body>
+</html>

@@ -954,3 +954,109 @@ Open questions worth revisiting: safe truncation length for base58/bech32 (poiso
 40-char hex; 4+4 fails, full display is the only proven floor); whether record-log users actually
 scan column-wise (no eye-tracking study of transaction tables exists); numeric-formatting error
 rates (no controlled evidence found).
+
+---
+
+## The framework floor (2026-07-07)
+
+Mined from the primary docs/source of seven mature table systems: GOV.UK Design System
+(govuk-frontend `_mixin.scss`), USWDS `usa-table`, IBM Carbon data table (style.mdx), Material
+Design data tables (M1 + M2 specs), Ant Design Table (v5 tokens), AG Grid + TanStack Table
+(behavioral conventions), Bootstrap 5 + the Tailwind idiom (baseline CSS). Where they agree,
+that's the floor — a system below it needs a reason, not a preference.
+
+### (a) Consensus values across systems
+
+| Property | GOV.UK | USWDS | Carbon | Material | Ant | AG Grid | Bootstrap | Tailwind idiom | **Floor (agreement)** |
+|---|---|---|---|---|---|---|---|---|---|
+| Row height, default | ~45px (10px pad-y + 19px type) | — (padding-based; `--compact` variant) | **48px (lg, default)**; xs 24 / sm 32 / md 40 / xl 64 | **52dp** (M2; M1 was 48dp) | ~54px (16px pad-y) | **42px** (Quartz theme) | ~41px (.5rem pad-y) | py-4 ≈ 52px | **Comfortable 42–52px; compact 32–40; dense floor 24 (Carbon xs)** |
+| Row height, compact | small-text-until-tablet modifier | `usa-table--compact` | md 40 / sm 32 | — | middle ~46 / small ~38 | `spacing` param scales all padding | `.table-sm` ~33px | py-2 | **32–40px** |
+| Cell padding y | 10px | padding-based | derived from row height | derived (52dp row) | **16 / 12 / 8** (lg/md/sm) | multiple of `spacing` | 8px (.5rem); sm 4px | py-3/py-4 (12/16) | **8–16px by density** |
+| Cell padding x | 20px right, **0 left** (flush idiom) | — | **16px** (`$spacing-05`) | **16dp** edge; 32dp+ (M2) / 56dp (M1) between columns | **16** lg / **8** sm | multiple of `spacing` | 8px | px-3/px-6 (12/24) | **8–16px; 16 is the mode** |
+| Header typography | **bold**, sentence case, body size | bold, sentence case | **14px SemiBold 600** (`$heading-compact-01`), sentence case | **12sp Medium**, 54% black (lighter + smaller) | 600 (fontWeightStrong), body size | theme font, one weight up | th bold (weight var = null) | `text-sm font-semibold` | **One weight step heavier (500–700), sentence case. NO system uppercases headers.** |
+| Numeric alignment | `--numeric` classes: header AND cell `text-align:right` | `font-mono-sm text-tabular text-right` | right for numbers | "Right-aligned numeric columns; left-aligned text" | per-column `align` | per-column | utilities | `text-right tabular-nums` | **Unanimous: numbers right + tabular; the numeric HEADER right-aligns too; text left; never center** |
+| Borders | `border-bottom: 1px solid` (functional border grey) only | bordered default; borderless variant | `border-bottom: $border-subtle` only | 1px row dividers | horizontal split lines | horizontal row borders | border-bottom via `$table-border-*`; vertical only with `.table-bordered` | `divide-y divide-gray-200` | **Unanimous: 1px horizontal dividers only; vertical rules are opt-in everywhere** |
+| Zebra / hover | neither — plainest system | `--striped` opt-in | zebra opt-in (`$layer-accent`); hover `$layer-hover` | hover Grey 200; selected Grey 100 | hover built-in | hover built-in | `.table-striped` / `.table-hover` opt-in (5% / 7.5% emphasis) | opt-in | **Zebra: always opt-in, never default. Hover: low-alpha (3–8% emphasis)** |
+| Sticky header | not shipped | `usa-table--sticky-header` | `stickyHeader` (React) | in implementations | `sticky` prop (4.6+) | **inherent — virtualized body scrolls under pinned header** | not shipped | `sticky top-0` | **Ship it: `position:sticky; top:0` + opaque bg + z-index on header cells** |
+| Responsive strategy | small-text modifier; scroll implied | **two named modes: `--stacked` (data-label blocks) vs scrollable container (`tabindex="0"`) — "scrollable is ideal for dense data"** | scroll | horizontal scroll in container | per-column `responsive` breakpoint arrays (hide columns) | horizontal scroll + column virtualization | `.table-responsive{-sm..xxl}` overflow wrapper | overflow-x wrapper | **Two schools: scroll/stack (gov systems — never hide data) vs column-hiding (Ant, trading UIs). Pick one deliberately; if hiding, scrolling should remain the fallback** |
+| Sort behavior | not shipped | `aria-sort` none/ascending/descending on `th`; **`aria-live="polite"` announcement region**; `data-sortable` | icon in header, 8px pad | icon 16dp, 38% black on hover → 87% active; M1 toggles asc/desc | **tri-state ascend → descend → null**; custom `sortIcon` | **tri-state asc → desc → none; shift = multi-sort** | not shipped | not shipped | **Tri-state cycle, whole header is the button, icon right of label, dormant icon appears on hover, `aria-sort` + polite announcement (USWDS is the a11y reference)** |
+| Truncation | wrap (prose tables) | wrap | ellipsis | **"truncated with an ellipsis… on hover a tooltip shows the full name"** | `ellipsis` prop (forces `table-layout:fixed`), `showTitle` default | ellipsis default | wrap | `whitespace-nowrap truncate` | **Data grids: single-line + ellipsis + full value on hover/title. Ellipsis implies fixed/explicit column widths** |
+| Column widths | width override classes | — | — | — | per-column `width`; fixed layout with ellipsis | default col width, flex sizing | — | `table-fixed` | **Explicit widths for data grids; TanStack defaults: size 150 / minSize 20 / maxSize ∞ — every column has a min floor** |
+
+Also unanimous where present: units/context live in the header not the cell; `<caption>` (or an
+accessible name) + `scope`/columnheader semantics are required (GOV.UK, USWDS); header row same
+height as body rows or slightly taller (Material +4dp), never shorter than a body row's touch
+target.
+
+### (b) Behaviors we don't have — with the reference implementation
+
+1. **Sticky header** — reference: USWDS `usa-table--sticky-header` / AG Grid (pinned by
+   architecture). R6 already mandates it; `.xt-head` has the opaque `--panel2` background ready,
+   it just isn't `position:sticky`.
+2. **Sortable headers** — reference: **USWDS sortable spec** (the only one with the full a11y
+   recipe: `th[data-sortable]` + `aria-sort` + button-in-header + `usa-table__announcement-region`
+   with `aria-live="polite"`); behavior reference: AG Grid tri-state asc→desc→none, shift for
+   multi-sort. Ours are server-ordered with zero user control.
+3. **Empty state** — reference: Ant Design (built-in `Empty` render when `dataSource` is empty).
+   `RecordTable` given `rows=[]` renders a header row floating over nothing.
+4. **Loading skeleton** — reference: Carbon `DataTableSkeleton` (skeleton rows matching the real
+   column template, no layout shift). Low urgency under RSC/SSR, but the pattern matters the day
+   any table fetches client-side.
+5. **Column min-width floor + scroll fallback** — reference: TanStack (`minSize: 20` exists on
+   every column by default) + USWDS scrollable container. Our text tracks are `minmax(0,1fr)` —
+   legal to crush to 0; and when priority-dropping isn't enough there is no `overflow-x` fallback,
+   the gov-system answer to "never silently lose data".
+6. **Accessible name** — reference: GOV.UK/USWDS `<caption>`. Our `role="table"` div has no
+   `aria-label`; screen-reader users get an anonymous grid.
+
+### (c) The floor as a checklist
+
+1. Row height 42–52px comfortable, 32–40px compact; never below 24px.
+2. Cell padding-x 8–16px, identical in header and body; padding-y 8–16px by density.
+3. Numbers right-aligned tabular/mono — and the numeric column's HEADER right-aligns with them.
+4. Text left-aligned; nothing is center-aligned in a data table.
+5. Header is one signal heavier than body: one weight step (500–700) OR uppercase+tracking — the
+   big systems all chose weight + sentence case; if you keep the terminal uppercase idiom, don't
+   also stack a big weight delta on top.
+6. Dividers: 1px horizontal only; vertical rules opt-in; no double borders (last row loses its
+   border inside a framed container).
+7. Zebra opt-in only; hover + focus-within highlight at low alpha (3–8% emphasis) as the
+   place-keeper.
+8. Header sticks (`position:sticky; top:0`, opaque background, z-index) on any table taller than
+   the viewport.
+9. Sortable header = the whole header is the button; tri-state asc→desc→none; icon right of the
+   label, dormant until hover on unsorted columns; `aria-sort` + polite live-region announcement.
+10. Cells never wrap; ellipsis + the full value in `title` (or tooltip).
+11. Every column has a minimum width; when columns can't fit: drop by declared priority or scroll
+    horizontally — never crush below legibility, never lose data without a fallback.
+12. Units and currency live in headers, never repeated per cell.
+13. Empty result renders an explicit "No {things} found" row spanning the template — a header over
+    nothing is a bug.
+14. Client-side loading renders skeleton rows on the real column template (no layout shift).
+15. The table has an accessible name (caption or `aria-label`) and real header semantics
+    (`scope` or `role="columnheader"`); ~hundreds of rows → paginate; thousands in one scrollport
+    → virtualize (AG Grid/TanStack).
+
+### (d) Diff: `.xtable` + `RecordTable` vs the floor
+
+**Passes** — row height ≈38–40px (9px pad-y + 13px/20px type: consensus compact band); padding-x
+14px + 12px column gap (in band, 16-adjacent); numeric right + `tabular-nums` mono with `.r`
+right-aligned headers (#3); text left, nothing centered (#4); 1px horizontal dividers only,
+last-row border removed inside the framed container (#6); no zebra, hover + `:focus-within`
+highlight at `rgba(255,255,255,.03)` (#7); single-line ellipsis cells with full values in `title`
+(#10, the `min-width:0; white-space:nowrap; text-overflow:ellipsis` rule); units-in-headers is R6
+policy (#12, partially rolled out); priority-based column dropping at 1000/760/560px is the
+Ant/trading-UI school of #11, declared per column — legitimate; div-grid carries
+`role="table"/"row"/"columnheader"/"cell"` (#15 semantics half).
+
+**Below the floor** — no sticky header (#8 — one CSS rule away, R6 already requires it); no sort
+affordance at all (#9); no empty-state row in `RecordTable` (#13); text tracks are `minmax(0,1fr)`
+with no min floor and no horizontal-scroll fallback when dropping isn't enough (#11 second half);
+no accessible name on the grid (#15); no skeleton pattern (#14, deferred while tables are
+server-rendered).
+
+**Deliberate deviation, keep but know it** — `.xt-head` stacks THREE header signals (10px mono +
+uppercase + .08em tracking + weight 500 + muted color) where every surveyed system uses exactly
+one (a weight step, sentence case). The uppercase micro-header is the financial-terminal idiom,
+not the design-system floor (#5) — consistent with the product's genre; the weight-500 bump on top
+is the part that's redundant.
