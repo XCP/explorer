@@ -151,8 +151,8 @@ const BLOCK_CHUNK = 100_000;
 const BLOCK_MAX = 1_200_000; // grid headroom over the current ~957k tip; empty windows are no-ops
 const blockWindows: Array<[number, number]> = [];
 for (let lo = 0; lo < BLOCK_MAX; lo += BLOCK_CHUNK) blockWindows.push([lo, lo + BLOCK_CHUNK]);
-const ROWID_CHUNK = 1_000_000;
-const ROWID_MAX = 8_000_000; // ≥ worst-case accumulated edge rows
+const ROWID_CHUNK = 400_000; // halved after bipartite passes exceeded D1 per-op limits as rank vectors densified
+const ROWID_MAX = 8_000_000; // grid covers both variants // ≥ worst-case accumulated edge rows
 const rowidWindows: Array<[number, number]> = [];
 for (let lo = 0; lo < ROWID_MAX; lo += ROWID_CHUNK) rowidWindows.push([lo, lo + ROWID_CHUNK]);
 
