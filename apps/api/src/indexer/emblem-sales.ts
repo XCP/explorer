@@ -8,7 +8,7 @@ import type { Env } from "../index";
 
 const ALCHEMY_SALES = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTSales`;
 const PAGE = 1000;
-const MAX_PAGES_PER_RUN = 15;
+const MAX_PAGES_PER_RUN = 25; // big contracts need ~46 pages; complete them in fewer cron cycles
 
 export const EMBLEM_SALES_DDL = `CREATE TABLE IF NOT EXISTS emblem_sales (
   tx_hash TEXT, log_index INTEGER, contract TEXT, token_id TEXT,
@@ -75,7 +75,10 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
     catch (e) { out.err = String(e).slice(0, 80); break; }
     const sales: NftSale[] = d?.nftSales || [];
     if (!out.sample && sales[0]) out.sample = sales[0]; // surface the raw shape on the first run
-    if (!sales.length) { cursor = ""; break; }
+    // Alchemy's asc pagination CAN return an empty page mid-stream with a valid pageKey — do NOT
+    // treat empty as end-of-contract (that bug capped the main contract at 30k of its 45k sales).
+    // Only a MISSING pageKey means we've reached the end.
+    if (!sales.length) { cursor = d?.pageKey || ""; if (!cursor) break; continue; }
     const stmts = sales.map((s) => {
       const p = priceOf(s);
       return env.DB.prepare(
