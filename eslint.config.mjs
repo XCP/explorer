@@ -3,7 +3,7 @@
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/.open-next/**", "**/.next/**", "**/.test-dist/**", "**/node_modules/**"] },
+  { ignores: ["**/.open-next/**", "**/.next/**", "**/.wrangler/**", "**/.test-dist/**", "**/node_modules/**"] },
   {
     files: ["apps/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.ts"],
     languageOptions: { parser: tseslint.parser, parserOptions: { ecmaVersion: "latest" } },
