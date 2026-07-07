@@ -33,7 +33,7 @@ function WalletButton({ full = false }: { full?: boolean }) {
       onClick={() => { const w = (window as { xcpwallet?: { connect?: () => Promise<void> } }).xcpwallet; if (w?.connect) w.connect().catch(() => {}); else window.open("https://www.xcp.io", "_blank"); }}
       className={`rounded-md text-[13px] font-semibold bg-[--color-xcp] text-white hover:brightness-110 transition ${full ? "w-full py-2.5" : "px-3.5 py-1.5"}`}
     >
-      Connect Wallet
+      Connect
     </button>
   );
 }
@@ -67,7 +67,7 @@ export function TopBar() {
       <StatusStrip />
       {/* solid bg on purpose: backdrop blur rasterizes the header text and reads fuzzy on Windows */}
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950">
-        <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-5 px-4 py-2">
+        <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-5 px-4 py-[10px]">
           <Link href="/" className="font-bold tracking-wider font-mono text-[15px] text-zinc-100 no-underline hover:!brightness-100 shrink-0">
             XCP<span className="text-[--color-xcp]">.io</span>
           </Link>
@@ -75,7 +75,7 @@ export function TopBar() {
           {/* desktop nav — quiet pills; the interesting header is the section's, not this one */}
           <nav aria-label="Primary" className="hidden sm:flex items-center gap-1 text-[13px] font-medium">
             {PRIMARY.map(([label, href]) => (
-              <Link key={href} href={href} className={`!no-underline rounded-md px-2.5 py-1.5 transition-colors ${active(href) ? "!text-zinc-100 bg-zinc-900" : "!text-zinc-400 hover:!text-zinc-100"}`}>{label}</Link>
+              <Link key={href} href={href} className={`!no-underline rounded-md px-[11px] py-1.5 transition-colors ${active(href) ? "!text-zinc-100 bg-zinc-900" : "!text-zinc-400 hover:!text-zinc-100"}`}>{label}</Link>
             ))}
             <NavMenu label="Explore" id="nav-explore" groups={EXPLORE} />
             <NavMenu label="Discover" id="nav-discover" groups={DISCOVER} />

@@ -48,10 +48,10 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false }: { tabs: TabD
   if (inBand) {
     return (
       <>
-        <div className="w-screen ml-[calc(50%-50vw)] border-b border-zinc-800 bg-[#0c0c0e]">
-          <div className="mx-auto max-w-6xl px-4">{bar}</div>
+        <div className="w-screen ml-[calc(50%-50vw)] !mt-0 border-b border-zinc-800 bg-[#0c0c0e]">
+          <div className="mx-auto max-w-6xl px-4 pt-[14px]">{bar}</div>
         </div>
-        <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">{panel}</div>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">{panel}</div>
       </>
     );
   }

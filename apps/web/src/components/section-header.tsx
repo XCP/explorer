@@ -13,7 +13,7 @@ export const FULL_BLEED = "w-screen ml-[calc(50%-50vw)] -mt-4";
 export function SectionHeader({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
   return (
     <div className={`${FULL_BLEED} bg-[#0c0c0e] ${flush ? "" : "border-b border-zinc-800"}`}>
-      <div className="mx-auto max-w-6xl px-4 pt-5 pb-5">{children}</div>
+      <div className={`mx-auto max-w-6xl px-4 pt-[18px] ${flush ? "pb-0" : "pb-5"}`}>{children}</div>
     </div>
   );
 }
@@ -63,9 +63,9 @@ export function SectionStats({ stats }: { stats: SectionStat[] }) {
       {stats.map((s, i) => (
         <div
           key={i}
-          className={`shrink-0 border-zinc-900 px-4 first:pl-0 sm:px-5 ${i < stats.length - 1 ? "border-r" : ""} ${s.hideOnMobile ? "hidden sm:block" : ""}`}
+          className={`shrink-0 border-zinc-900 px-4 first:pl-0 sm:px-[22px] ${i < stats.length - 1 ? "border-r" : ""} ${s.hideOnMobile ? "hidden sm:block" : ""}`}
         >
-          <div className="whitespace-nowrap text-[11px] uppercase tracking-wider text-zinc-500">{s.label}</div>
+          <div className="whitespace-nowrap text-[11px] uppercase tracking-wider text-zinc-400">{s.label}</div>
           <div className="mt-0.5 whitespace-nowrap text-[17px] font-semibold text-zinc-100">
             {s.value}
             {s.detail && <span className="ml-1.5 text-[11px] font-normal text-zinc-400">{s.detail}</span>}

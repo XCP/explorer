@@ -74,7 +74,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
     <>
       <SectionHeader flush>
         <SectionIdentity
-          visual={<AssetIcon asset={item.asset} size={48} />}
+          visual={<AssetIcon asset={item.asset} size={52} />}
           name={item.asset_longname || item.asset}
           chips={<>
             {item.tags?.includes("grail") && <SectionChip variant="grail">grail</SectionChip>}
