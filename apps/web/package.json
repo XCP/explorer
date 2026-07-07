@@ -5,7 +5,7 @@
   "description": "xcp.io explorer web app (Next.js App Router, SWR, Cloudflare via OpenNext). Consumes api.xcp.io.",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
