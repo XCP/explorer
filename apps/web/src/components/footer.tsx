@@ -59,7 +59,7 @@ function Column({ heading, links }: { heading: string; links: FooterLink[] }) {
 export function Footer() {
   return (
     <footer className="border-t border-zinc-800 bg-[#0c0c0e] mt-12">
-      <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
+      <div className="max-w-[1200px] mx-auto px-4 py-10 space-y-8">
         <nav aria-label="Footer" className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
           <div className="col-span-2 md:col-span-1">
             <div className="text-sm font-bold tracking-wider font-mono text-zinc-100">XCP<span className="text-(--color-brand)">.io</span></div>

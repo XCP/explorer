@@ -51,14 +51,14 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={id}
-        className={`transition-colors ${active || open ? "text-(--color-accent)" : "text-zinc-400 hover:text-zinc-200"}`}
+        className={`rounded-md px-[11px] py-1.5 transition-colors ${active || open ? "text-zinc-100 bg-zinc-900" : "text-zinc-400 hover:text-zinc-100"}`}
       >
         {label} <span aria-hidden="true" className="text-[9px]">▾</span>
       </button>
       {open && (
         // top-full + pt-2: the visual gap is PADDING inside the hover area — no dead zone.
         <div id={id} className="absolute left-0 top-full pt-2 z-50">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 shadow-xl flex gap-6">
+          <div className="rounded-lg border border-[#262a33] bg-[#101216] p-2.5 shadow-[0_10px_30px_rgba(0,0,0,.5)] flex gap-6">
             {groups.map((g, i) => (
               <div key={g.heading ?? i} className="min-w-28">
                 {g.heading && (
@@ -69,7 +69,7 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
                     <Link
                       key={href}
                       href={href}
-                      className={`!no-underline text-xs py-1 whitespace-nowrap ${pathname.startsWith(href) ? "!text-zinc-100" : "!text-zinc-400 hover:!text-zinc-100"}`}
+                      className={`!no-underline text-[13px] rounded-md px-2.5 py-[7px] whitespace-nowrap ${pathname.startsWith(href) ? "!text-zinc-100 bg-sky-400/10" : "!text-zinc-400 hover:!text-zinc-100 hover:bg-white/5"}`}
                     >
                       {l}
                     </Link>

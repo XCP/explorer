@@ -70,7 +70,7 @@ export function TopBar() {
       <StatusStrip />
       {/* solid bg on purpose: backdrop blur rasterizes the header text and reads fuzzy on Windows */}
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950">
-        <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-5 px-4 py-[10px]">
+        <div className="max-w-[1200px] mx-auto flex items-center gap-3 sm:gap-5 px-4 py-[10px]">
           <Link href="/" className="font-bold tracking-wider font-mono text-[15px] text-zinc-100 no-underline hover:!brightness-100 shrink-0">
             XCP<span className="text-(--color-xcp)">.io</span>
           </Link>

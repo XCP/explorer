@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SWRProvider>
           <div className="min-h-screen flex flex-col">
             <TopBar />
-            <main id="main" className="flex-1 max-w-6xl w-full mx-auto p-4 space-y-6">{children}</main>
+            <main id="main" className="flex-1 max-w-[1200px] w-full mx-auto p-4 space-y-6">{children}</main>
             <Footer />
           </div>
         </SWRProvider>

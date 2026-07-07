@@ -31,7 +31,7 @@ export function StatusStrip() {
 
   return (
     <div className="border-b border-zinc-900 bg-[#0c0c0e] font-mono text-[11px] tabular-nums">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 overflow-hidden whitespace-nowrap px-4 py-1">
+      <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-3 overflow-hidden whitespace-nowrap px-4 py-1">
         <span className="flex items-center">
           <Cell>
             <span className="mr-1.5 inline-block size-1.5 rounded-full bg-(--color-up) align-[1px] motion-safe:animate-pulse" aria-hidden="true" />
