@@ -38,7 +38,12 @@ async function serverFetch(url: string, init: RequestInit & { next?: { revalidat
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const binding = (getCloudflareContext().env as { API_WORKER?: WorkerBinding }).API_WORKER;
-    if (binding) return binding.fetch(url, init);
+    if (binding) {
+      // Local dev exposes the binding with nothing behind it (503); a real outage 5xxes too —
+      // either way the public URL is the honest fallback.
+      const res = await binding.fetch(url, init);
+      if (res.status < 500) return res;
+    }
   } catch {
     // not on Cloudflare (dev/build) — fall through to plain fetch
   }
