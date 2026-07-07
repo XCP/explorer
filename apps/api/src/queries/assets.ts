@@ -333,7 +333,7 @@ export function assetFeedCounts(db: D1Database, asset: string, issuer: string | 
 
 /** The asset's curated collection tag (tags with source='collection'; first wins). */
 export async function assetCollection(db: D1Database, asset: string): Promise<string | null> {
-  const r = await one<{ tag: string }>(db, `SELECT tag FROM tags WHERE asset=? AND source='collection' LIMIT 1`, asset);
+  const r = await one<{ tag: string }>(db, `SELECT tag FROM tags WHERE entity_type='asset' AND entity_id=? AND source='collection' LIMIT 1`, asset);
   return r?.tag ?? null;
 }
 
