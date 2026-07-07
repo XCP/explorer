@@ -5,7 +5,8 @@ import { Flame, Hammer, Key } from "lucide-react";
 import type { AssetDetail } from "@xcp/shared/assets";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { Card, KV } from "@/components/ui/card";
-import { LockBadge } from "@/components/ui/badges";
+import { AssetIcon, LockBadge } from "@/components/ui/badges";
+import { SectionHeader, SectionIdentity, SectionStats, type SectionStat } from "@/components/section-header";
 import { AssetArt } from "@/components/asset-art";
 import { MarketChip } from "@/components/market-chip";
 import { AssetTabs } from "@/components/asset-tabs";
@@ -44,6 +45,26 @@ export async function generateMetadata({ params }: { params: Promise<{ asset: st
   };
 }
 
+// The band's stat strip — the asset's headline numbers, all already on the fetched detail row.
+// Mobile shows at most the first four; the tail entries hide (hideOnMobile).
+function assetStats(item: AssetDetail): SectionStat[] {
+  const stats: SectionStat[] = [];
+  if (item.quality) stats.push({ label: "Score", value: item.quality.score ?? "—", detail: item.quality.tier });
+  stats.push({ label: "Holders", value: commas(item.holder_count) });
+  stats.push({ label: "Supply", value: commas(item.supply_normalized) });
+  if (item.first_issuance_block_index != null) {
+    const year = item.first_issuance_block_time ? new Date(item.first_issuance_block_time * 1000).getUTCFullYear() : null;
+    stats.push({
+      label: "Issued",
+      value: year ?? commas(item.first_issuance_block_index),
+      detail: year != null ? `block ${commas(item.first_issuance_block_index)}` : undefined,
+    });
+  }
+  stats.push({ label: "Divisible", value: item.divisible ? "yes" : "no", hideOnMobile: true });
+  if (Number(item.burned) > 0) stats.push({ label: "Circulating", value: commas(item.circulating_normalized), hideOnMobile: true });
+  return stats;
+}
+
 export default async function AssetPage({ params }: { params: Promise<{ asset: string }> }) {
   const { asset } = await params;
   const item = await loadAsset(asset);
@@ -51,31 +72,33 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
 
   return (
     <>
+      <SectionHeader>
+        <SectionIdentity
+          visual={<AssetIcon asset={item.asset} size={48} />}
+          name={item.asset_longname || item.asset}
+          chips={<>
+            <LockBadge locked={item.locked} />
+            <GraphTrustChip kind="assets" id={item.asset} />
+          </>}
+          actions={
+            <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="rounded border border-zinc-700 px-2 py-1 text-xs !text-zinc-300 hover:!text-zinc-100 !no-underline">Trade on xcpdex ↗</a>
+          }
+        />
+        <div className="pb-5"><SectionStats stats={assetStats(item)} /></div>
+      </SectionHeader>
       <Card>
         <div className="flex flex-col sm:flex-row gap-5">
           <AssetArt asset={item.asset} natural stamp={item.tags?.includes("stamp")} className="w-36 sm:w-44 rounded-lg border border-zinc-800 shrink-0 mx-auto sm:mx-0" />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-semibold text-zinc-100 break-all">{item.asset_longname || item.asset}</h1>
-              <LockBadge locked={item.locked} />
-              <GraphTrustChip kind="assets" id={item.asset} />
-            </div>
-            <div className="mt-3 grid sm:grid-cols-2 gap-x-6">
+            <div className="grid sm:grid-cols-2 gap-x-6">
               <KV k="Asset" v={<span className="font-mono">{item.asset}</span>} />
-              <KV k="Supply" v={<span className="font-mono">{commas(item.supply_normalized)}</span>} />
-              {Number(item.burned) > 0 && <KV k="Circulating" v={<span className="font-mono">{commas(item.circulating_normalized)}</span>} />}
               {Number(item.burned) > 0 && <KV k="Burned" v={<span className="font-mono inline-flex items-center gap-1 text-orange-400"><Flame className="size-3" />{commas(item.burned_normalized)}</span>} />}
-              <KV k="Divisible" v={item.divisible ? "yes" : "no"} />
-              <KV k="Holders" v={commas(item.holder_count)} />
               <KV k="Issuer" v={item.issuer ? <span className="inline-flex items-center gap-1"><Hammer className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.issuer}`} className="font-mono break-all">{item.issuer}</Link></span> : "—"} />
               <KV k="Owner" v={item.owner ? <span className="inline-flex items-center gap-1"><Key className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.owner}`} className="font-mono break-all">{item.owner}</Link></span> : "—"} />
             </div>
             {item.tags?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{item.tags.map((t: string) => <Link key={t} href={`/tag/${encodeURIComponent(t)}`} className="rounded bg-zinc-800 text-zinc-300 hover:text-[--color-accent] px-1.5 py-0.5 text-[10px] !no-underline">{t}</Link>)}</div> : null}
             {item.description && <p className="mt-2 text-sm text-zinc-400 break-all">{item.description}</p>}
             <MarketChip asset={item.asset} />
-            <div className="mt-3 flex gap-2 text-xs">
-              <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="rounded border border-zinc-700 px-2 py-1 !text-zinc-300 hover:!text-zinc-100 !no-underline">Trade on xcpdex ↗</a>
-            </div>
           </div>
         </div>
       </Card>

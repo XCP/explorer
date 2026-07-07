@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Coins, Store, ArrowLeftRight, Flame, Wallet, Stamp } from "lucide-react";
 import type { AddressSummary } from "@xcp/shared/addresses";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
-import { Card, Stat } from "@/components/ui/card";
+import { SectionHeader, SectionIdentity, SectionStats, type SectionStat } from "@/components/section-header";
 import { CopyButton } from "@/components/copy-button";
 import { GraphTrustChip } from "@/components/graph-trust-chip";
 import { AddressTabs } from "@/components/address-tabs";
@@ -36,38 +36,38 @@ export async function generateMetadata({ params }: { params: Promise<{ address: 
   return { title, description, openGraph: { title: `${title} | XCP.io`, description } };
 }
 
-// Identity-first header: who is this address (archetype chips) + how old/active, then balances.
-// Server-rendered from the fetched summary; only the copy button is a client island.
+// Identity-first section band (v3 chrome): who is this address (archetype chips) + how old/active,
+// then headline balances. Server-rendered from the fetched summary; only the copy button and the
+// graph-trust chip are client islands.
 function AddressHeader({ address, s }: { address: string; s: AddressSummary | null }) {
   const xcp = Number(s?.xcp) || 0;
+  const stats: SectionStat[] = [
+    { label: "XCP balance", value: commas(s?.xcp) },
+    { label: "Assets held", value: commas(s?.assets) },
+    { label: "Assets issued", value: commas(s?.issued) },
+    { label: "Dispensers", value: commas(s?.dispensers) },
+  ];
+  if (s?.first_block != null) {
+    stats.push({ label: "First block", value: <Link href={`/block/${s.first_block}`}>{commas(s.first_block)}</Link>, hideOnMobile: true });
+    stats.push({ label: "Last block", value: <Link href={`/block/${s.last_block}`}>{commas(s.last_block)}</Link>, hideOnMobile: true });
+  }
   return (
-    <Card>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-sm break-all text-zinc-100">{address}</span>
-        <CopyButton value={address} />
-      </div>
-      <div className="flex flex-wrap gap-1.5 mt-2.5">
-        <GraphTrustChip kind="addresses" id={address} />
-        {address === BURN_ADDRESS && <Chip><Flame className="size-3 text-orange-400" />Burn address</Chip>}
-        {(s?.issued ?? 0) > 0 && <Chip><Stamp className="size-3" />Issuer · {commas(s?.issued)} assets</Chip>}
-        {(s?.dispensers ?? 0) > 0 && <Chip><Store className="size-3" />Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
-        {(s?.open_orders ?? 0) > 0 && <Chip><ArrowLeftRight className="size-3" />Active trader · {s?.open_orders} open</Chip>}
-        {xcp >= 50000 && <Chip><Coins className="size-3 text-[--color-accent]" />XCP whale</Chip>}
-        {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip><Wallet className="size-3" />Holder</Chip>}
-      </div>
-      {s?.first_block != null && (
-        <div className="text-xs text-zinc-400 mt-2">
-          First active <Link href={`/block/${s.first_block}`}>block {commas(s.first_block)}</Link>
-          {" · "}last active <Link href={`/block/${s.last_block}`}>block {commas(s.last_block)}</Link>
-        </div>
-      )}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-        <Stat label="XCP balance" value={commas(s?.xcp)} icon={<Coins className="size-3" />} />
-        <Stat label="Assets held" value={commas(s?.assets)} icon={<Wallet className="size-3" />} />
-        <Stat label="Assets issued" value={commas(s?.issued)} icon={<Stamp className="size-3" />} />
-        <Stat label="Dispensers" value={commas(s?.dispensers)} icon={<Store className="size-3" />} />
-      </div>
-    </Card>
+    <SectionHeader>
+      <SectionIdentity
+        name={address}
+        chips={<>
+          <GraphTrustChip kind="addresses" id={address} />
+          {address === BURN_ADDRESS && <Chip><Flame className="size-3 text-orange-400" />Burn address</Chip>}
+          {(s?.issued ?? 0) > 0 && <Chip><Stamp className="size-3" />Issuer · {commas(s?.issued)} assets</Chip>}
+          {(s?.dispensers ?? 0) > 0 && <Chip><Store className="size-3" />Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
+          {(s?.open_orders ?? 0) > 0 && <Chip><ArrowLeftRight className="size-3" />Active trader · {s?.open_orders} open</Chip>}
+          {xcp >= 50000 && <Chip><Coins className="size-3 text-[--color-accent]" />XCP whale</Chip>}
+          {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip><Wallet className="size-3" />Holder</Chip>}
+        </>}
+        actions={<CopyButton value={address} />}
+      />
+      <div className="pb-5"><SectionStats stats={stats} /></div>
+    </SectionHeader>
   );
 }
 
