@@ -131,6 +131,27 @@ With the cap, expected flow volume ≈ 2-3× the CP mirror's 3.4M txs ≈ 7-10M 
 | 4 | Surfaces: BTC context on address pages, flows in history tabs | web | normal wave |
 | 5 | Analyses, each through the existing gates: BTC features (harness), BTC graph edges (baseline A/B), funding-path wash traces (local job, verdict flags pushed), first-funder provenance | mixed | per research-backlog rules |
 
+## Related systems: the consolidation service (investigated 2026-07-07)
+
+The bare-multisig consolidation feature used by the wallet extension is served TODAY by the old
+`XCP/app.xcp.io` Laravel app (live at app.xcp.io, MySQL, bootstrapped from Sandshrew Esplora —
+verified: `GET /api/v1/address/{addr}/consolidation` answers). Its architecture is this plan's
+follow-daemon in PHP form: `MonitorBlockchainJob` watches each new Bitcoin block, marks spent
+UTXOs, discovers new addresses (`UTXO_INDEXING_ARCHITECTURE.md` in that repo).
+
+Migration path (when the follow-daemon exists, not before):
+1. ETL the unspent bare-multisig UTXO rows (utxo, script_pubkey_hex, prev_tx_hex, claimability,
+   sign_type) from MySQL into `xcpio-btc` — same one-way-push ingest the flows use.
+2. Port the two consolidation endpoints (`/consolidation`, `/claimable`) into the Worker — thin
+   reads, fee_config included.
+3. The follow-daemon's per-block scan takes over spent-status maintenance — it is ALREADY looking
+   at every tx touching followed addresses; flagging spent multisig UTXOs is one extra
+   intersection, not a second system.
+4. Extension repoints to xcp-api; Laravel app retires (its Zaif/CMC trade history gets its own
+   one-time export first — see research-backlog.md "Data acquisition").
+Until then: leave the Laravel app running — it works and costs nothing new. Do NOT build a second
+block-watcher just for consolidation; that's the same double-driver mistake D1 already taught us.
+
 ## What tonight's uncommitted scaffold becomes
 
 The already-drafted `btc_signals` migration, ingest endpoint, address-universe export, and the

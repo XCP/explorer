@@ -92,6 +92,29 @@ framed as "unusual vs peers", never advice. (b) Burstiness: human activity has p
 gaps; scripts are metronomic. Variance of per-address inter-event times = one-scan bot-likeness
 signal feeding `likely_service` / low-quality classification, not the score.
 
+## Data acquisition (not features — inputs that upgrade existing features)
+
+### A. CEX trade history + CMC historic prices (source: XCP/app.xcp.io Laravel app, LIVE, MySQL)
+Investigated 2026-07-07. The old app.xcp.io repo/database holds what our USD pipeline is missing:
+- **Zaif CEX trades** (`IndexZaif`/`ProcessZaifTrade` → `trade_histories`): real exchange-traded
+  XCP/JPY and XCP/BTC fills — the deepest XCP market of the 2016-2018 era.
+- **CoinMarketCap historic daily CSVs** (`ImportCMCHistoricData`) for XCP (slug `counterparty`),
+  PEPECASH, FLDC, BITCRYSTALS — exchange-consensus USD dailies back to ~2014.
+- **`usd_fidelity_level`** column concept — provenance-graded USD values. Worth adopting: our
+  `prices` table has no source/fidelity dimension.
+Why it matters for OUR numbers (apps/api prices.ts): today XCP/USD = own-DEX XCP/BTC VWAP
+(forward-filled, thin/stale after ~2017) × Coinbase BTC/USD (starts 2015-07-20 — everything
+earlier is UNPRICED). CMC+Zaif fixes both: covers 2014+, real market prints instead of stale
+forward-fill, and PEPECASH/USD would let us price DEX/dispenser trades QUOTED in PEPECASH (a real
+quote currency of the 2016-2018 card market) that `applyTradeUsd` currently skips entirely.
+ETL shape: one-time export (artisan/SQL dump) → rows into `prices(day,currency,usd)` + a
+`source`/`fidelity` column; keep `__realized_usd` recalibration behind the usual gates.
+Maintenance: none for the historic value (it's frozen history); ongoing XCP/USD stays DEX-derived.
+
+### B. Consolidation service (source: same app.xcp.io app — see bitcoin-indexer.md "Related
+systems"): the migration path is owned by the Bitcoin indexer plan, since its follow-daemon and
+the consolidation service's MonitorBlockchainJob are the same per-block loop.
+
 ## Standing constraints
 
 - New factors: implement in BOTH `factorValue` and `rawSqlExpr` (config-driven parity), recalibrate
