@@ -10,7 +10,7 @@
  */
 import type {
   AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
-  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales,
+  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales, AssetFeedCounts,
 } from "@xcp/shared/assets";
 import type { SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow } from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "../schema";
@@ -307,6 +307,27 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
     `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
      WHERE asset_longname LIKE ? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`,
     asset + ".%", limit, offset
+  );
+}
+
+/** One count per detail-page feed tab — scalar subselects with the SAME filters as the per-asset
+ *  list queries above (trades / issuances / dispensers / dispenses / orders-either-side / sends /
+ *  subassets-by-longname-prefix) and the from-issuer feed (listIssued's issuer-or-owner predicate in
+ *  queries/addresses.ts), so each tab's count matches its table. `issuer` may be null (native path
+ *  never reaches here, but an assets row can lack an issuer) — the from_issuer count is then 0. */
+export function assetFeedCounts(db: D1Database, asset: string, issuer: string | null): Promise<AssetFeedCounts | null> {
+  return one<AssetFeedCounts>(
+    db,
+    `SELECT
+       (SELECT COUNT(*) FROM trades WHERE asset=?1) sales,
+       (SELECT COUNT(*) FROM issuances WHERE asset=?1) issuances,
+       (SELECT COUNT(*) FROM dispensers WHERE asset=?1) dispensers,
+       (SELECT COUNT(*) FROM dispenses WHERE asset=?1) dispenses,
+       (SELECT COUNT(*) FROM orders WHERE give_asset=?1 OR get_asset=?1) orders,
+       (SELECT COUNT(*) FROM sends WHERE asset=?1) sends,
+       (SELECT COUNT(*) FROM assets WHERE asset_longname LIKE ?2) subassets,
+       (SELECT COUNT(*) FROM assets WHERE issuer=?3 OR owner=?3) from_issuer`,
+    asset, asset + ".%", issuer
   );
 }
 

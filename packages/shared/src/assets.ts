@@ -20,6 +20,19 @@ export interface AssetSales {
   last_sale_time: number | null; // unix seconds of that sale
 }
 
+/** Per-feed record counts on AssetDetail (feed_counts) — one count per detail-page feed tab, each
+ *  computed with the SAME filter as that tab's list endpoint so the numbers match the tables. */
+export interface AssetFeedCounts {
+  sales: number; // trades ledger rows (every venue)
+  issuances: number;
+  dispensers: number;
+  dispenses: number;
+  orders: number; // orders touching the asset on either side
+  sends: number;
+  subassets: number;
+  from_issuer: number; // assets the issuer issued or owns (the from-issuer feed)
+}
+
 /** GET /v2/assets/:asset — full assets row + derived supply/burned/circulating + quality + tags.
  *  Native XCP/BTC take a reduced path, so many issuance fields are optional. Mirror: assets. */
 export interface AssetDetail {
@@ -52,6 +65,7 @@ export interface AssetDetail {
   tags?: string[];
   sales?: AssetSales;
   collection?: string | null; // curated collection tag (tags.source='collection'), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
+  feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
 }
 
 /** GET /v2/assets — the asset index / search row. description is clamped to a single line server-side

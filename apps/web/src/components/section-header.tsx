@@ -1,39 +1,31 @@
 import type { ReactNode } from "react";
 
 /**
- * The contextual band under the global chrome (v3 direction, design-lab v10/v11): each section —
- * asset, address, block — introduces ITSELF with a robust header while the global header stays
- * simple. Composition: identity row (visual · name+chips · actions), stat strip, tab bar.
- * Server component; interactive bits (watch buttons, live chips) arrive via the slots.
+ * The section band under the global chrome — v19 design system (design-lab/v19-banner.html): each
+ * section — asset, address, block — introduces ITSELF with a robust header while the global header
+ * stays simple. Composition: identity row (.sh-top: visual · name+chips · actions), stat strip
+ * (.sh-stats), and — when `flush` — the tab bar band that continues it (DetailTabs inBand).
+ * Server component; interactive bits (copy buttons, live chips) arrive via the slots.
  */
 /** Full-bleed breakout: escapes the layout's centered, padded <main> so the band reads as CHROME
  *  (background + border spanning the viewport), not as a card. -mt-4 cancels main's top padding. */
 export const FULL_BLEED = "w-screen ml-[calc(50%-50vw)] -mt-4";
 
 export function SectionHeader({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
+  // `flush`: the tab bar continues the band directly below and carries the bottom border instead.
   return (
-    <div className={`${FULL_BLEED} bg-[#0c0c0e] ${flush ? "" : "border-b border-zinc-800"}`}>
-      <div className={`mx-auto max-w-6xl px-4 pt-[18px] ${flush ? "pb-0" : "pb-5"}`}>{children}</div>
+    <div className={`section-head ${FULL_BLEED}`} style={flush ? { borderBottom: "none" } : undefined}>
+      <div className="sh-in" style={flush ? undefined : { paddingBottom: 18 }}>{children}</div>
     </div>
   );
 }
 
-/** The band's chip language: uppercase mono pills, tinted border + wash. One family, one look. */
-const CHIP_VARIANTS = {
-  grail: "text-amber-300 border-amber-700/60 bg-amber-900/15",
-  trusted: "text-sky-300 border-sky-700/60 bg-sky-900/15",
-  locked: "text-red-300 border-red-800/60 bg-red-900/15",
-  open: "text-green-300 border-green-800/60 bg-green-900/15",
-  og: "text-violet-300 border-violet-700/60 bg-violet-900/15",
-  neutral: "text-zinc-300 border-zinc-700 bg-zinc-800/30",
-} as const;
+/** The band's chip language — v19's .chip family (uppercase mono pills, tinted border + wash).
+ *  grail/trusted/locked come from the lab file; open/og/neutral are app extensions in globals.css. */
+export type SectionChipVariant = "grail" | "trusted" | "locked" | "open" | "og" | "neutral";
 
-export function SectionChip({ variant = "neutral", children }: { variant?: keyof typeof CHIP_VARIANTS; children: ReactNode }) {
-  return (
-    <span className={`rounded-full border px-2.5 py-px font-mono text-[11px] font-semibold uppercase tracking-wide ${CHIP_VARIANTS[variant]}`}>
-      {children}
-    </span>
-  );
+export function SectionChip({ variant = "neutral", children }: { variant?: SectionChipVariant; children: ReactNode }) {
+  return <span className={`chip ${variant}`}>{children}</span>;
 }
 
 export function SectionIdentity({ visual, name, chips, actions, compact = false }: {
@@ -45,32 +37,29 @@ export function SectionIdentity({ visual, name, chips, actions, compact = false 
   compact?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3.5">
+    <div className="sh-top">
       {visual}
       <div className="min-w-0">
-        <h1 className={`break-all font-mono text-zinc-100 ${compact ? "text-base font-semibold" : "text-[22px] font-bold"}`}>{name}</h1>
-        {chips && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{chips}</div>}
+        <h1 className="sh-name break-all" style={compact ? { fontSize: 16, fontWeight: 600 } : undefined}>{name}</h1>
+        {chips && <div className="chips" style={{ marginTop: 5 }}>{chips}</div>}
       </div>
-      {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="sh-actions">{actions}</div>}
     </div>
   );
 }
 
-/** One entry in the stat strip. `hideOnMobile` caps the strip on small screens (no ragged wrap). */
+/** One entry in the stat strip. `hideOnMobile` caps the strip on small screens (v19 .mobile-hide). */
 export type SectionStat = { label: string; value: ReactNode; detail?: ReactNode; hideOnMobile?: boolean };
 
 export function SectionStats({ stats }: { stats: SectionStat[] }) {
   return (
-    <div className="mt-4 flex overflow-x-auto font-mono tabular-nums">
+    <div className="sh-stats mono">
       {stats.map((s, i) => (
-        <div
-          key={i}
-          className={`shrink-0 border-zinc-900 px-4 first:pl-0 sm:px-[22px] ${i < stats.length - 1 ? "border-r" : ""} ${s.hideOnMobile ? "hidden sm:block" : ""}`}
-        >
-          <div className="whitespace-nowrap text-[11px] uppercase tracking-wider text-zinc-400">{s.label}</div>
-          <div className="mt-0.5 whitespace-nowrap text-[17px] font-semibold text-zinc-100">
+        <div key={i} className={`sh-stat${s.hideOnMobile ? " mobile-hide" : ""}`}>
+          <div className="l">{s.label}</div>
+          <div className="v">
             {s.value}
-            {s.detail && <span className="ml-1.5 text-[11px] font-normal text-zinc-400">{s.detail}</span>}
+            {s.detail != null && <> <small>{s.detail}</small></>}
           </div>
         </div>
       ))}
@@ -78,19 +67,13 @@ export function SectionStats({ stats }: { stats: SectionStat[] }) {
   );
 }
 
-/** The section's own tab bar — plain links; the active tab is the caller's business. */
+/** The section's own tab bar — plain links (v19 .tabs); the active tab is the caller's business. */
 export function SectionTabs({ tabs, active }: { tabs: [label: string, href: string][]; active: string }) {
   return (
-    <nav aria-label="Section" className="mt-3.5 flex gap-0.5 overflow-x-auto">
+    <nav aria-label="Section" className="tabs">
       {tabs.map(([label, href]) => (
-        <a
-          key={href}
-          href={href}
-          aria-current={label === active ? "page" : undefined}
-          className={`whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium !no-underline ${
-            label === active ? "border-(--color-accent) !text-zinc-100" : "border-transparent !text-zinc-400 hover:!text-zinc-100"
-          }`}
-        >
+        <a key={href} href={href} aria-current={label === active ? "page" : undefined}
+          className={label === active ? "active" : undefined}>
           {label}
         </a>
       ))}

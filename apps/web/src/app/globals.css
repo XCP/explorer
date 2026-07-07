@@ -2,8 +2,9 @@
 
 /* Converged design tokens — see DESIGN.md. Dark zinc-950 terminal (xcpdex family) + xcp brand accent. */
 @theme inline {
-  --color-background: #09090b;
-  --color-foreground: #f4f4f5;
+  /* Mapped onto the v19 tokens below (same roles): background = --bg, foreground = --t1. */
+  --color-background: #0a0b0d;
+  --color-foreground: #f2f4f7;
   /* Four content roles (see DESIGN.md). Brand crimson is a MARK — logo dot + Connect Wallet only.
      Accent (sky) carries every interaction: link hover, active nav/tab, focus ring, charts, selection.
      Up/green + down/red are market semantics exclusively. */
@@ -18,9 +19,10 @@
 
 :root { color-scheme: dark; }
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--t2);
+  font-family: var(--sans);
+  font-size: var(--fs-base);
 }
 /* Calm, readable links in dense tables; interaction reveals the sky accent. Brand crimson is reserved
    for the logo dot + Connect Wallet — nothing else focuses, hovers, or accents in red. */
@@ -36,9 +38,152 @@ a, button, [role="button"], input, select { touch-action: manipulation; -webkit-
 
 /* Terminal-feel scrollbar (matches xcpdex) */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #09090b; }
+::-webkit-scrollbar-track { background: #0a0b0d; }
 ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
 
 /* Full-bleed section bands use 100vw breakout; clip stops the scrollbar-width overflow. */
 html { overflow-x: clip; }
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   v19 design system — source of truth: design-lab/v19-banner.html
+   Ported VERBATIM: same classnames, same values. Do NOT rename classes or convert to Tailwind
+   utilities. The lab's data-font/data-density switchers are dropped — the fonts are hardcoded to
+   the app's Geist/Geist Mono (next/font variables) at the 14px "comfortable" scale.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg:#0a0b0d; --panel:#101216; --panel2:#0d0f13; --border:#262a33; --border2:#1a1d24;
+  --t1:#f2f4f7; --t2:#ccd2db; --t3:#a3adbc; --t4:#79839a;
+  --brand:#ec1550; --accent:#38bdf8; --up:#4ade80; --amber:#e3b34c;
+  /* type scale — INTEGER sizes only (subpixel fuzz fix) */
+  --fs-base:14px; --fs-sm:13px; --fs-xs:12px; --fs-2xs:11px; --fs-h1:22px; --fs-stat:17px;
+  /* lab data-font switcher → hardcoded to the app's Geist pair */
+  --sans:var(--font-geist-sans),ui-sans-serif,system-ui,sans-serif;
+  --mono:var(--font-geist-mono),ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+/* section header — asset flavor. ONE tab bar: Overview + the feeds. */
+.section-head { border-bottom:1px solid var(--border); background:var(--panel2); }
+/* 1200px per v19; the app shell main is also 1200px */
+.sh-in { max-width:1200px; margin:0 auto; padding:18px 16px 0; }
+.sh-top { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.sh-top img.icon { width:52px; height:52px; border-radius:8px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
+.sh-name { font-size:var(--fs-h1); font-weight:700; color:var(--t1); letter-spacing:0; font-family:var(--mono); }
+.chips { display:flex; gap:6px; flex-wrap:wrap; }
+.chip { font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
+.chip.grail { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
+.chip.trusted { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+.chip.locked { color:#fca5a5; border-color:#96312e; background:rgba(127,29,29,.15); }
+.sh-actions { margin-left:auto; display:flex; gap:8px; }
+.btn2 { background:none; border:1px solid var(--border); color:var(--t2); font-family:inherit; font-size:var(--fs-xs); font-weight:500; padding:7px 12px; border-radius:6px; cursor:pointer; }
+.btn2:hover { border-color:var(--t4); }
+.btn2.primary { background:var(--brand); border-color:var(--brand); color:#fff; }
+.sh-stats { display:flex; margin-top:16px; overflow-x:auto; }
+.sh-stat { padding:0 22px; border-right:1px solid var(--border2); flex-shrink:0; }
+.sh-stat:first-child { padding-left:0; } .sh-stat:last-child { border-right:none; }
+.sh-stat .l { font-size:var(--fs-2xs); letter-spacing:.07em; text-transform:uppercase; color:var(--t4); white-space:nowrap; }
+.sh-stat .v { font-size:var(--fs-stat); color:var(--t1); font-weight:600; margin-top:3px; white-space:nowrap; }
+.sh-stat .v small { font-size:var(--fs-2xs); color:var(--t3); font-weight:400; }
+.tabs { display:flex; gap:2px; margin-top:14px; position:relative; }
+.tabs .more { position:relative; }
+.tabs .more > a { display:flex; align-items:center; gap:5px; }
+.tabs .more > a .chev { font-size:9px; color:var(--t4); }
+.more-menu { position:absolute; right:0; top:100%; z-index:60; min-width:200px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:6px; box-shadow:0 10px 30px rgba(0,0,0,.5); display:none; }
+.more.open .more-menu { display:block; }
+.more-menu a { display:flex; justify-content:space-between; align-items:baseline; gap:14px; padding:8px 10px; border-radius:6px; border-bottom:none !important; color:var(--t3); font-size:var(--fs-sm); }
+.more-menu a:hover { background:rgba(255,255,255,.04); color:var(--t1); }
+.more-menu a.active { color:var(--t1); background:rgba(56,189,248,.08); }
+.tabs a { padding:10px 14px; font-size:var(--fs-base); font-weight:500; color:var(--t3); border-bottom:2px solid transparent; white-space:nowrap; }
+.tabs a.active { color:var(--t1); border-color:var(--accent); }
+.tabs a:hover { color:var(--t1); }
+.tabs .count { font-family:var(--mono); font-size:var(--fs-2xs); color:var(--t4); margin-left:6px; }
+.tabs .soon { font-family:var(--mono); font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); vertical-align:super; margin-left:4px; }
+
+.panel { display:flex; flex-direction:column; gap:18px; }
+.panel[hidden] { display:none; }
+.card { border:1px solid var(--border2); border-radius:8px; background:var(--panel); }
+.card h2 { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); padding:11px 14px; border-bottom:1px solid var(--border2); }
+.card .body { padding:4px 14px 8px; }
+.row { display:flex; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
+.row:last-child { border-bottom:none; }
+.row .k { color:var(--t4); }
+.row .n { color:var(--t1); font-weight:500; }
+.row .amt { margin-left:auto; text-align:right; }
+.time { color:var(--t4); font-size:var(--fs-xs); }
+
+/* ── THE CONTEXTUAL BAND — v18e's banner slot, generalized. One slot under the tab bar,
+   one variant per asset context: green = collection, amber = integrity, zinc = structural.
+   Same bones as v18e's advisory: calm, factual, one line, link at the far end. ── */
+.ctxband { border:1px solid; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.ctxband .msg b { font-weight:600; }
+.ctxband a { margin-left:auto; font-weight:600; white-space:nowrap; }
+.ctxband.collection { border-color:#1d7f42; background:rgba(22,101,52,.12); color:#86efac; }
+.ctxband.collection .msg span { color:#6bbc85; }
+.ctxband.collection a { color:#86efac; }
+.ctxband.collection a:hover { color:#bbf7d0; }
+.ctxband.integrity { border-color:#8a6420; background:rgba(120,86,27,.12); color:var(--amber); }
+.ctxband.integrity .msg span { color:#c9a94f; }
+.ctxband.integrity a { color:var(--amber); }
+.ctxband.integrity a:hover { color:#fcd34d; }
+.ctxband.structural { border-color:#34404f; background:rgba(121,131,154,.07); color:var(--t3); }
+.ctxband.structural .msg span { color:var(--t4); }
+.ctxband.structural a { color:var(--t3); }
+.ctxband.structural a:hover { color:var(--t1); }
+main > .ctxband { margin-bottom:10px; }
+
+/* ── overview: museum plate left (~40%), two quiet cards right ── */
+.mag { display:grid; grid-template-columns:2fr 3fr; gap:16px; align-items:start; }
+.plate { border:1px solid var(--border2); border-radius:8px; background:var(--panel); padding:22px 22px 16px; }
+.plate img { width:100%; display:block; border:1px solid var(--border2); background:#14171d; }
+.plate .cap { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; font-family:var(--mono); font-size:var(--fs-2xs); color:var(--t4); letter-spacing:.03em; }
+.plate .cap b { color:var(--t3); font-weight:500; }
+.magcol { display:flex; flex-direction:column; gap:16px; }
+
+/* the merged About+Market card — KV rows, nothing else (makeup got its own card) */
+.factcard .body { padding-top:2px; }
+
+/* stand-in note for not-yet-designed feeds */
+.standin-note { border:1px dashed #34404f; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); color:var(--t4); background:rgba(56,189,248,.03); }
+.standin-note b { color:var(--t3); }
+
+/* ── related tab: gallery rows (v12 variant-A cards) — same collection, then also-collect ── */
+.strip-title { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin-bottom:10px; }
+.gallery { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+.g-card { display:block; border:1px solid var(--border2); border-radius:8px; background:var(--panel); overflow:hidden; }
+.g-card:hover { border-color:var(--border); color:inherit; }
+.g-art { aspect-ratio:3/4.2; background:#14171d; border-bottom:1px solid var(--border2); }
+.g-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.g-meta { padding:9px 10px 10px; }
+.g-name { font-family:var(--mono); font-size:var(--fs-sm); font-weight:600; color:var(--t1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.g-why { font-size:var(--fs-2xs); color:var(--t4); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.g-why b { color:var(--t3); font-weight:500; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+/* v19 responsive blocks — only the rules that touch the ported classes */
+@media (max-width:1000px){
+  .gallery { grid-template-columns:repeat(3,1fr); }
+}
+@media (max-width:900px){
+  .mag { grid-template-columns:1fr; }
+  .plate { max-width:460px; }
+}
+@media (max-width:880px){
+  .sh-stat { padding:0 14px; }
+  .sh-stat.mobile-hide { display:none; }  /* cap the mobile stat strip */
+}
+@media (max-width:760px){
+  .ctxband a { margin-left:0; }
+}
+@media (max-width:620px){
+  .gallery { grid-template-columns:repeat(2,1fr); }
+  .plate { max-width:none; }
+}
+
+/* ── app extensions to the v19 system (NOT in the lab file) — same chip bones, extra variants the
+   app's data needs: open (unlocked assets), og/neutral (address archetypes), distrusted (graph). ── */
+.chip.open { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); }
+.chip.og { color:#c4b5fd; border-color:rgba(109,40,217,.6); background:rgba(76,29,149,.15); }
+.chip.distrusted { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
+.chip.neutral { color:#d4d4d8; border-color:#3f3f46; background:rgba(39,39,42,.3); }
+/* app glue: quiet .btn2 rendered as <a> keeps its text color under the global a:hover accent */
+a.btn2:hover { color:var(--t2); }

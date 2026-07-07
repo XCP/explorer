@@ -35,6 +35,10 @@ export const usdCompact = (v?: number | null) => {
   return "$" + (a >= 1 ? Math.round(v).toLocaleString() : v.toFixed(2));
 };
 
+// Collection tags are slugs ("rare-pepe"); surfaces show them as display names ("Rare Pepe").
+export const collectionLabel = (tag: string) =>
+  tag.split("-").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+
 export const ts = (sec?: number | null) =>
   sec ? new Date(sec * 1000).toISOString().replace("T", " ").slice(0, 19) + "Z" : "—";
 
