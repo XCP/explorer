@@ -12,6 +12,33 @@ from a local node; then maintain per-block: for each new Bitcoin block, scan its
 keep the ones touching followed addresses. Addresses one hop out (a pure-Bitcoin wallet that funded
 a Counterparty user) get *represented* — recorded as endpoints — without being followed themselves.
 
+## Why this is worth building (the analysis payoff)
+
+The Counterparty mirror sees the trade; the BTC side sees the MONEY BEHIND the trade. Behaviors
+that are invisible today and become detectable with `btc_flows`:
+
+- **Straw buyers**: "distinct" buyers of an asset who were all funded from one wallet right before
+  buying. The current `__realized_usd` buyer gate counts distinct addresses; BTC funding edges
+  reveal when distinct addresses are one actor. (Research-backlog #3, circular-funding wash check,
+  becomes fully implementable — today it can only see funding that happened *through* Counterparty.)
+- **Self-funded dispenser purchases**: an operator BTC-funding a fresh address that then buys from
+  their own dispenser. The origin-aware attribution catches same-address cases; BTC flows catch the
+  one-hop-laundered version.
+- **Wash-trade loops with a plain-BTC leg**: A sells to B on-chain, B's payment came from A via a
+  pure Bitcoin hop the mirror never sees. Closing this blind spot is the single biggest hardening
+  of the trades ledger.
+- **Fund-shuffling / self-clustering**: an address that mostly moves BTC among a small closed set
+  of addresses (vs. transacting with the wide world) is one actor with many keys. Feeds clustering
+  and dedupes the graph's vouch edges (self-vouching via sock puppets).
+- **Common-input-ownership clustering**: the classic heuristic — addresses co-spent as inputs in
+  one tx share an owner. Flow rows carry exactly the (txid, addr) pairs needed to derive cluster
+  IDs, which would collapse sybil families across ALL scoring, not just the graph.
+- **Economic-substance check on trust edges**: research-backlog #7 (value-weighted edges) gets its
+  denominator — a vouch backed by real BTC movement vs. a dust send.
+
+All of these are Phase-5 analyses gated by the coverage-fairness rule (complete backfill first),
+and none require storing transaction bodies — the flow tuples carry everything above.
+
 ## Hard constraints that shape the design
 
 1. **D1 size ceiling**: the main database is ~5.6GB of the 10GB hard cap. Raw BTC transaction
