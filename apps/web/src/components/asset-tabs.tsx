@@ -1,16 +1,22 @@
 "use client";
+import type { ReactNode } from "react";
 import { Flame, Landmark } from "lucide-react";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { blockCell, txCell, addrCell, timeCell } from "@/lib/cells";
 import { ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/registry";
+import { TRADE_COLS } from "@/components/trades";
 import { commas, short } from "@/lib/format";
 
-// The asset detail page's tabbed activity (holders, issuances, dispensers, …). A client island
+// The asset detail page's tabbed activity (sales, holders, issuances, dispensers, …). A client island
 // because the column `cell` renderers are functions — they can't cross the server→client boundary, so
 // the whole tab definition is built here and handed to the interactive (SWR/pagination) DetailTabs.
-export function AssetTabs({ asset, issuer, inBand = false }: { asset: string; issuer: string | null; inBand?: boolean }) {
+// The server page's overview node passes straight through to DetailTabs' Overview tab.
+export function AssetTabs({ asset, issuer, inBand = false, overview }: {
+  asset: string; issuer: string | null; inBand?: boolean; overview?: ReactNode;
+}) {
   const base = `/v2/assets/${encodeURIComponent(asset)}`;
   const tabs: TabDef[] = [
+    { label: "Sales", path: `${base}/trades`, cols: TRADE_COLS },
     { label: "Holders", path: `${base}/balances`, cols: [
       { label: "Holder", cell: (r) => (
         <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -41,5 +47,5 @@ export function AssetTabs({ asset, issuer, inBand = false }: { asset: string; is
     { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS },
     ...(issuer ? [{ label: "From issuer", path: `/v2/addresses/${issuer}/issued`, cols: ASSET_LIST_COLS }] : []),
   ];
-  return <DetailTabs tabs={tabs} inBand={inBand} />;
+  return <DetailTabs tabs={tabs} inBand={inBand} overview={overview} />;
 }

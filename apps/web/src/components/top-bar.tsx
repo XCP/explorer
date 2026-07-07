@@ -41,7 +41,10 @@ function WalletButton({ full = false }: { full?: boolean }) {
 export function TopBar() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  // Primary sections match their singular detail routes too: /asset/X lights Assets, /trade… Trades,
+  // /block/N Blocks (the plural href is itself covered by the singular prefix).
+  const SECTION_PREFIX: Record<string, string> = { "/assets": "/asset", "/trades": "/trade", "/blocks": "/block" };
+  const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(SECTION_PREFIX[href] ?? href));
 
   // "/" focuses the (desktop) search field
   useEffect(() => {

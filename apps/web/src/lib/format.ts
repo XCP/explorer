@@ -24,6 +24,17 @@ export const compact = (v?: string | number | null) => {
   return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
 };
 
+// Compact USD for money-stat surfaces ($114 / $3.4K / $1.2M) — dollar amounts where magnitude beats
+// exactness. Sub-$1 keeps cents (small dispenser sales); $1+ rounds to whole dollars.
+export const usdCompact = (v?: number | null) => {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const a = Math.abs(v);
+  if (a >= 1e9) return "$" + strip((v / 1e9).toFixed(1)) + "B";
+  if (a >= 1e6) return "$" + strip((v / 1e6).toFixed(1)) + "M";
+  if (a >= 1e3) return "$" + strip((v / 1e3).toFixed(1)) + "K";
+  return "$" + (a >= 1 ? Math.round(v).toLocaleString() : v.toFixed(2));
+};
+
 export const ts = (sec?: number | null) =>
   sec ? new Date(sec * 1000).toISOString().replace("T", " ").slice(0, 19) + "Z" : "—";
 

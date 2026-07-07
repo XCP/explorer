@@ -15,14 +15,14 @@ export function GraphTrustChip({ kind, id }: { kind: "addresses" | "assets"; id:
   const tier = data?.result?.tier;
   if (tier !== "trusted" && tier !== "distrusted") return null;
   return tier === "trusted" ? (
-    <span title="Graph reputation: reachable from the curated trust circle (Min-k-PPR over on-chain relations)"
+    <span title="Money-flow graph trust"
       className="inline-flex items-center rounded-full border border-sky-700/60 bg-sky-900/15 px-2.5 py-px font-mono text-[11px] font-semibold uppercase tracking-wide text-sky-300">
-      graph-trusted
+      trusted
     </span>
   ) : (
-    <span title="Graph reputation: sits in a known scam/low-quality issuer neighborhood (Anti-TrustRank)"
+    <span title="Money-flow graph distrust"
       className="inline-flex items-center rounded-full border border-amber-700/60 bg-amber-900/15 px-2.5 py-px font-mono text-[11px] font-semibold uppercase tracking-wide text-amber-300">
-      graph-distrusted
+      distrusted
     </span>
   );
 }

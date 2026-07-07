@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { blockCell, txCell, addrCell, assetCell } from "@/lib/cells";
 import { ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/registry";
@@ -7,7 +8,8 @@ import { commas } from "@/lib/format";
 // The address detail page's tabbed activity (sends, issuances, dispensers, …). A client island: the
 // column `cell` renderers are functions (can't cross the server→client boundary) and the direction/
 // counterparty cells close over `address`, so the tabs are built here for the interactive DetailTabs.
-export function AddressTabs({ address, inBand = false }: { address: string; inBand?: boolean }) {
+// The server page's overview node passes straight through to DetailTabs' Overview tab.
+export function AddressTabs({ address, inBand = false, overview }: { address: string; inBand?: boolean; overview?: ReactNode }) {
   const base = `/v2/addresses/${encodeURIComponent(address)}`;
   const tabs: TabDef[] = [
     { label: "Sends", path: `${base}/sends`, cols: [
@@ -34,5 +36,5 @@ export function AddressTabs({ address, inBand = false }: { address: string; inBa
     ]},
     { label: "Issued", path: `${base}/issued`, cols: ASSET_LIST_COLS },
   ];
-  return <DetailTabs tabs={tabs} inBand={inBand} />;
+  return <DetailTabs tabs={tabs} inBand={inBand} overview={overview} />;
 }

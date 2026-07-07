@@ -10,7 +10,7 @@
  */
 import type {
   AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
-  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow,
+  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales,
 } from "@xcp/shared/assets";
 import type { SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow } from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "../schema";
@@ -120,6 +120,21 @@ export function assetBurnedText(db: D1Database, asset: string): Promise<{ burned
 /** Precomputed asset-quality signal row (feeds the composed score). */
 export function assetSignalsRow(db: D1Database, asset: string): Promise<AssetSignalsRow | null> {
   return one<AssetSignalsRow>(db, `SELECT * FROM asset_signals WHERE asset=?`, asset);
+}
+
+/** Lifetime money stats from the unified trades ledger: realized USD across every venue plus the most
+ *  recent USD-known sale. Both reads ride idx_trades_asset(asset, block_time DESC); the LIMIT 1 probe
+ *  early-terminates at the newest priced row. */
+export function assetSales(db: D1Database, asset: string): Promise<AssetSales | null> {
+  return one<AssetSales>(
+    db,
+    `WITH last AS (SELECT usd_value, block_time FROM trades
+                   WHERE asset=?1 AND usd_value IS NOT NULL ORDER BY block_time DESC LIMIT 1)
+     SELECT (SELECT SUM(usd_value) FROM trades WHERE asset=?1) realized_usd,
+            (SELECT usd_value FROM last) last_sale_usd,
+            (SELECT block_time FROM last) last_sale_time`,
+    asset
+  );
 }
 
 /** Categorical tags for an asset (stamp/src20/grail/behavioral labels). */

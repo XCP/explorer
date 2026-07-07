@@ -41,7 +41,8 @@ const money = (n: number | null, currency: string | null) => {
 
 const usd = (n: number | null) => (n == null ? "—" : `$${commas(n.toFixed(2))}`);
 
-const TRADE_COLS: Col<TradeRow>[] = [
+// Exported: the asset page's Sales tab renders the same unified-ledger columns.
+export const TRADE_COLS: Col<TradeRow>[] = [
   { label: "Time", cell: (r) => timeCell(r.block_time ?? undefined) },
   { label: "Venue", cell: (r) => venueChip(r.venue) },
   { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset ?? undefined) },

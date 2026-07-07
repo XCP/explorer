@@ -8,7 +8,7 @@ import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 import {
   listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText,
-  assetSignalsRow, assetTags, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
+  assetSignalsRow, assetTags, assetSales, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listSubassets, assetCohort, assetQualitySignals,
 } from "../queries/assets";
@@ -55,7 +55,7 @@ assets.get("/v2/assets/:asset", async (c) => {
   }
   // The five reads below are independent — run them concurrently (wall-time = slowest, not the sum;
   // the sequential version was the classic multiple-round-trips D1 anti-pattern).
-  const [holder_count, sup, burn, sigRes, tagsRes] = await Promise.all([
+  const [holder_count, sup, burn, sigRes, tagsRes, salesRes] = await Promise.all([
     holderCount(c.env.DB, r.asset),
     // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
     // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
@@ -66,6 +66,8 @@ assets.get("/v2/assets/:asset", async (c) => {
     assetBurnedText(c.env.DB, r.asset),
     assetSignalsRow(c.env.DB, r.asset).catch(() => null),
     assetTags(c.env.DB, r.asset).catch(() => []),
+    // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
+    assetSales(c.env.DB, r.asset).catch(() => null),
   ]);
   const raw = BigInt(sup?.supply ?? 0);
   const burnedRaw = BigInt(burn?.burned ?? 0);
@@ -93,6 +95,7 @@ assets.get("/v2/assets/:asset", async (c) => {
       ? { tier: assetTier(scored.raw, state, sig.low_quality === 1), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
       : { tier: "Dormant", score: null },
     tags,
+    sales: salesRes ?? { realized_usd: null, last_sale_usd: null, last_sale_time: null },
   };
   return J(c, { result: body });
 });

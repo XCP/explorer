@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xcp.io design lab — chrome variants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background:#09090b; color:#f4f4f5; font-family:Geist,system-ui,sans-serif; padding:48px 24px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; letter-spacing:-0.01em; } h1 .dot { color:#ec1550; }
+  p.lede { color:#a1a1aa; margin: 8px 0 32px; font-size: 14px; max-width: 60ch; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+  a.card { display:block; border:1px solid #27272a; border-radius:10px; padding:18px; text-decoration:none; color:inherit; background:#111113; transition:border-color .15s; }
+  a.card:hover { border-color:#38bdf8; }
+  .num { font-family:"Geist Mono",monospace; font-size:11px; color:#71717a; }
+  .name { font-size:16px; font-weight:600; margin:6px 0 6px; }
+  .desc { font-size:13px; color:#a1a1aa; line-height:1.5; }
+  .tag { display:inline-block; margin-top:12px; font-size:11px; color:#38bdf8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>xcp.io design lab<span class="dot">.</span></h1>
+  <p class="lede">Six chrome directions, same content. Open each in the browser, resize for mobile. React per variant: what works, what doesn't, what to combine.</p>
+  <div class="grid">
+    <a class="card" href="v1-baseline.html"><span class="num">01</span><div class="name">Baseline</div><div class="desc">Today's chrome, replicated as the reference point. Judge the others against this.</div><span class="tag">current production →</span></a>
+    <a class="card" href="v2-utility.html"><span class="num">02</span><div class="name">Utility</div><div class="desc">Etherscan-species: two-tier header — thin data strip on top (tickers, sync), roomy main row with a wide search. One search per page. Denser, flatter, workmanlike.</div><span class="tag">infrastructure energy →</span></a>
+    <a class="card" href="v3-museum.html"><span class="num">03</span><div class="name">Museum</div><div class="desc">Editorial: serif display headings, generous air, quiet right-aligned nav, search lives only in the hero. The art gets bigger. Chrome nearly disappears.</div><span class="tag">gallery energy →</span></a>
+    <a class="card" href="v4-terminal.html"><span class="num">04</span><div class="name">Terminal</div><div class="desc">All-mono data terminal: full-width status bar, sharp corners, command-bar search with a prompt, tighter type. The chain-nerd face.</div><span class="tag">operator energy →</span></a>
+    <a class="card" href="v5-brand.html"><span class="num">05</span><div class="name">Brand</div><div class="desc">Confident crimson: bigger wordmark, crimson as the structural accent (active nav, focus, live dots) instead of sky. Space-Grotesk headings. Rounder, warmer.</div><span class="tag">identity energy →</span></a>
+    <a class="card" href="v6-paper.html"><span class="num">06</span><div class="name">Paper</div><div class="desc">The heretic: LIGHT archival theme. Off-white paper, ink text, crimson mark, mono data. Tests whether "twelve years of history" reads better as an archive than a dashboard.</div><span class="tag">archive energy →</span></a>
+  </div>
+
+  <h1 style="margin-top:40px">Round 2 — V2 × V4 hybrids<span class="dot">.</span></h1>
+  <p class="lede">Your feedback: V4's header navigation, V2's footer, not the terminal font. Three points on that spectrum — all share the V4 header skeleton (status strip + full-height nav cells + boxed search) and the V2 footer (about column + 4 link columns). They differ in font, accent, and how literal the terminal structure gets.</p>
+  <div class="grid">
+    <a class="card" href="v7-hybrid-a.html"><span class="num">07</span><div class="name">Hybrid A — closest to V2</div><div class="desc">Inter (sans) everywhere, blue-cool zinc. V4's segmented nav cells and status strip, but rounded search and sentence-case nav. The most conventional of the three.</div><span class="tag">V2 lean →</span></a>
+    <a class="card" href="v8-hybrid-b.html"><span class="num">08</span><div class="name">Hybrid B — house font</div><div class="desc">Geist + Geist Mono (today's production fonts) and today's exact zinc/sky tokens. V4's status strip and full-height nav, but no cell borders — active tab gets the inset underline only. The "minimum change from prod" version.</div><span class="tag">middle →</span></a>
+    <a class="card" href="v9-hybrid-c.html"><span class="num">09</span><div class="name">Hybrid C — closest to V4</div><div class="desc">IBM Plex Sans body, Plex Mono for nav (uppercase, letterspaced) and all data. Boxed cells, sharp radii, command-prompt search. Terminal structure, neutral zinc palette — no green.</div><span class="tag">V4 lean →</span></a>
+  </div>
+
+  <h1 style="margin-top:40px">Round 3 — section headers<span class="dot">.</span></h1>
+  <p class="lede">Your idea: simpler global header, but each section (asset, address, collection…) gets its own robust contextual header. Plus the regrouped status strip — chain state left, market data right — and honest mobile behavior (resize it: market cluster drops, nav collapses to hamburger, search goes full-width, stat rows scroll).</p>
+  <div class="grid">
+    <a class="card" href="v10-sections.html"><span class="num">10</span><div class="name">Sections</div><div class="desc">Slim global chrome (V7↔V9 voice: Plex Sans + mono data, sentence-case nav). Below it, TWO demos of the contextual band: the asset header (icon, chips, stat strip, tabs) and the address header (identity, reputation, tabs). V2 footer.</div><span class="tag">contextual chrome →</span></a>
+    <a class="card" href="v11-dialed.html"><span class="num">11</span><div class="name">Dialed — v10 crispness pass</div><div class="desc">v10's layout with the fuzz fixed: integer font sizes only, no backdrop blur on the sticky header, contrast lifted a notch. LIVE CONTROLS top-right: switch Geist / Inter / System (Segoe) fonts and 14px / 13px base — pick what's crispest on YOUR screen.</div><span class="tag">dial the type →</span></a>
+    <a class="card" href="v11-asset.html"><span class="num">11a</span><div class="name">Asset page — solo</div><div class="desc">v11 with ONLY the asset flavor (RAREPEPE): band, stats, tabs, cards, footer. One page, one section — the reference for the /asset route.</div><span class="tag">asset reference →</span></a>
+    <a class="card" href="v11-address.html"><span class="num">11b</span><div class="name">Address page — solo</div><div class="desc">v11 with ONLY the address flavor (Mike in Space): identity, reputation-first stats, tabs, cards, footer. The reference for the /address route.</div><span class="tag">address reference →</span></a>
+  </div>
+</div>
+</body>
+</html>

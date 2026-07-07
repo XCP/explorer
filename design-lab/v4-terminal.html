@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v4 · Terminal — xcp.io design lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --bg:#0a0c0a; --panel:#0e120e; --border:#233123; --border2:#182118; --t1:#e8f0e8; --t2:#c2cfc2; --t3:#8fa38f; --t4:#5f735f; --brand:#ec1550; --accent:#7ce38b; --amber:#e3c07c; --down:#e37c7c; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--t2); font-family:"IBM Plex Mono",monospace; font-size:13px; }
+  a { color:inherit; text-decoration:none; } a:hover { color:var(--accent); }
+  .sans { font-family:"IBM Plex Sans",system-ui,sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:0 16px; }
+
+  .statusbar { border-bottom:1px solid var(--border2); background:#0c0f0c; font-size:11.5px; overflow:hidden; }
+  .statusbar .in { max-width:1240px; margin:0 auto; padding:4px 16px; display:flex; gap:0; align-items:center; white-space:nowrap; }
+  .statusbar span.cell { padding:0 14px; border-right:1px solid var(--border2); }
+  .statusbar span.cell:first-child { padding-left:0; }
+  .statusbar .k { color:var(--t4); } .statusbar b { color:var(--t2); font-weight:500; }
+  .ok { color:var(--accent); } .warn { color:var(--amber); }
+
+  header { position:sticky; top:0; z-index:50; border-bottom:1px solid var(--border); background:rgba(10,12,10,.97); }
+  .hrow { max-width:1240px; margin:0 auto; display:flex; align-items:stretch; padding:0 16px; gap:0; }
+  .brand { display:flex; align-items:center; font-weight:700; font-size:15px; letter-spacing:.06em; color:var(--t1); padding:12px 20px 12px 0; border-right:1px solid var(--border2); }
+  .brand b { color:var(--brand); }
+  nav.primary { display:flex; align-items:stretch; font-size:12.5px; }
+  nav.primary a { display:flex; align-items:center; padding:0 16px; color:var(--t3); border-right:1px solid var(--border2); text-transform:uppercase; letter-spacing:.05em; }
+  nav.primary a.active { color:var(--accent); background:var(--panel); box-shadow:inset 0 -2px 0 var(--accent); }
+  nav.primary a:hover { color:var(--t1); }
+  .search { flex:1; display:flex; align-items:center; padding:8px 0 8px 16px; }
+  .search .box { flex:1; max-width:520px; display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--border); padding:7px 12px; }
+  .search .prompt { color:var(--accent); font-weight:700; }
+  .search input { flex:1; background:none; border:none; outline:none; color:var(--t1); font-family:inherit; font-size:13px; }
+  .search input::placeholder { color:var(--t4); }
+  .search .kbd { font-size:10px; color:var(--t4); border:1px solid var(--border2); padding:1px 6px; }
+  .cta { margin:8px 0 8px 16px; background:none; border:1px solid var(--brand); color:var(--brand); font-family:inherit; font-size:12px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:0 14px; cursor:pointer; }
+  .cta:hover { background:var(--brand); color:#fff; }
+
+  main { max-width:1240px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:16px; }
+  .idline { padding:14px 2px 2px; }
+  .idline h1 { font-size:15px; color:var(--t1); font-weight:600; letter-spacing:.03em; }
+  .idline h1::before { content:"// "; color:var(--t4); }
+  .idline p { color:var(--t4); font-size:12px; margin-top:4px; }
+
+  .cols { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  @media (max-width:920px){ .cols { grid-template-columns:1fr; } }
+  .card { border:1px solid var(--border2); background:var(--panel); }
+  .card h2 { font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--t3); padding:9px 12px; border-bottom:1px solid var(--border2); display:flex; justify-content:space-between; background:#101510; }
+  .card h2 a { font-weight:400; letter-spacing:0; text-transform:none; color:var(--t4); font-size:11px; }
+  .row { display:flex; align-items:center; gap:9px; padding:7px 12px; border-bottom:1px solid #121812; font-size:12.5px; }
+  .row:last-child { border-bottom:none; }
+  .row img { width:20px; height:20px; background:#141a14; object-fit:cover; }
+  .row .n { color:var(--t1); }
+  .row .amt { margin-left:auto; text-align:right; color:var(--t2); }
+  .tag { font-size:10px; padding:1px 6px; border:1px solid; text-transform:uppercase; letter-spacing:.04em; }
+  .tag.dex { color:#7cc4e3; border-color:#1e3a4a; }
+  .tag.disp { color:var(--accent); border-color:#234a2c; }
+  .time { color:var(--t4); font-size:11.5px; min-width:44px; text-align:right; }
+
+  .feat h2 { font-size:12px; color:var(--t3); letter-spacing:.12em; text-transform:uppercase; margin-bottom:10px; }
+  .feat h2 b { color:var(--t1); }
+  .featgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
+  .art .frame { border:1px solid var(--border2); background:#0c100c; aspect-ratio:3/4.2; }
+  .art img { width:100%; height:100%; object-fit:contain; }
+  .art .cap { font-size:10px; color:var(--t4); margin-top:5px; letter-spacing:.05em; text-align:center; }
+
+  footer { border-top:1px solid var(--border); margin-top:40px; background:#0c0f0c; }
+  .frow { max-width:1240px; margin:0 auto; padding:28px 16px 22px; }
+  .fcols { display:grid; grid-template-columns:repeat(4,1fr); gap:20px 28px; }
+  @media (max-width:640px){ .fcols { grid-template-columns:repeat(2,1fr); } }
+  footer h3 { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.14em; color:var(--t4); margin-bottom:9px; }
+  footer h3::before { content:"$ "; color:var(--accent); }
+  footer ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:5px; }
+  footer li a { font-size:12px; color:var(--t3); }
+  .fbrand { display:flex; justify-content:space-between; border-top:1px solid var(--border2); margin-top:22px; padding-top:16px; font-size:11.5px; color:var(--t4); flex-wrap:wrap; gap:8px; }
+  .fbrand b { color:var(--t3); }
+
+  @media (max-width:860px){ nav.primary, .statusbar span.hide-m { display:none; } .brand { border-right:none; } }
+</style>
+</head>
+<body>
+
+<div class="statusbar">
+  <div class="in">
+    <span class="cell"><span class="ok">●</span> <b>SYNCED</b></span>
+    <span class="cell"><span class="k">BLK</span> <b>956,990</b> <span class="k">+34s</span></span>
+    <span class="cell"><span class="k">MEMPOOL</span> <b class="warn">3</b></span>
+    <span class="cell hide-m"><span class="k">BTC</span> <b>$63,273</b> <span class="ok">+0.3%</span></span>
+    <span class="cell hide-m"><span class="k">XCP</span> <b>$1.17</b> <span class="ok">+0.9%</span></span>
+    <span class="cell hide-m"><span class="k">24H VOLUME</span> <b>$18,402</b></span>
+    <span class="cell" style="border-right:none"><span class="k">SINCE</span> <b>2014</b></span>
+  </div>
+</div>
+
+<header>
+  <div class="hrow">
+    <a class="brand" href="#">XCP<b>.IO</b></a>
+    <nav class="primary">
+      <a class="active" href="#">Assets</a><a href="#">Trades</a><a href="#">Blocks</a><a href="#">Records</a><a href="#">Discover</a>
+    </nav>
+    <div class="search"><div class="box"><span class="prompt">&gt;</span><input placeholder="asset / address / tx / block"><span class="kbd">/</span></div></div>
+    <button class="cta">Connect</button>
+  </div>
+</header>
+
+<main>
+  <div class="idline">
+    <h1>counterparty mainnet — live feed</h1>
+    <p>what just sold, what's pending, twelve years of history. on bitcoin since 2014.</p>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>Latest sales <a href="#">view all →</a></h2>
+      <div class="row"><img src="https://cdn.xcp.io/img/icon/INVISIBLPEPE" alt=""><span class="n">INVISIBLPEPE</span><span class="amt">25 XCP</span><span class="tag dex">dex</span><span class="time">47m</span></div>
+      <div class="row"><img src="https://cdn.xcp.io/img/icon/PEPESMALLS" alt=""><span class="n">PEPESMALLS</span><span class="amt">9 XCP</span><span class="tag dex">dex</span><span class="time">3h</span></div>
+      <div class="row"><img src="https://cdn.xcp.io/img/icon/PBOCPEPE" alt=""><span class="n">PBOCPEPE</span><span class="amt">1.5 XCP</span><span class="tag dex">dex</span><span class="time">3h</span></div>
+      <div class="row"><img src="https://cdn.xcp.io/img/icon/STAMPINGPLATE" alt=""><span class="n">STAMPIN…</span><span class="amt">0.00021 BTC</span><span class="tag disp">disp</span><span class="time">3h</span></div>
+      <div class="row"><img src="https://cdn.xcp.io/img/icon/XCP" alt=""><span class="n">XCP</span><span class="amt">$56.91</span><span class="tag disp">disp</span><span class="time">3h</span></div>
+      <div class="row"><img src="https://cdn.xcp.io/img/icon/PEPEISNUBLK" alt=""><span class="n">PEPEISNUBLK</span><span class="amt">$6.80</span><span class="tag dex">dex</span><span class="time">4h</span></div>
+    </div>
+    <div class="card">
+      <h2>Mempool <a href="#"><span class="ok">●</span> live →</a></h2>
+      <div class="row"><span class="tag disp">send</span><span class="n">PEPECASH ×420</span><span class="amt" style="color:var(--t4)">1BcE…9dKq</span><span class="time">12s</span></div>
+      <div class="row"><span class="tag dex">order</span><span class="n">RAREPEPE/XCP</span><span class="amt" style="color:var(--t4)">1Q5v…KtAn</span><span class="time">48s</span></div>
+      <div class="row"><span class="tag disp">disp</span><span class="n">XCP</span><span class="amt" style="color:var(--t4)">1GpC…XcqK</span><span class="time">1m</span></div>
+    </div>
+    <div class="card">
+      <h2>Latest transactions <a href="#">view all →</a></h2>
+      <div class="row"><span class="n">1926bf16…dbf6d0</span><span class="amt" style="color:var(--t4)">178e…qzL4A</span><span class="time">0s</span></div>
+      <div class="row"><span class="n">ff648cd2…c38207</span><span class="amt" style="color:var(--t4)">1Q5v…KtAn</span><span class="time">19m</span></div>
+      <div class="row"><span class="n">181be6b5…8c1dc1</span><span class="amt" style="color:var(--t4)">1Nyu…Eqgk</span><span class="time">47m</span></div>
+      <div class="row"><span class="n">f1bd8b7d…c90bd4</span><span class="amt" style="color:var(--t4)">1GpC…XcqK</span><span class="time">47m</span></div>
+      <div class="row"><span class="n">703b6543…09b7e2</span><span class="amt" style="color:var(--t4)">1GV6…u1ZZ</span><span class="time">47m</span></div>
+      <div class="row"><span class="n">8c34fdd8…6eb96b</span><span class="amt" style="color:var(--t4)">1CLN…PHtZY</span><span class="time">47m</span></div>
+    </div>
+  </div>
+
+  <section class="feat">
+    <h2><b>Featured</b> — top quality, with art</h2>
+    <div class="featgrid">
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/PEPECASH" alt="PEPECASH"></div><div class="cap">PEPECASH</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/SATOSHICARD" alt="SATOSHICARD"></div><div class="cap">SATOSHICARD</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/FDCARD" alt="FDCARD"></div><div class="cap">FDCARD</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/BITCRYSTALS" alt="BITCRYSTALS"></div><div class="cap">BITCRYSTALS</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/RAREPEPE" alt="RAREPEPE"></div><div class="cap">RAREPEPE</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/SHITCOINCARD" alt="SHITCOINCARD"></div><div class="cap">SHITCOINCARD</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/DARKPILLPEPE" alt="DARKPILLPEPE"></div><div class="cap">DARKPILLPEPE</div></div>
+      <div class="art"><div class="frame"><img src="https://cdn.xcp.io/img/full/TRUMPRARE" alt="TRUMPRARE"></div><div class="cap">TRUMPRARE</div></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="frow">
+    <div class="fcols">
+      <div><h3>explore</h3><ul><li><a href="#">assets</a></li><li><a href="#">trades</a></li><li><a href="#">blocks</a></li><li><a href="#">mempool</a></li><li><a href="#">all records</a></li></ul></div>
+      <div><h3>discover</h3><ul><li><a href="#">collections</a></li><li><a href="#">leaderboards</a></li><li><a href="#">firsts</a></li><li><a href="#">vaults</a></li><li><a href="#">exchanges</a></li></ul></div>
+      <div><h3>ecosystem</h3><ul><li><a href="#">xcpdex ↗</a></li><li><a href="#">digirare ↗</a></li><li><a href="#">xcp wallet ↗</a></li><li><a href="#">counterparty.io ↗</a></li></ul></div>
+      <div><h3>data</h3><ul><li><a href="#">api</a></li><li><a href="#">github ↗</a></li><li><a href="#">network stats</a></li></ul></div>
+    </div>
+    <div class="fbrand">
+      <span>XCP<span style="color:var(--brand)">.IO</span> — counterparty blockchain explorer. on bitcoin since 2014.</span>
+      <span><span class="ok">●</span> synced to block <b>956,990</b> · 3 pending</span>
+    </div>
+  </div>
+</footer>
+
+<a href="index.html" style="position:fixed;bottom:16px;right:16px;font-size:11px;color:#5f735f;border:1px solid #233123;padding:6px 12px;background:rgba(10,12,10,.9)">↩ lab index · v4 terminal</a>
+</body>
+</html>

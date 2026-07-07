@@ -36,17 +36,19 @@ export function SectionChip({ variant = "neutral", children }: { variant?: keyof
   );
 }
 
-export function SectionIdentity({ visual, name, chips, actions }: {
+export function SectionIdentity({ visual, name, chips, actions, compact = false }: {
   visual?: ReactNode;
   name: ReactNode;
   chips?: ReactNode;
   actions?: ReactNode;
+  /** Smaller h1 (16px) for long mono identifiers — addresses, tx hashes — vs the 22px display name. */
+  compact?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3.5">
       {visual}
       <div className="min-w-0">
-        <h1 className="break-all font-mono text-[22px] font-bold text-zinc-100">{name}</h1>
+        <h1 className={`break-all font-mono text-zinc-100 ${compact ? "text-base font-semibold" : "text-[22px] font-bold"}`}>{name}</h1>
         {chips && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{chips}</div>}
       </div>
       {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}

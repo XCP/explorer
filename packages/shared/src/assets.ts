@@ -13,6 +13,13 @@ export interface AssetQuality {
   low_quality?: boolean;
 }
 
+/** Per-asset money stats from the unified trades ledger (AssetDetail.sales). */
+export interface AssetSales {
+  realized_usd: number | null; // lifetime SUM(usd_value) across every venue
+  last_sale_usd: number | null; // the most recent USD-known sale
+  last_sale_time: number | null; // unix seconds of that sale
+}
+
 /** GET /v2/assets/:asset — full assets row + derived supply/burned/circulating + quality + tags.
  *  Native XCP/BTC take a reduced path, so many issuance fields are optional. Mirror: assets. */
 export interface AssetDetail {
@@ -43,6 +50,7 @@ export interface AssetDetail {
   holder_count: number;
   quality?: AssetQuality;
   tags?: string[];
+  sales?: AssetSales; // absent on the native XCP/BTC reduced path
 }
 
 /** GET /v2/assets — the asset index / search row. description is clamped to a single line server-side

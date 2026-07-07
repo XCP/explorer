@@ -14,7 +14,7 @@ import { AssetCohort, HolderQuality } from "@/components/relationships";
 import { HolderMakeup } from "@/components/holder-makeup";
 import { PendingActions } from "@/components/pending-actions";
 import { GraphTrustChip } from "@/components/graph-trust-chip";
-import { commas } from "@/lib/format";
+import { commas, timeAgo, usdCompact } from "@/lib/format";
 
 // Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
 // Returns null on 404 — only the PAGE calls notFound() (notFound() inside generateMetadata renders
@@ -45,23 +45,28 @@ export async function generateMetadata({ params }: { params: Promise<{ asset: st
   };
 }
 
-// The band's stat strip — the asset's headline numbers, all already on the fetched detail row.
-// Mobile shows at most the first four; the tail entries hide (hideOnMobile).
+// The band's stat strip — the asset's headline numbers, money-first (v11 reference: Score, Holders,
+// Supply, Realized, Last sale, Issued). Mobile shows the first four; the tail hides (hideOnMobile).
 function assetStats(item: AssetDetail): SectionStat[] {
   const stats: SectionStat[] = [];
   if (item.quality) stats.push({ label: "Score", value: item.quality.score ?? "—", detail: item.quality.tier });
   stats.push({ label: "Holders", value: commas(item.holder_count) });
   stats.push({ label: "Supply", value: commas(item.supply_normalized) });
+  if (item.sales?.realized_usd != null) {
+    stats.push({ label: "Realized", value: usdCompact(item.sales.realized_usd), detail: "lifetime" });
+  }
+  if (item.sales?.last_sale_usd != null) {
+    stats.push({ label: "Last sale", value: usdCompact(item.sales.last_sale_usd), detail: timeAgo(item.sales.last_sale_time), hideOnMobile: true });
+  }
   if (item.first_issuance_block_index != null) {
     const year = item.first_issuance_block_time ? new Date(item.first_issuance_block_time * 1000).getUTCFullYear() : null;
     stats.push({
       label: "Issued",
       value: year ?? commas(item.first_issuance_block_index),
       detail: year != null ? `block ${commas(item.first_issuance_block_index)}` : undefined,
+      hideOnMobile: true,
     });
   }
-  stats.push({ label: "Divisible", value: item.divisible ? "yes" : "no", hideOnMobile: true });
-  if (Number(item.burned) > 0) stats.push({ label: "Circulating", value: commas(item.circulating_normalized), hideOnMobile: true });
   return stats;
 }
 
@@ -70,31 +75,17 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
   const item = await loadAsset(asset);
   if (!item) notFound();
 
-  return (
+  const overview = (
     <>
-      <SectionHeader flush>
-        <SectionIdentity
-          visual={<AssetIcon asset={item.asset} size={52} />}
-          name={item.asset_longname || item.asset}
-          chips={<>
-            {item.tags?.includes("grail") && <SectionChip variant="grail">grail</SectionChip>}
-            <SectionChip variant={item.locked ? "locked" : "open"}>{item.locked ? "locked" : "open"}</SectionChip>
-            <GraphTrustChip kind="assets" id={item.asset} />
-          </>}
-          actions={
-            <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium !text-zinc-200 hover:!text-zinc-100 hover:border-zinc-500 !no-underline">Trade on xcpdex ↗</a>
-          }
-        />
-        <SectionStats stats={assetStats(item)} />
-      </SectionHeader>
-      <AssetTabs asset={item.asset} issuer={item.issuer} inBand />
       <Card>
         <div className="flex flex-col sm:flex-row gap-5">
           <AssetArt asset={item.asset} natural stamp={item.tags?.includes("stamp")} className="w-36 sm:w-44 rounded-lg border border-zinc-800 shrink-0 mx-auto sm:mx-0" />
           <div className="flex-1 min-w-0">
             <div className="grid sm:grid-cols-2 gap-x-6">
               <KV k="Asset" v={<span className="font-mono">{item.asset}</span>} />
+              <KV k="Divisible" v={item.divisible ? "yes" : "no"} />
               {Number(item.burned) > 0 && <KV k="Burned" v={<span className="font-mono inline-flex items-center gap-1 text-orange-400"><Flame className="size-3" />{commas(item.burned_normalized)}</span>} />}
+              {Number(item.burned) > 0 && <KV k="Circulating" v={<span className="font-mono">{commas(item.circulating_normalized)}</span>} />}
               <KV k="Issuer" v={item.issuer ? <span className="inline-flex items-center gap-1"><Hammer className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.issuer}`} className="font-mono break-all">{item.issuer}</Link></span> : "—"} />
               <KV k="Owner" v={item.owner ? <span className="inline-flex items-center gap-1"><Key className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.owner}`} className="font-mono break-all">{item.owner}</Link></span> : "—"} />
             </div>
@@ -108,7 +99,28 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
       <HolderMakeup asset={item.asset} />
       <HolderQuality asset={item.asset} />
       <AssetCohort asset={item.asset} />
+    </>
+  );
 
+  return (
+    <>
+      <SectionHeader flush>
+        <SectionIdentity
+          visual={<AssetIcon asset={item.asset} size={52} />}
+          name={item.asset_longname || item.asset}
+          chips={<>
+            {item.tags?.includes("grail") && <SectionChip variant="grail">grail</SectionChip>}
+            <GraphTrustChip kind="assets" id={item.asset} />
+            <SectionChip variant={item.locked ? "locked" : "open"}>{item.locked ? "locked" : "open"}</SectionChip>
+          </>}
+          actions={<>
+            <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium !text-zinc-200 hover:!text-zinc-100 hover:border-zinc-500 !no-underline">Trade on xcpdex ↗</a>
+            <a href={`https://digirare.com/cards/${encodeURIComponent(item.asset)}`} target="_blank" rel="noopener noreferrer" className="rounded-md border border-(--color-brand) bg-(--color-brand) px-3 py-1.5 text-xs font-medium !text-white hover:brightness-110 !no-underline">Collect ↗</a>
+          </>}
+        />
+        <SectionStats stats={assetStats(item)} />
+      </SectionHeader>
+      <AssetTabs asset={item.asset} issuer={item.issuer} inBand overview={overview} />
     </>
   );
 }

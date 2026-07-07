@@ -10,12 +10,28 @@ import { AddressTabs } from "@/components/address-tabs";
 import { Holdings } from "@/components/holdings";
 import { AddressConnections, AddressLineage } from "@/components/relationships";
 import { ReputationHeader } from "@/components/reputation";
+import { ReputationStat } from "@/components/reputation-stat";
 import { PendingActions } from "@/components/pending-actions";
 import { commas, short } from "@/lib/format";
 
 const BURN_ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
 const Chip = ({ children }: { children: React.ReactNode }) =>
   <span className="inline-flex items-center gap-1 rounded-md bg-zinc-800 text-zinc-200 px-2 py-1 text-xs font-medium ring-1 ring-inset ring-white/5">{children}</span>;
+
+// Deterministic identity visual (v11 reference): 2-3 hues hashed from the address chars, blended as a
+// 135° gradient — every address gets a stable face without any asset art. Server-safe (pure string math).
+function AddressGradient({ address }: { address: string }) {
+  let h = 0;
+  for (let i = 0; i < address.length; i++) h = (h * 31 + address.charCodeAt(i)) >>> 0;
+  const hues = [h % 360, (h >> 7) % 360, (h >> 14) % 360];
+  return (
+    <div
+      aria-hidden
+      className="size-[52px] shrink-0 rounded-lg border border-zinc-800"
+      style={{ background: `linear-gradient(135deg, hsl(${hues[0]} 55% 38%) 0%, hsl(${hues[1]} 50% 30%) 60%, hsl(${hues[2]} 45% 24%) 100%)` }}
+    />
+  );
+}
 
 // The summary is one of several panels, not a gate — an address with no history still renders (dashes),
 // so we tolerate a null result and only translate a real 404 into notFound().
@@ -36,25 +52,26 @@ export async function generateMetadata({ params }: { params: Promise<{ address: 
   return { title, description, openGraph: { title: `${title} | XCP.io`, description } };
 }
 
-// Identity-first section band (v3 chrome): who is this address (archetype chips) + how old/active,
-// then headline balances. Server-rendered from the fetched summary; only the copy button and the
-// graph-trust chip are client islands.
+// Identity-first section band (v3 chrome, v11 reference): who is this address (gradient visual +
+// archetype chips), then reputation-first headline stats. Server-rendered from the fetched summary;
+// the copy button, graph-trust chip, and reputation score are client islands.
 function AddressHeader({ address, s }: { address: string; s: AddressSummary | null }) {
   const xcp = Number(s?.xcp) || 0;
   const stats: SectionStat[] = [
-    { label: "XCP balance", value: commas(s?.xcp) },
+    { label: "Reputation", value: <ReputationStat address={address} /> },
     { label: "Assets held", value: commas(s?.assets) },
     { label: "Assets issued", value: commas(s?.issued) },
-    { label: "Dispensers", value: commas(s?.dispensers) },
   ];
   if (s?.first_block != null) {
-    stats.push({ label: "First block", value: <Link href={`/block/${s.first_block}`}>{commas(s.first_block)}</Link>, hideOnMobile: true });
-    stats.push({ label: "Last block", value: <Link href={`/block/${s.last_block}`}>{commas(s.last_block)}</Link>, hideOnMobile: true });
+    stats.push({ label: "First block", value: <Link href={`/block/${s.first_block}`}>{commas(s.first_block)}</Link> });
   }
+  stats.push({ label: "XCP balance", value: commas(s?.xcp), hideOnMobile: true });
+  stats.push({ label: "Dispensers", value: commas(s?.dispensers), hideOnMobile: true });
   return (
-    <>
     <SectionHeader flush>
       <SectionIdentity
+        compact
+        visual={<AddressGradient address={address} />}
         name={address}
         chips={<>
           <GraphTrustChip kind="addresses" id={address} />
@@ -69,8 +86,6 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
       />
       <SectionStats stats={stats} />
     </SectionHeader>
-    <AddressTabs address={address} inBand />
-    </>
   );
 }
 
@@ -78,14 +93,20 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
   const { address } = await params;
   const summary = await loadSummary(address);
 
-  return (
+  const overview = (
     <>
-      <AddressHeader address={address} s={summary} />
       <ReputationHeader address={address} />
       <AddressLineage address={address} />
       <PendingActions address={address} />
       <Holdings address={address} />
       <AddressConnections address={address} />
+    </>
+  );
+
+  return (
+    <>
+      <AddressHeader address={address} s={summary} />
+      <AddressTabs address={address} inBand overview={overview} />
     </>
   );
 }
