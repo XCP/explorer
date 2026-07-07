@@ -23,7 +23,7 @@ export function AssetIndex() {
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOffset(0); }}
         placeholder="Filter assets…"
-        className="mb-4 w-full max-w-sm rounded bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-[--color-accent]"
+        className="mb-4 w-full max-w-sm rounded bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-(--color-accent)"
       />
       <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="assets" loading={<Skeleton />}>
         <>

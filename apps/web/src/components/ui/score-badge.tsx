@@ -12,8 +12,8 @@
 // Ranked tiers get progressively brighter; the elite carry the sky accent ring. Anything not listed
 // (Untraded/Dormant/Exchange/Vault/Burn/… and any address non-ranked state) falls to QUIET.
 const RAMP: Record<string, string> = {
-  Bluechip: "text-zinc-100 ring-[--color-accent]/40 bg-[--color-accent]/10",
-  OG: "text-zinc-100 ring-[--color-accent]/40 bg-[--color-accent]/10",
+  Bluechip: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
+  OG: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
   Established: "text-zinc-200 ring-zinc-500/50 bg-zinc-800",
   Active: "text-zinc-300 ring-zinc-600/60 bg-zinc-800/60",
   Speculative: "text-zinc-400 ring-zinc-700 bg-zinc-900/60",

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 export const Stat = ({ label, value, icon, sub }: { label: string; value: ReactNode; icon?: ReactNode; sub?: ReactNode }) => (
   <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3.5">
     <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
-      {icon && <span className="text-[--color-accent] opacity-80">{icon}</span>}{label}
+      {icon && <span className="text-(--color-accent) opacity-80">{icon}</span>}{label}
     </div>
     <div className="text-2xl font-semibold text-zinc-100 font-mono tabular-nums mt-1.5 leading-none">{value ?? "—"}</div>
     {sub && <div className="text-xs text-zinc-400 mt-1.5">{sub}</div>}

@@ -26,10 +26,10 @@ function NowPanel({ title, href, live, children }: { title: string; href: string
       <div className="absolute right-4 top-4 flex items-center gap-2 text-xs">
         {live && (
           <span className="flex items-center gap-1.5 text-zinc-400">
-            <span className={`size-1.5 rounded-full animate-pulse ${live === "amber" ? "bg-amber-400" : "bg-[--color-up]"}`} /> live
+            <span className={`size-1.5 rounded-full animate-pulse ${live === "amber" ? "bg-amber-400" : "bg-(--color-up)"}`} /> live
           </span>
         )}
-        <Link href={href} className="!text-zinc-400 hover:!text-[--color-accent]">View all →</Link>
+        <Link href={href} className="!text-zinc-400 hover:!text-(--color-accent)">View all →</Link>
       </div>
       {children}
     </Card>
@@ -81,7 +81,7 @@ function Vital({ label, value, tone }: { label: string; value: ReactNode; tone?:
 function Feed<T>({ title, href, rows, head, render }: { title: string; href: string; rows: T[]; head: Head[]; render: (r: T, i: number) => ReactNode }) {
   return (
     <Card title={title}>
-      <Link href={href} className="absolute right-4 top-4 text-xs !text-zinc-400 hover:!text-[--color-accent]">View all →</Link>
+      <Link href={href} className="absolute right-4 top-4 text-xs !text-zinc-400 hover:!text-(--color-accent)">View all →</Link>
       {rows.length === 0 ? <Skeleton rows={5} /> : <Table head={head}>{rows.map(render)}</Table>}
     </Card>
   );
@@ -120,7 +120,7 @@ export function HomeDashboard() {
         <Vital label="Pending" value={commas(pending)} tone="amber" />
         <Vital label="Last block" value={lastBlockTime ? timeAgo(lastBlockTime) : "—"} />
         <span className="ml-auto flex items-center gap-1.5 text-xs text-zinc-400">
-          <span className="size-1.5 rounded-full bg-[--color-up] animate-pulse" /> live
+          <span className="size-1.5 rounded-full bg-(--color-up) animate-pulse" /> live
         </span>
       </div>
 
@@ -170,7 +170,7 @@ export function HomeDashboard() {
           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2">
             {featured.map((a) => (
               <Link key={a.asset} href={`/asset/${a.asset}`} title={a.asset_longname || a.asset} className="group">
-                <AssetArt asset={a.asset} className="w-full aspect-[5/7] rounded-lg border border-zinc-800 group-hover:border-[--color-accent] transition-colors" />
+                <AssetArt asset={a.asset} className="w-full aspect-[5/7] rounded-lg border border-zinc-800 group-hover:border-(--color-accent) transition-colors" />
                 <div className="mt-1 text-[10px] text-zinc-400 truncate group-hover:text-zinc-200">{a.asset_longname || a.asset}</div>
               </Link>
             ))}
@@ -208,7 +208,7 @@ export function HomeDashboard() {
             return (
               <Row key={i}>
                 <Cell primary><Link href={`/asset/${v.base}`} className="flex items-center gap-2"><AssetIcon asset={v.base} size={16} />{v.base}<span className="text-zinc-600">/{v.quote}</span></Link></Cell>
-                <Cell><span className={v.direction === "buy" ? "text-[--color-up]" : "text-[--color-down]"}>{v.direction}</span></Cell>
+                <Cell><span className={v.direction === "buy" ? "text-(--color-up)" : "text-(--color-down)"}>{v.direction}</span></Cell>
                 <Cell numeric>{v.price ? `${v.price >= 1 ? commas(v.price.toFixed(4)) : v.price.toPrecision(3)} ${v.quote}` : "—"}</Cell>
               </Row>
             );

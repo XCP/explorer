@@ -26,7 +26,7 @@ export function ActivityChart() {
             className={`text-xs px-2 py-0.5 rounded transition-colors ${s === k ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}>{lbl}</button>
         ))}
         <button onClick={() => setCum((v) => !v)} title="Cumulative"
-          className={`text-xs px-2 py-0.5 rounded transition-colors ${cum ? "bg-[--color-accent] text-zinc-950" : "text-zinc-400 hover:text-zinc-200 border border-zinc-700"}`}>Σ</button>
+          className={`text-xs px-2 py-0.5 rounded transition-colors ${cum ? "bg-(--color-accent) text-zinc-950" : "text-zinc-400 hover:text-zinc-200 border border-zinc-700"}`}>Σ</button>
       </div>
       <div className="text-xs text-zinc-400 mb-2">{cum ? "Cumulative" : "Daily"} {label} · last {series.length} days indexed</div>
       <AreaChart data={series} height={200} />

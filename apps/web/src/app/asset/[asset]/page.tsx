@@ -98,7 +98,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
               <KV k="Issuer" v={item.issuer ? <span className="inline-flex items-center gap-1"><Hammer className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.issuer}`} className="font-mono break-all">{item.issuer}</Link></span> : "—"} />
               <KV k="Owner" v={item.owner ? <span className="inline-flex items-center gap-1"><Key className="size-3 text-zinc-500 shrink-0" /><Link href={`/address/${item.owner}`} className="font-mono break-all">{item.owner}</Link></span> : "—"} />
             </div>
-            {item.tags?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{item.tags.map((t: string) => <Link key={t} href={`/tag/${encodeURIComponent(t)}`} className="rounded bg-zinc-800 text-zinc-300 hover:text-[--color-accent] px-1.5 py-0.5 text-[10px] !no-underline">{t}</Link>)}</div> : null}
+            {item.tags?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{item.tags.map((t: string) => <Link key={t} href={`/tag/${encodeURIComponent(t)}`} className="rounded bg-zinc-800 text-zinc-300 hover:text-(--color-accent) px-1.5 py-0.5 text-[10px] !no-underline">{t}</Link>)}</div> : null}
             {item.description && <p className="mt-2 text-sm text-zinc-400 break-all">{item.description}</p>}
             <MarketChip asset={item.asset} />
           </div>

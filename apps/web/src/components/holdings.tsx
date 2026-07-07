@@ -29,7 +29,7 @@ export function Holdings({ address }: { address: string }) {
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {rows.map((b) => (
             <Link key={b.asset} href={`/asset/${b.asset}`}
-              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-[--color-accent] transition-colors">
+              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-(--color-accent) transition-colors">
               <AssetArt asset={b.asset} stamp={!!b.stamp} className="w-full aspect-[3/4] group-hover:scale-105 transition-transform" />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pt-6 pb-1.5">
                 <div className="text-[11px] font-medium text-zinc-100 truncate">{b.asset_longname || b.asset}</div>

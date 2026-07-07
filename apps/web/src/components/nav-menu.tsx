@@ -51,7 +51,7 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={id}
-        className={`transition-colors ${active || open ? "text-[--color-accent]" : "text-zinc-400 hover:text-zinc-200"}`}
+        className={`transition-colors ${active || open ? "text-(--color-accent)" : "text-zinc-400 hover:text-zinc-200"}`}
       >
         {label} <span aria-hidden="true" className="text-[9px]">▾</span>
       </button>

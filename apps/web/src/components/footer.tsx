@@ -33,7 +33,7 @@ const DATA: FooterLink[] = [
   ["GitHub repo", "https://github.com/XCP/explorer"],
 ];
 
-const linkClass = "text-xs !text-zinc-400 hover:!text-[--color-accent] !no-underline";
+const linkClass = "text-xs !text-zinc-400 hover:!text-(--color-accent) !no-underline";
 
 function Column({ heading, links }: { heading: string; links: FooterLink[] }) {
   return (
@@ -62,7 +62,7 @@ export function Footer() {
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
         <nav aria-label="Footer" className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
           <div className="col-span-2 md:col-span-1">
-            <div className="text-sm font-bold tracking-wider font-mono text-zinc-100">XCP<span className="text-[--color-brand]">.io</span></div>
+            <div className="text-sm font-bold tracking-wider font-mono text-zinc-100">XCP<span className="text-(--color-brand)">.io</span></div>
             <p className="mt-2.5 max-w-[34ch] text-xs leading-relaxed text-zinc-400">
               The reference explorer for Counterparty — the unified sales ledger, reputation
               intelligence, and twelve years of provenance on Bitcoin.

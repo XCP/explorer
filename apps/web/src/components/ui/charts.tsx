@@ -38,7 +38,7 @@ export function Sparkline({ data, height = 36 }: { data: number[]; height?: numb
     <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
       {data.map((v, i) => {
         const bh = Math.max(1, (v / max) * (height - 2));
-        return <rect key={i} x={i * bw} y={height - bh} width={Math.max(0.5, bw * 0.7)} height={bh} rx={0.5} className="fill-[--color-accent]" opacity={0.55} />;
+        return <rect key={i} x={i * bw} y={height - bh} width={Math.max(0.5, bw * 0.7)} height={bh} rx={0.5} className="fill-(--color-accent)" opacity={0.55} />;
       })}
     </svg>
   );

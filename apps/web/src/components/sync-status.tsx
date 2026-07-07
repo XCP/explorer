@@ -10,7 +10,7 @@ export function SyncStatus() {
   const tip = stats?.tip ?? (stats?.indexed_block ? Number(stats.indexed_block) : null);
   return (
     <div className="flex items-center gap-2 text-xs text-zinc-400">
-      <span className="size-1.5 rounded-full bg-[--color-up] animate-pulse" aria-hidden="true" />
+      <span className="size-1.5 rounded-full bg-(--color-up) animate-pulse" aria-hidden="true" />
       {tip != null ? (
         <span>
           Synced to block <span className="font-mono tabular-nums text-zinc-300">{commas(tip)}</span>

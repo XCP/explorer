@@ -85,7 +85,7 @@ export default async function TxPage({ params }: { params: Promise<{ hash: strin
       <KV k="Fee" v={item.fee ? <span className="font-mono">{item.fee}</span> : "—"} />
       <KV k="Supported" v={item.supported ? "yes" : "no"} />
       <div className="mt-3 text-xs">
-        <a href={`https://www.xcp.io/tx/${item.tx_hash}`} target="_blank" rel="noopener noreferrer" className="!text-zinc-400 hover:!text-[--color-accent] !no-underline">Raw decode ↗</a>
+        <a href={`https://www.xcp.io/tx/${item.tx_hash}`} target="_blank" rel="noopener noreferrer" className="!text-zinc-400 hover:!text-(--color-accent) !no-underline">Raw decode ↗</a>
       </div>
     </Card>
   );

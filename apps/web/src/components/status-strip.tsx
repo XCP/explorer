@@ -17,7 +17,7 @@ function Cell({ children, last = false }: { children: React.ReactNode; last?: bo
 function Delta({ chg }: { chg: number | null }) {
   if (chg == null) return null;
   return (
-    <span className={chg >= 0 ? "text-[--color-up]" : "text-[--color-down]"}>
+    <span className={chg >= 0 ? "text-(--color-up)" : "text-(--color-down)"}>
       {" "}{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
     </span>
   );
@@ -34,7 +34,7 @@ export function StatusStrip() {
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 overflow-hidden whitespace-nowrap px-4 py-1">
         <span className="flex items-center">
           <Cell>
-            <span className="mr-1.5 inline-block size-1.5 rounded-full bg-[--color-up] align-[1px] motion-safe:animate-pulse" aria-hidden="true" />
+            <span className="mr-1.5 inline-block size-1.5 rounded-full bg-(--color-up) align-[1px] motion-safe:animate-pulse" aria-hidden="true" />
             <span className="font-medium text-zinc-300">{tip != null ? "synced" : "connecting…"}</span>
           </Cell>
           {tip != null && (

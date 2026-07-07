@@ -30,7 +30,7 @@ export function MempoolFeed() {
   return (
     <Card title="Mempool">
       <span className="absolute right-5 top-4 flex items-center gap-1.5 text-xs text-zinc-400">
-        <span className="size-1.5 rounded-full bg-[--color-up] animate-pulse" /> live
+        <span className="size-1.5 rounded-full bg-(--color-up) animate-pulse" /> live
       </span>
       <p className="-mt-2 mb-3 text-xs text-zinc-400">
         {rows.length === 0

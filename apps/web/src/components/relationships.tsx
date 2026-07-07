@@ -23,7 +23,7 @@ export function AssetCohort({ asset }: { asset: string }) {
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {rows.map((r) => (
             <Link key={r.asset} href={`/asset/${r.asset}`}
-              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-[--color-accent] transition-colors">
+              className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-(--color-accent) transition-colors">
               <AssetArt asset={r.asset} className="w-full aspect-[3/4] group-hover:scale-105 transition-transform" />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pt-6 pb-1.5">
                 <div className="text-[11px] font-medium text-zinc-100 truncate">{r.asset_longname || r.asset}</div>
@@ -84,7 +84,7 @@ export function AddressConnections({ address }: { address: string }) {
         <ul className="space-y-1">
           {rows.map((r) => (
             <li key={r.cp} className="relative rounded overflow-hidden">
-              <div className="absolute inset-y-0 left-0 bg-[--color-accent]/10" style={{ width: `${Math.max(3, (Number(r.interactions) / max) * 100)}%` }} />
+              <div className="absolute inset-y-0 left-0 bg-(--color-accent)/10" style={{ width: `${Math.max(3, (Number(r.interactions) / max) * 100)}%` }} />
               <div className="relative flex items-center justify-between px-2 py-1.5 text-sm">
                 <span className="truncate">{addrCell(r.cp)}</span>
                 <span className="font-mono text-xs text-zinc-400 shrink-0 ml-2">{commas(r.interactions)}×</span>

@@ -30,7 +30,7 @@ export function Leaderboards() {
           <p className="text-sm text-zinc-400 mt-1">Derived across the whole chain — who builds, who collects, what endures. Reputation signals, not just balances.</p>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer shrink-0 mt-1">
-          <input type="checkbox" checked={!showLowQ} onChange={(e) => setShowLowQ(!e.target.checked)} className="accent-[--color-accent] w-3.5 h-3.5" />
+          <input type="checkbox" checked={!showLowQ} onChange={(e) => setShowLowQ(!e.target.checked)} className="accent-(--color-accent) w-3.5 h-3.5" />
           Hide low quality
         </label>
       </div>

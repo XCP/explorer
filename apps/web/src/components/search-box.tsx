@@ -20,7 +20,7 @@ export function SearchBox({ big = false, autoFocusKey = false }: { big?: boolean
   return (
     <form onSubmit={go} className="relative w-full" data-search={autoFocusKey ? "" : undefined}>
       {/* lens LEFT, "/" affordance RIGHT (v11): the icon reads as part of the prompt, not a button */}
-      <button type="submit" aria-label="Search" className={`absolute top-1/2 -translate-y-1/2 text-zinc-500 hover:text-[--color-accent] ${big ? "left-3.5" : "left-3"}`}>
+      <button type="submit" aria-label="Search" className={`absolute top-1/2 -translate-y-1/2 text-zinc-500 hover:text-(--color-accent) ${big ? "left-3.5" : "left-3"}`}>
         <svg aria-hidden="true" className={big ? "size-5" : "size-4"} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
         </svg>
@@ -30,7 +30,7 @@ export function SearchBox({ big = false, autoFocusKey = false }: { big?: boolean
         name="q" autoComplete="off" spellCheck={false} enterKeyHint="search"
         aria-label="Search asset, address, transaction, or block"
         placeholder="Search assets, addresses, txs, blocks…"
-        className={`w-full rounded-md bg-[#101216] border border-zinc-800 text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-[--color-accent] ${
+        className={`w-full rounded-md bg-[#101216] border border-zinc-800 text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-(--color-accent) ${
           big ? "pl-10 pr-4 py-3 text-base" : "pl-9 pr-9 py-[7px] text-[13px]"
         }`}
       />

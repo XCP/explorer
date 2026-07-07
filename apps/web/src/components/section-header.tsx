@@ -86,7 +86,7 @@ export function SectionTabs({ tabs, active }: { tabs: [label: string, href: stri
           href={href}
           aria-current={label === active ? "page" : undefined}
           className={`whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium !no-underline ${
-            label === active ? "border-[--color-accent] !text-zinc-100" : "border-transparent !text-zinc-400 hover:!text-zinc-100"
+            label === active ? "border-(--color-accent) !text-zinc-100" : "border-transparent !text-zinc-400 hover:!text-zinc-100"
           }`}
         >
           {label}

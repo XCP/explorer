@@ -29,7 +29,7 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false }: { tabs: TabD
       {tabs.map((t, i) => (
         <button key={t.label} onClick={() => select(i)}
           className={`whitespace-nowrap px-3.5 py-2.5 text-sm font-medium -mb-px border-b-2 transition-colors ${
-            i === active ? "border-[--color-accent] text-zinc-100" : "border-transparent text-zinc-400 hover:text-zinc-200"
+            i === active ? "border-(--color-accent) text-zinc-100" : "border-transparent text-zinc-400 hover:text-zinc-200"
           }`}>{t.label}</button>
       ))}
     </div>
