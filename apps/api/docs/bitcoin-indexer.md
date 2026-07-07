@@ -152,6 +152,23 @@ Migration path (when the follow-daemon exists, not before):
 Until then: leave the Laravel app running — it works and costs nothing new. Do NOT build a second
 block-watcher just for consolidation; that's the same double-driver mistake D1 already taught us.
 
+Design notes from reviewing nutildah/OutputSpender (2026-07-07):
+- **`prev_tx_hex` is a trust feature, not a signing requirement.** Legacy SIGHASH_ALL needs only
+  the output's scriptPubKey as script code (OutputSpender signs valid spends with zero prev-tx
+  bodies). @scure/btc-signer demands the full prev tx because legacy sighash doesn't commit to
+  amounts — without it the wallet must trust the API's amount, and a lie silently becomes miner
+  fee. KEEP serving it (right call for a wallet), but store blobs in R2 as a LAZY CACHE, not a
+  dependency: seed from the MySQL dump, fetch-on-miss from Sandshrew with R2 write-back. The D1
+  index (discovery UX) ships without waiting on any blob backfill, and tx bodies stay out of D1.
+- **ETL verification: Dec 2, 2014 cutoff** (unix 1417478400). Pre-cutoff Counterparty multisig
+  data outputs generally contain no real sender pubkey and are unspendable. Our per-UTXO sign_type
+  analysis should already classify these invalid — if migrated recoverable totals include
+  meaningful pre-cutoff value, the claimability analysis has a bug.
+- Confirmed ours is ahead on: script analysis vs. their string-match detection (false-positives on
+  genuine 1-of-N multisig), 420-UTXO cross-transaction batching vs. their one-txid-per-build, RBF,
+  computed fees, and stamps handling (we exclude by default with `includeStamps` opt-in; they have
+  a README warning).
+
 ## What tonight's uncommitted scaffold becomes
 
 The already-drafted `btc_signals` migration, ingest endpoint, address-universe export, and the
