@@ -81,7 +81,15 @@
   .sh-stat .l { font-size:var(--fs-2xs); letter-spacing:.07em; text-transform:uppercase; color:var(--t4); white-space:nowrap; }
   .sh-stat .v { font-size:var(--fs-stat); color:var(--t1); font-weight:600; margin-top:3px; white-space:nowrap; }
   .sh-stat .v small { font-size:var(--fs-2xs); color:var(--t3); font-weight:400; }
-  .tabs { display:flex; gap:2px; margin-top:14px; overflow-x:auto; }
+  .tabs { display:flex; gap:2px; margin-top:14px; position:relative; }
+  .tabs .more { position:relative; }
+  .tabs .more > a { display:flex; align-items:center; gap:5px; }
+  .tabs .more > a .chev { font-size:9px; color:var(--t4); }
+  .more-menu { position:absolute; right:0; top:100%; z-index:60; min-width:200px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:6px; box-shadow:0 10px 30px rgba(0,0,0,.5); display:none; }
+  .more.open .more-menu { display:block; }
+  .more-menu a { display:flex; justify-content:space-between; align-items:baseline; gap:14px; padding:8px 10px; border-radius:6px; border-bottom:none !important; color:var(--t3); font-size:var(--fs-sm); }
+  .more-menu a:hover { background:rgba(255,255,255,.04); color:var(--t1); }
+  .more-menu a.active { color:var(--t1); background:rgba(56,189,248,.08); }
   .tabs a { padding:10px 14px; font-size:var(--fs-base); font-weight:500; color:var(--t3); border-bottom:2px solid transparent; white-space:nowrap; }
   .tabs a.active { color:var(--t1); border-color:var(--accent); }
   .tabs a:hover { color:var(--t1); }
@@ -501,6 +509,58 @@
       if (target) activate(target);
     });
   });
+</script>
+
+<script>
+(function () {
+  var bar = document.getElementById("asset-tabs");
+  if (!bar) return;
+  // build the More container once
+  var more = document.createElement("div");
+  more.className = "more";
+  more.innerHTML = '<a href="#" aria-haspopup="true" aria-expanded="false">More <span class="chev">▾</span></a><div class="more-menu" role="menu"></div>';
+  var moreBtn = more.firstChild, menu = more.lastChild;
+  var all = Array.prototype.slice.call(bar.querySelectorAll(":scope > a"));
+
+  function layout() {
+    // restore everything to the bar (before More), then move overflow into the menu
+    all.forEach(function (a) { bar.insertBefore(a, more.parentNode === bar ? more : null); });
+    if (more.parentNode !== bar) bar.appendChild(more);
+    menu.innerHTML = ""; more.classList.remove("open"); moreBtn.setAttribute("aria-expanded", "false");
+    more.style.display = "none";
+    var avail = bar.clientWidth;
+    var used = 0, overflowStart = -1;
+    for (var i = 0; i < all.length; i++) {
+      used += all[i].offsetWidth + 2;
+      if (used > avail) { overflowStart = i; break; }
+    }
+    if (overflowStart === -1) return; // everything fits, no More
+    more.style.display = "";
+    // re-measure with More visible: it takes room too
+    var moreW = more.offsetWidth || 80;
+    used = 0;
+    for (var j = 0; j < all.length; j++) {
+      used += all[j].offsetWidth + 2;
+      if (used > avail - moreW) { overflowStart = j; break; }
+    }
+    for (var k = all.length - 1; k >= overflowStart && k >= 0; k--) menu.insertBefore(all[k], menu.firstChild);
+    // active tab hidden in the menu? highlight the More trigger
+    moreBtn.classList.toggle("active", !!menu.querySelector("a.active"));
+  }
+  moreBtn.addEventListener("click", function (e) {
+    e.preventDefault();
+    var open = more.classList.toggle("open");
+    moreBtn.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("pointerdown", function (e) { if (!more.contains(e.target)) more.classList.remove("open"); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") more.classList.remove("open"); });
+  // when a menu tab is clicked, the existing tab JS activates it; then close + re-highlight
+  menu.addEventListener("click", function () { setTimeout(layout, 0); more.classList.remove("open"); });
+  window.addEventListener("resize", layout);
+  // run after fonts settle so widths are true
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout); else layout();
+  setTimeout(layout, 300);
+})();
 </script>
 </body>
 </html>
