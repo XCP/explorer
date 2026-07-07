@@ -13,8 +13,13 @@ export const DISTRUST_SLOT = K; // slot 3
 export const ASSET_PREFIX = "asset:"; // asset node id namespace so an asset never collides with a bitcoin address
 export const BIP_W = "0.6931471805599453"; // ln(2): the constant bipartite edge weight (count is always 1 per pair)
 
-// curated conduits (exchanges + burns) excluded as trust SOURCES — subquery reused in every edge insert.
-export const EXCLUDE_SRC = `(SELECT key FROM curated WHERE kind IN ('exchange','burn'))`;
+// MACHINES AND CONDUITS DON'T VOUCH: trust is only emitted where an outbound relation reflects a
+// human choice. Excluded as trust SOURCES: curated exchanges + burns, detected exchange deposit
+// addresses (forwarding pipes), Emblem vault addresses (custody boxes, not collectors — matters
+// most for the bipartite holder edges), and likely-service addresses. They may still RECEIVE
+// (sinks are harmless under damping); they never pour. Subquery reused in every edge insert.
+export const EXCLUDE_SRC = `(SELECT key FROM curated WHERE kind IN ('exchange','burn')
+  UNION SELECT addr FROM address_signals WHERE is_deposit=1 OR is_emblem_vault=1 OR likely_service=1)`;
 
 /** Deterministic k-split: FNV-1a over the node id, mod K. Stable across rebuilds; reproducible in the harness. */
 export function seedSubset(key: string, k = K): number {
@@ -166,12 +171,15 @@ const countEdges = (selectCore: (lo: number, hi: number) => string) =>
 
 export const EDGE_INSERTS: string[] = [
   // sends: the source endorses the destination (a payment is a weak vouch). Plain sends are already keyed
-  // to the human operator (source) — the origin remap only matters on the dispenser rail below.
+  // to the human operator (source) — the origin remap only matters on the dispenser rail below. A creator
+  // funding their OWN empty-address dispenser is machine maintenance, not a vouch — dropped (else every
+  // trusted creator sprinkles trust over dozens of dead vending-machine addresses).
   ...countEdges((lo, hi) =>
-    `SELECT source, destination, COUNT(*) FROM sends
+    `SELECT source, destination, COUNT(*) FROM sends s
      WHERE block_index > ${lo} AND block_index <= ${hi}
        AND source IS NOT NULL AND destination IS NOT NULL AND source <> destination
        AND source NOT IN ${EXCLUDE_SRC}
+       AND NOT EXISTS (SELECT 1 FROM dispensers dp WHERE dp.source = s.destination AND dp.origin = s.source)
      GROUP BY source, destination`),
   // order_matches: a trade is a mutual interaction -> an edge each way.
   ...countEdges((lo, hi) =>
