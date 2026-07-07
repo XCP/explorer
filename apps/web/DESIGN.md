@@ -74,23 +74,36 @@ first screenful.** The home is a *now* dashboard, then the museum, then the refe
 5. Activity chart — secondary, drawn in accent (a red activity chart reads as an incident).
 6. Compact record feeds last (deep cuts for browsing).
 
-## App chrome (header + footer carry the brand)
+## App chrome (v3 — decided via design-lab rounds 1-4; see /design-lab, winner v11)
 
-**Header** (iterating — the highest-traffic UI in the product):
-- Brand mark: `xcp.io` wordmark with crimson dot — the one place brand red always lives.
-- Nav IA: Assets · Trades · Blocks · Records ▾ · Discover ▾ (intent-ranked; see nav-menu.tsx).
-- Search: the hero utility — `/` shortcut chip, shape-routing; candidates: ⌘K affordance,
-  typeahead suggestions (assets by prefix) as a later feature.
-- Buttons: exactly one primary (Connect Wallet, brand); everything else quiet.
-- Tickers: BTC/XCP compact, tabular-nums; drop below md.
+**The organizing idea: the global chrome is deliberately simple; each SECTION introduces itself
+with a robust contextual header.** The global header stops trying to be interesting — the asset,
+the address, the collection are the interesting things, and they get the rich treatment
+(section-header.tsx: identity row + chips + actions, stat strip, tabs).
 
-**Footer** (generous — the explorer's site map + trust signals, Etherscan-fat, not a strip):
-- 4 columns: **Explore** (Assets, Trades, Blocks, Mempool, all records) · **Discover**
-  (Leaderboards, Firsts, Vaults, Exchanges, Stats) · **Ecosystem** (xcpdex, Digirare, Wallet,
-  counterparty.io, GitHub) · **Data** (API, docs, this repo).
-- Brand row: wordmark + "Counterparty blockchain explorer — on Bitcoin since 2014."
-- The interesting bit: a **live sync line** — "Synced to block 956,948 · n pending" — the
-  explorer's heartbeat, in the footer on every page.
+**Status strip** (status-strip.tsx, above the header, not sticky): mono 11px, two clusters
+justified apart — chain state LEFT (sync dot · block · mempool), market RIGHT (BTC · XCP; drops
+below md). Tickers live here, never in the nav row.
+
+**Global header** (top-bar.tsx, sticky, SOLID bg — backdrop-blur rasterizes text and reads fuzzy
+on Windows):
+- Brand mark: `XCP.io` — mono, caps, crimson `.io`.
+- Nav IA: Assets · Trades · Blocks · Explore ▾ (the 16 record feeds) · Discover ▾. Quiet pills;
+  active = zinc-900 pill.
+- Search: the hero utility — `/` shortcut chip, shape-routing. Mobile: full-width row of its own.
+- Exactly one primary button (Connect Wallet, brand).
+
+**Section headers** (section-header.tsx — asset/address flavors live; block/collection to follow):
+identity (icon · mono name · tier/status chips · deep-link actions "Trade on xcpdex / Collect"),
+stat strip (4-6 stats, mono 17px values, `hideOnMobile` caps mobile at ~4), then the section's own
+tabs. Full-bleed band under the global chrome.
+
+**Type discipline (the fuzz rules)**: INTEGER font sizes only (13.5px lands on subpixel boundaries
+and ClearType smears it); base 14px; Geist/Geist Mono; no backdrop-filter under text.
+
+**Footer** (V2-lab structure): brand/about column (wordmark + one-paragraph mission) + 4 link
+columns (**Explore** · **Discover** · **Ecosystem** · **Data**), then the brand row with the
+**live sync line** — "Synced to block N · n pending" — the explorer's heartbeat on every page.
 
 ## Component recipes
 

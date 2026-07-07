@@ -2,22 +2,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { usePrices } from "@/lib/prices";
 import { SearchBox } from "@/components/search-box";
 import { NavMenu, type NavGroup } from "@/components/nav-menu";
+import { StatusStrip } from "@/components/status-strip";
 
 /**
- * Navigation IA — positions ranked by user intent:
- *   1 Assets (the catalog)  2 Trades (the market)  3 Blocks (the chain timeline)
- *   4 Records ▾ (the 16 protocol feeds, grouped)   5 Discover ▾ (curated/insight surfaces)
- * Transactions is a raw feed reached from blocks/search — it lives in Records, not primary.
+ * Global chrome (v3 direction, design-lab v11): deliberately SIMPLE — the identity burden lives in
+ * each section's contextual header, not here. Structure: status strip (chain left / market right),
+ * then one slim row: XCP.io wordmark · Assets · Trades · Blocks · Explore ▾ · Discover ▾ · search ·
+ * Connect. Tickers live in the strip, not this row.
  */
 const PRIMARY: [string, string][] = [
   ["Assets", "/assets"],
   ["Trades", "/trades"],
   ["Blocks", "/blocks"],
 ];
-const RECORDS: NavGroup[] = [
+const EXPLORE: NavGroup[] = [
   { heading: "Transfers", links: [["Sends", "/sends"], ["Sweeps", "/sweeps"], ["Dispenses", "/dispenses"]] },
   { heading: "Trading", links: [["Orders", "/orders"], ["Matches", "/matches"], ["Dispensers", "/dispensers"], ["BTCPays", "/btcpays"], ["Bets", "/bets"]] },
   { heading: "Issuance", links: [["Issuances", "/issuances"], ["Fairminters", "/fairminters"], ["Fairmints", "/fairmints"], ["Dividends", "/dividends"], ["Destructions", "/destructions"], ["Burns", "/burns"]] },
@@ -27,21 +27,11 @@ const DISCOVER: NavGroup[] = [
   { links: [["Mempool", "/mempool"], ["Collections", "/collections"], ["Leaderboards", "/leaderboards"], ["Firsts", "/firsts"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Network Stats", "/stats"]] },
 ];
 
-function Ticker({ label, v, chg }: { label: string; v: number | null; chg: number | null }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-zinc-400">{label}</span>
-      <span className="text-xs text-zinc-300 font-mono tabular-nums">{v != null ? `$${v < 10 ? v.toFixed(2) : v.toLocaleString()}` : "—"}</span>
-      {chg != null && <span className={`text-[10px] font-mono tabular-nums ${chg >= 0 ? "text-[--color-up]" : "text-[--color-down]"}`}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>}
-    </div>
-  );
-}
-
 function WalletButton({ full = false }: { full?: boolean }) {
   return (
     <button
       onClick={() => { const w = (window as { xcpwallet?: { connect?: () => Promise<void> } }).xcpwallet; if (w?.connect) w.connect().catch(() => {}); else window.open("https://www.xcp.io", "_blank"); }}
-      className={`rounded text-xs font-medium bg-[--color-xcp] text-white hover:brightness-110 transition ${full ? "w-full py-2.5" : "px-3 py-1.5"}`}
+      className={`rounded-md text-[13px] font-semibold bg-[--color-xcp] text-white hover:brightness-110 transition ${full ? "w-full py-2.5" : "px-3.5 py-1.5"}`}
     >
       Connect Wallet
     </button>
@@ -51,7 +41,6 @@ function WalletButton({ full = false }: { full?: boolean }) {
 export function TopBar() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const { btc, btcChange, xcp, xcpChange } = usePrices();
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
   // "/" focuses the (desktop) search field
@@ -74,63 +63,62 @@ export function TopBar() {
   }, [menuOpen]);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-5 px-4 py-2">
-        <Link href="/" className="font-bold tracking-wider font-mono text-sm text-zinc-100 no-underline hover:!brightness-100 shrink-0">
-          xcp<span className="text-[--color-xcp]">.io</span>
-        </Link>
+    <>
+      <StatusStrip />
+      {/* solid bg on purpose: backdrop blur rasterizes the header text and reads fuzzy on Windows */}
+      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950">
+        <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-5 px-4 py-2">
+          <Link href="/" className="font-bold tracking-wider font-mono text-[15px] text-zinc-100 no-underline hover:!brightness-100 shrink-0">
+            XCP<span className="text-[--color-xcp]">.io</span>
+          </Link>
 
-        {/* desktop nav */}
-        <nav aria-label="Primary" className="hidden sm:flex items-center gap-4 text-xs">
-          {PRIMARY.map(([label, href]) => (
-            <Link key={href} href={href} className={`!no-underline transition-colors border-b-2 pb-0.5 ${active(href) ? "!text-zinc-100 border-[--color-accent]" : "!text-zinc-400 border-transparent hover:!text-zinc-200"}`}>{label}</Link>
-          ))}
-          <NavMenu label="Records" id="nav-records" groups={RECORDS} />
-          <NavMenu label="Discover" id="nav-discover" groups={DISCOVER} />
-        </nav>
+          {/* desktop nav — quiet pills; the interesting header is the section's, not this one */}
+          <nav aria-label="Primary" className="hidden sm:flex items-center gap-1 text-[13px] font-medium">
+            {PRIMARY.map(([label, href]) => (
+              <Link key={href} href={href} className={`!no-underline rounded-md px-2.5 py-1.5 transition-colors ${active(href) ? "!text-zinc-100 bg-zinc-900" : "!text-zinc-400 hover:!text-zinc-100"}`}>{label}</Link>
+            ))}
+            <NavMenu label="Explore" id="nav-explore" groups={EXPLORE} />
+            <NavMenu label="Discover" id="nav-discover" groups={DISCOVER} />
+          </nav>
 
-        {/* desktop search */}
-        <div className="hidden sm:block ml-auto sm:ml-2 flex-1 max-w-md xl:max-w-lg"><SearchBox autoFocusKey /></div>
+          {/* desktop search */}
+          <div className="hidden sm:block ml-auto flex-1 max-w-md xl:max-w-lg"><SearchBox autoFocusKey /></div>
 
-        {/* desktop right */}
-        <div className="hidden sm:flex items-center gap-4 shrink-0">
-          <div className="hidden md:flex items-center gap-4"><Ticker label="BTC" v={btc} chg={btcChange} /><Ticker label="XCP" v={xcp} chg={xcpChange} /></div>
-          <div className="h-4 w-px bg-zinc-800" />
-          <WalletButton />
+          {/* desktop right */}
+          <div className="hidden sm:block shrink-0"><WalletButton /></div>
+
+          {/* mobile hamburger */}
+          <button onClick={() => setMenuOpen((o) => !o)} aria-label="Menu" aria-expanded={menuOpen} aria-controls="mobile-menu"
+            className="sm:hidden ml-auto flex items-center justify-center size-8 rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300">
+            <span aria-hidden="true" className="text-base leading-none">{menuOpen ? "✕" : "≡"}</span>
+          </button>
         </div>
 
-        {/* mobile hamburger */}
-        <button onClick={() => setMenuOpen((o) => !o)} aria-label="Menu" aria-expanded={menuOpen} aria-controls="mobile-menu"
-          className="sm:hidden ml-auto flex items-center justify-center size-8 rounded border border-zinc-800 bg-zinc-900 text-zinc-300">
-          <span aria-hidden="true" className="text-base leading-none">{menuOpen ? "✕" : "≡"}</span>
-        </button>
-      </div>
+        {/* mobile search row — always visible (search is the #1 mobile action) */}
+        <div className="sm:hidden px-4 pb-2"><SearchBox big /></div>
 
-      {/* mobile search row — always visible (search is the #1 mobile action) */}
-      <div className="sm:hidden px-4 pb-2"><SearchBox big /></div>
-
-      {/* mobile drawer — the same IA as desktop: primary row, then the grouped catalogs */}
-      {menuOpen && (
-        <nav id="mobile-menu" aria-label="Primary" className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto overscroll-contain">
-          <div className="flex items-center gap-4"><Ticker label="BTC" v={btc} chg={btcChange} /><Ticker label="XCP" v={xcp} chg={xcpChange} /></div>
-          <div className="flex gap-2">
-            {PRIMARY.map(([label, href]) => (
-              <Link key={href} href={href} className={`flex-1 text-center rounded border px-2 py-2 !no-underline text-sm ${active(href) ? "border-zinc-600 !text-zinc-100 bg-zinc-900" : "border-zinc-800 !text-zinc-400"}`}>{label}</Link>
-            ))}
-          </div>
-          {[{ title: "Records", groups: RECORDS }, { title: "Discover", groups: DISCOVER }].map(({ title, groups }) => (
-            <div key={title}>
-              <div className="pb-1 text-[10px] uppercase tracking-wider text-zinc-500">{title}</div>
-              <div className="grid grid-cols-2 gap-x-4">
-                {groups.flatMap((g) => g.links).map(([label, href]) => (
-                  <Link key={href} href={href} className={`!no-underline py-1.5 text-sm ${active(href) ? "!text-zinc-100" : "!text-zinc-400"}`}>{label}</Link>
-                ))}
-              </div>
+        {/* mobile drawer — same IA as desktop: primary row, then the grouped catalogs */}
+        {menuOpen && (
+          <nav id="mobile-menu" aria-label="Primary" className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto overscroll-contain">
+            <div className="flex gap-2">
+              {PRIMARY.map(([label, href]) => (
+                <Link key={href} href={href} className={`flex-1 text-center rounded-md border px-2 py-2 !no-underline text-sm ${active(href) ? "border-zinc-600 !text-zinc-100 bg-zinc-900" : "border-zinc-800 !text-zinc-400"}`}>{label}</Link>
+              ))}
             </div>
-          ))}
-          <WalletButton full />
-        </nav>
-      )}
-    </header>
+            {[{ title: "Explore", groups: EXPLORE }, { title: "Discover", groups: DISCOVER }].map(({ title, groups }) => (
+              <div key={title}>
+                <div className="pb-1 text-[10px] uppercase tracking-wider text-zinc-500">{title}</div>
+                <div className="grid grid-cols-2 gap-x-4">
+                  {groups.flatMap((g) => g.links).map(([label, href]) => (
+                    <Link key={href} href={href} className={`!no-underline py-1.5 text-sm ${active(href) ? "!text-zinc-100" : "!text-zinc-400"}`}>{label}</Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <WalletButton full />
+          </nav>
+        )}
+      </header>
+    </>
   );
 }
