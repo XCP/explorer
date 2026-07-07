@@ -12,7 +12,10 @@ import type {
   AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
   HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales, AssetFeedCounts,
 } from "@xcp/shared/assets";
-import type { SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow } from "@xcp/shared/records";
+import type {
+  SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow, FairmintRow, DividendRow, DestructionRow,
+  PoolRow, PoolMatchRow,
+} from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "../schema";
 import { q, one } from "../db";
 import { ORDER_SELECT } from "./records";
@@ -300,6 +303,56 @@ export function listAssetOrders(db: D1Database, asset: string, limit: number, of
   );
 }
 
+/** An asset's fairmints (the global /v2/fairmints feed projection, filtered to one asset). */
+export function listAssetFairmints(db: D1Database, asset: string, limit: number, offset: number): Promise<FairmintRow[]> {
+  return q<FairmintRow>(
+    db,
+    `SELECT tx_hash,block_index,block_time,source,fairminter_tx_hash,asset,earn_quantity,paid_quantity,status
+     FROM fairmints WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    asset, limit, offset
+  );
+}
+
+/** Dividends touching an asset on either side — paid ON it (asset) or paid IN it (dividend_asset). */
+export function listAssetDividends(db: D1Database, asset: string, limit: number, offset: number): Promise<DividendRow[]> {
+  return q<DividendRow>(
+    db,
+    `SELECT tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit_normalized,status
+     FROM dividends WHERE asset=? OR dividend_asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    asset, asset, limit, offset
+  );
+}
+
+/** An asset's destructions (the global /v2/destructions feed projection, filtered to one asset). */
+export function listAssetDestructions(db: D1Database, asset: string, limit: number, offset: number): Promise<DestructionRow[]> {
+  return q<DestructionRow>(
+    db,
+    `SELECT tx_hash,block_index,block_time,source,asset,quantity_normalized,tag,status
+     FROM destructions WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    asset, limit, offset
+  );
+}
+
+/** AMM pools the asset participates in — as either reserve leg, or as the pool's LP token. */
+export function listAssetPools(db: D1Database, asset: string, limit: number, offset: number): Promise<PoolRow[]> {
+  return q<PoolRow>(
+    db,
+    `SELECT lp_asset,pair,asset_a,asset_b,reserve_a,reserve_b,lp_supply,price,status,block_index
+     FROM pools WHERE asset_a=?1 OR asset_b=?1 OR lp_asset=?1 ORDER BY block_index DESC LIMIT ?2 OFFSET ?3`,
+    asset, limit, offset
+  );
+}
+
+/** AMM swaps touching the asset on either leg (POOL_MATCH events carry no lp_asset, so match on the legs). */
+export function listAssetPoolMatches(db: D1Database, asset: string, limit: number, offset: number): Promise<PoolMatchRow[]> {
+  return q<PoolMatchRow>(
+    db,
+    `SELECT tx_hash,block_index,block_time,source,lp_asset,pair,forward_asset,forward_quantity,backward_asset,backward_quantity
+     FROM pool_matches WHERE forward_asset=?1 OR backward_asset=?1 ORDER BY block_index DESC LIMIT ?2 OFFSET ?3`,
+    asset, limit, offset
+  );
+}
+
 /** Subassets of an asset (longname prefix match). */
 export function listSubassets(db: D1Database, asset: string, limit: number, offset: number): Promise<AssetListRow[]> {
   return q<AssetListRow>(
@@ -312,7 +365,9 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
 
 /** One count per detail-page feed tab — scalar subselects with the SAME filters as the per-asset
  *  list queries above (trades / issuances / dispensers / dispenses / orders-either-side / sends /
- *  subassets-by-longname-prefix) and the from-issuer feed (listIssued's issuer-or-owner predicate in
+ *  subassets-by-longname-prefix / fairmints / dividends-either-side / destructions /
+ *  pools-either-leg-or-lp) and the
+ *  from-issuer feed (listIssued's issuer-or-owner predicate in
  *  queries/addresses.ts), so each tab's count matches its table. `issuer` may be null (native path
  *  never reaches here, but an assets row can lack an issuer) — the from_issuer count is then 0. */
 export function assetFeedCounts(db: D1Database, asset: string, issuer: string | null): Promise<AssetFeedCounts | null> {
@@ -326,7 +381,11 @@ export function assetFeedCounts(db: D1Database, asset: string, issuer: string | 
        (SELECT COUNT(*) FROM orders WHERE give_asset=?1 OR get_asset=?1) orders,
        (SELECT COUNT(*) FROM sends WHERE asset=?1) sends,
        (SELECT COUNT(*) FROM assets WHERE asset_longname LIKE ?2) subassets,
-       (SELECT COUNT(*) FROM assets WHERE issuer=?3 OR owner=?3) from_issuer`,
+       (SELECT COUNT(*) FROM assets WHERE issuer=?3 OR owner=?3) from_issuer,
+       (SELECT COUNT(*) FROM fairmints WHERE asset=?1) fairmints,
+       (SELECT COUNT(*) FROM dividends WHERE asset=?1 OR dividend_asset=?1) dividends,
+       (SELECT COUNT(*) FROM destructions WHERE asset=?1) destructions,
+       (SELECT COUNT(*) FROM pools WHERE asset_a=?1 OR asset_b=?1 OR lp_asset=?1) pools`,
     asset, asset + ".%", issuer
   );
 }

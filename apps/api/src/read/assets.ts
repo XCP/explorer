@@ -10,7 +10,8 @@ import {
   listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText,
   assetSignalsRow, assetTags, assetSales, assetCollection, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
-  listAssetDispensers, listAssetDispenses, listAssetOrders, listSubassets, assetCohort, assetQualitySignals,
+  listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
+  listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetQualitySignals,
 } from "../queries/assets";
 
 export const assets = router();
@@ -180,6 +181,31 @@ assets.get("/v2/assets/:asset/dispenses", async (c) => {
 
 assets.get("/v2/assets/:asset/orders", async (c) => {
   const rows = await listAssetOrders(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
+});
+
+assets.get("/v2/assets/:asset/fairmints", async (c) => {
+  const rows = await listAssetFairmints(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
+});
+
+assets.get("/v2/assets/:asset/dividends", async (c) => {
+  const rows = await listAssetDividends(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
+});
+
+assets.get("/v2/assets/:asset/destructions", async (c) => {
+  const rows = await listAssetDestructions(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
+});
+
+assets.get("/v2/assets/:asset/pools", async (c) => {
+  const rows = await listAssetPools(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
+});
+
+assets.get("/v2/assets/:asset/pool-matches", async (c) => {
+  const rows = await listAssetPoolMatches(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 

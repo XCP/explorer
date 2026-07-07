@@ -5,7 +5,7 @@ import type { AssetFeedCounts } from "@xcp/shared/assets";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { RelatedTab } from "@/components/related-tab";
 import { blockCell, txCell, addrCell, timeCell } from "@/lib/cells";
-import { ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS } from "@/lib/registry";
+import { POOL_COLS, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS, FAIRMINT_COLS, DIVIDEND_COLS, DESTRUCTION_COLS } from "@/lib/registry";
 import { TRADE_COLS } from "@/components/trades";
 import { commas, short } from "@/lib/format";
 
@@ -15,8 +15,12 @@ import { commas, short } from "@/lib/format";
 // (SWR/pagination) DetailTabs. The server page's overview node and contextual band pass straight
 // through. Feed tabs carry v19's mono counts (feed_counts on the asset detail; omitted when the
 // count read failed); Related is a panel tab that fetches only while selected.
-export function AssetTabs({ asset, issuer, collection = null, holderCount, feedCounts, inBand = false, overview, banner }: {
-  asset: string; issuer: string | null; collection?: string | null;
+//
+// Feed tabs are EARNED: any feed tab whose count is known and zero is omitted entirely, so a
+// dormant asset shows only Overview, Related, and whatever activity it actually has. Tabs whose
+// count is unknown (the count read failed) still render; Overview and Related always render.
+export function AssetTabs({ asset, collection = null, holderCount, feedCounts, inBand = false, overview, banner }: {
+  asset: string; collection?: string | null;
   holderCount?: number | null; feedCounts?: AssetFeedCounts | null;
   inBand?: boolean; overview?: ReactNode; banner?: ReactNode;
 }) {
@@ -51,8 +55,13 @@ export function AssetTabs({ asset, issuer, collection = null, holderCount, feedC
       { label: "From", cell: (r) => addrCell(r.source) }, { label: "To", cell: (r) => addrCell(r.destination) },
       { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) }, { label: "Tx", cell: (r) => txCell(r.tx_hash) },
     ]},
+    { label: "Fairmints", path: `${base}/fairmints`, cols: FAIRMINT_COLS, count: feedCounts?.fairmints },
+    { label: "Dividends", path: `${base}/dividends`, cols: DIVIDEND_COLS, count: feedCounts?.dividends },
+    { label: "Destructions", path: `${base}/destructions`, cols: DESTRUCTION_COLS, count: feedCounts?.destructions },
     { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS, count: feedCounts?.subassets },
-    ...(issuer ? [{ label: "From issuer", path: `/v2/addresses/${issuer}/issued`, cols: ASSET_LIST_COLS, count: feedCounts?.from_issuer }] : []),
+    { label: "Pools", path: `${base}/pools`, cols: POOL_COLS, count: feedCounts?.pools },
   ];
-  return <DetailTabs tabs={tabs} inBand={inBand} overview={overview} banner={banner} />;
+  // the zero-count rule: a feed tab with a KNOWN empty feed doesn't earn a spot in the bar.
+  const earned = tabs.filter((t) => !("path" in t) || t.count == null || t.count > 0);
+  return <DetailTabs tabs={earned} inBand={inBand} overview={overview} banner={banner} />;
 }

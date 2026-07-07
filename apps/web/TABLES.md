@@ -1,4 +1,322 @@
-# TABLES.md — record-table design spec, mined from the owner's prior Counterparty UIs
+# TABLES.md — record-table spec (FINAL)
+
+Synthesized from three inputs: (1) conventions mined from the owner's prior Counterparty UIs,
+(2) the unsurfaced-data audit — both preserved verbatim under "Inputs" below — and (3) an
+adversarially-verified research survey on dense-table design (2026-07: 25 sources fetched,
+25 claims 3-way verified, 20 confirmed / 5 refuted). This document drives the
+columns.tsx/cells.tsx rewrite. Read top-down: rules → per-record plan → rollout order.
+
+---
+
+## The rules (final)
+
+Tags: **[mined]** = owner precedent only · **[research: source, confidence]** = verified survey
+finding · **[both]**. Where research QUALIFIED a mined rule, the qualification is part of the rule.
+
+**R1. Payload first; fixed trailing run `Status? → Block → relative Time → View`.** Block is never
+column 1 unless blocks are the table's subject. [both — mined T1/T4; research: NN/g
+importance-ordering ("column order should reflect importance to the user's task, related columns
+adjacent") + the bypassing pattern, high. Provenance note: the popular "leftmost column gets the
+most fixations" eye-tracking justification was REFUTED in verification (0-3, three separate
+claims — those studies cover text pages and comparison tables, not record tables). The rule
+stands on importance-ordering and bypassing, not fixation heat.]
+
+**R2. Row anchor = the record's subject.** Asset-bearing rows anchor on icon + linked asset name
+(icon ≥24px in anchor position, 16px in secondary asset columns); asset-less rows anchor on
+Source; the raw tx list anchors on the hash. [both — mined T2; research: NN/g "first column
+should be a human-readable record identifier, not mystery meat", medium. NN/g leaves
+canonical-hash identifiers unaddressed — we keep hash-first ONLY on the generic transactions
+list, and pair it with a human-readable Type chip (see plan §1).]
+
+**R3. Quantity sits immediately right of its asset** — they read as one phrase
+("1,000 PEPECASH"). [both — mined T3; research: NN/g "related columns should be adjacent", high.]
+
+**R4. Contextual suppression: never render the column the page already answers** (asset column on
+asset pages, source on address pages, block on block pages), and sign quantities from the page
+subject's perspective on address tabs. [both — mined T5; research: the bypassing pattern — "users
+deliberately skip the first words when multiple lines start with the same word(s)" — high; a
+value repeating down every row is actively ignored and wastes the highest-value real estate.
+Corollary from the same finding: avoid uniform leading prefixes inside anchor cells — front-load
+the differentiating characters.]
+
+**R5. Addresses render FULL wherever the address is payload.** [both — mined T6; research: USENIX
+Security 2025 address-poisoning measurement (~270M attempts, ~$84M confirmed losses) + arXiv
+2508.12107, high — the survey's best-evidenced rule: prefix+suffix truncation is precisely the
+exploitable gap attackers mint lookalikes against.] Where space genuinely forbids it (dense tapes
+only): a LONG prefix+suffix run plus a copy-full affordance — **never 4+4**; our exchange-derived
+`6…4` is below the research bar and should lengthen when touched. Labels (curated
+`exchange_name`, burn) render as a colored parenthetical after the address.
+
+**R6. Units live in headers (`Price (BTC)`, `Fee Paid (XCP)`), never repeated per cell; headers go
+sticky on long tables.** [both — mined T8; research: UNC eye-tracking thesis — column/row
+headings absorb ~half of total fixation duration during table search — medium (n=8; treat as
+directional; sticky is our extrapolation from "the anchor should never scroll away").]
+
+**R7. Numbers: right-aligned `font-mono tabular-nums`; always the normalized value (divide by 1e8
+only when divisible — never render raw satoshi fields); comma-grouped; magnitude-aware precision
+≤8dp; trailing zeros stripped; signed % keeps its `+`.** [mined T7 — the research survey produced
+NO surviving verified claims on numeric formatting (precision, compaction, decimal alignment);
+this stays practitioner convention, marked as such.]
+
+**R8. Green/red are reserved for buy/sell semantics AND must never be hue-only.** [both — mined
+T9; research: Bloomberg CVD study — CVD users (~6% of Terminal subscribers, red-green being the
+common axis) were measurably more accurate and more confident on alternative palettes — high.]
+Concretely: every green/red value carries a non-color channel (the buy/sell word itself, a
+`+`/`-` sign, or an arrow); ALL non-semantic table text stays neutral so the semantic hues remain
+exclusive; status pills may use green/red because the pill's text label is the redundant channel.
+Optional future CVD mode: blue=up/buy, red=down/sell (Bloomberg's scheme).
+
+**R9. Time is relative in table cells** ("3 days ago"; compact `5m`/`3h` on tapes) **with the
+absolute UTC in `title`**; absolute timestamps belong only in detail-page KV panels. [mined T4 —
+research silent; practitioner convention.]
+
+**R10. Status renders as a colored pill** (`bg-{c}-400/10 text-{c}-400 ring-{c}-400/20`):
+open/valid=green, filled=blue, expired/invalid=red, cancelled=gray, pending=yellow,
+completed=indigo; dispensers: open=green, open-empty=yellow, closing=orange, closed=red.
+[mined T4 — research silent on palettes; text-in-pill satisfies R8's redundant channel.]
+
+**R11. Hover + keyboard-focus row highlighting is the PRIMARY place-keeping mechanism** in our
+link-row tables — the only aid that is on-demand and adds zero static ink. Zebra striping is an
+optional no-harm default (if adopted: single color, alternating single rows, dark theme = one
+slightly lighter surface tone) and never load-bearing. [research: NN/g data-tables, medium;
+Enders striping studies (244 participants + 2,276 timed sessions: significant on only 1/6 speed
+and 3/8 accuracy questions, never negative), high. Fills a mined gap.]
+
+**R12. No cell flashing, ever, in historical tables.** Explorer records are append-only —
+blinking is per-column opt-in and only for genuinely live cells (mempool status, chain tip).
+[research: AG Grid, the dominant financial-grid practice — flashing off by default, deliberate
+per-column opt-in — high. Fills a mined gap.]
+
+**R13. One consistent column grammar across all record types; strict vertical alignment; one
+attribute per column; no prose-shaped cells** (text columns truncate ~50 chars). Structure is the
+defense against lossy F-scanning, which appears exactly when structural cues are absent; lookup
+users scan DOWN a key column, so optimize column-wise consistency across the 16 types. [both —
+mined T12 (shared chrome, per-type columns); research: NN/g F-pattern-is-conditional +
+lawn-mower-exception, high. Caution: the lawn-mower row-sweep is comparison-table behavior — do
+not cite it for record-table column order.]
+
+**R14. Responsive: prose/secondary columns hide first (`hideBelow`); identity, quantity, and
+status never hide.** [mined T11 — research silent.]
+
+**R15. Trading tapes invert the grammar: Time first** (trades, mempool — freshness anchors when
+recency is the question or no block exists). [mined T10 — research silent.]
+
+**Areas the research could NOT verify** — no surviving claims; these stay practitioner
+convention, marked as such: numeric formatting/precision/compaction (R7), the Tufte/Few/Butterick
+typographic canon itself (so "right-aligned tabular numerals" and "units in headers" are only
+indirectly evidenced), WCAG floors for dense tables (24px target size, screen-reader semantics of
+link-rows, `<th>` scope), and empty/skeleton states. Keep current practice — real `<table>`
+markup, `<th>` headers, explicit "No {things} found" empties, adequate row padding — as
+convention, not evidence.
+
+---
+
+## Per-record implementation plan
+
+Notation: `⟨run⟩` = trailing run `Status? | Block | Time | View` (R1) — Status only where the
+record has state worth showing; Block linked + comma-grouped, suppressed on block pages; Time
+relative with UTC `title`; View right-aligned trailing link, `sr-only` header. Cell recipes are
+§C below (assetAnchor = ≥24px icon + link; qty = normalized, signed in address context; addr =
+full linked mono + optional label; pill = R10; chip = small neutral label — chips are NOT
+green/red per R8). Work markers: **(P1)** systemic sweep · **(P2)** returned-but-hidden, cells
+only · **(P3)** API/query work — see Rollout.
+
+### 1. transactions
+- Columns: `Tx | Type | Source | Destination | ⟨Block | Time | View⟩`
+- Add: **Type chip decoded from `data` type byte (P3)** — audit #6; a tx list that can't say what
+  each tx is answers nothing. Optional: btc_amount/fee (already returned) at `hideBelow: "xl"`.
+- Suppress: Source on address pages; Block on block pages.
+- Cells: short-hash mono link (R2's sanctioned exception), chip, addr, addr, ⟨run⟩.
+
+### 2. sends
+- Columns: `Asset | Quantity | Type | Source | Destination | ⟨Block | Time | View⟩` (no Status —
+  valid-only feed)
+- Add: **`send_type` chip (P2)** — audit #10, cheapest item: attach/detach/MPMA/move are
+  different actions flattened into "send" today. Later: `memo` (P3, stored not returned).
+- Suppress: Asset on asset tab; Source on address tab + sign Quantity.
+- Cells: assetAnchor, qty(signed), chip, addr, addr, ⟨run⟩.
+
+### 3. issuances
+- Columns: `Asset | Quantity | Action | Issuer | Description | ⟨Status | Block | Time | View⟩`
+- Add: **Action badge from `asset_events` (P3)** — audit #5; the mined table's defining column
+  (Lock/Reset/Transfer/Issue/Edit/Create) is stored verbatim, one SELECT away. Description
+  (already returned) truncated 50 at `hideBelow: "xl"`. Optional: `fee_paid` (P3, mined column).
+- Suppress: Asset on asset tab.
+- Cells: assetAnchor, qty, action badge (icon+label, per-action accent), addr, text-trunc, pill, ⟨run⟩.
+
+### 4. orders
+- Columns: `Pair | Side | Price | Amount | Total | Filled % | Expires | ⟨Status | Block | View⟩`
+- Add: **Total = price × amount (P2, derived client-side)**; **Filled % from
+  `give_remaining`/`get_remaining` (P3)** and **Expires from `expiration`/`expire_index` (P3)** —
+  audit #3, the two live questions about an open order. Maker `source` is returned and unshown —
+  add at `hideBelow: "lg"`.
+- Suppress: nothing page-equal (Pair ≠ asset page asset — keep but consider suppressing base on
+  asset tab).
+- Cells: pair link, side (green/red word — R8 satisfied by the word), price (unit → header, R6),
+  qty, qty, percent, blocks-left ("~2d" style), pill, ⟨run⟩.
+
+### 5. order_matches → trades-shaped
+- Columns: `Pair | Side | Price | Quantity | Total | Buyer | Seller | ⟨Status | Block | Time | View⟩`
+- Add: **normalize quantities via the ORDER_SELECT-style divisibility join (P3)** — audit #2 /
+  gap-list #1; `tx1_address` is already returned (P2). Pending BTC matches: settle-by from
+  `match_expire_index` (P3, optional). DEX matches already exist normalized in `trades` — reuse.
+- Suppress: Buyer/Seller when equal to the address page subject.
+- Cells: pair link, side, price, qty, qty, addr, addr, pill, ⟨run⟩.
+
+### 6. dispensers
+- Columns: `Asset | Price (BTC) | Available | Sales | ⟨Status | Block | View⟩` + Source at
+  `hideBelow: "lg"`
+- Add: **`status` badge (P2)** — audit #4, on the wire today, hidden entirely; **`operator_trust`
+  (P2 on asset tabs — already SELECTed there, rendered nowhere)**. **`escrow_quantity` (P3)**
+  completes the mined `remaining / escrow` Available cell; `give_quantity` unit size in `title`;
+  `oracle_address` (P3) so oracle-priced machines stop looking free/wrong; `origin` (P3).
+- Suppress: Asset on asset tab; Source on address tab.
+- Cells: assetAnchor, price (sats mode for dust), combined `remaining / escrow` qty, count,
+  dispenser pill (4-state palette), ⟨run⟩.
+
+### 7. dispenses
+- Columns: `Asset | Quantity | Price (BTC) | Total (BTC) | Source | Destination | ⟨Block | Time | View⟩`
+- Add: **`btc_amount` → Price + Total (P3)** — audit #1, the single largest stored-but-invisible
+  field; without it a dispense is indistinguishable from a free send. **USD (P3)** — already
+  computed in the `trades` ledger; render as column at `hideBelow: "lg"` or `title`.
+  `dispenser_tx_hash` (returned) links the machine — put on the Price cell.
+- Suppress: Asset on asset tab; Source/Destination per address tab + sign.
+- Cells: assetAnchor, qty, price, total (+USD title), addr, addr, ⟨run⟩.
+
+### 8. sweeps
+- Columns: `Source | Destination | Sweep | Fee Paid (XCP) | Memo | ⟨Block | Time | View⟩`
+- Add: **`flags` badge (P2)** — balances / ownership / binary-memo, the mined SweepFlagsBadge,
+  zero backend work; **`fee_paid` (P2)**. Memo demoted to `hideBelow: "xl"`.
+- Suppress: Source on address tab.
+- Cells: addr, addr, flags badge, qty, text-trunc, ⟨run⟩.
+
+### 9. broadcasts
+- Columns: `Source | Text | Value | ⟨Block | Time | View⟩`
+- Add: **`locked` badge + oracle attribution (P2 locked / P3 oracle)** — separates dead feeds and
+  price oracles from graffiti. Text truncated ~50, never hidden below Value: Value gets
+  `hideBelow: "xl"` (invert today's mistake).
+- Suppress: Source on address tab.
+- Cells: addr (+oracle/locked chip), text-trunc, numeric, ⟨run⟩.
+
+### 10. burns
+- Columns: `Source | Burned (BTC) | Earned (XCP) | USD | ⟨Block | Time | View⟩`
+- Add: **USD-at-burn via `prices` (P3)** — turns a 2014 curiosity into "paid $X for its XCP";
+  column or `title`.
+- Suppress: Source on address tab.
+- Cells: addr, qty, qty, usd, ⟨run⟩.
+
+### 11. dividends
+- Columns: `Asset | Dividend | Per Unit | Recipients | Source | ⟨Block | Time | View⟩`
+- Add: **`fee_paid` → Recipients (P3)** — the protocol fee counts holders paid
+  (fee_paid / 20000 sat); "how many got paid" is the dividend question.
+- Suppress: Asset on asset tab; Source on address tab.
+- Cells: assetAnchor, asset link (16px icon), qty (unit = dividend_asset, header note), count,
+  addr, ⟨run⟩.
+
+### 12. bets
+- Columns: `Source | Type | Wager (XCP) | Counterwager (XCP) | Target | Expiration | ⟨Status | Block | View⟩`
+- Add: **`bet_type` + `counterwager_quantity` (P2)** — both returned; type and odds are what a
+  bet is. `target_value`, `deadline` returned too. **Fix: wager renders raw satoshis — normalize
+  (P2, R7 bug).** Feed address `hideBelow: "md"`.
+- Suppress: Source on address tab.
+- Cells: addr, bet-type badge (Bullish/Bearish CFD, Equal/NotEqual), qty, qty, numeric, blocks,
+  pill, ⟨run⟩.
+
+### 13. fairminters
+- Columns: `Asset | Price (XCP) | Minted % | Hard Cap | ⟨Status | Block | View⟩` + Source at
+  `hideBelow: "lg"`
+- Add: **Minted % = `earned_quantity` / `hard_cap` (P2)** — audit #9, both operands on the wire;
+  one cell turns a config dump into a progress table. Later: window state from
+  `start_block`/`end_block` (P3), `burn_payment` (P3 — changes what "price" means).
+- Suppress: Asset on asset tab.
+- Cells: assetAnchor, price (unit → header, R6), percent (progress), qty, pill, ⟨run⟩.
+
+### 14. fairmints
+- Columns: `Asset | Earned | Paid (XCP) | Source | ⟨Block | Time | View⟩`
+- Add: **`paid_quantity` (P2)** — free-mint vs paid-mint is the row's one interesting split.
+  **Fix: `earn_quantity` renders raw — normalize (P2, R7 bug).**
+- Suppress: Asset on asset tab; Source on address tab.
+- Cells: assetAnchor, qty, qty, addr, ⟨run⟩.
+
+### 15. destructions
+- Columns: `Asset | Quantity | Tag | Source | ⟨Block | Time | View⟩`
+- Add: nothing — leanest table in the mirror; just the P1 reorder + Time. Tag stays at
+  `hideBelow: "md"`.
+- Suppress: Asset on asset tab; Source on address tab + sign.
+- Cells: assetAnchor, qty(signed), text-trunc, addr, ⟨run⟩.
+
+### 16. btcpays
+- Columns: `Source | Destination | BTC | Order Match | ⟨Block | Time | View⟩`
+- Add: **link `order_match_id` (P2)** — already returned; a btcpay without its match is a
+  context-free BTC transfer. Later: resolve to pair/price of the settled trade (P3).
+- Suppress: Source/Destination on address tab.
+- Cells: addr, addr, qty, match link, ⟨run⟩.
+
+### Non-registry tables
+- **trades** (tape, Time-first per R15): add **unit `price` + `seller` (P2)** — both returned;
+  **self-trade dim via `asset_signals.self_trade_pct`/`low_quality` + buyer=seller flag (P3)** —
+  audit #8. Keep compact time.
+- **holders**: add **% of supply + rank (P2)** — denominator already on the page — audit #7;
+  later `updated_block_index` "last moved" + curated `exchange_name` labels (P3).
+- **blocks**: Block-first is correct (blocks are the subject); complete. Optional: interval Δ
+  client-side.
+- **mempool**: Time-first, conforms (R15). The one place cell flashing may ever be enabled (R12).
+
+---
+
+## Rollout order
+
+### Pass 1 — systemic (one sweep of registry/columns.tsx + cells.tsx + record-table.tsx + ui/table.tsx)
+1. **Reorder all 16 kinds payload-first + append the trailing run** `Status? | Block | Time | View`
+   (R1): Block linked/comma-grouped/moved to run; View as right-aligned trailing link with
+   `sr-only` header.
+2. **Relative-time cell** — new `timeAgo` cell with absolute UTC in `title` (R9); registry rows
+   gain Time where missing (block_time is already returned on nearly every kind).
+3. **Status pill component** + palette (R10) — replaces bare status text everywhere; includes the
+   4-state dispenser variant.
+4. **Contextual suppression** — `context` knob on `Col`/`RecordTable`
+   (`{ address?, asset?, block? }`) driving column drop + quantity signing (R4); `detail-tabs.tsx`
+   passes page context.
+5. **Hover + focus-visible row highlight** in `ui/table.tsx` (R11); zebra optional/no-harm.
+6. **Units out of cells into headers** (R6): orders Price, dispenser price/sats.
+7. **Anchor asset cells at ≥24px icon** (16px stays for secondary asset columns) (R2).
+8. Confirm the non-rules: no cell flashing anywhere (R12); full addresses stay (R5); non-semantic
+   text neutral, green/red only on side/status-with-label (R8).
+
+### Pass 2 — per-type payload fixes (returned-but-hidden; columns + cells only), impact order
+1. dispensers: `status` pill + `operator_trust` (audit #4)
+2. holders: % of supply + rank (audit #7)
+3. trades: unit `price` + `seller` columns (audit #8)
+4. fairminters: Minted % (audit #9)
+5. sends: `send_type` chip (audit #10)
+6. bets: `bet_type` + counterwager + target + deadline; fix raw-sats wager (gap #6)
+7. sweeps: `flags` badge + `fee_paid` (gap #7)
+8. broadcasts: Text before Value, Value `hideBelow: "xl"`, `locked` badge (gap #9)
+9. fairmints: `paid_quantity`; fix raw `earn_quantity` (gap #11)
+10. btcpays: `order_match_id` link
+11. orders: Total (derived) + maker `source` at `hideBelow: "lg"`
+12. issuances: `description` truncated at `hideBelow: "xl"`
+
+### Pass 3 — API additions (stored-not-returned fields or new joins), audit-ranked
+1. dispenses: SELECT `btc_amount` → Price (BTC) / Total (BTC) / USD (audit #1 — largest gap)
+2. order_matches: divisibility join → normalized Price/Quantity/Total trade view (audit #2)
+3. orders: SELECT `give_remaining`/`get_remaining` + `expiration`/`expire_index` → Filled % +
+   Expires (audit #3)
+4. issuances: SELECT `asset_events` → Action badge (audit #5)
+5. transactions: decode `data` type byte → Type chip (audit #6)
+6. dispensers: `escrow_quantity` (Available = remaining/escrow), `oracle_address`, `origin`
+7. dividends: `fee_paid` → Recipients
+8. burns: USD-at-burn via `prices`
+9. trades/holders polish: self-trade dim via `asset_signals`; `updated_block_index` "last moved";
+   curated `exchange_name` labels on every addrCell
+10. cross-cutting: `prices` day-lookup USD `title`s on dispenser prices, order totals, fairmint
+    payments
+
+---
+
+# Inputs (source material — preserved verbatim)
+
+## Input 1 — mined conventions from the owner's prior Counterparty UIs
 
 Sources mined (cloned at HEAD, 2026-07-07):
 
@@ -19,7 +337,7 @@ Audited against: `apps/web/src/lib/registry.tsx` (column defs), `apps/web/src/li
 
 ---
 
-## A. Touchstones — the cross-table invariants
+### A. Touchstones — the cross-table invariants
 
 These held across *every* explorer table in nuxt-xcp and (where applicable) both DEX repos.
 
@@ -190,7 +508,7 @@ convention and T5's context suppression.
 
 ---
 
-## B. Per-record layouts (our 16 registry kinds)
+### B. Per-record layouts (our 16 registry kinds)
 
 Legend: **[move]** wrong position · **[miss]** column the mined spec has and we lack ·
 **[noise]** column the mined spec deliberately omits or demotes.
@@ -314,7 +632,7 @@ block is the subject; nuxt `BlocksTable.vue` and xcpdex `Blocks.vue` both lead w
 
 ---
 
-## C. Cell recipes
+### C. Cell recipes
 
 **Asset** — linked to `/asset/`, icon + display name where display name = `asset_longname ?? asset`
 (nuxt `utils/formatAssetName.js`; XCP/BTC never get longnames). Icon from
@@ -356,7 +674,7 @@ text — no pill, no color.
 
 ---
 
-## D. Gap list — ranked by distance from spec
+### D. Gap list — ranked by distance from spec
 
 1. **order_matches** — wrong genre entirely: raw forward/backward dump, no price/quantity/total,
    one party, no time; row ends mid-thought. Needs the xcpdex trade-view rebuild.
@@ -376,3 +694,256 @@ text — no pill, no color.
 11. **fairmints** — raw `earn_quantity`; **transactions** — hash buried third; both quick fixes.
 12. **Minor polish** — 16px anchor icons (mined: 40px), units in cells instead of headers
     (T8), relative-time absent from list rows.
+
+---
+
+## Input 2 — unsurfaced data audit (2026-07-07)
+
+What we HAVE but don't SHOW, per record type. Four buckets per table:
+
+- **Displayed** — columns in the registry/component today.
+- **Returned, hidden** — on the wire (queries/records.ts SELECT + @xcp/shared row) but no column
+  renders it. Zero-backend-work additions.
+- **Stored, not returned** — in D1 (migrations 0002/0003/0004/0006/0007/0009) but not SELECTed.
+  One-line SELECT + wire-type additions.
+- **Derivable** — absent from the row but we already run the machinery elsewhere: the `prices`
+  day×currency USD calendar (BTC/ETH/XCP daily, indexer/prices.ts), `asset_signals`
+  (quality tier, `low_quality`, `self_trade_pct`, `graph_trust`), `address_signals`
+  (`is_exchange`/`is_burn`/`is_deposit`/`is_emblem_vault`/`likely_service`, `disp_trust`),
+  `curated` (`exchange_name` operator labels), `dispenser_refills`, `cancels`, `btcpays`,
+  mempool pending reads.
+
+Verdict criterion: does it answer the question a reader of THAT table is actually asking?
+
+### transactions
+| | |
+|---|---|
+| Displayed | block_index, block_time, tx_hash, source, destination |
+| Returned, hidden | tx_index, btc_amount, fee, supported |
+| Stored, not returned | `data` (the raw message payload), `utxos_info` |
+| Derivable | message-type chip decoded from `data` (type byte → send/order/issuance/…); address labels via curated |
+| **Verdict** | **A message-type column from `data`** — a tx list that can't say what each tx *is* answers nothing; the payload is sitting in the mirror. |
+
+### sends
+| | |
+|---|---|
+| Displayed | block_index, asset, quantity_normalized, source, destination, tx_hash |
+| Returned, hidden | block_time, `send_type` (send / enhanced_send / **mpma / attach / detach / move**), status |
+| Stored, not returned | `memo`, `memo_hex`, `fee_paid` (attach XCP gas), `source_address`/`destination_address` (UTXO↔address provenance), msg_index, tx_index |
+| Derivable | curated `exchange_name` label on either endpoint; is_exchange/is_burn badges; asset quality tier / low_quality dimming |
+| **Verdict** | **`send_type` chip** — already on the wire; a UTXO `attach` and a plain send are different stories rendered identically today. Memo close second. |
+
+### sweeps
+| | |
+|---|---|
+| Displayed | block_index, source, destination, memo, tx_hash |
+| Returned, hidden | block_time, **`flags`** (1=balances, 2=ownership, 4=binary memo — the payload §B.8 wants), `fee_paid` (XCP), status |
+| Stored, not returned | — (all columns returned) |
+| Derivable | swept-asset count (balances at block — heavy; skip), address labels |
+| **Verdict** | **`flags` badge** — the mined SweepFlagsBadge needs zero backend work; it's already in SweepRow. |
+
+### dispenses
+| | |
+|---|---|
+| Displayed | block_index, asset, dispense_quantity_normalized, source, destination, tx_hash |
+| Returned, hidden | block_time, `dispenser_tx_hash` (link to the machine that sold) |
+| Stored, not returned | **`btc_amount`** (BTC the buyer actually paid — §B.7's missing Price/Total), `dispense_index` |
+| Derivable | **USD via `prices`** — dispenses are already rows in the `trades` ledger *with `usd_value` filled*; per-unit BTC price = btc_amount/quantity; buyer labels; repeat-buyer flag |
+| **Verdict** | **`btc_amount` → Price (BTC) + Total + USD** — the single largest stored-but-invisible field anywhere; without it a dispense is indistinguishable from a free send, and the USD is *already computed* in `trades`. |
+
+### orders
+| | |
+|---|---|
+| Displayed | block_index, pair, side, price, amount, status, tx_hash |
+| Returned, hidden | block_time, `source` (the maker — no party shown at all today) |
+| Stored, not returned | **`give_remaining`/`get_remaining`** (fill progress), **`expiration` + `expire_index`** (blocks left — first-class in xcpdex), `fee_required`/`fee_provided` (+`_remaining`), `closed_block_index` |
+| Derivable | Total (quote) = price × amount from returned fields; Filled % = 1 − remaining/quantity; Expires-in = expire_index − tip; USD via `prices`; cancel provenance via `cancels.offer_hash` |
+| **Verdict** | **`give_remaining`/`get_remaining` → Filled %, and `expire_index` → Expires** — an open order's two live questions (how much is left? how long?) are both in D1 and neither is SELECTed. |
+
+### order_matches
+| | |
+|---|---|
+| Displayed | block_index, forward_asset, backward_asset, status, tx0_address |
+| Returned, hidden | `tx1_address` (the other party), `forward_quantity`/`backward_quantity` (raw — unusable without divisibility), tx0_hash/tx1_hash, block_time, id |
+| Stored, not returned | `match_expire_index`, `fee_paid`, tx0/tx1_index, tx0/tx1_block_index, tx0/tx1_expiration |
+| Derivable | Price/Quantity/Total via the ORDER_SELECT-style divisibility join (machinery exists in queries/records.ts); USD via `prices`; BTC-match settlement state via `btcpays.order_match_id`; DEX matches are already normalized rows in `trades` |
+| **Verdict** | **Normalize the quantities and render the trade view** (§D.1) — everything needed is returned or one join away; `pending` BTC matches could even show settle-by (`match_expire_index`). |
+
+### dispensers
+| | |
+|---|---|
+| Displayed | block_index, asset, satoshirate_normalized, give_remaining_normalized, dispense_count, source, tx_hash |
+| Returned, hidden | block_time, `give_quantity_normalized` (unit size — "sells in lots of N"), **`status`** (0 open / 10 closed / 11 closing — hidden entirely, §B.6's top miss), **`operator_trust`** (already SELECTed on /v2/assets/:a/dispensers — rendered nowhere) |
+| Stored, not returned | **`escrow_quantity`** (the mined `remaining / escrow` combined cell), `origin` (true creator when source is an empty vending address), **`oracle_address`** (oracle-priced dispensers look free/wrong without it), `closed_block_index`, `last_status_tx_hash` |
+| Derivable | USD price via `prices` (satoshirate × BTC/USD); refill history via `dispenser_refills`; operator label via curated |
+| **Verdict** | **`status` badge + the already-returned `operator_trust`** — state and operator track record are the two "should I buy from this machine?" answers; both are on the wire today (status globally, trust on the asset tab). |
+
+### btcpays
+| | |
+|---|---|
+| Displayed | block_index, source, destination, btc_amount_normalized, tx_hash |
+| Returned, hidden | **`order_match_id`** (the match this payment settles — the row's entire story, §B.16), status, block_time |
+| Stored, not returned | btc_amount raw |
+| Derivable | resolve order_match_id → pair/price of the settled trade; USD via `prices` |
+| **Verdict** | **Link `order_match_id`** — already returned; a btcpay without its match is a context-free BTC transfer. |
+
+### bets
+| | |
+|---|---|
+| Displayed | block_index, source, feed_address, wager_quantity (raw sats — known bug), status, tx_hash |
+| Returned, hidden | **`bet_type`** (Bullish/Bearish CFD, Equal/NotEqual), **`counterwager_quantity`** (the odds), `deadline`, `target_value`, `leverage`, block_time |
+| Stored, not returned | `wager_remaining`/`counterwager_remaining` (fill), `expiration`/`expire_index`, `fee_fraction_int` |
+| Derivable | odds = wager/counterwager; feed reputation via broadcasts history |
+| **Verdict** | **`bet_type` + `counterwager_quantity`** — both returned; type and odds are what a bet *is* (§B.12), and they cost only cells. |
+
+### issuances
+| | |
+|---|---|
+| Displayed | block_index, asset(+longname), quantity_normalized, issuer, status, tx_hash |
+| Returned, hidden | block_time, source, `transfer`, `divisible`, `locked`, `description` |
+| Stored, not returned | **`asset_events`** (Counterparty's own action string — `creation`, `reissuance`, `lock_quantity`, `transfer`, `reset`, `change_description` — the §B.3 Action column is stored verbatim, not derived), `fee_paid` (XCP — a mined column), `mime_type`, `reset`, `callable`/`call_date`/`call_price`, msg_index, tx_index |
+| Derivable | Action badge falls out of `asset_events` directly; art thumbnail via mime_type/stamp tag |
+| **Verdict** | **SELECT `asset_events` → Action badge** — the defining mined column that TABLES.md scored as "derive it" is actually raw captured data one column away. |
+
+### fairminters
+| | |
+|---|---|
+| Displayed | block_index, asset(+longname), price, hard_cap, status, source |
+| Returned, hidden | **`earned_quantity`** (minted so far) + hard_cap → **progress %** for free, `soft_cap`, `paid_quantity`, `divisible`, block_time |
+| Stored, not returned | `start_block`/`end_block` (mint window), `soft_cap_deadline_block`, `premint_quantity`/`pre_minted`, `max_mint_per_tx`/`max_mint_per_address`, `minted_asset_commission_int`, **`burn_payment`** (XCP burned vs paid to issuer — changes what "price" means), `lock_quantity`/`lock_description`, `description`, `mime_type`, `asset_parent`, `quantity_by_price` |
+| Derivable | window state (upcoming/live/ended) from start/end_block vs tip; XCP price → USD via `prices` |
+| **Verdict** | **Minted % (`earned_quantity`/`hard_cap`)** — §B.13 asked for "Minted %?"; both operands are already on the wire. |
+
+### fairmints
+| | |
+|---|---|
+| Displayed | block_index, asset, earn_quantity (raw — known bug), source, tx_hash |
+| Returned, hidden | **`paid_quantity`** (what the minter paid — §B.14's "Paid (XCP)?"), `fairminter_tx_hash`, status, block_time |
+| Stored, not returned | `commission` |
+| Derivable | effective unit price = paid/earned; USD via `prices` |
+| **Verdict** | **`paid_quantity` column** — already returned; mint-for-free vs paid-mint is the row's one interesting split. |
+
+### dividends
+| | |
+|---|---|
+| Displayed | block_index, asset, dividend_asset, quantity_per_unit_normalized, source, tx_hash |
+| Returned, hidden | block_time, status |
+| Stored, not returned | **`fee_paid`** — mined column, and it *encodes recipient count* (protocol charges 0.0002 XCP per holder paid, so fee_paid/20000 sat = recipients) |
+| Derivable | recipients from fee_paid (above); total distributed ≈ per_unit × supply; USD when dividend_asset is XCP via `prices` |
+| **Verdict** | **`fee_paid` → Recipients** — "how many holders got paid" is the dividend question, and the fee already counts them. |
+
+### destructions
+| | |
+|---|---|
+| Displayed | block_index, asset, quantity_normalized, tag, source, tx_hash |
+| Returned, hidden | block_time, status |
+| Stored, not returned | quantity raw |
+| Derivable | % of supply destroyed (assets.supply); asset quality tier |
+| **Verdict** | Time (T4) — column set is otherwise complete; the leanest table in the mirror. |
+
+### burns
+| | |
+|---|---|
+| Displayed | block_index, source, burned_normalized, earned_normalized, tx_hash |
+| Returned, hidden | block_time, status |
+| Stored, not returned | burned/earned raw |
+| Derivable | **USD-at-burn via `prices`** (BTC day price × burned); implied XCP cost basis (burned×BTC-USD/earned) |
+| **Verdict** | USD value of the burn — turns a 2014 curiosity into "this address paid $X for its XCP". |
+
+### broadcasts
+| | |
+|---|---|
+| Displayed | block_index, source, value, text, tx_hash |
+| Returned, hidden | block_time, `timestamp` (the feed's own clock), **`locked`** (feed permanently closed), `mime_type`, status |
+| Stored, not returned | `fee_fraction_int` (the cut the feed operator takes from bets — mined `Fee` column) |
+| Derivable | oracle attribution: is this source a dispenser oracle (`dispensers.oracle_address`) or bet feed (`bets.feed_address`)? |
+| **Verdict** | **`locked` badge + oracle attribution** — separates dead feeds and price oracles from one-off graffiti. |
+
+### trades (unified sales tape)
+| | |
+|---|---|
+| Displayed | block_time, venue, asset, quantity, total(+currency), usd_value, buyer, block_index, tx_hash |
+| Returned, hidden | **`price`** (unit price — the generated column exists precisely for the tape and isn't a column), **`seller`** (mined tapes always show both parties) |
+| Stored, not returned | — (COLS selects every column) |
+| Derivable | **self-trade flag** (`buyer = seller` per row) and asset `low_quality`/`self_trade_pct` dimming via asset_signals; buyer/seller curated labels; asset quality tier |
+| **Verdict** | **Price + Seller + a wash-trade dim** — a sales tape that hides unit price and one side of every trade, over a ledger that already knows which assets self-trade. |
+
+### blocks
+| | |
+|---|---|
+| Displayed | block_index, block_time, transaction_count, block_hash |
+| Returned, hidden | — (BLOCK_COLS is fully rendered) |
+| Stored, not returned | `ledger_hash`, `txlist_hash`, `messages_hash`, `previous_block_hash`, `difficulty` (detail-only today) |
+| Derivable | block interval (Δblock_time between consecutive rows — client-side); "notable" flag (Counterparty tx types in block — needs a query) |
+| **Verdict** | Closest to done; hash columns belong on detail. Only interval is worth a look. |
+
+### holders (asset balances tab)
+| | |
+|---|---|
+| Displayed | holder (+burn/exchange badges), quantity_normalized |
+| Returned, hidden | holder_type (drives cell logic only), quantity raw |
+| Stored, not returned | `balances.updated_block_index` ("last moved" — diamond hands vs fresh bag), `balances.utxo_address` (controlling address of a utxo-attached row — today utxo rows are dead mono strings) |
+| Derivable | **% of supply** (supply_normalized already on the same page) + rank #; holder reputation tier (holderTiers machinery in queries/assets.ts); curated `exchange_name` label ("Poloniex", not just "exchange"); graph trust tier |
+| **Verdict** | **% of supply per row** — the concentration question every cap-table reader is asking; the denominator is already on the page. |
+
+### Top 10 unsurfaced additions, ranked
+
+1. **dispenses: `btc_amount` → Price (BTC) / Total / USD** — stored since 0002, already
+   USD-priced in the `trades` ledger; converts the weakest table (a sale rendered as a gift)
+   with data we've had all along.
+2. **order_matches: normalized Price / Quantity / Total trade view** — quantities are returned
+   (raw); the divisibility join is a copy of ORDER_SELECT. Fixes gap-list #1.
+3. **orders: `give_remaining`/`get_remaining` → Filled % + `expire_index` → Expires** — the two
+   live questions about an open order; both stored, neither SELECTed.
+4. **dispensers: `status` badge + `operator_trust`** — status is on the wire globally,
+   operator_trust is on the wire for asset tabs and rendered nowhere; together they answer
+   "is this machine on, and do I trust it?". (`escrow_quantity` completes the mined
+   remaining/escrow cell.)
+5. **issuances: `asset_events` → Action badge** — the mined table's defining column turns out to
+   be *stored verbatim*, not derivation work.
+6. **transactions: message-type chip decoded from `data`** — the generic tx list currently
+   answers no question at all; the payload is in the mirror.
+7. **holders: % of supply (+ `updated_block_index` "last moved")** — concentration is the
+   cap-table question; denominator already on the page, recency already in `balances`.
+8. **trades: unit `price` + `seller` + self-trade dim** — the tape hides the generated price
+   column and one party, while `asset_signals.self_trade_pct`/`low_quality` sit unused for
+   wash-trade honesty.
+9. **fairminters: Minted % (`earned_quantity`/`hard_cap`)** — both operands already returned;
+   one cell turns a config dump into a progress table. (Pairs with fairmints' returned-but-hidden
+   `paid_quantity`.)
+10. **sends: `send_type` chip** — returned today; attach/detach/MPMA/move are different actions
+    the table flattens into "send". (Cheapest item on this list.)
+
+Cross-cutting: the `prices` calendar (BTC/ETH/XCP daily USD) is used only by the trades ledger —
+burns, dispenser prices, order totals and fairmint payments could all carry a USD `title`/column
+via the same day-lookup. Curated `exchange_name` labels and `address_signals` badges render only
+on the holders tab; every addrCell could carry them.
+
+## Input 3 — research survey provenance (2026-07, adversarially verified)
+
+Method: 6 search angles → 25 sources fetched → 123 claims extracted → top 25 verified by 3
+independent verifiers each → 20 confirmed / 5 refuted → 11 synthesized findings. Findings are
+folded into "The rules (final)" above with citations; this stanza records what survived and what
+died.
+
+Survived (finding → rule): zebra striping weak/no-harm, Enders/A List Apart, high → R11;
+importance-ordered columns, NN/g, high → R1; human-readable first column, NN/g, medium → R2;
+hover/border/striping as place-keepers, NN/g, medium → R11; F-pattern is a conditional fallback,
+NN/g + Djamasbi, high → R13; lawn-mower is comparison-only, NN/g, high → R13 caution; bypassing
+pattern, NN/g, high → R4; headers ≈ half of fixations, UNC thesis, medium → R6; green/red must
+not be hue-only, Bloomberg CVD, high → R8; no default cell flashing, AG Grid, high → R12; full
+addresses vs address-poisoning, USENIX Sec 2025 + arXiv 2508.12107, high → R5.
+
+Refuted (0-3 / 1-2, all variants of one idea): "the leftmost column gets the most fixations,
+therefore payload-left" — the eye-tracking studies behind it cover text pages and comparison
+tables, not record tables. Payload-first survives on importance-ordering + bypassing instead.
+Also killed: two over-strong readings of the zebra-striping data (both directions).
+
+No surviving claims (stay practitioner convention): numeric formatting/precision/compaction and
+the Tufte/Few/Butterick canon; WCAG dense-table floors, link-row screen-reader semantics, touch
+targets; empty states and skeleton rows.
+
+Open questions worth revisiting: safe truncation length for base58/bech32 (poisoning corpus is
+40-char hex; 4+4 fails, full display is the only proven floor); whether record-log users actually
+scan column-wise (no eye-tracking study of transaction tables exists); numeric-formatting error
+rates (no controlled evidence found).

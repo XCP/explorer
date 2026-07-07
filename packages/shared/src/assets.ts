@@ -31,6 +31,10 @@ export interface AssetFeedCounts {
   sends: number;
   subassets: number;
   from_issuer: number; // assets the issuer issued or owns (the from-issuer feed)
+  fairmints: number;
+  dividends: number; // dividends touching the asset on either side (paid ON it, or paid IN it)
+  destructions: number;
+  pools: number; // AMM pools the asset participates in (either reserve leg, or as the LP token)
 }
 
 /** GET /v2/assets/:asset — full assets row + derived supply/burned/circulating + quality + tags.

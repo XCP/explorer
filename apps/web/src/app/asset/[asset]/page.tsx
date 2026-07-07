@@ -145,7 +145,6 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
       </SectionHeader>
       <AssetTabs
         asset={item.asset}
-        issuer={item.issuer}
         collection={collection}
         holderCount={item.holder_count}
         feedCounts={item.feed_counts ?? null}

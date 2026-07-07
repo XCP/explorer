@@ -1,6 +1,6 @@
 import Link from "next/link";
-import type {
-  RecordKind, RecordRowMap, OrderRow, DispenserRow,
+import type { PoolRow,
+  RecordKind, RecordRowMap, OrderRow, DispenserRow, FairmintRow, DividendRow, DestructionRow,
 } from "@xcp/shared/records";
 import type { AssetListRow } from "@xcp/shared/assets";
 import { commas, compact, short } from "@/lib/format";
@@ -11,7 +11,16 @@ import { type Col, blockCell, txCell, addrCell, assetCell, timeCell } from "@/li
 // The record catalog — for each RecordKind the explorer serves as a list feed, its URL slug, page
 // title, and column layout. Keyed by RecordKind so the API's list routes and the web's index pages
 // share one source of truth; column cells are typed to the feed's row (Col<RecordRowMap[K]>). The
-// five kinds with no page (bet_matches, rps, rps_matches, pools, pool_matches) simply have no entry.
+// five kinds with no page (bet_matches, rps, rps_matches, pool_matches) simply have no entry.
+// Pools have no index page yet, but the asset page's Pools tab renders them (payload first: the
+// pair and its reserves; the LP token is the pool's identity on Counterparty).
+export const POOL_COLS: Col<PoolRow>[] = [
+  { label: "Pair", cell: (r) => <span className="font-mono text-zinc-100">{r.pair ?? `${r.asset_a ?? "?"}/${r.asset_b ?? "?"}`}</span> },
+  { label: "Reserves", numeric: true, cell: (r) => <span className="font-mono tabular-nums">{compact(r.reserve_a)} / {compact(r.reserve_b)}</span> },
+  { label: "LP token", cell: (r) => assetCell(r.lp_asset) },
+  { label: "Block", numeric: true, cell: (r) => blockCell(r.block_index) },
+]
+
 
 // Shared columns. Low-priority ones carry hideBelow so they drop first on narrow screens, leaving the
 // identity + key metric. Block stays (primary locator); Time/Status/Destination/Tx yield on mobile.
@@ -57,6 +66,21 @@ export const DISPENSER_COLS: Col<DispenserRow>[] = [
   cSource, cTx,
 ];
 
+// fairmint / dividend / destruction rows — also reused by the per-asset feed tabs (asset-tabs.tsx)
+export const FAIRMINT_COLS: Col<FairmintRow>[] = [
+  cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
+  { label: "Earned", numeric: true, cell: (r) => commas(r.earn_quantity) }, cSource, cTx,
+];
+export const DIVIDEND_COLS: Col<DividendRow>[] = [
+  cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) }, { label: "Dividend", cell: (r) => assetCell(r.dividend_asset) },
+  { label: "Per Unit", numeric: true, cell: (r) => commas(r.quantity_per_unit_normalized) }, cSource, cTx,
+];
+export const DESTRUCTION_COLS: Col<DestructionRow>[] = [
+  cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
+  { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
+  { label: "Tag", hideBelow: "md", cell: (r) => <span className="text-zinc-400">{short(r.tag, 16, 0)}</span> }, cSource, cTx,
+];
+
 type RegistryEntry<K extends RecordKind> = { slug: string; title: string; cols: Col<RecordRowMap[K]>[] };
 type Registry = { [K in RecordKind]?: RegistryEntry<K> };
 
@@ -98,10 +122,7 @@ export const REGISTRY: Registry = {
     { label: "Burned (BTC)", numeric: true, cell: (r) => commas(r.burned_normalized) },
     { label: "Earned (XCP)", numeric: true, cell: (r) => commas(r.earned_normalized) }, cTx,
   ] },
-  dividends: { slug: "dividends", title: "Dividends", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) }, { label: "Dividend", cell: (r) => assetCell(r.dividend_asset) },
-    { label: "Per Unit", numeric: true, cell: (r) => commas(r.quantity_per_unit_normalized) }, cSource, cTx,
-  ] },
+  dividends: { slug: "dividends", title: "Dividends", cols: DIVIDEND_COLS },
   bets: { slug: "bets", title: "Bets", cols: [
     cBlock, cSource, { label: "Feed", cell: (r) => addrCell(r.feed_address) },
     { label: "Wager", numeric: true, cell: (r) => commas(r.wager_quantity) },
@@ -113,15 +134,8 @@ export const REGISTRY: Registry = {
     { label: "Hard Cap", numeric: true, cell: (r) => compact(r.hard_cap) },
     cStatus, cSource,
   ] },
-  fairmints: { slug: "fairmints", title: "Fairmints", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-    { label: "Earned", numeric: true, cell: (r) => commas(r.earn_quantity) }, cSource, cTx,
-  ] },
-  destructions: { slug: "destructions", title: "Destructions", cols: [
-    cBlock, { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset) },
-    { label: "Quantity", numeric: true, cell: (r) => commas(r.quantity_normalized) },
-    { label: "Tag", hideBelow: "md", cell: (r) => <span className="text-zinc-400">{short(r.tag, 16, 0)}</span> }, cSource, cTx,
-  ] },
+  fairmints: { slug: "fairmints", title: "Fairmints", cols: FAIRMINT_COLS },
+  destructions: { slug: "destructions", title: "Destructions", cols: DESTRUCTION_COLS },
   btcpays: { slug: "btcpays", title: "BTCPays", cols: [
     cBlock, cSource, cDest,
     { label: "BTC", numeric: true, cell: (r) => commas(r.btc_amount_normalized) }, cTx,
