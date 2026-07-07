@@ -55,9 +55,18 @@ CLOUD (new, SEPARATE D1 database `xcpio-btc`, own binding — protects the main 
                   DB's address universe minus the infra exclusions)
 ```
 
-- **Follow set**: every address in the Counterparty mirror (sources, destinations, issuers,
-  holders) minus curated exchanges/burns/detected deposits — synced periodically from the main DB.
-  New Counterparty users join the follow set as the mirror sees them (their BTC backfill enqueues).
+- **Two-tier address model** (the scope rule that keeps this bounded):
+  - **Tier 1 — FOLLOWED** (full flow indexing): addresses that have used or received Counterparty —
+    every address in the mirror (sources, destinations, issuers, holders) minus curated
+    exchanges/burns/detected deposits. Their complete Bitcoin history is captured as flows.
+  - **Tier 2 — KNOWN** (represented, not indexed): pure-Bitcoin addresses that ever transacted
+    with a Tier-1 address. They exist only as counterparty endpoints on Tier-1 flow rows — we are
+    *aware* of them (they can be displayed, counted, graphed as endpoints) but we never index
+    their own transaction histories. This is the wall that prevents transitive crawl of the
+    whole chain.
+  - **Promotion**: the moment a Tier-2 address touches Counterparty, the mirror sees it, it joins
+    Tier 1, and its full BTC backfill enqueues (Fulcrum makes late backfill cheap).
+  New Counterparty users join the follow set as the mirror sees them.
 - **Display histories** (the "include BTC txs in their history tab" feature) read from `btc_flows`
   when present, with the Counterparty node's /v2/bitcoin proxy as a live top-up for anything newer
   than the last push — the ONE place on-demand is right, because full history already exists
