@@ -81,7 +81,7 @@ body {
 .sh-top img.icon { width:52px; height:52px; border-radius:8px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
 .sh-name { font-size:var(--fs-h1); font-weight:700; color:var(--t1); letter-spacing:0; font-family:var(--mono); }
 .chips { display:flex; gap:6px; flex-wrap:wrap; }
-.chip { font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
+.chip { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
 .chip.grail { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
 .chip.trusted { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
 .chip.locked { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); } /* locked supply = good */
