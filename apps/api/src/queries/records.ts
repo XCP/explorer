@@ -11,10 +11,31 @@ import { q } from "../db";
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even
 // though they have no assets row). Powers the base/quote price math on the client. Aliases the orders
 // table `o`, so its feed orders on o.block_index. Also reused by the per-asset orders tab (queries/assets).
-export const ORDER_SELECT = `SELECT o.tx_hash,o.block_index,o.block_time,o.source,o.give_asset,o.get_asset,o.status,
+export const ORDER_SELECT = `SELECT o.tx_hash,o.block_index,o.block_time,o.source,o.give_asset,o.get_asset,o.status,o.expiration,o.expire_index,
   CAST(o.give_quantity AS REAL)/(CASE WHEN o.give_asset IN ('XCP','BTC') OR ga.divisible THEN 100000000.0 ELSE 1 END) give_quantity_normalized,
-  CAST(o.get_quantity AS REAL)/(CASE WHEN o.get_asset IN ('XCP','BTC') OR gb.divisible THEN 100000000.0 ELSE 1 END) get_quantity_normalized
+  CAST(o.get_quantity AS REAL)/(CASE WHEN o.get_asset IN ('XCP','BTC') OR gb.divisible THEN 100000000.0 ELSE 1 END) get_quantity_normalized,
+  CAST(o.give_remaining AS REAL)/(CASE WHEN o.give_asset IN ('XCP','BTC') OR ga.divisible THEN 100000000.0 ELSE 1 END) give_remaining_normalized,
+  CAST(o.get_remaining AS REAL)/(CASE WHEN o.get_asset IN ('XCP','BTC') OR gb.divisible THEN 100000000.0 ELSE 1 END) get_remaining_normalized
   FROM orders o LEFT JOIN assets ga ON ga.asset=o.give_asset LEFT JOIN assets gb ON gb.asset=o.get_asset`;
+
+// order matches with divisibility-normalized forward/backward quantities (same recipe as ORDER_SELECT) so
+// a match renders as a trade: pair, side, price, quantity, total.
+export const ORDER_MATCH_SELECT = `SELECT om.id,om.block_index,om.block_time,om.tx0_hash,om.tx1_hash,om.tx0_address,om.tx1_address,
+  om.forward_asset,om.forward_quantity,om.backward_asset,om.backward_quantity,om.status,
+  CAST(om.forward_quantity AS REAL)/(CASE WHEN om.forward_asset IN ('XCP','BTC') OR fa.divisible THEN 100000000.0 ELSE 1 END) forward_quantity_normalized,
+  CAST(om.backward_quantity AS REAL)/(CASE WHEN om.backward_asset IN ('XCP','BTC') OR ba.divisible THEN 100000000.0 ELSE 1 END) backward_quantity_normalized
+  FROM order_matches om LEFT JOIN assets fa ON fa.asset=om.forward_asset LEFT JOIN assets ba ON ba.asset=om.backward_asset`;
+
+// dispenses with the BTC actually paid + the trades ledger's USD valuation (venue='dispense', ref=id —
+// the trades PK, so the join is an index hit per row).
+export const DISPENSE_SELECT = `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.destination,d.asset,
+  d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,t.usd_value
+  FROM dispenses d LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.id AS TEXT)`;
+
+// fairmints with the minted asset's divisibility so earn_quantity can render in human units.
+export const FAIRMINT_SELECT = `SELECT f.tx_hash,f.block_index,f.block_time,f.source,f.fairminter_tx_hash,f.asset,
+  f.earn_quantity,f.paid_quantity,COALESCE(a.divisible,0) divisible,f.status
+  FROM fairmints f LEFT JOIN assets a ON a.asset=f.asset`;
 
 /** One record feed: its SELECT column list, plus the ORDER BY column when an aliased join needs qualifying. */
 interface RecordFeed {
@@ -26,14 +47,14 @@ interface RecordFeed {
 const FEEDS: Record<RecordKind, RecordFeed> = {
   transactions: { select: `SELECT tx_hash,tx_index,block_index,block_time,source,destination,btc_amount,fee,supported FROM transactions` },
   sends: { select: `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status FROM sends` },
-  issuances: { select: `SELECT tx_hash,block_index,block_time,asset,asset_longname,source,issuer,quantity_normalized,transfer,divisible,locked,description,status FROM issuances` },
+  issuances: { select: `SELECT tx_hash,block_index,block_time,asset,asset_longname,source,issuer,quantity_normalized,transfer,divisible,locked,description,asset_events,status FROM issuances` },
   dispensers: { select: `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status FROM dispensers` },
-  dispenses: { select: `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized,dispenser_tx_hash FROM dispenses` },
+  dispenses: { select: DISPENSE_SELECT, orderCol: "d.block_index" },
   orders: { select: ORDER_SELECT, orderCol: "o.block_index" },
-  order_matches: { select: `SELECT id,block_index,block_time,tx0_hash,tx1_hash,tx0_address,tx1_address,forward_asset,forward_quantity,backward_asset,backward_quantity,status FROM order_matches` },
+  order_matches: { select: ORDER_MATCH_SELECT, orderCol: "om.block_index" },
   sweeps: { select: `SELECT tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status FROM sweeps` },
   fairminters: { select: `SELECT tx_hash,block_index,block_time,source,asset,asset_longname,price,hard_cap,soft_cap,divisible,earned_quantity,paid_quantity,status FROM fairminters` },
-  fairmints: { select: `SELECT tx_hash,block_index,block_time,source,fairminter_tx_hash,asset,earn_quantity,paid_quantity,status FROM fairmints` },
+  fairmints: { select: FAIRMINT_SELECT, orderCol: "f.block_index" },
   destructions: { select: `SELECT tx_hash,block_index,block_time,source,asset,quantity_normalized,tag,status FROM destructions` },
   burns: { select: `SELECT tx_hash,block_index,block_time,source,burned_normalized,earned_normalized,status FROM burns` },
   dividends: { select: `SELECT tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit_normalized,status FROM dividends` },

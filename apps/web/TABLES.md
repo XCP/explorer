@@ -10,6 +10,13 @@ columns.tsx/cells.tsx rewrite. Read top-down: rules → per-record plan → roll
 
 ## The rules (final)
 
+> **Owner decision (2026-07-07, supersedes R1's trailing run):** Time is the FIRST column and
+> Block the SECOND on every record feed — "information I get out of the glass, then ignore."
+> Record feeds are monitoring surfaces, matching the owner's tape/mempool time-first convention;
+> the mined explorer trailing-run is retired. Payload-first ordering governs everything after the
+> two temporal anchors. View stays at the row end.
+
+
 Tags: **[mined]** = owner precedent only · **[research: source, confidence]** = verified survey
 finding · **[both]**. Where research QUALIFIED a mined rule, the qualification is part of the rule.
 

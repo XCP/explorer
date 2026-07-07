@@ -34,8 +34,13 @@ export interface AddressIssuanceRow {
   block_index: number;
   block_time: number;
   asset: string;
+  asset_longname: string | null;
   quantity_normalized: string;
   transfer: number;
+  issuer: string | null;
+  description: string | null;
+  /** Counterparty's own action string(s) (creation, reissuance, lock_quantity, …). */
+  asset_events: string | null;
   status: string;
 }
 
@@ -63,6 +68,11 @@ export interface AddressDispenseRow {
   destination: string | null;
   asset: string | null;
   dispense_quantity_normalized: string;
+  dispenser_tx_hash: string | null;
+  /** BTC the buyer paid, raw satoshis as text. */
+  btc_amount: string | null;
+  /** USD value at sale time, from the trades ledger where known. */
+  usd_value: number | null;
 }
 
 /** GET /v2/addresses/:addr/issued — an asset the address issued or owns. */

@@ -94,30 +94,34 @@ export const DISPENSER_COLS: Col<DispenserRow>[] = [
 
 // fairmint / dividend / destruction rows — also reused by the per-asset feed tabs (asset-tabs.tsx)
 export const FAIRMINT_COLS: Col<FairmintRow>[] = [
+  cTime, cBlock,
   { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
   { label: "Earned", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.earn_quantity, r.divisible)) },
   { label: "Paid (XCP)", numeric: true, priority: 2, cell: (r) => commas(fromSats(r.paid_quantity)) },
   { label: "Minter", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
-  cBlock, cTime, cView,
+  cView,
 ];
 export const DIVIDEND_COLS: Col<DividendRow>[] = [
+  cTime, cBlock,
   { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
   { label: "Dividend", priority: 2, w: "minmax(0,0.8fr)", cell: (r) => assetChip(r.dividend_asset) },
   { label: "Per Unit", numeric: true, priority: 1, cell: (r) => commas(r.quantity_per_unit_normalized) },
   { label: "Source", priority: 3, omitOn: "address", cell: (r) => addrCell(r.source) },
-  cBlock, cTime, cView,
+  cView,
 ];
 export const DESTRUCTION_COLS: Col<DestructionRow>[] = [
+  cTime, cBlock,
   { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
   { label: "Quantity", numeric: true, priority: 1, cell: (r, ctx) => signedQty(r.quantity_normalized, ctx, true) },
   { label: "Tag", priority: 3, cell: (r) => <span className="block truncate text-zinc-400">{short(r.tag, 16, 0) || "—"}</span> },
   { label: "Source", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
-  cBlock, cTime, cView,
+  cView,
 ];
 
 // order matches rendered as trades (xcpdex OrderMatches grammar): pair, side, price, quantity,
 // total, both parties. Side/price are from tx0's perspective via the shared base/quote pairing.
 const ORDER_MATCH_COLS: Col<OrderMatchRow>[] = [
+  cTime, cBlock,
   { label: "Pair", priority: 1, w: "minmax(150px,1fr)", cell: (r) => { const v = matchView(r); return pairCell(v.base, v.quote); } },
   { label: "Side", priority: 1, w: "44px", cell: (r) => side(matchView(r).direction) },
   { label: "Price", numeric: true, priority: 2, cell: (r) => { const v = matchView(r); return v.price ? fmtPrice(v.price) : "—"; } },
@@ -125,7 +129,7 @@ const ORDER_MATCH_COLS: Col<OrderMatchRow>[] = [
   { label: "Total", numeric: true, priority: 4, cell: (r) => commas(matchView(r).quoteQty) },
   { label: "Buyer", priority: 3, w: "minmax(0,1.5fr)", cell: (r) => { const v = matchView(r); return addrCell(v.direction === "buy" ? r.tx0_address : r.tx1_address); } },
   { label: "Seller", priority: 4, w: "minmax(0,1.5fr)", cell: (r) => { const v = matchView(r); return addrCell(v.direction === "buy" ? r.tx1_address : r.tx0_address); } },
-  cStatus, cBlock, cTime,
+  cStatus,
   { label: "View", srOnly: true, priority: 1, w: "44px", cell: (r) => viewCell(r.tx1_hash ?? r.tx0_hash) },
 ];
 
@@ -133,29 +137,36 @@ type RegistryEntry<K extends RecordKind> = { slug: string; title: string; cols: 
 type Registry = { [K in RecordKind]?: RegistryEntry<K> };
 
 export const REGISTRY: Registry = {
+  // Destination is null on ~all modern rows (enhanced sends encode it in data) — a dead column;
+  // the always-present miner fee is the useful third fact (spec §1's sanctioned optional).
   transactions: { slug: "transactions", title: "Transactions", cols: [
+  cTime, cBlock,
     { label: "Tx", weight: "primary", priority: 1, w: "minmax(130px,1fr)", cell: (r) => txCell(r.tx_hash) },
-    { label: "Source", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
-    cDest, cBlock, cTime, cView,
+    { label: "Source", priority: 2, w: "minmax(0,1.3fr)", omitOn: "address", cell: (r) => addrCell(r.source) },
+    { label: "Fee (sats)", numeric: true, priority: 3, cell: (r) => sats(r.fee != null ? Number(r.fee) : null) },
+    cView,
   ] },
   sends: { slug: "sends", title: "Sends", cols: [
+  cTime, cBlock,
     { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
     { label: "Quantity", numeric: true, priority: 1, cell: (r, ctx) => signedQty(r.quantity_normalized, ctx, r.source === ctx.address) },
     { label: "Type", priority: 3, w: "70px", cell: (r) => sendTypeChip(r.send_type) },
-    cSource, cDest, cBlock, cTime, cView,
+    cSource, cDest, cView,
   ] },
   issuances: { slug: "issuances", title: "Issuances", cols: [
+  cTime, cBlock,
     { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset, r.asset_longname) },
     { label: "Quantity", numeric: true, priority: 2, cell: (r) => commas(r.quantity_normalized) },
     { label: "Action", priority: 1, w: "110px", cell: (r) => actionBadge(r.asset_events) },
     { label: "Issuer", priority: 2, omitOn: "address", cell: (r) => addrCell(r.issuer) },
     { label: "Description", priority: 4, cell: (r) => <span className="block truncate text-zinc-400">{short(r.description, 50, 0) || "—"}</span> },
-    cStatus, cBlock, cTime, cView,
+    cStatus, cView,
   ] },
   orders: { slug: "orders", title: "Orders", cols: ORDER_COLS },
   order_matches: { slug: "matches", title: "Order Matches", cols: ORDER_MATCH_COLS },
   dispensers: { slug: "dispensers", title: "Dispensers", cols: DISPENSER_COLS },
   dispenses: { slug: "dispenses", title: "Dispenses", cols: [
+  cTime, cBlock,
     { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
     { label: "Quantity", numeric: true, priority: 1, cell: (r, ctx) => signedQty(r.dispense_quantity_normalized, ctx, r.source === ctx.address) },
     // per-unit price in sats (mined convention — integers, one denomination), linked to the machine
@@ -171,28 +182,35 @@ export const REGISTRY: Registry = {
     ) },
     { label: "Source", priority: 3, w: "minmax(0,1.3fr)", omitOn: "address", cell: (r) => addrCell(r.source) },
     { label: "Buyer", priority: 4, w: "minmax(0,1.3fr)", cell: (r) => addrCell(r.destination) },
-    cBlock, cTime, cView,
+    cView,
   ] },
   sweeps: { slug: "sweeps", title: "Sweeps", cols: [
-    cSource, { label: "Destination", priority: 1, cell: (r) => addrCell(r.destination) },
-    { label: "Sweep", priority: 2, w: "150px", cell: (r) => sweepFlagsBadge(r.flags) },
+  cTime, cBlock,
+    cSource,
+    // partial sweeps (balances-only / ownership-only) are the exception — the chip rides the
+    // destination cell instead of occupying a mostly-empty column of its own
+    { label: "Destination", priority: 1, w: "minmax(0,1.3fr)", cell: (r) => (
+      <span className="inline-flex max-w-full items-center gap-1.5 min-w-0">{addrCell(r.destination)}{sweepFlagsBadge(r.flags)}</span>
+    ) },
     { label: "Fee Paid (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSats(r.fee_paid)) },
     { label: "Memo", priority: 4, cell: (r) => <span className="block truncate text-zinc-400">{short(r.memo, 18, 0) || "—"}</span> },
-    cBlock, cTime, cView,
+    cView,
   ] },
   broadcasts: { slug: "broadcasts", title: "Broadcasts", cols: [
+  cTime, cBlock,
     { label: "Source", priority: 1, omitOn: "address", cell: (r) => (
       <span className="inline-flex items-center gap-1.5 min-w-0">{addrCell(r.source)}{r.locked ? chip("locked", "amber") : null}</span>
     ) },
     { label: "Text", priority: 1, w: "minmax(0,1.4fr)", cell: (r) => <span className="block truncate text-zinc-300">{short(r.text, 50, 0) || "—"}</span> },
     { label: "Value", numeric: true, priority: 4, cell: (r) => (r.value != null && Number(r.value) !== -1 ? commas(r.value) : "—") },
-    cBlock, cTime, cView,
+    cView,
   ] },
   burns: { slug: "burns", title: "Burns", cols: [
+  cTime, cBlock,
     { label: "Source", priority: 1, omitOn: "address", cell: (r) => addrCell(r.source) },
     { label: "Burned (BTC)", numeric: true, priority: 1, cell: (r) => btc8(r.burned_normalized) },
     { label: "Earned (XCP)", numeric: true, priority: 2, cell: (r) => commas(r.earned_normalized) },
-    cBlock, cTime, cView,
+    cView,
   ] },
   dividends: { slug: "dividends", title: "Dividends", cols: DIVIDEND_COLS },
   bets: { slug: "bets", title: "Bets", cols: [
@@ -222,10 +240,11 @@ export const REGISTRY: Registry = {
   fairmints: { slug: "fairmints", title: "Fairmints", cols: FAIRMINT_COLS },
   destructions: { slug: "destructions", title: "Destructions", cols: DESTRUCTION_COLS },
   btcpays: { slug: "btcpays", title: "BTCPays", cols: [
+  cTime, cBlock,
     cSource, { label: "Destination", priority: 2, cell: (r) => addrCell(r.destination) },
     { label: "BTC", numeric: true, priority: 1, cell: (r) => btc8(r.btc_amount_normalized) },
     { label: "Order Match", priority: 3, w: "130px", cell: (r) =>
       r.order_match_id ? <Link href={`/tx/${r.order_match_id.split("_")[0]}`} className="font-mono">{short(r.order_match_id, 8, 6)}</Link> : "—" },
-    cBlock, cTime, cView,
+    cView,
   ] },
 };

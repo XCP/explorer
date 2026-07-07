@@ -18,7 +18,7 @@ import type {
 } from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "../schema";
 import { q, one } from "../db";
-import { ORDER_SELECT } from "./records";
+import { ORDER_SELECT, DISPENSE_SELECT, FAIRMINT_SELECT } from "./records";
 
 /* ---------- index + search ---------- */
 
@@ -258,7 +258,7 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
 export function listAssetIssuances(db: D1Database, asset: string, limit: number, offset: number): Promise<IssuanceRow[]> {
   return q<IssuanceRow>(
     db,
-    `SELECT tx_hash, block_index, block_time, source, issuer, transfer, quantity_normalized, status
+    `SELECT tx_hash, block_index, block_time, source, issuer, transfer, quantity_normalized, description, asset_events, status
      FROM issuances WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
     asset, limit, offset
   );
@@ -289,7 +289,7 @@ export function listAssetDispensers(db: D1Database, asset: string, limit: number
 export function listAssetDispenses(db: D1Database, asset: string, limit: number, offset: number): Promise<DispenseRow[]> {
   return q<DispenseRow>(
     db,
-    `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized FROM dispenses WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    `${DISPENSE_SELECT} WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
     asset, limit, offset
   );
 }
@@ -307,8 +307,7 @@ export function listAssetOrders(db: D1Database, asset: string, limit: number, of
 export function listAssetFairmints(db: D1Database, asset: string, limit: number, offset: number): Promise<FairmintRow[]> {
   return q<FairmintRow>(
     db,
-    `SELECT tx_hash,block_index,block_time,source,fairminter_tx_hash,asset,earn_quantity,paid_quantity,status
-     FROM fairmints WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    `${FAIRMINT_SELECT} WHERE f.asset=? ORDER BY f.block_index DESC LIMIT ? OFFSET ?`,
     asset, limit, offset
   );
 }

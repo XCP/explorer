@@ -48,7 +48,7 @@ export function listSends(db: D1Database, addr: string, p: Page): Promise<Addres
 export function listIssuances(db: D1Database, addr: string, p: Page): Promise<AddressIssuanceRow[]> {
   return q<AddressIssuanceRow>(
     db,
-    `SELECT tx_hash, block_index, block_time, asset, quantity_normalized, transfer, status
+    `SELECT tx_hash, block_index, block_time, asset, asset_longname, quantity_normalized, transfer, issuer, description, asset_events, status
      FROM issuances WHERE source=? OR issuer=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
     addr, addr, p.limit, p.offset
   );
@@ -67,7 +67,9 @@ export function listDispensers(db: D1Database, addr: string, p: Page): Promise<A
 export function listDispenses(db: D1Database, addr: string, p: Page): Promise<AddressDispenseRow[]> {
   return q<AddressDispenseRow>(
     db,
-    `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity_normalized FROM dispenses WHERE source=? OR destination=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.destination,d.asset,d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,t.usd_value
+     FROM dispenses d LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.id AS TEXT)
+     WHERE d.source=? OR d.destination=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
     addr, addr, p.limit, p.offset
   );
 }

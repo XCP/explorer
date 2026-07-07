@@ -145,12 +145,12 @@ export const actionBadge = (events?: string | null) => {
  *  The full balances+ownership sweep is the norm and renders nothing; only partial sweeps (the
  *  exceptions) earn a chip. */
 export const sweepFlagsBadge = (flags?: number | null) => {
-  if (flags == null) return "—";
+  if (flags == null) return null;
   const balances = !!(flags & 1), ownership = !!(flags & 2);
   if (balances && ownership) return null;
   if (balances) return chip("balances only", "sky");
   if (ownership) return chip("ownership only", "violet");
-  return "—";
+  return null;
 };
 
 /** Bet type badge — what the bet IS (0/1 = CFDs, 2/3 = binary outcomes). */

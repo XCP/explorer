@@ -77,6 +77,8 @@ export interface IssuanceRow {
   divisible: 0 | 1;
   locked: 0 | 1;
   description: string | null;
+  /** Counterparty's own action string(s) for the issuance (creation, reissuance, lock_quantity, transfer, reset, change_description, …). */
+  asset_events: string | null;
   status: string | null;
 }
 
@@ -91,6 +93,11 @@ export interface OrderRow {
   status: string | null;
   give_quantity_normalized: number;
   get_quantity_normalized: number;
+  give_remaining_normalized: number;
+  get_remaining_normalized: number;
+  /** Order lifetime in blocks, and the block it expires at (fill progress + blocks-left). */
+  expiration: number | null;
+  expire_index: number | null;
 }
 
 /** GET /v2/order_matches. Mirror: order_matches. */
@@ -106,6 +113,9 @@ export interface OrderMatchRow {
   forward_quantity: string | null; // raw
   backward_asset: string | null;
   backward_quantity: string | null; // raw
+  /** Divisibility-normalized quantities (computed REAL, like OrderRow) so a match renders as a trade. */
+  forward_quantity_normalized: number;
+  backward_quantity_normalized: number;
   status: string | null;
 }
 
@@ -137,6 +147,10 @@ export interface DispenseRow {
   asset: string | null;
   dispense_quantity_normalized: string | null;
   dispenser_tx_hash?: string | null;
+  /** BTC the buyer paid, raw satoshis as text — a dispense is a sale, not a free send. */
+  btc_amount: string | null;
+  /** USD value at sale time, from the trades ledger where known. */
+  usd_value: number | null;
 }
 
 /** GET /v2/sweeps. Mirror: sweeps. */
@@ -245,6 +259,8 @@ export interface FairmintRow {
   asset: string | null;
   earn_quantity: string | null;
   paid_quantity: string | null;
+  /** Asset divisibility (joined) so earn_quantity can render in human units. */
+  divisible: 0 | 1;
   status: string | null;
 }
 

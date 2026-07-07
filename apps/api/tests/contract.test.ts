@@ -87,6 +87,8 @@ const ORDER_ROW: Spec = {
   tx_hash: "string", block_index: "number", block_time: "number|null", source: "string|null",
   give_asset: "string|null", get_asset: "string|null", status: "string|null",
   give_quantity_normalized: "number", get_quantity_normalized: "number",
+  give_remaining_normalized: "number", get_remaining_normalized: "number",
+  expiration: "number|null", expire_index: "number|null",
 };
 const TRADE_ROW: Spec = {
   venue: "string", asset: "string|null", block_time: "number|null", block_index: "number|null", quantity: "number|null",
