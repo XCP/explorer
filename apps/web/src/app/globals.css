@@ -293,6 +293,13 @@ a.btn2:hover { color:var(--t2); }
 .rt { overflow-x:auto; } /* floor: nothing is ever unreachable */
 .rt .tr.th { position:sticky; top:0; z-index:1; } /* floor: header anchors ~half of fixations */
 .rt-empty { padding:18px 14px; text-align:center; font-size:var(--fs-xs); color:var(--t4); }
+/* sortable header — whole-header button; arrow dims until active (Material/AG pattern) */
+.th-sort { display:inline-flex; align-items:center; gap:5px; font:inherit; color:inherit; letter-spacing:inherit; text-transform:inherit; background:none; border:none; padding:0; cursor:pointer; }
+.tr.th .r .th-sort { flex-direction:row-reverse; }
+.th-sort:hover { color:var(--t2); }
+.th-arrow { font-size:9px; opacity:.35; }
+.th-arrow.on { opacity:1; color:var(--accent); }
+.th-sort:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 /* USD sub-line inside a numeric cell (trades tape Total) — the old .xt-price small recipe */
 .qty small, .num small { display:block; font-size:var(--fs-2xs); color:var(--t4); font-weight:400; }
 /* app pill extension: pending/empty/closing states (amber caution family) */

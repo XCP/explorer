@@ -47,8 +47,8 @@ export function useAssetMempool(asset?: string) {
     asset ? apiUrl(`/v2/assets/${encodeURIComponent(asset)}/mempool`) : null, { refreshInterval: 10_000 });
   return { rows: data?.result ?? [] };
 }
-export const useAssets = (query?: string, offset = 0, limit = 50) =>
-  useList<AssetIndexRow>("/v2/assets", { query, offset, limit });
+export const useAssets = (query?: string, offset = 0, limit = 50, sort?: string, dir?: string) =>
+  useList<AssetIndexRow>("/v2/assets", { query, offset, limit, sort, dir });
 export const useAsset = (asset?: string) => useDetail<AssetDetail>(asset ? `/v2/assets/${encodeURIComponent(asset)}` : null);
 export const useBlocks = (offset = 0, limit = 25) => useList<BlockRow>("/v2/blocks", { offset, limit });
 export const useBlock = (n?: string | number) => useDetail<BlockDetail>(n != null ? `/v2/blocks/${n}` : null);

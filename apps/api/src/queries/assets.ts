@@ -26,7 +26,17 @@ export interface AssetListFilter {
   query?: string;
   limit: number;
   offset: number;
+  sort?: string; // whitelist key (see ASSET_SORTS); ignored on the search path (relevance wins)
+  dir?: "asc" | "desc";
 }
+
+// Sortable columns for the browse path — a fixed whitelist maps each key to a SAFE ORDER BY
+// expression (never interpolate user input into SQL). Default: newest issuance first.
+const ASSET_SORTS: Record<string, string> = {
+  created: "a.last_issuance_block_index",
+  supply: "CAST(a.supply_normalized AS REAL)",
+  asset: "a.asset",
+};
 
 // The projected columns, shared by the browse query and each search probe.
 const ASSET_LIST_SELECT = `SELECT a.asset, a.asset_longname, a.type, a.issuer, a.owner, a.divisible, a.locked, a.supply_normalized,
@@ -45,8 +55,10 @@ const nextPrefix = (p: string) => p.slice(0, -1) + String.fromCharCode(p.charCod
 export function listAssets(db: D1Database, f: AssetListFilter): Promise<AssetIndexRow[]> {
   const query = (f.query || "").trim();
   if (!query) {
+    const col = ASSET_SORTS[f.sort ?? ""] ?? "a.last_issuance_block_index";
+    const dir = f.dir === "asc" ? "ASC" : "DESC";
     return q<AssetIndexRow>(
-      db, `${ASSET_LIST_SELECT} ORDER BY a.last_issuance_block_index DESC LIMIT ? OFFSET ?`, f.limit, f.offset);
+      db, `${ASSET_LIST_SELECT} ORDER BY ${col} ${dir} LIMIT ? OFFSET ?`, f.limit, f.offset);
   }
   // Three indexed range probes UNIONed: asset (stored uppercase), longname as-typed, longname
   // lowercased — preserving the old LIKE's case-insensitivity for the common all-lower longnames.

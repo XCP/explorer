@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Col, RecordContext } from "@/lib/cells";
+import type { Col, RecordContext, SortState } from "@/lib/cells";
 
 // Single source of truth for rendering a record list, on the v20 .rt/.tr grammar (globals.css —
 // ported verbatim from design-lab/v20-tables.html, the owner-approved acceptance reference).
@@ -8,8 +8,12 @@ import type { Col, RecordContext } from "@/lib/cells";
 // 3+ drops at 760px), so the generic engine reproduces v20's hand-tuned column dropping.
 // `context` is the page subject: columns marked omitOn are suppressed when the page already
 // answers them (R4), and cells receive the context for perspective signing.
-export function RecordTable<T>({ cols, rows, context = {}, label = "records" }: {
+// `sort`/`onSort`: when a column carries a sortKey and onSort is set, its header becomes a
+// tri-state sort button with aria-sort — the page owns what the sort MEANS (client comparator or
+// server param). Everything else is unchanged.
+export function RecordTable<T>({ cols, rows, context = {}, label = "records", sort, onSort }: {
   cols: Col<T>[]; rows: T[]; context?: RecordContext; label?: string;
+  sort?: SortState; onSort?: (key: string) => void;
 }) {
   // suffix with row index: the same tx_hash can legitimately appear in two rows (order matches, a
   // dispense where the address is both source and destination) — index guarantees uniqueness.
@@ -33,13 +37,26 @@ export function RecordTable<T>({ cols, rows, context = {}, label = "records" }: 
     [dropClass(c), head ? (c.numeric ? "r" : "") : (c.cellClass ?? (c.numeric ? "num" : "")), !head && c.weight === "muted" ? "dim" : ""]
       .filter(Boolean).join(" ") || undefined;
 
+  const header = (c: Col<T>) => {
+    const inner = c.srOnly ? <span className="sr-only">{c.label}</span> : c.label;
+    if (c.sortKey && onSort) {
+      const active = sort?.key === c.sortKey;
+      const ariaSort = active ? (sort!.dir === "asc" ? "ascending" : "descending") : "none";
+      return (
+        <button type="button" className="th-sort" aria-sort={ariaSort} onClick={() => onSort(c.sortKey!)}>
+          {inner}
+          <span aria-hidden className={`th-arrow${active ? " on" : ""}`}>{active ? (sort!.dir === "asc" ? "↑" : "↓") : "↕"}</span>
+        </button>
+      );
+    }
+    return inner;
+  };
+
   return (
     <div className="rt" style={style} role="table" aria-label={label}>
       <div className="tr th" role="row">
         {visible.map((c) => (
-          <span key={c.label} role="columnheader" className={cellClass(c, true)}>
-            {c.srOnly ? <span className="sr-only">{c.label}</span> : c.label}
-          </span>
+          <span key={c.label} role="columnheader" className={cellClass(c, true)}>{header(c)}</span>
         ))}
       </div>
       {rows.length === 0 && <div className="rt-empty">No {label} yet</div>}

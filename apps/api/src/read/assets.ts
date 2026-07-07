@@ -17,7 +17,7 @@ import {
 export const assets = router();
 
 assets.get("/v2/assets", async (c) => {
-  const rows = await listAssets(c.env.DB, { query: c.req.query("query"), limit: lim(c), offset: off(c) });
+  const rows = await listAssets(c.env.DB, { query: c.req.query("query"), limit: lim(c), offset: off(c), sort: c.req.query("sort"), dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined });
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 

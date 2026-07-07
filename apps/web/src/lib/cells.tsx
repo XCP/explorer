@@ -34,7 +34,13 @@ export type Col<T = any> = {
   omitOn?: "asset" | "address" | "block";
   weight?: "primary" | "muted";
   srOnly?: boolean;
+  // Sortable header (framework floor / TABLES.md): the key the header reports to onSort. The page
+  // decides what it means — a client-side comparator (non-paginated tables) or a server sort param
+  // (paginated). Headers without a sortKey stay plain text.
+  sortKey?: string;
 };
+
+export type SortState = { key: string; dir: "asc" | "desc" };
 
 // Shared cell renderers on the v20 cell classes. Nulls render as an em-dash so a Col bound to a
 // nullable row field can pass the value straight through.
