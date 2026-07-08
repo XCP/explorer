@@ -17,6 +17,11 @@ import { buildTags, buildTagsScoped } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { crawlScarceSales } from "./indexer/scarce-sales";
+import { classifyVaults } from "./indexer/vault-contents";
+import { crawlEmblemMeta } from "./indexer/emblem-meta";
+import { crawlEmblemTransfers } from "./indexer/emblem-transfers";
+import { buildScamAttribution } from "./indexer/emblem-scam";
+import { maybeBuildGraph } from "./indexer/graph";
 import { buildTrades } from "./indexer/trades";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 import { read } from "./read/router";
@@ -163,8 +168,19 @@ export default {
         try { await maybeCrawlCollections(env); } catch (e) { console.error("crawlCollections", e); }
         // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
         try { await maybeCrawlEmblemSales(env); } catch (e) { console.error("crawlEmblemSales", e); }
+        // Recover post-April-2024 sales getNFTSales stopped indexing (getAssetTransfers + Seaport decode).
+        try { await crawlEmblemTransfers(env); } catch (e) { console.error("crawlEmblemTransfers", e); }
         // Continue the Scarce.city sales sweep (Bitcoin-native marketplace; one bounded asset batch per tick).
         try { await crawlScarceSales(env); } catch (e) { console.error("crawlScarceSales", e); }
+        // Classify Emblem vault contents/crack state (real vs scam sales) — one bounded vault batch per tick.
+        try { await classifyVaults(env); } catch (e) { console.error("classifyVaults", e); }
+        // Capture Emblem /meta (claim vs contents) for 'foreign' vaults — splits legit foreign from empty scams.
+        try { await crawlEmblemMeta(env); } catch (e) { console.error("crawlEmblemMeta", e); }
+        // Attribute Emblem empty-shell scams to BTC identities (creator bridge → address_signals.shell_scams). Daily-gated.
+        try { await buildScamAttribution(env); } catch (e) { console.error("buildScamAttribution", e); }
+        // Keep the graph-reputation trait fresh: advance an in-progress Min-k-PPR rebuild a couple units/tick,
+        // and kick a fresh weekly rebuild when idle (trust/distrust tiers + scam seeds stay current, no staleness).
+        try { await maybeBuildGraph(env); } catch (e) { console.error("maybeBuildGraph", e); }
         // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
         try { await buildTrades(env); } catch (e) { console.error("buildTrades", e); }
         // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).

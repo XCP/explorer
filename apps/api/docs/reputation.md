@@ -46,6 +46,16 @@ This is the single rationale doc; all the knobs live in `src/reputation/config.t
 |---|---|---|---|
 | `dex_trades` | 1.0 | log | DEX order-match participation — active market participant (was unrewarded entirely). |
 | `stamps_created` | 0.8 | log | Bitcoin Stamp creation — recognize the stamp-builder cohort. |
+| `vault_scams` | −2.0 | log | **PENALTY (2026-07-07)** — the only explicit bad-actor demerit. Counts distinct Emblem vaults this BTC address *cracked* (sent/swept the wrapped card out) that were then **resold empty**. Cracking to redeem your own card is fine — the signal requires a POST-crack sale, so honest redeemers score 0. Scope: only Counterparty-funded vaults have an on-chain crack; the *other* Emblem scam shape — vaults minted empty that just claim a card (`trades.sale_class='scam_empty'`) — is an ETH-side mint with **no BTC actor to score**. Currently flags ~0 (the crack-then-resell pattern is essentially absent in the data; see the Emblem vault classification below). |
+
+### Emblem vault sale classification (2026-07-07)
+Emblem is multi-chain; we index Counterparty. `indexer/vault-contents.ts` (on-chain: sends/balances/sweeps)
++ `indexer/emblem-meta.ts` (Emblem `/meta`: claimed name vs actual contents) classify every vault sale
+into `trades.sale_class`: **real** (single CP card, full at sale — the only class attributed to an asset,
+now with true unit quantity), **bundle** (multi-CP), **scam_cracked** (card sent/swept out before the sale
+— ~0 observed), **scam_empty** (name claims a real CP card but the vault holds nothing on any chain — the
+minted-empty shells), **non_counterparty** (value genuinely on another chain — Namecoin/Ordinals/BTC — NOT
+a scam, just invisible to our Counterparty view). The realized-USD asset signals now count only `real`.
 
 ---
 

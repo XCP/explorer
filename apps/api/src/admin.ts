@@ -12,6 +12,11 @@ import { buildTags } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { crawlScarceSales } from "./indexer/scarce-sales";
+import { classifyVaults } from "./indexer/vault-contents";
+import { crawlEmblemMeta } from "./indexer/emblem-meta";
+import { crawlEmblemTransfers } from "./indexer/emblem-transfers";
+import { buildScamAttribution } from "./indexer/emblem-scam";
+import { graphEval } from "./indexer/graph-eval";
 import { buildTrades } from "./indexer/trades";
 import { buildGraphTrust } from "./indexer/graph";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
@@ -138,6 +143,33 @@ admin.post("/admin/crawl-collections", async (c) => {
 // `sample` field returns the raw Alchemy shape on the first run so we can confirm the fields.
 admin.post("/admin/crawl-emblem-sales", async (c) => {
   return c.json(await crawlEmblemSales(c.env));
+});
+
+// Recover post-April-2024 Emblem sales that getNFTSales stopped indexing: getAssetTransfers + Seaport decode
+// (emblem-transfers.ts). Loop until it cycles the contracts; INSERT OR IGNORE dedupes the getNFTSales overlap.
+admin.post("/admin/crawl-emblem-transfers", async (c) => {
+  return c.json(await crawlEmblemTransfers(c.env));
+});
+
+// Rebuild Emblem empty-shell scam attribution → address_signals.shell_scams (creator bridge). force=1 for on-demand.
+admin.post("/admin/build-scam-attribution", async (c) => {
+  return c.json(await buildScamAttribution(c.env, true));
+});
+
+// Graph-reputation SCORECARD: objective success criteria for the current graph (recall, false-flags,
+// distrust contamination, watchlist coverage, tier sizes). Run after each rebuild; compare across variants.
+admin.get("/admin/graph-eval", async (c) => c.json(await graphEval(c.env)));
+
+// Classify Emblem vault contents + crack state (real vs scam sales). Loop until {wrapped:true} to sweep
+// the whole vault universe; bounded batch per call. Run before build-trades so the fold sees fresh classes.
+admin.post("/admin/classify-vaults", async (c) => {
+  return c.json(await classifyVaults(c.env));
+});
+
+// Capture Emblem /meta for 'foreign' vaults (claim vs actual contents). Loop until {done:true} to drain
+// the ~15.7k foreign vaults; splits legit foreign (Ordinals/Namecoin/…) from empty Counterparty scams.
+admin.post("/admin/crawl-emblem-meta", async (c) => {
+  return c.json(await crawlEmblemMeta(c.env));
 });
 
 // Materialize the polymorphic `trades` ledger (dex + dispense + emblem). Loop until {done:true}; on-chain

@@ -14,6 +14,15 @@ Three indexers stand side by side, feeding one database:
    to their BTC addresses. Lives *next to* the mirror, never in it.
 3. **Emblem sales crawler** (`indexer/emblem-sales.ts`) — vault sale history, same sidecar rule.
 
+**Emblem is multi-chain, we index Counterparty.** A vault wraps a BTC address whose contents may be a
+Counterparty card *or* Namecoin / Ordinals / BTC / LTC — invisible to us. `indexer/vault-contents.ts`
+classifies each vault purely from the mirror (sends + balances + sweeps → `emblem_vaults.vault_kind`
+`single`/`multi`/`foreign`, `contents_asset/_qty`, `cracked_at`, `cracker_address`). This drives the
+per-sale `trades.sale_class`: `real` (single Counterparty card, full at sale — the only class that
+carries an attributed asset + true unit quantity), `bundle` (multi-card), `scam_cracked` (card sent OR
+swept out before the sale), `non_counterparty` (empty to us — value on another chain; **NOT a scam**).
+A crack that precedes a later sale flags the receiving BTC address via `address_signals.vault_scams`.
+
 Derived layers build on top and are always rebuildable from the sources: `asset_signals` /
 `address_signals` / `tags` today, and the planned **unified `trades` projection** (order_matches +
 dispenses + Emblem sales in one queryable surface). The web app consumes all of it through the read
