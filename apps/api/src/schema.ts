@@ -99,6 +99,7 @@ export interface AddressSignalsRow {
   is_btns_user: 0 | 1;
   vault_scams: number; // bad-actor: distinct Emblem vaults this address cracked then sold empty (migration 0031)
   shell_scams: number; // bad-actor: genuine empty-shell Emblem vaults attributed to this BTC identity (migration 0033)
+  dump_scams: number; // bad-actor: high-supply single-unit Emblem "collectible" dumps funded by this address (migration 0035)
 }
 
 /** Mirror of the polymorphic `tags` table (migration 0012). */

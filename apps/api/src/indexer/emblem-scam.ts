@@ -23,6 +23,7 @@ async function setState(env: Env, k: string, v: string): Promise<void> {
 }
 
 const HEAVY_DAILY = 144; // ~1 day of Counterparty blocks
+const HIGH_SUPPLY_DUMP = 1_000_000; // a card whose supply is ≥ this: one unit is a fungible fraction, not a collectible
 
 interface Edge { sel: string; scams: number; funder: string; nv: number }
 
@@ -78,7 +79,33 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
     env.DB.prepare(`INSERT INTO address_signals (addr, shell_scams) VALUES (?,?) ON CONFLICT(addr) DO UPDATE SET shell_scams=excluded.shell_scams`).bind(addr, n));
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
 
+  // 6) DUMP scams: a SOLD single-unit vault of a very-high-supply card (one fungible unit of a $0.0004 token
+  //    sold as a $40 "collectible" NFT). The BTC funder who deposited the unit to dump it IS the actor —
+  //    direct attribution, no consistency test needed. Count-scaled so the 300-dump factories get crushed and
+  //    a one-off memento sale is a rounding error.
+  await env.DB.prepare(`UPDATE emblem_vaults SET is_dump=0 WHERE is_dump=1`).run();
+  await env.DB.prepare(
+    `UPDATE emblem_vaults SET is_dump=1
+      WHERE vault_kind='single' AND COALESCE(contents_qty,1)<=1
+        AND contents_asset IN (SELECT asset FROM asset_signals WHERE supply>=${HIGH_SUPPLY_DUMP})
+        AND EXISTS (SELECT 1 FROM emblem_sales es WHERE es.token_id=emblem_vaults.token_id AND es.contract=emblem_vaults.contract)`
+  ).run();
+  await env.DB.prepare(`UPDATE address_signals SET dump_scams=0 WHERE dump_scams>0`).run();
+  const dumps = (await env.DB.prepare(
+    `SELECT s.source addr, COUNT(DISTINCT ev.token_id) n FROM emblem_vaults ev
+       JOIN sends s ON s.destination=ev.btc_address AND s.asset=ev.contents_asset AND s.asset<>'XCP'
+      WHERE ev.is_dump=1 AND s.source IS NOT NULL GROUP BY s.source`
+  ).all<{ addr: string; n: number }>()).results || [];
+  const dumpStmts = dumps.map((r) =>
+    env.DB.prepare(`INSERT INTO address_signals (addr, dump_scams) VALUES (?,?) ON CONFLICT(addr) DO UPDATE SET dump_scams=excluded.dump_scams`).bind(r.addr, r.n));
+  for (let i = 0; i < dumpStmts.length; i += 50) await env.DB.batch(dumpStmts.slice(i, i + 50));
+
   await setState(env, "scam_attrib_block", String(tip));
   const shells = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE is_scam_shell=1`).first<{ c: number }>())?.c ?? 0;
-  return { tip, genuine_shells: shells, scam_sellers: bySeller.size, btc_identities: attrib.size, attributed_shells: [...attrib.values()].reduce((a, b) => a + b, 0) };
+  const dumpVaults = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE is_dump=1`).first<{ c: number }>())?.c ?? 0;
+  return {
+    tip, genuine_shells: shells, scam_sellers: bySeller.size, btc_identities: attrib.size,
+    attributed_shells: [...attrib.values()].reduce((a, b) => a + b, 0),
+    dump_vaults: dumpVaults, dump_actors: dumps.length, attributed_dumps: dumps.reduce((a, r) => a + r.n, 0),
+  };
 }

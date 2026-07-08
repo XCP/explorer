@@ -73,6 +73,12 @@ export const ADDRESS_FACTORS: Factor[] = [
   // Collision-filtered (is_scam_shell requires the claimed card be wrapped by a real vault) so Ordinals/name
   // collisions (BITCOIN/TWELVEFOLD/…) don't count. RECALIBRATE weight once the population effect is read.
   { key: "shell_scams",     weight: -1.5, transform: "log",   label: "shell_scam", why: "penalty: minted empty Emblem shells claiming a real card = scammed buyers (bridged to this BTC identity)" },
+  // PENALTY (2026-07-08): Emblem high-supply single-unit DUMPS. This BTC address funded single-unit vaults of
+  // VERY-high-supply cards (supply ≥1M — PEPECASH's unit is worth $0.008, GUARDSPEPE's $0.0004) that then
+  // sold on Emblem for ~$40 as "collectibles" — a thousands-to-∞× markup on a fungible fraction. Predatory.
+  // Count-scaled: the repeat factories (300 dumps) are crushed (ln(301)·−1.5 ≈ −8.6); a one-off memento sale
+  // is ln(2)·−1.5 ≈ −1.0. Direct attribution (the funder deposited the unit to dump it). signals/emblem-scam.ts.
+  { key: "dump_scams",      weight: -1.5, transform: "log",   label: "dump_scam",  why: "penalty: dumped single fungible units of very-high-supply cards as $40 Emblem NFTs (thousands-x markup)" },
   // NOTE: the never-computed rep_score/pagerank factor was removed 2026-07-06 (weight 0.0 since inception, so it
   // never contributed). The address_signals.rep_score column is kept (harmless) in case personalized PageRank returns.
 ];

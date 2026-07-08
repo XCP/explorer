@@ -110,7 +110,7 @@ async function applySeeds(env: Env): Promise<void> {
   const distrust = new Set<string>();
   for (const l of lowqs) distrust.add(ASSET_PREFIX + l);
   for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
-  const scamActors = (await q<{ addr: string }>(env.DB, `SELECT addr FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0`)).map((r) => r.addr);
+  const scamActors = (await q<{ addr: string }>(env.DB, `SELECT addr FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0 OR dump_scams > 0`)).map((r) => r.addr);
   for (const a of scamActors) if (!excluded.has(a)) distrust.add(a);
   for (const n of trust) distrust.delete(n); // trust wins the (rare) collision to keep Σs=1 exact
 

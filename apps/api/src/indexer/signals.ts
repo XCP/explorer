@@ -40,7 +40,7 @@ const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
   assets_burned INTEGER DEFAULT 0, disp_trust REAL DEFAULT 0, is_emblem_vault INTEGER DEFAULT 0,
   likely_service INTEGER DEFAULT 0, dex_trades INTEGER DEFAULT 0,
   stamps_created INTEGER DEFAULT 0, stamps_collected INTEGER DEFAULT 0, src20_deploys INTEGER DEFAULT 0, is_btns_user INTEGER DEFAULT 0,
-  vault_scams INTEGER DEFAULT 0, shell_scams INTEGER DEFAULT 0)`;
+  vault_scams INTEGER DEFAULT 0, shell_scams INTEGER DEFAULT 0, dump_scams INTEGER DEFAULT 0)`;
 const ASSET_DDL = `CREATE TABLE IF NOT EXISTS asset_signals (
   asset TEXT PRIMARY KEY, asset_longname TEXT, issuer TEXT, divisible INTEGER, locked INTEGER,
   holders INTEGER DEFAULT 0, top1_pct REAL DEFAULT 0, trades INTEGER DEFAULT 0,
