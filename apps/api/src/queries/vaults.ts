@@ -10,19 +10,43 @@ import { q, one } from "../db";
 type VaultSummary = NonNullable<VaultsPayload["summary"]>;
 type VaultTopAsset = VaultsPayload["top_assets"][number];
 type VaultTopAddr = VaultsPayload["top_funders"][number];
+type SaleClassRow = VaultsPayload["sales_by_class"][number];
+type TopSoldRow = VaultsPayload["top_sold_assets"][number];
 
 // a funded vault box: an Emblem vault BTC address currently holding a positive Counterparty balance.
 const inVault = `emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`;
 
-/** Vault records + funded/assets-vaulted counts + funder/cracker tag counts. */
+/** Honest vault census (Counterparty vs foreign) + the Emblem sales market (count + realized USD). */
 export function vaultSummary(db: D1Database): Promise<VaultSummary | null> {
   return one<VaultSummary>(
     db,
-    `SELECT (SELECT COUNT(*) FROM emblem_vaults) vault_records,
+    `SELECT (SELECT COUNT(*) FROM emblem_vaults) total_vaults,
+        (SELECT COUNT(*) FROM emblem_vaults WHERE vault_kind IN ('single','multi')) counterparty_vaults,
+        (SELECT COUNT(*) FROM emblem_vaults WHERE vault_kind='foreign') foreign_vaults,
         (SELECT COUNT(*) FROM emblem_vaults e WHERE EXISTS(SELECT 1 FROM balances b WHERE b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0)) funded_vaults,
-        (SELECT COUNT(DISTINCT b.asset) FROM ${inVault}) assets_vaulted,
-        (SELECT COUNT(*) FROM tags WHERE tag='vault_funder') funders,
-        (SELECT COUNT(*) FROM tags WHERE tag='vault_cracker') crackers`
+        (SELECT COUNT(*) FROM emblem_vaults WHERE is_scam_shell=1) scam_shells,
+        (SELECT COUNT(*) FROM trades WHERE venue='emblem') sales,
+        (SELECT COALESCE(ROUND(SUM(usd_value)),0) FROM trades WHERE venue='emblem' AND sale_class IN ('real','bundle')) realized_usd`
+  );
+}
+
+/** Emblem sales split by verdict: real (attributed CP card) / bundle / scam_empty / non_counterparty. */
+export function vaultSalesByClass(db: D1Database): Promise<SaleClassRow[]> {
+  return q<SaleClassRow>(
+    db,
+    `SELECT COALESCE(sale_class,'unknown') sale_class, COUNT(*) sales, COALESCE(ROUND(SUM(COALESCE(usd_value,0))),0) usd
+       FROM trades WHERE venue='emblem' GROUP BY sale_class ORDER BY usd DESC`
+  );
+}
+
+/** Most-sold Counterparty cards on the Emblem (ETH) market — realized USD of REAL sales only. */
+export function vaultTopSoldAssets(db: D1Database): Promise<TopSoldRow[]> {
+  return q<TopSoldRow>(
+    db,
+    `SELECT t.asset, a.asset_longname, COALESCE(ROUND(SUM(t.usd_value)),0) usd, COUNT(*) sales
+       FROM trades t LEFT JOIN assets a ON a.asset=t.asset
+      WHERE t.venue='emblem' AND t.sale_class='real' AND t.asset IS NOT NULL AND t.usd_value>0
+      GROUP BY t.asset ORDER BY usd DESC LIMIT 15`
   );
 }
 
@@ -50,10 +74,13 @@ export function vaultTopCrackers(db: D1Database): Promise<VaultTopAddr[]> {
   );
 }
 
-/** Vaulting activity: assets sent INTO vault boxes per day (last 90d), oldest-first for charting. */
-export function vaultingActivity(db: D1Database): Promise<MetricPoint[]> {
-  return q<{ d: number; v: number }>(
+/** Emblem sales market over time: realized USD of Counterparty-card sales per MONTH (the market spans
+ *  2020→now, so monthly not daily), oldest-first for charting. */
+export function vaultSalesActivity(db: D1Database): Promise<MetricPoint[]> {
+  return q<{ t: number; v: number }>(
     db,
-    `SELECT s.block_time/86400 d, COUNT(*) v FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.block_time>0 GROUP BY d ORDER BY d DESC LIMIT 90`
-  ).then((rows) => rows.map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse());
+    `SELECT CAST(strftime('%s', block_time, 'unixepoch', 'start of month') AS INTEGER) t, COALESCE(ROUND(SUM(COALESCE(usd_value,0))),0) v
+       FROM trades WHERE venue='emblem' AND sale_class IN ('real','bundle') AND block_time>0
+      GROUP BY t ORDER BY t`
+  ).then((rows) => rows.map((r) => ({ t: Number(r.t) || 0, v: Number(r.v) || 0 })));
 }

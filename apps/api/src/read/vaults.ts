@@ -6,19 +6,21 @@
 import type { Envelope } from "@xcp/shared/envelope";
 import type { VaultsPayload } from "@xcp/shared/emblem";
 import { router, cached } from "./respond";
-import { vaultSummary, vaultTopAssets, vaultTopFunders, vaultTopCrackers, vaultingActivity } from "../queries/vaults";
+import { vaultSummary, vaultSalesByClass, vaultTopSoldAssets, vaultTopAssets, vaultTopFunders, vaultTopCrackers, vaultSalesActivity } from "../queries/vaults";
 
 export const vaults = router();
 
 vaults.get("/v2/vaults", (c) =>
   cached(c, "vaults", { ttl: 600, edge: 120 }, async (): Promise<Envelope<VaultsPayload>> => {
     const db = c.env.DB;
-    const [summary, top_assets, top_funders, top_crackers, activity] = await Promise.all([
+    const [summary, sales_by_class, top_sold_assets, top_assets, top_funders, top_crackers, sales_activity] = await Promise.all([
       vaultSummary(db).catch(() => null),
+      vaultSalesByClass(db).catch(() => []),
+      vaultTopSoldAssets(db).catch(() => []),
       vaultTopAssets(db).catch(() => []),
       vaultTopFunders(db).catch(() => []),
       vaultTopCrackers(db).catch(() => []),
-      vaultingActivity(db).catch(() => []),
+      vaultSalesActivity(db).catch(() => []),
     ]);
-    return { result: { summary, top_assets, top_funders, top_crackers, activity } };
+    return { result: { summary, sales_by_class, top_sold_assets, top_assets, top_funders, top_crackers, sales_activity } };
   }));
