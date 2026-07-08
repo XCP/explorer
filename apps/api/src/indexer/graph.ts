@@ -25,6 +25,8 @@ import {
   K, DISTRUST_SLOT, PASSES, ASSET_PREFIX,
   seedSubset, passStatements, finalizeStatements, EDGE_INSERTS, BIPARTITE_EDGE_INSERTS, NODE_INSERTS, RANK_INIT, SEED_APPLY,
 } from "./graph-core";
+import { rawSqlExpr } from "../reputation/score";
+import { ASSET_FACTORS, ASSET_TIERS } from "../reputation/config";
 
 const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per admin call
 
@@ -57,41 +59,62 @@ async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
   }
   return [...out];
 }
-// holders of >=2 DISTINCT grails (aggregated across IN-chunks in TS).
-async function multiGrailHolders(env: Env, grails: string[]): Promise<string[]> {
-  const held = new Map<string, Set<string>>();
-  for (const part of chunk(grails, 90)) {
-    if (!part.length) continue;
-    const ph = part.map(() => "?").join(",");
-    const r = await q<{ holder: string; asset: string }>(env.DB,
-      `SELECT DISTINCT holder, asset FROM balances WHERE holder_type='address' AND CAST(quantity AS INTEGER)>0 AND asset IN (${ph})`, ...part);
-    for (const x of r) {
-      if (!x.holder) continue;
-      let s = held.get(x.holder);
-      if (!s) held.set(x.holder, (s = new Set()));
-      s.add(x.asset);
-    }
-  }
-  const out: string[] = [];
-  for (const [h, s] of held) if (s.size >= 2) out.push(h);
-  return out;
-}
 
+// Curated-collection membership = the hand-labelled legit ecosystem (non-circular: directory curation, not
+// market stats). The "proven ecosystem citizen" ARCHETYPE tags (from the reputation thresholds, config.TAG)
+// are our persisted trust label for PEOPLE — collector (held ≥100), creator (survived ≥20), etc. Graph trust
+// feeds NEITHER the asset-quality nor the address-reputation score (H4), so seeding the graph from those is a
+// high-precision starting point, not circular.
+const COLLECTION_TAGS = ["rare-pepe", "fake-rare", "dank-rare", "spells-of-genesis", "bitcorn", "rare-coco", "notable-pepe", "the-wojak-way", "kaleidoscope"];
+const TRUST_ARCHETYPES = ["collector", "creator", "prolific_creator", "dividend_payer"];
+// A scammer never seeds trust even if they also collect/create — bad wins here. (Infra already can't carry
+// these tags, but we guard anyway.)
+const NOT_INFRA_OR_SCAM = `sig.is_exchange=0 AND sig.is_burn=0 AND sig.is_deposit=0 AND sig.is_emblem_vault=0
+  AND sig.likely_service=0 AND COALESCE(sig.shell_scams,0)=0 AND COALESCE(sig.vault_scams,0)=0`;
+
+/**
+ * Trust the ART by our QUALITY score, trust PEOPLE by our reputation ARCHETYPES — the trust signals we
+ * already compute, not a flat cohort. Trust-asset seeds = curated grails + every curated-collection card +
+ * algorithmically Established+ assets (the quality score's top tier — fixes the BITCRYSTALS class of legit
+ * currencies grail-trust never reached). Trust-ADDRESS seeds = the good-actor archetype tags (collector /
+ * creator / prolific_creator / dividend_payer), never infra or a scammer. Seeds are high-precision; the graph
+ * propagates from them. Distrust unchanged.
+ */
 async function applySeeds(env: Env): Promise<void> {
-  const grails = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='grail'`)).map((r) => r.key);
-  const lowqs = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='lowq'`)).map((r) => r.key);
+  const tagPh = COLLECTION_TAGS.map(() => "?").join(",");
+  const archPh = TRUST_ARCHETYPES.map(() => "?").join(",");
   const excluded = new Set((await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind IN ('exchange','burn')`)).map((r) => r.key));
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
 
+  // ---- TRUST ASSETS: grails + curated collections + Established+ by our QUALITY score ----
+  const grails = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='grail'`)).map((r) => r.key);
+  const collAssets = (await q<{ a: string }>(env.DB, `SELECT DISTINCT entity_id a FROM tags WHERE entity_type='asset' AND tag IN (${tagPh})`, ...COLLECTION_TAGS)).map((r) => r.a);
+  const estCut = ASSET_TIERS.find((t) => t.tier === "Established")?.minRaw ?? 45.86;
+  const qualExpr = rawSqlExpr(ASSET_FACTORS, tip); // the asset quality raw, in SQL (same expr as /reputation/review)
+  // low_quality=0: the −6 penalty doesn't fully demote a curated-junk asset on the Phase-B scale (a wash/bridge
+  // token can ride real flow to Established), so a flagged asset must NEVER become a trust seed via quality.
+  const quality = (await q<{ a: string }>(env.DB,
+    `SELECT asset a FROM asset_signals WHERE low_quality=0 AND (trades>0 OR dispenses>0) AND (${qualExpr}) >= ${estCut}`)).map((r) => r.a);
   const trust = new Set<string>();
-  const distrust = new Set<string>();
-  for (const g of grails) trust.add(ASSET_PREFIX + g);
-  for (const l of lowqs) distrust.add(ASSET_PREFIX + l);
-  for (const a of await distinctIssuers(env, grails)) if (!excluded.has(a)) trust.add(a);
-  for (const a of await multiGrailHolders(env, grails)) if (!excluded.has(a)) trust.add(a);
-  for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
-  // a node can't be both a trust and a distrust seed — trust wins the (rare) collision to keep Σs=1 exact.
-  for (const n of trust) distrust.delete(n);
+  for (const a of [...grails, ...collAssets, ...quality]) trust.add(ASSET_PREFIX + a);
 
+  // ---- TRUST ADDRESSES: proven-ecosystem archetype tags, never infra/scam (+ grail issuers as axioms) ----
+  const trustAddrs = (await q<{ addr: string }>(env.DB,
+    `SELECT DISTINCT t.entity_id addr FROM tags t JOIN address_signals sig ON sig.addr=t.entity_id
+      WHERE t.entity_type='address' AND t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`, ...TRUST_ARCHETYPES)).map((r) => r.addr);
+  const grailIssuers = await distinctIssuers(env, grails); // a grail's creator is an axiom, even if under the creator threshold
+  for (const addr of [...trustAddrs, ...grailIssuers]) if (!excluded.has(addr)) trust.add(addr);
+
+  // ---- DISTRUST (unchanged): curated lowq + their issuers + derived scam actors ----
+  const lowqs = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='lowq'`)).map((r) => r.key);
+  const distrust = new Set<string>();
+  for (const l of lowqs) distrust.add(ASSET_PREFIX + l);
+  for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
+  const scamActors = (await q<{ addr: string }>(env.DB, `SELECT addr FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0`)).map((r) => r.addr);
+  for (const a of scamActors) if (!excluded.has(a)) distrust.add(a);
+  for (const n of trust) distrust.delete(n); // trust wins the (rare) collision to keep Σs=1 exact
+
+  // ---- STAGE: split trust k ways (Min-k), distrust into its slot; batch the ~13k inserts (not one-at-a-time) ----
   const subsets: string[][] = Array.from({ length: K }, () => []);
   for (const key of trust) subsets[seedSubset(key)].push(key);
   const rows: [string, number, number][] = [];
@@ -101,11 +124,9 @@ async function applySeeds(env: Env): Promise<void> {
   for (const node of dArr) rows.push([node, DISTRUST_SLOT, ds]);
 
   await env.DB.prepare(`DELETE FROM graph_seed`).run();
-  for (const part of chunk(rows, 30)) {
-    if (!part.length) continue;
-    const ph = part.map(() => "(?,?,?)").join(",");
-    await env.DB.prepare(`INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES ${ph}`).bind(...part.flat()).run();
-  }
+  const stmts = chunk(rows, 30).filter((p) => p.length).map((part) =>
+    env.DB.prepare(`INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES ${part.map(() => "(?,?,?)").join(",")}`).bind(...part.flat()));
+  for (const b of chunk(stmts, 20)) await env.DB.batch(b);
   await env.DB.prepare(SEED_APPLY).run();
 }
 
@@ -188,4 +209,30 @@ export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: b
   }
 
   return { phase: "done", done: true, note: "already built; POST with reset=1 to rebuild" };
+}
+
+// ~7 days of Counterparty blocks — the auto-rebuild cadence (the graph moves slowly; weekly is ample).
+const WEEK_BLOCKS = 1008;
+async function graphTip(env: Env): Promise<number> {
+  return Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+}
+
+/**
+ * Cron driver: keeps the graph trait from going stale WITHOUT a heavy per-tick cost. If a rebuild is in
+ * progress, advance a couple of work-units (one iterate pass ≈ 20s — safe inside a 2-min tick); if idle,
+ * kick a fresh reset once WEEK_BLOCKS have elapsed since the last finalize. So a full Min-k-PPR rebuild
+ * (incl. the freshly-seeded scam actors) trickles to completion over a few hours, once a week, on its own.
+ */
+export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
+  const phase = (await getState(env, K_PHASE)) || "done";
+  if (phase === "done") {
+    const tip = await graphTip(env);
+    const last = int(await getState(env, "graph_rebuilt_block"), 0);
+    if (last === 0) { await setState(env, "graph_rebuilt_block", String(tip)); return { skipped: "clock started" }; }
+    if (tip - last >= WEEK_BLOCKS) return await buildGraphTrust(env, { reset: true });
+    return { skipped: `fresh (${tip - last}/${WEEK_BLOCKS} blocks to next rebuild)` };
+  }
+  const r = await buildGraphTrust(env, { work: 4 }); // single-driver (cron owns the rebuild); a few units/tick
+  if (r.done) await setState(env, "graph_rebuilt_block", String(await graphTip(env)));
+  return r;
 }
