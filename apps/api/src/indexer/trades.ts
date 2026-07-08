@@ -61,26 +61,45 @@ function dispenseSql(lo: number, hi: number) {
     WHERE d.btc_amount > 0 AND d.block_index > ${lo} AND d.block_index <= ${hi}`;
 }
 
-/** Emblem: NFT sale (qty 1 vault) → the wrapped Counterparty card via emblem_vaults.btc_address → its primary balance.
- *  ETH block→time is approximated (piecewise around the merge); price/currency from the token map. */
+/** Emblem: an Ethereum NFT sale → the wrapped Counterparty card the vault holds. Attribution + a per-sale
+ *  scam verdict come from the vault classification (src/indexer/vault-contents.ts): a sale is 'real' only
+ *  when the vault held ONE Counterparty card and was still full at sale time; 'scam_cracked' if the card had
+ *  already been sent/swept back out before the sale; 'bundle' for multi-card vaults; 'scam_empty' if the
+ *  vault NAME claims a real Counterparty card but it holds nothing on any chain (empty shell — from Emblem
+ *  /meta, indexer/emblem-meta.ts); 'non_counterparty' if its value is genuinely on another chain (Namecoin,
+ *  Ordinals, BTC … — NOT a scam, just invisible to us). Only 'real' sales carry an attributed asset.
+ *  ETH block→time is approximated (piecewise around the merge; tight for Emblem's 2021+ era). */
 function emblemSql() {
   const eth = ETH_TOKENS.map((t) => `'${t}'`).join(",");
   const isUsdc = `es.token_addr = '${USDC}'`;
-  return `INSERT OR IGNORE INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,usd_value,buyer,seller,tx_hash)
+  // The sale's unix time, in the same clock as a BTC crack (sends.block_time), so full-at-sale is decidable.
+  const saleTime = `(CASE WHEN es.block_number >= 15537394 THEN 1663224162 + (es.block_number - 15537394) * 12
+                         ELSE CAST(1438269973 + es.block_number * 13.15 AS INTEGER) END)`;
+  const isReal = `ev.vault_kind = 'single' AND (ev.cracked_at IS NULL OR ${saleTime} < ev.cracked_at)`;
+  // Upsert (not INSERT OR IGNORE): a vault can be RECLASSIFIED after the sale was first materialized
+  // (it gets cracked later, or the crawl fills in contents), so refresh the classification columns on
+  // every fold. usd_value is filled by a SEPARATE prices pass — leave it untouched here.
+  return `INSERT INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,usd_value,buyer,seller,tx_hash,sale_class)
     SELECT 'emblem', es.tx_hash || '_' || es.log_index,
-      (SELECT b.asset FROM balances b WHERE b.holder = ev.btc_address AND b.asset <> 'XCP'
-         ORDER BY CAST(b.quantity AS REAL) DESC LIMIT 1),
-      CASE WHEN es.block_number >= 15537394 THEN 1663224162 + (es.block_number - 15537394) * 12
-           ELSE CAST(1438269973 + es.block_number * 13.15 AS INTEGER) END,
-      es.block_number, 1.0,
+      CASE WHEN ${isReal} THEN ev.contents_asset ELSE NULL END,
+      ${saleTime},
+      es.block_number,
+      CASE WHEN ${isReal} THEN COALESCE(ev.contents_qty, 1.0) ELSE 1.0 END,
       CASE WHEN ${isUsdc} THEN 'USDC' ELSE 'ETH' END,
       CAST(es.price_raw AS REAL) / (CASE WHEN ${isUsdc} THEN 1e6 ELSE 1e18 END),
       CASE WHEN ${isUsdc} THEN CAST(es.price_raw AS REAL) / 1e6 ELSE NULL END,
-      es.buyer, es.seller, es.tx_hash
+      es.buyer, es.seller, es.tx_hash,
+      CASE WHEN ev.vault_kind = 'single' AND (ev.cracked_at IS NULL OR ${saleTime} < ev.cracked_at) THEN 'real'
+           WHEN ev.vault_kind = 'multi' THEN 'bundle'
+           WHEN ev.vault_kind = 'single' THEN 'scam_cracked'
+           WHEN ev.is_scam_shell = 1 THEN 'scam_empty'
+           ELSE 'non_counterparty' END
     FROM emblem_sales es
     JOIN emblem_vaults ev ON ev.token_id = es.token_id AND ev.contract = es.contract
     WHERE ev.btc_address IS NOT NULL AND CAST(es.price_raw AS REAL) > 0
-      AND es.token_addr IN (${eth}, '${USDC}')`;
+      AND es.token_addr IN (${eth}, '${USDC}')
+    ON CONFLICT(venue,ref) DO UPDATE SET
+      asset = excluded.asset, quantity = excluded.quantity, sale_class = excluded.sale_class`;
 }
 
 /** Scarce.city: a Bitcoin-native card sale (qty 1) priced in BTC. No on-chain tx/block — sold_at IS

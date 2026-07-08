@@ -39,7 +39,8 @@ const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
   is_exchange INTEGER DEFAULT 0, is_deposit INTEGER DEFAULT 0, is_burn INTEGER DEFAULT 0,
   assets_burned INTEGER DEFAULT 0, disp_trust REAL DEFAULT 0, is_emblem_vault INTEGER DEFAULT 0,
   likely_service INTEGER DEFAULT 0, dex_trades INTEGER DEFAULT 0,
-  stamps_created INTEGER DEFAULT 0, stamps_collected INTEGER DEFAULT 0, src20_deploys INTEGER DEFAULT 0, is_btns_user INTEGER DEFAULT 0)`;
+  stamps_created INTEGER DEFAULT 0, stamps_collected INTEGER DEFAULT 0, src20_deploys INTEGER DEFAULT 0, is_btns_user INTEGER DEFAULT 0,
+  vault_scams INTEGER DEFAULT 0, shell_scams INTEGER DEFAULT 0)`;
 const ASSET_DDL = `CREATE TABLE IF NOT EXISTS asset_signals (
   asset TEXT PRIMARY KEY, asset_longname TEXT, issuer TEXT, divisible INTEGER, locked INTEGER,
   holders INTEGER DEFAULT 0, top1_pct REAL DEFAULT 0, trades INTEGER DEFAULT 0,
@@ -264,6 +265,25 @@ const UNITS: FeatureUnit[] = [
   { name: "ddl_emblem", scope: "global", reads: [], periodic: true, full: EMBLEM_DDL },
   { name: "addr_is_emblem", scope: "address", reads: [], periodic: true,
     full: `UPDATE address_signals SET is_emblem_vault = CASE WHEN addr IN (SELECT btc_address FROM emblem_vaults) THEN 1 ELSE 0 END` },
+  // vault_scams: BAD-ACTOR count. A Counterparty Emblem vault is only a real sale if the card was still
+  // inside at sale time. When someone CRACKS one (sends OR sweeps the card back out — cracker_address, set
+  // by vault-contents.ts) and an Emblem sale then happens AFTER the crack, a buyer paid for an empty shell.
+  // We attribute that to the one on-chain identity we can see: the BTC address that received the cracked
+  // card. (Scope: only COUNTERPARTY-funded vaults. 'foreign' vaults — value on another chain — have no
+  // Counterparty crack and aren't counted.) Cracking to redeem your OWN card is fine — the EXISTS gate
+  // requires a post-crack sale, so an honest redeemer scores 0.
+  // Counts DISTINCT vaults (one scam op = one vault), reset-then-set so a reclassification can clear it.
+  { name: "addr_vault_scam_reset", scope: "address", reads: [], periodic: true,
+    full: `UPDATE address_signals SET vault_scams = 0 WHERE vault_scams > 0` },
+  { name: "addr_vault_scams", scope: "address", reads: ["emblem_vaults", "emblem_sales"], dependsOn: ["addr_vault_scam_reset"], periodic: true,
+    full: `INSERT INTO address_signals (addr,vault_scams)
+      SELECT ev.cracker_address, COUNT(DISTINCT ev.token_id) FROM emblem_vaults ev
+      WHERE ev.cracker_address IS NOT NULL AND ev.cracked_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM emblem_sales es WHERE es.token_id = ev.token_id AND es.contract = ev.contract
+          AND (CASE WHEN es.block_number >= 15537394 THEN 1663224162 + (es.block_number - 15537394) * 12
+                    ELSE CAST(1438269973 + es.block_number * 13.15 AS INTEGER) END) >= ev.cracked_at)
+      GROUP BY ev.cracker_address
+      ON CONFLICT(addr) DO UPDATE SET vault_scams = excluded.vault_scams` },
   // likely_service: HEURISTIC flag for service-like addresses (huge inbound, no creation, not already infra).
   { name: "addr_likely_service", scope: "address", reads: [], dependsOn: ["addr_is_exchange", "addr_is_burn", "addr_is_emblem", "addr_iss", "addr_send_in"], periodic: true,
     full: `UPDATE address_signals SET likely_service = CASE WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END` },

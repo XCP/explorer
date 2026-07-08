@@ -56,6 +56,23 @@ export const ADDRESS_FACTORS: Factor[] = [
   { key: "xcp",             weight: 1.0, transform: "log",    label: "xcp",       why: "XCP protocol stake" },
   { key: "dex_trades",      weight: 1.0, transform: "log",    label: "dex",       why: "DEX order-match participation" },
   { key: "stamps_created",  weight: 0.8, transform: "log",    label: "stamps",    why: "Bitcoin Stamp creation" },
+  // PENALTY (2026-07-07): Emblem vault SCAMS. This BTC address cracked a vault (sent the wrapped card back
+  // out) and an Emblem sale then happened AFTER the crack — a buyer paid for an empty shell (signals.ts
+  // addr_vault_scams; counts DISTINCT such vaults). Cracking to redeem your OWN card is fine (the signal
+  // requires a POST-crack sale, so honest redeemers score 0). Negative weight = the only explicit bad-actor
+  // demerit in the address model. Weight −2.0 provisional: ln(1+n)·−2 ⇒ 1 scam −1.4, 3 −2.8, 10 −4.8 (wipes a
+  // p90 score). RECALIBRATE once the vault_scams distribution is read over the population (few hundred crackers,
+  // so ADDRESS_PCT anchors are unaffected). CAVEAT: a knowingly-disclosed "spent vault" collectible sale looks
+  // identical on-chain — kept moderate for that reason. Never-funded scams have NO BTC actor, so aren't here.
+  { key: "vault_scams",     weight: -2.0, transform: "log",   label: "vault_scam", why: "penalty: cracked a vault then an Emblem sale followed = sold an empty shell (bad actor)" },
+  // PENALTY (2026-07-08): Emblem empty-SHELL scams attributed to this BTC identity via the creator bridge
+  // (signals/emblem-scam.ts): they minted vaults NAMING a real Counterparty card that hold nothing, and are
+  // the consistent BTC funder of their own real vaults. COUNT-scaled (log), not share-gated: a dedicated
+  // scammer (e.g. 23 shells) is docked hard; a prolific creator with 1 stray shell gets ln(2)·−1.5 ≈ −1.0, a
+  // nudge their real-vault/creator positives outweigh — so nobody is excluded by fiat, magnitude discriminates.
+  // Collision-filtered (is_scam_shell requires the claimed card be wrapped by a real vault) so Ordinals/name
+  // collisions (BITCOIN/TWELVEFOLD/…) don't count. RECALIBRATE weight once the population effect is read.
+  { key: "shell_scams",     weight: -1.5, transform: "log",   label: "shell_scam", why: "penalty: minted empty Emblem shells claiming a real card = scammed buyers (bridged to this BTC identity)" },
   // NOTE: the never-computed rep_score/pagerank factor was removed 2026-07-06 (weight 0.0 since inception, so it
   // never contributed). The address_signals.rep_score column is kept (harmless) in case personalized PageRank returns.
 ];
