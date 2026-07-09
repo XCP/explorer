@@ -80,43 +80,55 @@ async function currentBlock(api: string): Promise<number> {
 
 /* ---------- credit/debit ledger backfill (isolated, non-destructive) ---------- */
 
-/** One-off historical backfill of the credits/debits ledger (migration 0038). Walks the event stream from a
- *  dedicated cursor and INSERT-OR-IGNOREs only CREDIT/DEBIT rows — it NEVER touches balances, the mirror, or
- *  signals (no dispatch, no applyBalances), so it can run against the live DB with zero corruption risk; the
- *  only cost is credit/debit write volume. Idempotent on event_index. Loop /admin/backfill-ledger until
- *  {caught_up:true}, then delete the cursor. Independent of the main sync cursor (forward capture in
- *  events/balance.ts covers new events). */
-export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}): Promise<{ from: number; cursor: number; tip: number; processed: number; written: number; caught_up: boolean }> {
+/** One-off historical backfill of the credits/debits ledger (migration 0038). Pages the Counterparty
+ *  event-TYPE endpoints /events/CREDIT and /events/DEBIT directly (next_cursor descending) so it fetches ONLY
+ *  those ~4.3M + ~4M events instead of scanning the whole ~20M global stream — far fewer requests, far fewer
+ *  429s. Per-type cursor + done flag in indexer_state. Isolated: INSERT-OR-IGNORE only, never touches
+ *  balances/mirror/signals, so zero corruption risk. Idempotent on event_index. Loop /admin/backfill-ledger
+ *  until {caught_up:true}. Forward capture (events/balance.ts) covers new events. */
+const LEDGER_KINDS = [
+  { type: "CREDIT", table: "credits", cursorKey: "ledger_credit_cursor", doneKey: "ledger_credit_done" },
+  { type: "DEBIT", table: "debits", cursorKey: "ledger_debit_cursor", doneKey: "ledger_debit_done" },
+] as const;
+
+export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}): Promise<{ processed: number; written: number; credit_done: boolean; debit_done: boolean; caught_up: boolean }> {
   const api = env.COUNTERPARTY_API_BASE;
-  const tip = await tipEventIndex(api);
-  let cursor = parseInt((await getState(env.DB, "ledger_backfill_cursor")) || "0", 10);
-  if (cursor < 0) cursor = 0;
-  const start = cursor;
   const cap = Math.min(opts.maxEvents ?? 10000, MAX_EVENTS_PER_RUN);
   let processed = 0, written = 0;
-  const stmts: Stmt[] = [];
-  while (processed < cap && cursor <= tip) {
-    const rows = await fetchAsc(api, cursor);
-    if (!rows.length) break;
-    for (const ev of rows) {
-      if (ev.event === "CREDIT" || ev.event === "DEBIT") {
+  const inserts: Stmt[] = [];
+  const done: Record<string, boolean> = {};
+  const finalize: D1PreparedStatement[] = [];
+  for (const k of LEDGER_KINDS) {
+    done[k.type] = (await getState(env.DB, k.doneKey)) === "1";
+    if (done[k.type]) continue;
+    let cursor = await getState(env.DB, k.cursorKey); // null on first pass → newest page
+    let finished = false;
+    while (processed < cap) {
+      const d = await counterpartyJson<{ result?: Ev[]; next_cursor?: number | null }>(
+        api, `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`);
+      const rows = d.result || [];
+      for (const ev of rows) {
         const p = ev.params;
         const holder = (p.utxo as string) || (p.address as string);
         if (holder && p.asset) {
-          const table = ev.event === "CREDIT" ? "credits" : "debits";
-          stmts.push((db) => db.prepare(
-            `INSERT OR IGNORE INTO ${table} (event_index,block_index,tx_hash,address,asset,quantity,calling_function,utxo_address) VALUES (?,?,?,?,?,?,?,?)`,
-          ).bind(ev.event_index, ev.block_index, ev.tx_hash, holder, p.asset, str(p.quantity) ?? "0", str(p.calling_function ?? p.category ?? null), p.utxo ? str(p.utxo_address ?? null) : null));
+          inserts.push((db) => db.prepare(
+            `INSERT OR IGNORE INTO ${k.table} (event_index,block_index,tx_hash,address,asset,quantity,calling_function,utxo_address) VALUES (?,?,?,?,?,?,?,?)`,
+          ).bind(ev.event_index, ev.block_index, ev.tx_hash, holder, p.asset, str(p.quantity) ?? "0", str(p.calling_function ?? null), p.utxo ? str(p.utxo_address ?? null) : null));
           written++;
         }
+        processed++;
       }
-      cursor = ev.event_index + 1;
-      processed++;
+      const nc = d.next_cursor;
+      if (nc == null || rows.length === 0) { finished = true; break; }
+      cursor = String(nc);
     }
+    // persist AFTER the inserts flush (below) so a batch failure re-runs idempotently rather than skipping ahead
+    if (finished) { done[k.type] = true; finalize.push(setStateStmt(env.DB, k.doneKey, "1")); }
+    else if (cursor != null) finalize.push(setStateStmt(env.DB, k.cursorKey, cursor));
   }
-  if (stmts.length) await batchAll(env.DB, stmts);
-  await setStateStmt(env.DB, "ledger_backfill_cursor", String(cursor)).run();
-  return { from: start, cursor, tip, processed, written, caught_up: cursor > tip };
+  if (inserts.length) await batchAll(env.DB, inserts);
+  if (finalize.length) await env.DB.batch(finalize);
+  return { processed, written, credit_done: !!done["CREDIT"], debit_done: !!done["DEBIT"], caught_up: !!done["CREDIT"] && !!done["DEBIT"] };
 }
 
 /* ---------- balances: apply netted deltas for a chunk ---------- */
