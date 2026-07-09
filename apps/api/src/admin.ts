@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "./index";
-import { syncEvents } from "./indexer/sync";
+import { syncEvents, backfillLedger } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade, verifySignals } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
@@ -77,6 +77,15 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
 admin.post("/admin/sync", async (c) => {
   const events = c.req.query("events") ? parseInt(c.req.query("events")!, 10) : undefined;
   return c.json(await syncEvents(c.env, { maxEvents: events }));
+});
+
+// Backfill the historical credits/debits ledger (migration 0038) — isolated & non-destructive: inserts only
+// CREDIT/DEBIT rows, never touches balances/mirror/signals, so it's safe to loop against the live DB. Repeat
+// until {caught_up:true}. ?events=N tunes the per-call batch (default 10000). Its own cursor; forward capture
+// (events/balance.ts) handles new events.
+admin.post("/admin/backfill-ledger", async (c) => {
+  const events = c.req.query("events") ? parseInt(c.req.query("events")!, 10) : undefined;
+  return c.json(await backfillLedger(c.env, { maxEvents: events }));
 });
 
 // Full re-index: reset the event cursor to -1 so the next /admin/sync (or cron) WIPES balances + snapshots
