@@ -197,11 +197,14 @@ export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = 
 // Address reputation TIERS — primary display, parallel to the asset tiers. Cut on RAW (= exact percentiles of
 // the REAL-USER population). Each states its meaning. Non-ranked states (infra + dormant) are handled in
 // addressTier() and labelled via ADDRESS_TIER_MEANING below. Retires the old vague Established/Proven/Active.
+// Cutoffs recalibrated 2026-07-09 against the corrected 400,913-user pool (after "no history" collapsed
+// to ~0 — every known address is now scored). The pool grew at the low end, so the top-1/10/50% lines
+// dropped: histogram percentiles over the live distribution put them at ~15 / ~5 / ~2.5.
 export const ADDRESS_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "OG",          minRaw: 16.33, meaning: "top ~1% of real users — deep, long, STILL-active history" },
-  { tier: "Established", minRaw: 5.22,  meaning: "top ~10% — a credible, sustained Counterparty history" },
-  { tier: "Active",      minRaw: 2.88,  meaning: "upper half of real users — an ongoing presence" },
-  { tier: "Casual",      minRaw: -1e9,  meaning: "a real user with a light footprint" },
+  { tier: "OG",          minRaw: 15.0, meaning: "top ~1% of real users — deep, long, STILL-active history" },
+  { tier: "Established", minRaw: 5.0,  meaning: "top ~10% — a credible, sustained Counterparty history" },
+  { tier: "Active",      minRaw: 2.5,  meaning: "upper half of real users — an ongoing presence" },
+  { tier: "Casual",      minRaw: -1e9, meaning: "a real user with a light footprint" },
 ];
 // Plain-language meaning for every tier + non-ranked state, surfaced in the API so no label is unexplained.
 export const ADDRESS_TIER_MEANING: Record<string, string> = {
