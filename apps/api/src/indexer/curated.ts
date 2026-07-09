@@ -11,9 +11,9 @@
 // asset IN (…) → curated low-quality (wash/scam/bridge) set. Used by asset_signals.low_quality.
 export const CURATED_LOWQ_SQL = `SELECT key FROM curated WHERE kind='lowq'`;
 
-// addr IN (…) → curated exchange / consolidation-hub wallets. Used by address_signals.is_exchange
+// address IN (…) → curated exchange / consolidation-hub wallets. Used by address_signals.is_exchange
 // (and, transitively, deposit detection).
 export const EXCHANGES_SQL = `SELECT key FROM curated WHERE kind='exchange'`;
 
-// addr IN (…) → verified burn addresses. Used by address_signals.is_burn.
+// address IN (…) → verified burn addresses. Used by address_signals.is_burn.
 export const CURATED_BURNS_SQL = `SELECT key FROM curated WHERE kind='burn'`;

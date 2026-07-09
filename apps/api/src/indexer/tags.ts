@@ -23,31 +23,31 @@ interface Rule { tag: string; key: string; sql: string }
 // need a correlated subquery. `key` is the column that carries the tagged address. ----
 const ADDR_RULES: Rule[] = [
   // ---- address classification (infra) ----
-  { tag: "exchange",        key: "addr",          sql: `SELECT 'address',addr,'exchange','computed' FROM address_signals WHERE is_exchange=1` },
-  { tag: "deposit",         key: "addr",          sql: `SELECT 'address',addr,'deposit','computed' FROM address_signals WHERE is_deposit=1` },
-  { tag: "burn",            key: "addr",          sql: `SELECT 'address',addr,'burn','computed' FROM address_signals WHERE is_burn=1` },
-  { tag: "vault",           key: "addr",          sql: `SELECT 'address',addr,'vault','computed' FROM address_signals WHERE is_emblem_vault=1` },
+  { tag: "exchange",        key: "address",          sql: `SELECT 'address',address,'exchange','computed' FROM address_signals WHERE is_exchange=1` },
+  { tag: "deposit",         key: "address",          sql: `SELECT 'address',address,'deposit','computed' FROM address_signals WHERE is_deposit=1` },
+  { tag: "burn",            key: "address",          sql: `SELECT 'address',address,'burn','computed' FROM address_signals WHERE is_burn=1` },
+  { tag: "vault",           key: "address",          sql: `SELECT 'address',address,'vault','computed' FROM address_signals WHERE is_emblem_vault=1` },
   // vault FUNDERS (sent assets into a vault) + CRACKERS (received assets out of a vault) — both are power-user
   // cohorts (lab 06-27: ~100x / ~65x baseline survived_assets). Tags for segmentation, not score weights
   // (the underlying quality is already captured by survived_assets/btc_fees/assets_held).
   { tag: "vault_funder",    key: "s.source",      sql: `SELECT DISTINCT 'address',s.source,'vault_funder','computed' FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.source IS NOT NULL` },
   { tag: "vault_cracker",   key: "s.destination", sql: `SELECT DISTINCT 'address',s.destination,'vault_cracker','computed' FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source WHERE s.destination IS NOT NULL` },
-  { tag: "service",         key: "addr",          sql: `SELECT 'address',addr,'service','computed' FROM address_signals WHERE likely_service=1` },
+  { tag: "service",         key: "address",          sql: `SELECT 'address',address,'service','computed' FROM address_signals WHERE likely_service=1` },
   // ---- address behavior / archetypes ----
-  { tag: "trader",          key: "addr",          sql: `SELECT 'address',addr,'trader','computed' FROM address_signals WHERE dex_trades>=10` },
-  { tag: "active_trader",   key: "addr",          sql: `SELECT 'address',addr,'active_trader','computed' FROM address_signals WHERE dex_trades>=100` },
-  { tag: "collector",       key: "addr",          sql: `SELECT 'address',addr,'collector','computed' FROM address_signals WHERE assets_held>=100` },
-  { tag: "whale",           key: "addr",          sql: `SELECT 'address',addr,'whale','computed' FROM address_signals WHERE assets_held>=500` },
-  { tag: "merchant",        key: "addr",          sql: `SELECT 'address',addr,'merchant','computed' FROM address_signals WHERE dispenses>=5` },
-  { tag: "creator",         key: "addr",          sql: `SELECT 'address',addr,'creator','computed' FROM address_signals WHERE survived_assets>=1` },
-  { tag: "prolific_creator",key: "addr",          sql: `SELECT 'address',addr,'prolific_creator','computed' FROM address_signals WHERE survived_assets>=20` },
-  { tag: "burner",          key: "addr",          sql: `SELECT 'address',addr,'burner','computed' FROM address_signals WHERE assets_burned>=3` },
-  { tag: "dividend_payer",  key: "addr",          sql: `SELECT 'address',addr,'dividend_payer','computed' FROM address_signals WHERE dividends>=1` },
-  { tag: "stamp_creator",   key: "addr",          sql: `SELECT 'address',addr,'stamp_creator','computed' FROM address_signals WHERE stamps_created>=5` },
-  { tag: "stamp_collector", key: "addr",          sql: `SELECT 'address',addr,'stamp_collector','computed' FROM address_signals WHERE stamps_collected>=20` },
-  { tag: "src20_deployer",  key: "addr",          sql: `SELECT 'address',addr,'src20_deployer','computed' FROM address_signals WHERE src20_deploys>=1` },
-  { tag: "btns_user",       key: "addr",          sql: `SELECT 'address',addr,'btns_user','computed' FROM address_signals WHERE is_btns_user=1` },
-  { tag: "og",              key: "addr",          sql: `SELECT 'address',addr,'og','computed' FROM address_signals WHERE first_block<={TIP}-43800 AND last_block>=850000` },
+  { tag: "trader",          key: "address",          sql: `SELECT 'address',address,'trader','computed' FROM address_signals WHERE dex_trades>=10` },
+  { tag: "active_trader",   key: "address",          sql: `SELECT 'address',address,'active_trader','computed' FROM address_signals WHERE dex_trades>=100` },
+  { tag: "collector",       key: "address",          sql: `SELECT 'address',address,'collector','computed' FROM address_signals WHERE assets_held>=100` },
+  { tag: "whale",           key: "address",          sql: `SELECT 'address',address,'whale','computed' FROM address_signals WHERE assets_held>=500` },
+  { tag: "merchant",        key: "address",          sql: `SELECT 'address',address,'merchant','computed' FROM address_signals WHERE dispenses>=5` },
+  { tag: "creator",         key: "address",          sql: `SELECT 'address',address,'creator','computed' FROM address_signals WHERE survived_assets>=1` },
+  { tag: "prolific_creator",key: "address",          sql: `SELECT 'address',address,'prolific_creator','computed' FROM address_signals WHERE survived_assets>=20` },
+  { tag: "burner",          key: "address",          sql: `SELECT 'address',address,'burner','computed' FROM address_signals WHERE assets_burned>=3` },
+  { tag: "dividend_payer",  key: "address",          sql: `SELECT 'address',address,'dividend_payer','computed' FROM address_signals WHERE dividends>=1` },
+  { tag: "stamp_creator",   key: "address",          sql: `SELECT 'address',address,'stamp_creator','computed' FROM address_signals WHERE stamps_created>=5` },
+  { tag: "stamp_collector", key: "address",          sql: `SELECT 'address',address,'stamp_collector','computed' FROM address_signals WHERE stamps_collected>=20` },
+  { tag: "src20_deployer",  key: "address",          sql: `SELECT 'address',address,'src20_deployer','computed' FROM address_signals WHERE src20_deploys>=1` },
+  { tag: "btns_user",       key: "address",          sql: `SELECT 'address',address,'btns_user','computed' FROM address_signals WHERE is_btns_user=1` },
+  { tag: "og",              key: "address",          sql: `SELECT 'address',address,'og','computed' FROM address_signals WHERE first_block<={TIP}-43800 AND last_block>=850000` },
 ];
 // NOTE: stamp classification tags (stamp/src20/src721/src101/src20_deploy) are NOT here — they are written
 // at ingest by the issuance handler with source='protocol' (the classifier base64-decodes the description,

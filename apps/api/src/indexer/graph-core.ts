@@ -19,7 +19,7 @@ export const BIP_W = "0.6931471805599453"; // ln(2): the constant bipartite edge
 // most for the bipartite holder edges), and likely-service addresses. They may still RECEIVE
 // (sinks are harmless under damping); they never pour. Subquery reused in every edge insert.
 export const EXCLUDE_SRC = `(SELECT key FROM curated WHERE kind IN ('exchange','burn')
-  UNION SELECT addr FROM address_signals WHERE is_deposit=1 OR is_emblem_vault=1 OR likely_service=1)`;
+  UNION SELECT address FROM address_signals WHERE is_deposit=1 OR is_emblem_vault=1 OR likely_service=1)`;
 
 /** Deterministic k-split: FNV-1a over the node id, mod K. Stable across rebuilds; reproducible in the harness. */
 export function seedSubset(key: string, k = K): number {
@@ -101,10 +101,10 @@ export function finalizeStatements(): string[] {
     `UPDATE address_signals SET graph_trust = 0, graph_distrust = 0`,
     `UPDATE address_signals AS a SET graph_trust = m.tr
        FROM (SELECT node, MIN(r) AS tr FROM graph_rank WHERE slot IN (${trustSlots}) GROUP BY node) m
-       WHERE a.addr = m.node`,
+       WHERE a.address = m.node`,
     `UPDATE address_signals AS a SET graph_distrust = m.dr
        FROM (SELECT node, r AS dr FROM graph_rank WHERE slot = ${DISTRUST_SLOT}) m
-       WHERE a.addr = m.node`,
+       WHERE a.address = m.node`,
     `UPDATE asset_signals SET graph_trust = 0, graph_distrust = 0`,
     `UPDATE asset_signals AS a SET graph_trust = m.tr
        FROM (SELECT substr(node, ${ASSET_PREFIX.length + 1}) AS asset, MIN(r) AS tr FROM graph_rank
@@ -121,7 +121,7 @@ export function finalizeStatements(): string[] {
        FROM (SELECT r.node, MAX(r.r) AS tr FROM graph_rank r
              JOIN graph_seed sd ON sd.node = r.node AND sd.slot < ${K}
              WHERE r.slot IN (${trustSlots}) GROUP BY r.node) m
-       WHERE a.addr = m.node`,
+       WHERE a.address = m.node`,
     `UPDATE asset_signals AS a SET graph_trust = m.tr
        FROM (SELECT substr(r.node, ${ASSET_PREFIX.length + 1}) AS asset, MAX(r.r) AS tr FROM graph_rank r
              JOIN graph_seed sd ON sd.node = r.node AND sd.slot < ${K}

@@ -90,9 +90,9 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
             </thead>
             <tbody>
               {members.map((m, i) => (
-                <tr key={m.addr} className="border-b border-[#14171d] last:border-0 hover:bg-white/[.02]">
+                <tr key={m.address} className="border-b border-[#14171d] last:border-0 hover:bg-white/[.02]">
                   <td className="px-3 py-2 font-mono text-zinc-500 tabular-nums">{i + 1}</td>
-                  <td className="px-3 py-2 max-w-0">{addrCell(m.addr)}</td>
+                  <td className="px-3 py-2 max-w-0">{addrCell(m.address)}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-zinc-100">{m.raw}</td>
                   {COLS.map((c) => (
                     <td key={c.label} className="px-3 py-2 text-right font-mono tabular-nums text-zinc-400">

@@ -127,7 +127,7 @@ export function assetBurnedText(db: D1Database, asset: string): Promise<{ burned
   return one<{ burned: string | null }>(
     db,
     `SELECT CAST(COALESCE(SUM(CAST(b.quantity AS INTEGER)),0) AS TEXT) burned
-     FROM balances b JOIN address_signals s ON s.addr=b.holder WHERE b.asset=? AND s.is_burn=1`,
+     FROM balances b JOIN address_signals s ON s.address=b.holder WHERE b.asset=? AND s.is_burn=1`,
     asset
   );
 }
@@ -191,7 +191,7 @@ export function holderTiers(
     `WITH h AS (
        SELECT CAST(b.quantity AS REAL) q, sg.is_exchange xch, sg.is_deposit dep,
          sg.is_emblem_vault vlt, sg.is_burn brn, sg.likely_service svc, (${expr}) raw
-       FROM balances b JOIN address_signals sg ON sg.addr=b.holder
+       FROM balances b JOIN address_signals sg ON sg.address=b.holder
        WHERE b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0),
      tot AS (SELECT SUM(q) s FROM h)
      SELECT CASE WHEN xch=1 THEN 'Exchange' WHEN dep=1 THEN 'Deposit' WHEN vlt=1 THEN 'Vault'
@@ -212,7 +212,7 @@ export function holderArchetypes(db: D1Database, asset: string): Promise<HolderA
             SUM(CASE WHEN sg.assets_held>=500 THEN 1 ELSE 0 END) whales,
             SUM(CASE WHEN sg.assets_held>=100 THEN 1 ELSE 0 END) collectors,
             COUNT(*) holders
-     FROM balances b JOIN address_signals sg ON sg.addr=b.holder
+     FROM balances b JOIN address_signals sg ON sg.address=b.holder
      WHERE b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`,
     asset
   );
@@ -280,7 +280,7 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
                  WHEN s.likely_service=1 THEN 'service' WHEN s.survived_assets>=20 THEN 'creator'
                  WHEN s.assets_held>=500 THEN 'whale' WHEN s.assets_held>=100 THEN 'collector'
                  END role
-     FROM balances b LEFT JOIN address_signals s ON s.addr=b.holder
+     FROM balances b LEFT JOIN address_signals s ON s.address=b.holder
      WHERE b.asset=? AND CAST(b.quantity AS INTEGER)>0 ORDER BY CAST(b.quantity AS INTEGER) DESC LIMIT ? OFFSET ?`,
     asset, limit, offset
   );
@@ -311,7 +311,7 @@ export function listAssetDispensers(db: D1Database, asset: string, limit: number
     db,
     `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.asset,d.give_quantity_normalized,d.give_remaining_normalized,
             d.satoshirate,d.satoshirate_normalized,d.dispense_count,d.status, ROUND(COALESCE(sg.disp_trust,0),1) operator_trust
-     FROM dispensers d LEFT JOIN address_signals sg ON sg.addr=d.source
+     FROM dispensers d LEFT JOIN address_signals sg ON sg.address=d.source
      WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
     asset, limit, offset
   );

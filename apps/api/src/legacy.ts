@@ -2,8 +2,8 @@
  * Legacy app.xcp.io/api/v1 surface the wallet extension depends on, so the old app.xcp.io droplet can
  * be retired (old installs reach app.xcp.io -> proxied here):
  *   /api/v1/simple-search, /api/v1/search, /api/v1/asset/{asset}   -> from our D1 assets mirror
- *   /api/v1/address/{addr}/utxos                                   -> cached read-through to Counterparty
- *   /api/v1/address/{addr}/consolidation*                         -> proxy to Hetzner consolidation svc
+ *   /api/v1/address/{address}/utxos                                   -> cached read-through to Counterparty
+ *   /api/v1/address/{address}/consolidation*                         -> proxy to Hetzner consolidation svc
  *   /api/v1/swap/{give}/{get}                                     -> proxy + reshape xcpdex market data
  */
 import { Hono } from "hono";

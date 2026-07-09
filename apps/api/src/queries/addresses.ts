@@ -11,7 +11,7 @@
 import type {
   AddressBalanceRow, AddressSendRow, AddressIssuanceRow, AddressDispenserRow,
   AddressDispenseRow, AddressIssuedAssetRow, AddressSummary, AddressConnectionRow,
-  AddressLineageRow, ReputationDistribution, ReputationTopRow,
+  AddressLineageRow, AddressLedgerRow, ReputationDistribution, ReputationTopRow,
 } from "@xcp/shared/addresses";
 import type { AddressSignalsRow } from "../schema";
 import { q, one } from "../db";
@@ -21,8 +21,21 @@ export interface Page { limit: number; offset: number; }
 /** The address_signals row plus the read-time extras the scorer needs (XCP balance + chain tip). */
 export type AddressReputationRow = AddressSignalsRow & { xcp: number | null; tip: number | null };
 
+/** Provenance ledger — every raw credit (in) and debit (out) for an address, newest first (credits/debits,
+ *  migration 0038). ?1 is the address (used by both legs); a 2-term union stays under D1's compound-SELECT cap. */
+export function listAddressLedger(db: D1Database, address: string, p: Page): Promise<AddressLedgerRow[]> {
+  return q<AddressLedgerRow>(
+    db,
+    `SELECT 'in' direction, block_index, tx_hash, asset, quantity, calling_function FROM credits WHERE address=?1
+     UNION ALL
+     SELECT 'out' direction, block_index, tx_hash, asset, quantity, calling_function FROM debits WHERE address=?1
+     ORDER BY block_index DESC, tx_hash LIMIT ?2 OFFSET ?3`,
+    address, p.limit, p.offset,
+  );
+}
+
 /** Held assets (real, non-dust), with divisibility + stamp flag, asset-sorted. */
-export function listBalances(db: D1Database, addr: string, p: Page): Promise<AddressBalanceRow[]> {
+export function listBalances(db: D1Database, address: string, p: Page): Promise<AddressBalanceRow[]> {
   return q<AddressBalanceRow>(
     db,
     `SELECT b.asset, b.quantity, b.quantity_normalized, a.divisible, a.asset_longname,
@@ -30,62 +43,62 @@ export function listBalances(db: D1Database, addr: string, p: Page): Promise<Add
      FROM balances b LEFT JOIN assets a ON a.asset=b.asset
      WHERE b.holder=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0
      ORDER BY b.asset LIMIT ? OFFSET ?`,
-    addr, p.limit, p.offset
+    address, p.limit, p.offset
   );
 }
 
 /** Sends where the address is source or destination, newest first. */
-export function listSends(db: D1Database, addr: string, p: Page): Promise<AddressSendRow[]> {
+export function listSends(db: D1Database, address: string, p: Page): Promise<AddressSendRow[]> {
   return q<AddressSendRow>(
     db,
     `SELECT tx_hash, block_index, block_time, source, destination, asset, quantity_normalized, send_type, status
      FROM sends WHERE source=? OR destination=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    addr, addr, p.limit, p.offset
+    address, address, p.limit, p.offset
   );
 }
 
 /** Issuances the address made or received (transfer), newest first. */
-export function listIssuances(db: D1Database, addr: string, p: Page): Promise<AddressIssuanceRow[]> {
+export function listIssuances(db: D1Database, address: string, p: Page): Promise<AddressIssuanceRow[]> {
   return q<AddressIssuanceRow>(
     db,
     `SELECT tx_hash, block_index, block_time, asset, asset_longname, quantity_normalized, transfer, issuer, description, asset_events, status
      FROM issuances WHERE source=? OR issuer=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    addr, addr, p.limit, p.offset
+    address, address, p.limit, p.offset
   );
 }
 
 /** Dispensers opened by the address, newest first. */
-export function listDispensers(db: D1Database, addr: string, p: Page): Promise<AddressDispenserRow[]> {
+export function listDispensers(db: D1Database, address: string, p: Page): Promise<AddressDispenserRow[]> {
   return q<AddressDispenserRow>(
     db,
     `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status FROM dispensers WHERE source=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    addr, p.limit, p.offset
+    address, p.limit, p.offset
   );
 }
 
 /** Dispenses the address triggered or received, newest first. */
-export function listDispenses(db: D1Database, addr: string, p: Page): Promise<AddressDispenseRow[]> {
+export function listDispenses(db: D1Database, address: string, p: Page): Promise<AddressDispenseRow[]> {
   return q<AddressDispenseRow>(
     db,
     `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.destination,d.asset,d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,t.usd_value
      FROM dispenses d LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.id AS TEXT)
      WHERE d.source=? OR d.destination=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
-    addr, addr, p.limit, p.offset
+    address, address, p.limit, p.offset
   );
 }
 
 /** Assets the address issued or owns, newest issuance first. */
-export function listIssued(db: D1Database, addr: string, p: Page): Promise<AddressIssuedAssetRow[]> {
+export function listIssued(db: D1Database, address: string, p: Page): Promise<AddressIssuedAssetRow[]> {
   return q<AddressIssuedAssetRow>(
     db,
     `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
      WHERE issuer=? OR owner=? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`,
-    addr, addr, p.limit, p.offset
+    address, address, p.limit, p.offset
   );
 }
 
 /** Identity header counts (XCP balance, held/issued/dispenser/order counts, activity span, disp trust). */
-export function addressSummary(db: D1Database, addr: string): Promise<AddressSummary | null> {
+export function addressSummary(db: D1Database, address: string): Promise<AddressSummary | null> {
   return one<AddressSummary>(
     db,
     `SELECT (SELECT quantity_normalized FROM balances WHERE holder=? AND asset='XCP') xcp,
@@ -96,24 +109,24 @@ export function addressSummary(db: D1Database, addr: string): Promise<AddressSum
             (SELECT COUNT(*) FROM orders WHERE source=? AND status='open') open_orders,
             (SELECT MIN(block_index) FROM sends WHERE source=? OR destination=?) first_block,
             (SELECT MAX(block_index) FROM sends WHERE source=? OR destination=?) last_block,
-            (SELECT ROUND(disp_trust,1) FROM address_signals WHERE addr=?) dispenser_trust`,
-    addr, addr, addr, addr, addr, addr, addr, addr, addr, addr, addr
+            (SELECT ROUND(disp_trust,1) FROM address_signals WHERE address=?) dispenser_trust`,
+    address, address, address, address, address, address, address, address, address, address, address
   );
 }
 
 /** The precomputed address_signals row + XCP balance + chain tip, for the reputation scorer. */
-export function addressReputationRow(db: D1Database, addr: string): Promise<AddressReputationRow | null> {
+export function addressReputationRow(db: D1Database, address: string): Promise<AddressReputationRow | null> {
   return one<AddressReputationRow>(
     db,
     `SELECT sg.*, (SELECT CAST(quantity_normalized AS REAL) FROM balances WHERE holder=? AND asset='XCP') xcp,
             (SELECT MAX(block_index) FROM blocks) tip
-     FROM address_signals sg WHERE sg.addr=?`,
-    addr, addr
+     FROM address_signals sg WHERE sg.address=?`,
+    address, address
   );
 }
 
 /** Top counterparties merged across sends + dispenses + DEX order-matches (excludes self + deposit plumbing). */
-export function addressConnections(db: D1Database, addr: string, limit: number): Promise<AddressConnectionRow[]> {
+export function addressConnections(db: D1Database, address: string, limit: number): Promise<AddressConnectionRow[]> {
   return q<AddressConnectionRow>(
     db,
     `SELECT g.cp, g.interactions, COALESCE(sg.is_exchange,0) is_exchange FROM (
@@ -127,21 +140,21 @@ export function addressConnections(db: D1Database, addr: string, limit: number):
           SELECT CASE WHEN tx0_address=? THEN tx1_address ELSE tx0_address END cp, COUNT(*) n
             FROM order_matches WHERE tx0_address=? OR tx1_address=? GROUP BY cp
         ) WHERE cp IS NOT NULL AND cp<>? GROUP BY cp
-     ) g LEFT JOIN address_signals sg ON sg.addr=g.cp
+     ) g LEFT JOIN address_signals sg ON sg.address=g.cp
      WHERE COALESCE(sg.is_deposit,0)=0 ORDER BY g.interactions DESC LIMIT ?`,
-    addr, addr, addr, addr, addr, addr, addr, addr, addr, addr, limit
+    address, address, address, address, address, address, address, address, address, address, limit
   );
 }
 
 /** Sweep-based identity lineage — swept-to / swept-from links (strongest "same person" on-chain signal). */
-export function addressLineage(db: D1Database, addr: string): Promise<AddressLineageRow[]> {
+export function addressLineage(db: D1Database, address: string): Promise<AddressLineageRow[]> {
   return q<AddressLineageRow>(
     db,
     `SELECT 'out' direction, destination counterparty, block_index, block_time FROM sweeps WHERE source=?
      UNION ALL
      SELECT 'in' direction, source counterparty, block_index, block_time FROM sweeps WHERE destination=?
      ORDER BY block_index`,
-    addr, addr
+    address, address
   );
 }
 
@@ -174,7 +187,7 @@ export function reputationDistribution(
 export function reputationTop(db: D1Database, expr: string, notInfra: string): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
-    `SELECT addr, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
+    `SELECT address, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
      FROM address_signals WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`
   );
 }
@@ -218,7 +231,7 @@ export function reputationTierMembers(
 ): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
-    `SELECT addr, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
+    `SELECT address, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
      FROM address_signals WHERE ${notInfra} AND (${expr})>=${minRaw} AND (${expr})<${maxRaw}
      ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
     limit, offset

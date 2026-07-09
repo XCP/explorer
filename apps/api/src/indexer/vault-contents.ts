@@ -68,54 +68,54 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
 
   // Inbound funding: every non-XCP card that ever ARRIVED, summed (gross — what the vault was filled with).
   const fundRows = (await env.DB.prepare(
-    `SELECT s.destination addr, s.asset, SUM(COALESCE(CAST(s.quantity_normalized AS REAL), CAST(s.quantity AS REAL))) qn
+    `SELECT s.destination address, s.asset, SUM(COALESCE(CAST(s.quantity_normalized AS REAL), CAST(s.quantity AS REAL))) qn
        FROM emblem_vaults ev JOIN sends s ON s.destination = ev.btc_address
       WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL AND s.asset IS NOT NULL AND s.asset <> 'XCP'
       GROUP BY s.destination, s.asset`
-  ).bind(cursor, hi).all<{ addr: string; asset: string; qn: number }>()).results || [];
+  ).bind(cursor, hi).all<{ address: string; asset: string; qn: number }>()).results || [];
 
   // Still-held balances: authoritative "the card is right there now" (best contents_qty for un-cracked vaults).
   const balRows = (await env.DB.prepare(
-    `SELECT b.holder addr, b.asset, CAST(b.quantity_normalized AS REAL) qn
+    `SELECT b.holder address, b.asset, CAST(b.quantity_normalized AS REAL) qn
        FROM emblem_vaults ev JOIN balances b ON b.holder = ev.btc_address
       WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL AND b.asset <> 'XCP' AND CAST(b.quantity AS REAL) > 0`
-  ).bind(cursor, hi).all<{ addr: string; asset: string; qn: number }>()).results || [];
+  ).bind(cursor, hi).all<{ address: string; asset: string; qn: number }>()).results || [];
 
   // Outbound sends: a crack — a non-XCP card sent back out, and who received it.
   const outRows = (await env.DB.prepare(
-    `SELECT s.source addr, s.block_time, s.destination FROM emblem_vaults ev JOIN sends s ON s.source = ev.btc_address
+    `SELECT s.source address, s.block_time, s.destination FROM emblem_vaults ev JOIN sends s ON s.source = ev.btc_address
       WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL AND s.asset IS NOT NULL AND s.asset <> 'XCP'
       ORDER BY s.source, s.block_time ASC, s.id ASC`
-  ).bind(cursor, hi).all<{ addr: string; block_time: number; destination: string }>()).results || [];
+  ).bind(cursor, hi).all<{ address: string; block_time: number; destination: string }>()).results || [];
 
   // Outbound SWEEPS are ALSO a crack — a sweep moves EVERYTHING out of the address at once (no per-asset
   // row), so any outbound sweep from a funded vault empties it. Merge with sends; earliest wins.
   const sweepRows = (await env.DB.prepare(
-    `SELECT sw.source addr, sw.block_time, sw.destination FROM emblem_vaults ev JOIN sweeps sw ON sw.source = ev.btc_address
+    `SELECT sw.source address, sw.block_time, sw.destination FROM emblem_vaults ev JOIN sweeps sw ON sw.source = ev.btc_address
       WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL
       ORDER BY sw.source, sw.block_time ASC`
-  ).bind(cursor, hi).all<{ addr: string; block_time: number; destination: string }>()).results || [];
+  ).bind(cursor, hi).all<{ address: string; block_time: number; destination: string }>()).results || [];
 
   // Fold per address.
   const funded = new Map<string, Map<string, number>>();
-  for (const r of fundRows) { const m = funded.get(r.addr) ?? new Map(); m.set(r.asset, (m.get(r.asset) ?? 0) + qn(r.qn as unknown as string)); funded.set(r.addr, m); }
+  for (const r of fundRows) { const m = funded.get(r.address) ?? new Map(); m.set(r.asset, (m.get(r.asset) ?? 0) + qn(r.qn as unknown as string)); funded.set(r.address, m); }
   const held = new Map<string, Map<string, number>>();
-  for (const r of balRows) { const m = held.get(r.addr) ?? new Map(); m.set(r.asset, qn(r.qn as unknown as string)); held.set(r.addr, m); }
+  for (const r of balRows) { const m = held.get(r.address) ?? new Map(); m.set(r.asset, qn(r.qn as unknown as string)); held.set(r.address, m); }
   // Earliest outbound event (send OR sweep) per address = the crack moment.
   const firstCrack = new Map<string, { at: number; to: string }>();
-  const noteCrack = (addr: string, at: number, to: string) => {
-    const cur = firstCrack.get(addr);
-    if (!cur || at < cur.at) firstCrack.set(addr, { at, to });
+  const noteCrack = (address: string, at: number, to: string) => {
+    const cur = firstCrack.get(address);
+    if (!cur || at < cur.at) firstCrack.set(address, { at, to });
   };
-  for (const r of outRows) noteCrack(r.addr, r.block_time, r.destination);
-  for (const r of sweepRows) noteCrack(r.addr, r.block_time, r.destination);
+  for (const r of outRows) noteCrack(r.address, r.block_time, r.destination);
+  for (const r of sweepRows) noteCrack(r.address, r.block_time, r.destination);
 
-  const classify = (addr: string): Classification => {
-    const inb = funded.get(addr);
-    const bal = held.get(addr);
+  const classify = (address: string): Classification => {
+    const inb = funded.get(address);
+    const bal = held.get(address);
     // Universe of COUNTERPARTY cards ever associated with this vault (funded in OR still held).
     const assets = new Set<string>([...(inb?.keys() ?? []), ...(bal?.keys() ?? [])]);
-    const crack = firstCrack.get(addr) ?? null;
+    const crack = firstCrack.get(address) ?? null;
     // No Counterparty asset ever ⇒ 'foreign' (value, if any, is on another chain — Namecoin/Ordinals/BTC/…;
     // or a genuinely empty shell — indistinguishable from here). NOT a scam; a crack timeline is meaningless.
     if (assets.size === 0) return { vault_kind: "foreign", funded: 0, contents_asset: null, contents_qty: null, cracked_at: null, cracker_address: null };

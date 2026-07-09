@@ -16,8 +16,8 @@ export interface VaultsPayload {
   sales_by_class: Array<{ sale_class: string; sales: number; usd: number }>;
   top_sold_assets: Array<{ asset: string; asset_longname: string | null; usd: number; sales: number }>;
   top_assets: Array<{ asset: string; asset_longname: string | null; vaults: number }>;
-  top_funders: Array<{ addr: string; vaults: number }>;
-  top_crackers: Array<{ addr: string; vaults: number }>;
+  top_funders: Array<{ address: string; vaults: number }>;
+  top_crackers: Array<{ address: string; vaults: number }>;
   sales_activity: MetricPoint[]; // realized USD of Counterparty-card Emblem sales per month
 }
 

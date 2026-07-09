@@ -221,7 +221,7 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
   const tables = ["transactions", "sends", "issuances", "destructions", "dispensers", "dispenses",
     "dispenser_refills", "cancels", "orders", "order_matches", "btcpays", "sweeps", "burns", "dividends", "broadcasts",
     "fairminters", "fairmints", "pools", "pool_matches", "pool_liquidity",
-    "bets", "bet_matches", "bet_match_resolutions", "rps", "rps_matches", "blocks"];
+    "bets", "bet_matches", "bet_match_resolutions", "rps", "rps_matches", "credits", "debits", "blocks"];
   for (const t of tables) await deleteAbove(env.DB, t, rollbackTo);
   // reopen orders/dispensers closed after rollback
   await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();

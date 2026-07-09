@@ -6,7 +6,7 @@ import { router, J, lim, off, round } from "./respond";
 import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, ADDRESS_FACTORS } from "../reputation/score";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
 import {
-  listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued,
+  listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued, listAddressLedger,
   addressSummary, addressReputationRow, addressConnections, addressLineage,
   maxBlockIndex, reputationDistribution, reputationTop, reputationTierMembers, reputationFunnel, reputationHistogram,
 } from "../queries/addresses";
@@ -22,36 +22,43 @@ export const addresses = router();
 // over address_signals columns — never user input, so safe to interpolate into the WHERE.
 const NOT_INFRA = `is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 AND (assets_held>0 OR survived_assets>0 OR dex_trades>0 OR dispenses>0 OR btc_fees>0 OR assets_issued>0 OR dividends>0)`;
 
-addresses.get("/v2/addresses/:addr/balances", async (c) => {
-  const result = await listBalances(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+addresses.get("/v2/addresses/:address/balances", async (c) => {
+  const result = await listBalances(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-addresses.get("/v2/addresses/:addr/sends", async (c) => {
-  const result = await listSends(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+addresses.get("/v2/addresses/:address/sends", async (c) => {
+  const result = await listSends(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-addresses.get("/v2/addresses/:addr/issuances", async (c) => {
-  const result = await listIssuances(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+// Provenance ledger — every raw credit/debit for the address (credits/debits, migration 0038): the full
+// money-in/out history with each event's Counterparty reason. Empty until the ledger is backfilled by a reindex.
+addresses.get("/v2/addresses/:address/ledger", async (c) => {
+  const result = await listAddressLedger(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-addresses.get("/v2/addresses/:addr/dispensers", async (c) => {
-  const result = await listDispensers(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+addresses.get("/v2/addresses/:address/issuances", async (c) => {
+  const result = await listIssuances(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-addresses.get("/v2/addresses/:addr/dispenses", async (c) => {
-  const result = await listDispenses(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+addresses.get("/v2/addresses/:address/dispensers", async (c) => {
+  const result = await listDispensers(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
+});
+
+addresses.get("/v2/addresses/:address/dispenses", async (c) => {
+  const result = await listDispenses(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 // Address reputation — composed, intrinsic, earned-only score from precomputed address_signals.
 // Returns a 0-100 score (percentile-mapped from the skewed raw distribution), a band, archetype tags,
 // and the EVIDENCE behind it (so it's explainable, not a black box). New/quiet addresses read neutral.
-addresses.get("/v2/addresses/:addr/reputation", async (c) => {
-  const h = c.req.param("addr");
+addresses.get("/v2/addresses/:address/reputation", async (c) => {
+  const h = c.req.param("address");
   const r = await addressReputationRow(c.env.DB, h);
   if (!r || !r.first_block) return J(c, { result: { score: null, tier: "No history", band: "No history", tier_meaning: ADDRESS_TIER_MEANING["No history"], tags: [], evidence: null } }, 300);
   const n = (v: unknown) => Number(v) || 0;
@@ -159,13 +166,13 @@ addresses.get("/v2/reputation/tiers/:tier", async (c) => {
   return J(c, { result: { tier: summary, members }, next_offset: members.length === lim(c) ? off(c) + lim(c) : null }, 120);
 });
 
-addresses.get("/v2/addresses/:addr/summary", async (c) => {
-  const result = await addressSummary(c.env.DB, c.req.param("addr"));
+addresses.get("/v2/addresses/:address/summary", async (c) => {
+  const result = await addressSummary(c.env.DB, c.req.param("address"));
   return J(c, { result }, 30);
 });
 
-addresses.get("/v2/addresses/:addr/issued", async (c) => {
-  const result = await listIssued(c.env.DB, c.req.param("addr"), { limit: lim(c), offset: off(c) });
+addresses.get("/v2/addresses/:address/issued", async (c) => {
+  const result = await listIssued(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
@@ -175,14 +182,14 @@ addresses.get("/v2/addresses/:addr/issued", async (c) => {
 // Exchange-DEPOSIT counterparties are filtered out: they're 1:1 plumbing (validated — they're 60% of an
 // exchange's "connections" but ~0% of a real user's), so they bury genuine relationships. is_exchange
 // counterparties are KEPT (a real "uses this exchange" signal) and flagged so the UI can badge them.
-addresses.get("/v2/addresses/:addr/connections", async (c) => {
-  const result = await addressConnections(c.env.DB, c.req.param("addr"), lim(c, 12, 24));
+addresses.get("/v2/addresses/:address/connections", async (c) => {
+  const result = await addressConnections(c.env.DB, c.req.param("address"), lim(c, 12, 24));
   return J(c, { result }, 120);
 });
 
 // Identity lineage via sweeps — a SWEEP moves all assets+ownership to another address (strongest
 // "same person" signal on chain). Returns swept-to / swept-from links to chain identity clusters.
-addresses.get("/v2/addresses/:addr/lineage", async (c) => {
-  const result = await addressLineage(c.env.DB, c.req.param("addr"));
+addresses.get("/v2/addresses/:address/lineage", async (c) => {
+  const result = await addressLineage(c.env.DB, c.req.param("address"));
   return J(c, { result }, 300);
 });

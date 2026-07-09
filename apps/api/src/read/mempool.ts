@@ -6,7 +6,7 @@
  * view, and its per-entity cardinality makes the D1 response cache a poor fit.
  *
  *   GET /v2/mempool                          protocol-wide pending actions (?event= filters one event kind)
- *   GET /v2/addresses/:addr/mempool          pending actions touching one address
+ *   GET /v2/addresses/:address/mempool          pending actions touching one address
  *   GET /v2/assets/:asset/mempool            pending actions on one asset
  *   GET /v2/dispensers/:tx_hash/mempool      pending DISPENSE actions against one dispenser
  *   GET /v2/mempool/transactions/:hash       pending actions of one specific tx (404 when the node has none)
@@ -102,9 +102,9 @@ mempool.get("/v2/mempool", async (c) => {
   return J(c, envelope(ev ? rows.filter((r) => r.event === ev) : rows), 10);
 });
 
-mempool.get("/v2/addresses/:addr/mempool", async (c) => {
-  const addr = c.req.param("addr");
-  const rows = await fetchActions(c, `/addresses/mempool?addresses=${encodeURIComponent(addr)}&verbose=true`);
+mempool.get("/v2/addresses/:address/mempool", async (c) => {
+  const address = c.req.param("address");
+  const rows = await fetchActions(c, `/addresses/mempool?addresses=${encodeURIComponent(address)}&verbose=true`);
   return J(c, envelope(rows), 10);
 });
 

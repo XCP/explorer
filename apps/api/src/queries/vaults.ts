@@ -62,7 +62,7 @@ export function vaultTopAssets(db: D1Database): Promise<VaultTopAsset[]> {
 export function vaultTopFunders(db: D1Database): Promise<VaultTopAddr[]> {
   return q<VaultTopAddr>(
     db,
-    `SELECT s.source addr, COUNT(DISTINCT s.destination) vaults FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.source IS NOT NULL GROUP BY s.source ORDER BY vaults DESC LIMIT 12`
+    `SELECT s.source address, COUNT(DISTINCT s.destination) vaults FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.source IS NOT NULL GROUP BY s.source ORDER BY vaults DESC LIMIT 12`
   );
 }
 
@@ -70,7 +70,7 @@ export function vaultTopFunders(db: D1Database): Promise<VaultTopAddr[]> {
 export function vaultTopCrackers(db: D1Database): Promise<VaultTopAddr[]> {
   return q<VaultTopAddr>(
     db,
-    `SELECT s.destination addr, COUNT(DISTINCT s.source) vaults FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source WHERE s.destination IS NOT NULL GROUP BY s.destination ORDER BY vaults DESC LIMIT 12`
+    `SELECT s.destination address, COUNT(DISTINCT s.source) vaults FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source WHERE s.destination IS NOT NULL GROUP BY s.destination ORDER BY vaults DESC LIMIT 12`
   );
 }
 

@@ -34,8 +34,8 @@ export function ExchangeDirectory() {
               <span>Operator / wallet</span><span className="text-right">Assets</span><span className="text-right">Senders</span>
             </div>
             {ex.map((e) => (
-              <div key={e.addr} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1.5 border-b border-zinc-900 last:border-0">
-                <span className="flex items-center gap-2 min-w-0"><span className="text-zinc-200">{e.name}</span><Link href={`/address/${e.addr}`} className="font-mono text-xs text-zinc-400 break-all">{e.addr}</Link></span>
+              <div key={e.address} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1.5 border-b border-zinc-900 last:border-0">
+                <span className="flex items-center gap-2 min-w-0"><span className="text-zinc-200">{e.name}</span><Link href={`/address/${e.address}`} className="font-mono text-xs text-zinc-400 break-all">{e.address}</Link></span>
                 <span className="text-right font-mono text-zinc-400 text-xs">{commas(e.assets_received)}</span>
                 <span className="text-right font-mono text-zinc-400 text-xs">{commas(e.in_peers)}</span>
               </div>

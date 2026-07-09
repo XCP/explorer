@@ -219,10 +219,10 @@ test("addressTier: infra/dormant states ignore raw and return their own label", 
 /* ---------- percentile mapping lands on its anchors ---------- */
 
 test("percentile: piecewise-linear map hits each anchor (0 / 50 / 90 / 99)", () => {
-  near(percentile(ADDRESS_PCT.floor, ADDRESS_PCT), 0, "addr floor→0");
-  near(percentile(ADDRESS_PCT.p50, ADDRESS_PCT), 50, "addr p50→50");
-  near(percentile(ADDRESS_PCT.p90, ADDRESS_PCT), 90, "addr p90→90");
-  near(percentile(ADDRESS_PCT.p99, ADDRESS_PCT), 99, "addr p99→99");
+  near(percentile(ADDRESS_PCT.floor, ADDRESS_PCT), 0, "address floor→0");
+  near(percentile(ADDRESS_PCT.p50, ADDRESS_PCT), 50, "address p50→50");
+  near(percentile(ADDRESS_PCT.p90, ADDRESS_PCT), 90, "address p90→90");
+  near(percentile(ADDRESS_PCT.p99, ADDRESS_PCT), 99, "address p99→99");
   near(percentile(ASSET_PCT.p50, ASSET_PCT), 50, "asset p50→50");
   near(percentile(ASSET_PCT.p90, ASSET_PCT), 90, "asset p90→90");
   assert.equal(assetScore(ASSET_PCT.p90), 90, "assetScore rounds p90 anchor to 90");

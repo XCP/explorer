@@ -48,7 +48,7 @@ export interface Metrics {
 }
 
 /** GET /v2/leaderboards — derived boards across the whole dataset (cached). Each board is an array
- *  of small ad-hoc row objects (addr/asset + the board's metric column); exact columns are the
+ *  of small ad-hoc row objects (address/asset + the board's metric column); exact columns are the
  *  board's business. */
 export interface Leaderboards {
   top_creators: Array<Record<string, unknown>>;

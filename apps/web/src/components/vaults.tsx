@@ -58,8 +58,8 @@ export function Vaults() {
         <Board title="Sales by type" rows={d?.sales_by_class ?? []} render={(r) => (<><span className="flex-1 min-w-0 truncate text-zinc-300">{CLASS_LABEL[r.sale_class] ?? r.sale_class}</span>{val(`${commas(r.sales)} · ${usdCompact(r.usd)}`)}</>)} />
       </div>
       <div className="grid lg:grid-cols-2 gap-6">
-        <Board title="Top vault funders" rows={d?.top_funders ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.vaults)} funded`)}</>)} />
-        <Board title="Top vault crackers" rows={d?.top_crackers ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.vaults)} cracked`)}</>)} />
+        <Board title="Top vault funders" rows={d?.top_funders ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.vaults)} funded`)}</>)} />
+        <Board title="Top vault crackers" rows={d?.top_crackers ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.vaults)} cracked`)}</>)} />
       </div>
     </>
   );

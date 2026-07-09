@@ -99,18 +99,18 @@ async function applySeeds(env: Env): Promise<void> {
   for (const a of [...grails, ...collAssets, ...quality]) trust.add(ASSET_PREFIX + a);
 
   // ---- TRUST ADDRESSES: proven-ecosystem archetype tags, never infra/scam (+ grail issuers as axioms) ----
-  const trustAddrs = (await q<{ addr: string }>(env.DB,
-    `SELECT DISTINCT t.entity_id addr FROM tags t JOIN address_signals sig ON sig.addr=t.entity_id
-      WHERE t.entity_type='address' AND t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`, ...TRUST_ARCHETYPES)).map((r) => r.addr);
+  const trustAddrs = (await q<{ address: string }>(env.DB,
+    `SELECT DISTINCT t.entity_id address FROM tags t JOIN address_signals sig ON sig.address=t.entity_id
+      WHERE t.entity_type='address' AND t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`, ...TRUST_ARCHETYPES)).map((r) => r.address);
   const grailIssuers = await distinctIssuers(env, grails); // a grail's creator is an axiom, even if under the creator threshold
-  for (const addr of [...trustAddrs, ...grailIssuers]) if (!excluded.has(addr)) trust.add(addr);
+  for (const address of [...trustAddrs, ...grailIssuers]) if (!excluded.has(address)) trust.add(address);
 
   // ---- DISTRUST (unchanged): curated lowq + their issuers + derived scam actors ----
   const lowqs = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='lowq'`)).map((r) => r.key);
   const distrust = new Set<string>();
   for (const l of lowqs) distrust.add(ASSET_PREFIX + l);
   for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
-  const scamActors = (await q<{ addr: string }>(env.DB, `SELECT addr FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0 OR dump_scams > 0`)).map((r) => r.addr);
+  const scamActors = (await q<{ address: string }>(env.DB, `SELECT address FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0 OR dump_scams > 0`)).map((r) => r.address);
   for (const a of scamActors) if (!excluded.has(a)) distrust.add(a);
   for (const n of trust) distrust.delete(n); // trust wins the (rare) collision to keep Σs=1 exact
 

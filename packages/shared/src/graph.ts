@@ -4,7 +4,7 @@
 
 export type GraphTier = "trusted" | "distrusted" | "unscored";
 
-/** GET /v2/addresses/:addr/graph · /v2/assets/:asset/graph */
+/** GET /v2/addresses/:address/graph · /v2/assets/:asset/graph */
 export interface GraphEntityScore {
   trust: number;
   distrust: number;

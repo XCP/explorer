@@ -66,8 +66,8 @@ async function counterpartyContracts(): Promise<string[]> {
     for (const c of list) {
       const na: string[] = c?.nativeAssets || [];
       const isCp = c?.collectionChain === "xcp" || c?.addressChain === "BTC" || na.includes("XCP") || na.includes("BTC");
-      const addr = c?.contracts?.["1"];
-      if (isCp && typeof addr === "string" && addr.startsWith("0x")) out.add(addr.toLowerCase());
+      const address = c?.contracts?.["1"];
+      if (isCp && typeof address === "string" && address.startsWith("0x")) out.add(address.toLowerCase());
     }
   } catch { /* keep legacy + whatever we have */ }
   return [...out];

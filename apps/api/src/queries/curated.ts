@@ -7,7 +7,7 @@ import { q } from "../db";
 
 export interface CuratedRow { kind: string; key: string; value: string | null; note: string | null }
 
-/** Operator-name map for the exchange wallets: { addr → label }. One query per /v2/exchanges request. */
+/** Operator-name map for the exchange wallets: { address → label }. One query per /v2/exchanges request. */
 export async function exchangeNames(db: D1Database): Promise<Record<string, string>> {
   const rows = await q<{ key: string; value: string }>(
     db,

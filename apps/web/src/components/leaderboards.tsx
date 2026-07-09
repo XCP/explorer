@@ -37,13 +37,13 @@ export function Leaderboards() {
 
       <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-2">People</h2>
       <div className="grid lg:grid-cols-3 gap-6">
-        <Board title="Top creators" rows={d.top_creators ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.survived_assets)} assets that landed`)}</>)} />
-        <Board title="Top collectors" rows={d.top_collectors ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.assets_held)} held`)}</>)} />
-        <Board title="Biggest merchants" rows={d.top_merchants ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.dispense_btc)} BTC dispensed`)}</>)} />
-        <Board title="Biggest BTC spenders" rows={d.biggest_spenders ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.btc_spent)} BTC`)}</>)} />
+        <Board title="Top creators" rows={d.top_creators ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.survived_assets)} assets that landed`)}</>)} />
+        <Board title="Top collectors" rows={d.top_collectors ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.assets_held)} held`)}</>)} />
+        <Board title="Biggest merchants" rows={d.top_merchants ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.dispense_btc)} BTC dispensed`)}</>)} />
+        <Board title="Biggest BTC spenders" rows={d.biggest_spenders ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.btc_spent)} BTC`)}</>)} />
         <Board title="Richest — XCP" rows={d.richest_xcp ?? []} render={(r) => (<>{Addr(r.holder)}{val(commas(r.quantity_normalized))}</>)} />
-        <Board title="Trusted dispensers" rows={d.top_dispensers ?? []} render={(r) => (<>{Addr(r.addr)}{val(`trust ${r.disp_trust} · ${commas(r.dispenses)} sales`)}</>)} />
-        <Board title="Top creator hits" rows={d.top_hits ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.assets_hits)} hits (50+ holders)`)}</>)} />
+        <Board title="Trusted dispensers" rows={d.top_dispensers ?? []} render={(r) => (<>{Addr(r.address)}{val(`trust ${r.disp_trust} · ${commas(r.dispenses)} sales`)}</>)} />
+        <Board title="Top creator hits" rows={d.top_hits ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.assets_hits)} hits (50+ holders)`)}</>)} />
       </div>
 
       <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Assets</h2>
@@ -58,15 +58,15 @@ export function Leaderboards() {
 
       <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Reputation</h2>
       <div className="grid lg:grid-cols-3 gap-6">
-        <Board title="Highest reputation (OG)" rows={d.top_reputation ?? []} render={(r) => (<>{Addr(r.addr)}{val(`score ${r.score}`)}</>)} />
+        <Board title="Highest reputation (OG)" rows={d.top_reputation ?? []} render={(r) => (<>{Addr(r.address)}{val(`score ${r.score}`)}</>)} />
         <Board title="Highest quality (Bluechip)" rows={d.top_quality ?? []} render={(r) => (<>{Asset(r.asset, r.asset_longname)}{val(`score ${r.score}`)}</>)} />
       </div>
 
       <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Bitcoin Stamps</h2>
       <div className="grid lg:grid-cols-3 gap-6">
-        <Board title="Top stamp creators" rows={d.top_stamp_creators ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.stamps_created)} stamps`)}</>)} />
-        <Board title="Top stamp collectors" rows={d.top_stamp_collectors ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.stamps_collected)} held`)}</>)} />
-        <Board title="Top SRC-20 deployers" rows={d.top_src20_deployers ?? []} render={(r) => (<>{Addr(r.addr)}{val(`${commas(r.src20_deploys)} deploys`)}</>)} />
+        <Board title="Top stamp creators" rows={d.top_stamp_creators ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.stamps_created)} stamps`)}</>)} />
+        <Board title="Top stamp collectors" rows={d.top_stamp_collectors ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.stamps_collected)} held`)}</>)} />
+        <Board title="Top SRC-20 deployers" rows={d.top_src20_deployers ?? []} render={(r) => (<>{Addr(r.address)}{val(`${commas(r.src20_deploys)} deploys`)}</>)} />
         <Board title="Most-held stamps" rows={d.most_held_stamps ?? []} render={(r) => (<>{Asset(r.asset, r.asset_longname)}{val(`${commas(r.holders)} holders`)}</>)} />
       </div>
     </>

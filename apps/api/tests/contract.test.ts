@@ -96,7 +96,7 @@ const TRADE_ROW: Spec = {
   buyer: "string|null", seller: "string|null", tx_hash: "string|null",
 };
 const TRADE_VENUE_STATS: Spec = { venue: "string", trades: "number", assets: "number", last_time: "number|null", usd_known: "number|null" };
-const EXCHANGE_ROW: Spec = { addr: "string", assets_received: "number", in_peers: "number", first_block: "number|null", last_block: "number|null", name: "string" };
+const EXCHANGE_ROW: Spec = { address: "string", assets_received: "number", in_peers: "number", first_block: "number|null", last_block: "number|null", name: "string" };
 const ADDRESS_SUMMARY: Spec = {
   xcp: "string|null", assets: "number", issued: "number", dispensers: "number", open_dispensers: "number",
   open_orders: "number", first_block: "number|null", last_block: "number|null", dispenser_trust: "number|null",
@@ -192,8 +192,8 @@ test("contract: GET /v2/vaults — VaultsPayload", async (t) => {
     assertShape(p.summary, { vault_records: "number", funded_vaults: "number", assets_vaulted: "number", funders: "number", crackers: "number" }, "vaults.summary.");
   }
   assertRows(p.top_assets, { asset: "string", asset_longname: "string|null", vaults: "number" }, "vaults.top_assets");
-  assertRows(p.top_funders, { addr: "string", vaults: "number" }, "vaults.top_funders");
-  assertRows(p.top_crackers, { addr: "string", vaults: "number" }, "vaults.top_crackers");
+  assertRows(p.top_funders, { address: "string", vaults: "number" }, "vaults.top_funders");
+  assertRows(p.top_crackers, { address: "string", vaults: "number" }, "vaults.top_crackers");
   assertRows(p.activity, { t: "number", v: "number" }, "vaults.activity");
 });
 

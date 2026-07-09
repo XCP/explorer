@@ -196,8 +196,8 @@ main > .ctxband { margin-bottom:10px; }
 
 /* addresses — single-line CSS ellipsis over the FULL string (long prefix stays
    visible); the complete address lives in title. NEVER 4+4, never wrapping. */
-.addr { display:block; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-a.addr:hover { color:var(--accent); }
+.address { display:block; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+a.address:hover { color:var(--accent); }
 
 .desc { font-size:var(--fs-xs); color:var(--t4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
@@ -242,8 +242,8 @@ a.view:hover { color:var(--accent); }
 .ht-row { display:grid; grid-template-columns:30px minmax(0,1fr) 150px 110px; align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
 .ht-row:last-child { border-bottom:none; }
 .ht-rank { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs); color:var(--t4); }
-.ht-addr { font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ht-addr small { color:var(--t4); font-weight:400; margin-left:8px; font-size:var(--fs-2xs); }
+.ht-address { font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ht-address small { color:var(--t4); font-weight:400; margin-left:8px; font-size:var(--fs-2xs); }
 .ht-qty { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t1); font-weight:500; }
 .ht-pct { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--t3); font-size:var(--fs-xs); }
 

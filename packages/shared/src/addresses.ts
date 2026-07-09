@@ -1,11 +1,11 @@
-/** Address surfaces — summary, reputation, relationships (GET /v2/addresses/:addr/*, /v2/exchanges). */
+/** Address surfaces — summary, reputation, relationships (GET /v2/addresses/:address/*, /v2/exchanges). */
 
 export type AddressTier =
   | "OG" | "Established" | "Active" | "Casual" // ranked real users
   | "Exchange" | "Exchange deposit" | "Vault" | "Burn" | "Service" // infrastructure states
   | "Dormant" | "No history"; // non-ranked
 
-/** GET /v2/addresses/:addr/balances — one held asset (raw + normalized are text; stamp flag from tags). */
+/** GET /v2/addresses/:address/balances — one held asset (raw + normalized are text; stamp flag from tags). */
 export interface AddressBalanceRow {
   asset: string;
   quantity: string;
@@ -15,7 +15,7 @@ export interface AddressBalanceRow {
   stamp: 0 | 1;
 }
 
-/** GET /v2/addresses/:addr/sends — a send where the address is source or destination. */
+/** GET /v2/addresses/:address/sends — a send where the address is source or destination. */
 export interface AddressSendRow {
   tx_hash: string;
   block_index: number;
@@ -28,7 +28,7 @@ export interface AddressSendRow {
   status: string;
 }
 
-/** GET /v2/addresses/:addr/issuances — an issuance the address made or received (transfer). */
+/** GET /v2/addresses/:address/issuances — an issuance the address made or received (transfer). */
 export interface AddressIssuanceRow {
   tx_hash: string;
   block_index: number;
@@ -44,7 +44,7 @@ export interface AddressIssuanceRow {
   status: string;
 }
 
-/** GET /v2/addresses/:addr/dispensers — a dispenser opened by the address (raw sat rates are text; status is int). */
+/** GET /v2/addresses/:address/dispensers — a dispenser opened by the address (raw sat rates are text; status is int). */
 export interface AddressDispenserRow {
   tx_hash: string;
   block_index: number;
@@ -59,7 +59,7 @@ export interface AddressDispenserRow {
   status: number;
 }
 
-/** GET /v2/addresses/:addr/dispenses — a dispense the address triggered or received. */
+/** GET /v2/addresses/:address/dispenses — a dispense the address triggered or received. */
 export interface AddressDispenseRow {
   tx_hash: string;
   block_index: number;
@@ -75,7 +75,7 @@ export interface AddressDispenseRow {
   usd_value: number | null;
 }
 
-/** GET /v2/addresses/:addr/issued — an asset the address issued or owns. */
+/** GET /v2/addresses/:address/issued — an asset the address issued or owns. */
 export interface AddressIssuedAssetRow {
   asset: string;
   asset_longname: string | null;
@@ -85,7 +85,7 @@ export interface AddressIssuedAssetRow {
   first_issuance_block_index: number;
 }
 
-/** GET /v2/addresses/:addr/summary — identity header counts. */
+/** GET /v2/addresses/:address/summary — identity header counts. */
 export interface AddressSummary {
   xcp: string | null; // XCP balance (normalized text)
   assets: number; // distinct held assets
@@ -120,7 +120,7 @@ export interface AddressReputationEvidence {
   btns_user: boolean;
 }
 
-/** GET /v2/addresses/:addr/reputation — composed, explainable address score. New/quiet addresses
+/** GET /v2/addresses/:address/reputation — composed, explainable address score. New/quiet addresses
  *  read neutral (score/evidence null). */
 export interface AddressReputation {
   score: number | null; // 0-100 percentile; null for infra/dormant/no-history
@@ -133,19 +133,30 @@ export interface AddressReputation {
   breakdown?: Record<string, number>;
 }
 
-/** GET /v2/addresses/:addr/connections — top counterparties across sends + dispenses + DEX matches. */
+/** GET /v2/addresses/:address/connections — top counterparties across sends + dispenses + DEX matches. */
 export interface AddressConnectionRow {
   cp: string;
   interactions: number;
   is_exchange: 0 | 1;
 }
 
-/** GET /v2/addresses/:addr/lineage — sweep-based identity links. */
+/** GET /v2/addresses/:address/lineage — sweep-based identity links. */
 export interface AddressLineageRow {
   direction: "in" | "out";
   counterparty: string | null;
   block_index: number;
   block_time: number | null;
+}
+
+/** GET /v2/addresses/:address/ledger — one raw credit (in) or debit (out) from the credits/debits ledger
+ *  (migration 0038). The full provenance of an address: every balance change with its Counterparty reason. */
+export interface AddressLedgerRow {
+  direction: "in" | "out";
+  block_index: number;
+  tx_hash: string | null;
+  asset: string;
+  quantity: string; // raw bigint as text
+  calling_function: string | null; // send | dispense | issuance | dividend | order match | ...
 }
 
 /** GET /v2/reputation/review — population raw-score band counts (calibration view). */
@@ -162,7 +173,7 @@ export interface ReputationDistribution {
 /** GET /v2/reputation/review + /v2/reputation/tiers/:tier — a scored address row (face-validity spot
  *  check, and the per-tier leaderboard member). */
 export interface ReputationTopRow {
-  addr: string;
+  address: string;
   raw: number;
   survived_assets: number;
   assets_held: number;
@@ -210,7 +221,7 @@ export interface ReputationTierMembers {
 
 /** GET /v2/exchanges — a known CEX wallet. */
 export interface ExchangeRow {
-  addr: string;
+  address: string;
   assets_received: number;
   in_peers: number;
   first_block: number | null;

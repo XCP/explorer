@@ -38,7 +38,7 @@ function RoleBadge({ role }: { role: HolderRole }) {
 const holderCols = (supply: number | null): Col<BalanceRow>[] => [
   { label: "#", priority: 2, w: "30px", cell: (r, ctx, i) => <span className="ht-rank">{(ctx.offset ?? 0) + i + 1}</span> },
   { label: "Holder", priority: 1, cell: (r) => (
-    <span className="ht-addr inline-flex items-center gap-1.5 min-w-0">
+    <span className="ht-address inline-flex items-center gap-1.5 min-w-0">
       {r.holder_type === "address" ? addrCell(r.holder) : <span className="font-mono">{short(r.holder)}</span>}
       {r.role ? <RoleBadge role={r.role} /> : null}
     </span>

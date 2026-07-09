@@ -49,7 +49,7 @@ export const mono = (n: ReactNode) => <span className="font-mono">{n}</span>;
 export const blockCell = (n?: number | null) => (n != null ? <Link className="blk" href={`/block/${n}`}>{commas(n)}</Link> : <span className="blk">—</span>);
 export const txCell = (h?: string | null) => (h ? <Link href={`/tx/${h}`}>{mono(short(h))}</Link> : "—");
 /** Address — single-line ellipsis over the FULL string, complete address in title. Never 4+4 (R5). */
-export const addrCell = (a?: string | null) => (a ? <Link className="addr" href={`/address/${a}`} title={a}>{a}</Link> : "—");
+export const addrCell = (a?: string | null) => (a ? <Link className="address" href={`/address/${a}`} title={a}>{a}</Link> : "—");
 /** Row anchor: icon + linked mono name, one line (v20 .asset anatomy). `display` overrides (longnames). */
 export const assetCell = (a?: string | null, display?: string | null) =>
   a ? <span className="asset"><AssetIcon asset={a} size={22} className="aicon" /><Link className="aname" href={`/asset/${a}`}>{display || a}</Link></span> : "—";

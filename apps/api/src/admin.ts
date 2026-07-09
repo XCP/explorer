@@ -44,7 +44,7 @@ admin.use("/admin/*", async (c, next) => {
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).
 // Body: JSON array of rows (max 100/call); upserted atomically via batch.
 interface BtcStatsRow {
-  addr: string; btc_received?: number; btc_sent?: number; btc_balance?: number;
+  address: string; btc_received?: number; btc_sent?: number; btc_balance?: number;
   btc_txs?: number; btc_first_block?: number | null; btc_last_block?: number | null;
 }
 admin.post("/admin/btc-stats", async (c) => {
@@ -53,13 +53,13 @@ admin.post("/admin/btc-stats", async (c) => {
   if (rows.length > 100) return c.json({ error: "max 100 rows per call" }, 400);
   const now = Math.floor(Date.now() / 1000);
   const stmt = c.env.DB.prepare(
-    `INSERT INTO btc_signals (addr, btc_received, btc_sent, btc_balance, btc_txs, btc_first_block, btc_last_block, updated_at)
+    `INSERT INTO btc_signals (address, btc_received, btc_sent, btc_balance, btc_txs, btc_first_block, btc_last_block, updated_at)
      VALUES (?,?,?,?,?,?,?,?)
-     ON CONFLICT(addr) DO UPDATE SET btc_received=excluded.btc_received, btc_sent=excluded.btc_sent,
+     ON CONFLICT(address) DO UPDATE SET btc_received=excluded.btc_received, btc_sent=excluded.btc_sent,
        btc_balance=excluded.btc_balance, btc_txs=excluded.btc_txs, btc_first_block=excluded.btc_first_block,
        btc_last_block=excluded.btc_last_block, updated_at=excluded.updated_at`);
-  await c.env.DB.batch(rows.filter((r) => typeof r.addr === "string" && r.addr.length > 0).map((r) =>
-    stmt.bind(r.addr, r.btc_received ?? 0, r.btc_sent ?? 0, r.btc_balance ?? 0, r.btc_txs ?? 0,
+  await c.env.DB.batch(rows.filter((r) => typeof r.address === "string" && r.address.length > 0).map((r) =>
+    stmt.bind(r.address, r.btc_received ?? 0, r.btc_sent ?? 0, r.btc_balance ?? 0, r.btc_txs ?? 0,
       r.btc_first_block ?? null, r.btc_last_block ?? null, now)));
   return c.json({ ok: true, upserted: rows.length });
 });
@@ -69,8 +69,8 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
   const limit = Math.min(10_000, Math.max(1, parseInt(c.req.query("limit") || "5000", 10)));
   const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
   const r = await c.env.DB.prepare(
-    `SELECT addr FROM address_signals ORDER BY addr LIMIT ? OFFSET ?`).bind(limit, offset).all<{ addr: string }>();
-  return c.json({ result: r.results.map((x) => x.addr), next_offset: r.results.length === limit ? offset + limit : null });
+    `SELECT address FROM address_signals ORDER BY address LIMIT ? OFFSET ?`).bind(limit, offset).all<{ address: string }>();
+  return c.json({ result: r.results.map((x) => x.address), next_offset: r.results.length === limit ? offset + limit : null });
 });
 
 // Drive the full Counterparty mirror (chronological event replay). Repeat until caught_up.

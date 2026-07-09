@@ -65,7 +65,7 @@ export interface AssetSignalsRow {
 
 /** Mirror of the `address_signals` table (ADDR_DDL in signals.ts). */
 export interface AddressSignalsRow {
-  addr: string;
+  address: string;
   first_block: number | null;
   last_block: number;
   out_peers: number;

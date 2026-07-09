@@ -75,8 +75,8 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
 
   // 5) Reset then write shell_scams on the BTC identities.
   await env.DB.prepare(`UPDATE address_signals SET shell_scams=0 WHERE shell_scams>0`).run();
-  const stmts = [...attrib.entries()].map(([addr, n]) =>
-    env.DB.prepare(`INSERT INTO address_signals (addr, shell_scams) VALUES (?,?) ON CONFLICT(addr) DO UPDATE SET shell_scams=excluded.shell_scams`).bind(addr, n));
+  const stmts = [...attrib.entries()].map(([address, n]) =>
+    env.DB.prepare(`INSERT INTO address_signals (address, shell_scams) VALUES (?,?) ON CONFLICT(address) DO UPDATE SET shell_scams=excluded.shell_scams`).bind(address, n));
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
 
   // 6) DUMP scams: a SOLD single-unit vault of a very-high-supply card (one fungible unit of a $0.0004 token
@@ -92,12 +92,12 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
   ).run();
   await env.DB.prepare(`UPDATE address_signals SET dump_scams=0 WHERE dump_scams>0`).run();
   const dumps = (await env.DB.prepare(
-    `SELECT s.source addr, COUNT(DISTINCT ev.token_id) n FROM emblem_vaults ev
+    `SELECT s.source address, COUNT(DISTINCT ev.token_id) n FROM emblem_vaults ev
        JOIN sends s ON s.destination=ev.btc_address AND s.asset=ev.contents_asset AND s.asset<>'XCP'
       WHERE ev.is_dump=1 AND s.source IS NOT NULL GROUP BY s.source`
-  ).all<{ addr: string; n: number }>()).results || [];
+  ).all<{ address: string; n: number }>()).results || [];
   const dumpStmts = dumps.map((r) =>
-    env.DB.prepare(`INSERT INTO address_signals (addr, dump_scams) VALUES (?,?) ON CONFLICT(addr) DO UPDATE SET dump_scams=excluded.dump_scams`).bind(r.addr, r.n));
+    env.DB.prepare(`INSERT INTO address_signals (address, dump_scams) VALUES (?,?) ON CONFLICT(address) DO UPDATE SET dump_scams=excluded.dump_scams`).bind(r.address, r.n));
   for (let i = 0; i < dumpStmts.length; i += 50) await env.DB.batch(dumpStmts.slice(i, i + 50));
 
   await setState(env, "scam_attrib_block", String(tip));
