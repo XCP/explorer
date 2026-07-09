@@ -95,39 +95,36 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
   const api = env.COUNTERPARTY_API_BASE;
   const cap = Math.min(opts.maxEvents ?? 10000, MAX_EVENTS_PER_RUN);
   let processed = 0, written = 0;
-  const inserts: Stmt[] = [];
   const done: Record<string, boolean> = {};
-  const finalize: D1PreparedStatement[] = [];
   for (const k of LEDGER_KINDS) {
     done[k.type] = (await getState(env.DB, k.doneKey)) === "1";
     if (done[k.type]) continue;
-    let cursor = await getState(env.DB, k.cursorKey); // null on first pass → newest page
-    let finished = false;
+    let cursor = await getState(env.DB, k.cursorKey); // null on first pass = newest page
     while (processed < cap) {
+      // Per-page durability: a 429/throw here ends the call, but every prior page is already committed and its
+      // cursor persisted, so the next call resumes cleanly with no lost work. This is what makes it 429-resilient.
       const d = await counterpartyJson<{ result?: Ev[]; next_cursor?: number | null }>(
         api, `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`);
       const rows = d.result || [];
+      const page: Stmt[] = [];
       for (const ev of rows) {
         const p = ev.params;
         const holder = (p.utxo as string) || (p.address as string);
         if (holder && p.asset) {
-          inserts.push((db) => db.prepare(
+          page.push((db) => db.prepare(
             `INSERT OR IGNORE INTO ${k.table} (event_index,block_index,tx_hash,address,asset,quantity,calling_function,utxo_address) VALUES (?,?,?,?,?,?,?,?)`,
           ).bind(ev.event_index, ev.block_index, ev.tx_hash, holder, p.asset, str(p.quantity) ?? "0", str(p.calling_function ?? null), p.utxo ? str(p.utxo_address ?? null) : null));
           written++;
         }
         processed++;
       }
+      if (page.length) await batchAll(env.DB, page);
       const nc = d.next_cursor;
-      if (nc == null || rows.length === 0) { finished = true; break; }
+      if (nc == null || rows.length === 0) { await setStateStmt(env.DB, k.doneKey, "1").run(); done[k.type] = true; break; }
       cursor = String(nc);
+      await setStateStmt(env.DB, k.cursorKey, cursor).run();
     }
-    // persist AFTER the inserts flush (below) so a batch failure re-runs idempotently rather than skipping ahead
-    if (finished) { done[k.type] = true; finalize.push(setStateStmt(env.DB, k.doneKey, "1")); }
-    else if (cursor != null) finalize.push(setStateStmt(env.DB, k.cursorKey, cursor));
   }
-  if (inserts.length) await batchAll(env.DB, inserts);
-  if (finalize.length) await env.DB.batch(finalize);
   return { processed, written, credit_done: !!done["CREDIT"], debit_done: !!done["DEBIT"], caught_up: !!done["CREDIT"] && !!done["DEBIT"] };
 }
 
