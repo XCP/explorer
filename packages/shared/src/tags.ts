@@ -19,6 +19,12 @@ export interface TagStatsRow {
   pct_low_quality: number | null; // % of asset members flagged low_quality
   total_realized_usd: number; // Σ max_realized_usd over asset members
   total_holders: number; // Σ holders over asset members
+  // Community-strength aggregates — the per-asset "who holds it" signals rolled up to the collection.
+  avg_conviction: number | null; // mean Conviction raw over members (low_quality members zeroed)
+  conviction_score: number | null; // 0-100 (enriched server-side) — the collection's community/scarcity strength
+  avg_holder_dex: number | null; // mean holder DEX-trade sophistication across members
+  avg_creator_pct: number | null; // mean % of members' holders who are proven creators (peer validation)
+  meta: string | null; // collection meta JSON ({collection, site}) when the tag carries one (tokenscan)
 }
 
 /** One asset member of a tag (GET /v2/tags/:tag members[]). Tier + score are computed server-side from

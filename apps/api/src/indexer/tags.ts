@@ -47,7 +47,7 @@ const ADDR_RULES: Rule[] = [
   { tag: "stamp_collector", key: "addr",          sql: `SELECT 'address',addr,'stamp_collector','computed' FROM address_signals WHERE stamps_collected>=20` },
   { tag: "src20_deployer",  key: "addr",          sql: `SELECT 'address',addr,'src20_deployer','computed' FROM address_signals WHERE src20_deploys>=1` },
   { tag: "btns_user",       key: "addr",          sql: `SELECT 'address',addr,'btns_user','computed' FROM address_signals WHERE is_btns_user=1` },
-  { tag: "og",              key: "addr",          sql: `SELECT 'address',addr,'og','computed' FROM address_signals WHERE first_blk<={TIP}-43800 AND last_blk>=850000` },
+  { tag: "og",              key: "addr",          sql: `SELECT 'address',addr,'og','computed' FROM address_signals WHERE first_block<={TIP}-43800 AND last_block>=850000` },
 ];
 // NOTE: stamp classification tags (stamp/src20/src721/src101/src20_deploy) are NOT here — they are written
 // at ingest by the issuance handler with source='protocol' (the classifier base64-decodes the description,

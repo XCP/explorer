@@ -14,7 +14,7 @@ type ExchangeSummary = NonNullable<ExchangesPayload["summary"]>;
 export function exchangeWallets(db: D1Database): Promise<ExchangeWalletRow[]> {
   return q<ExchangeWalletRow>(
     db,
-    `SELECT addr, assets_received, in_peers, first_blk, last_blk FROM address_signals WHERE is_exchange=1 ORDER BY in_peers DESC`
+    `SELECT addr, assets_received, in_peers, first_block, last_block FROM address_signals WHERE is_exchange=1 ORDER BY in_peers DESC`
   );
 }
 

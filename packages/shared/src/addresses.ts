@@ -159,7 +159,8 @@ export interface ReputationDistribution {
   casual: number;
 }
 
-/** GET /v2/reputation/review — one high-scoring address (face-validity spot check). */
+/** GET /v2/reputation/review + /v2/reputation/tiers/:tier — a scored address row (face-validity spot
+ *  check, and the per-tier leaderboard member). */
 export interface ReputationTopRow {
   addr: string;
   raw: number;
@@ -171,13 +172,49 @@ export interface ReputationTopRow {
   btc_fees: number;
 }
 
+/** One reputation tier's public summary (definition + population) on the /reputation overview. */
+export interface ReputationTierSummary {
+  tier: string;    // OG | Established | Active | Casual
+  slug: string;    // og | established | active | casual — the deep-link segment
+  min_raw: number; // inclusive raw-score cutoff
+  meaning: string; // plain-language definition
+  count: number;   // real users currently in this tier
+}
+
+/** The scoring funnel — every mirror address narrowed to the scored real-user pool. `by_kind` breaks down
+ *  the infrastructure that's filtered out. Shown as the "who counts" act on /reputation. */
+export interface ReputationFunnel {
+  total_addresses: number; // every address in the mirror
+  infrastructure: number;  // exchanges + deposits + vaults + burns + services
+  no_history: number;      // non-infra addresses with no reputation-bearing activity
+  scored: number;          // the real-user pool that gets a tier
+  by_kind: { exchanges: number; deposits: number; vaults: number; burns: number; services: number };
+}
+
+/** GET /v2/reputation/tiers — the reputation system overview: the funnel, the score distribution, and the
+ *  per-tier breakdown, high→low. `histogram` is integer-binned scores (0..cap) for the distribution curve. */
+export interface ReputationTiersOverview {
+  total: number; // real users scored (== funnel.scored)
+  mean: number;
+  max: number;
+  funnel: ReputationFunnel;
+  histogram: { bin: number; count: number }[];
+  tiers: ReputationTierSummary[];
+}
+
+/** GET /v2/reputation/tiers/:tier — one tier's definition + its ranked membership (paginated). */
+export interface ReputationTierMembers {
+  tier: ReputationTierSummary;
+  members: ReputationTopRow[];
+}
+
 /** GET /v2/exchanges — a known CEX wallet. */
 export interface ExchangeRow {
   addr: string;
   assets_received: number;
   in_peers: number;
-  first_blk: number | null;
-  last_blk: number | null;
+  first_block: number | null;
+  last_block: number | null;
   name: string; // operator label (Bittrex/Poloniex/…) or "Exchange"
 }
 

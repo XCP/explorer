@@ -84,10 +84,10 @@ status: ✅ computed & in a table · 🔬 measured this lab · 🧩 candidate (c
 ### Age / activity
 | signal | def | pol | strength | status |
 |---|---|---|---|---|
-| age (tip−first_blk) | longevity | + but **dominates (67% of top-band)** | 🔬 | ✅ |
+| age (tip−first_block) | longevity | + but **dominates (67% of top-band)** | 🔬 | ✅ |
 | span (last−first) | active lifespan | + | ? | ✅ |
 | modern_active | active ≥ block 900k | + (not dead) | ? | ✅ |
-| recency (tip−last_blk) | how recently active | + | ? | 🧩 |
+| recency (tip−last_block) | how recently active | + | ? | 🧩 |
 
 ### Creation
 | signal | def | pol | strength | status |

@@ -45,7 +45,7 @@ export async function graphEval(env: Env): Promise<Record<string, unknown>> {
   // C5 — aged-address resistance: what fraction of the TRUSTED address cohort is dormant (>1yr since last
   // activity). A flat PPR rewards stale position; temporal decay should shrink this (trust flows old→new).
   const tip = (await one(env, `SELECT MAX(block_index) m FROM blocks`)).m ?? 0;
-  const dormant = await one(env, `SELECT SUM(CASE WHEN ${rTrust} THEN 1 ELSE 0 END) trusted, SUM(CASE WHEN ${rTrust} AND ${tip}-last_blk>52560 THEN 1 ELSE 0 END) dormant FROM address_signals`);
+  const dormant = await one(env, `SELECT SUM(CASE WHEN ${rTrust} THEN 1 ELSE 0 END) trusted, SUM(CASE WHEN ${rTrust} AND ${tip}-last_block>52560 THEN 1 ELSE 0 END) dormant FROM address_signals`);
 
   // C6 — legit coverage: of the watchlist, how many read trusted (good) vs distrusted (bad).
   const wl = LEGIT_WATCHLIST.map((a) => `'${a}'`).join(",");

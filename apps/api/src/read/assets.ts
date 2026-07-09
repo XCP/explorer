@@ -7,7 +7,7 @@ import { router, J, lim, off, round, cached } from "./respond";
 import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 import {
-  listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText,
+  listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText, assetEscrowText,
   assetSignalsRow, assetTags, assetSales, assetCollection, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
@@ -56,7 +56,7 @@ assets.get("/v2/assets/:asset", async (c) => {
   }
   // The five reads below are independent — run them concurrently (wall-time = slowest, not the sum;
   // the sequential version was the classic multiple-round-trips D1 anti-pattern).
-  const [holder_count, sup, burn, sigRes, tagsRes, salesRes, collectionRes, feedCountsRes] = await Promise.all([
+  const [holder_count, sup, burn, esc, sigRes, tagsRes, salesRes, collectionRes, feedCountsRes] = await Promise.all([
     holderCount(c.env.DB, r.asset),
     // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
     // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
@@ -65,6 +65,8 @@ assets.get("/v2/assets/:asset", async (c) => {
     // Burned = supply sitting in known burn addresses; circulating = total issued minus that. Canonical
     // supply is left intact — burned/circulating sit alongside.
     assetBurnedText(c.env.DB, r.asset),
+    // Escrow = supply locked in open dispensers + open DEX orders (debited from balances, held by no address).
+    assetEscrowText(c.env.DB, r.asset),
     assetSignalsRow(c.env.DB, r.asset).catch(() => null),
     assetTags(c.env.DB, r.asset).catch(() => []),
     // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
@@ -75,6 +77,7 @@ assets.get("/v2/assets/:asset", async (c) => {
   ]);
   const raw = BigInt(sup?.supply ?? 0);
   const burnedRaw = BigInt(burn?.burned ?? 0);
+  const escrowRaw = BigInt(esc?.escrow ?? 0);
   const circRaw = raw - burnedRaw;
   // exact BigInt -> normalized decimal string (pure string math; no float, preserves >2^53 precision).
   const norm = (x: bigint) => {
@@ -94,13 +97,15 @@ assets.get("/v2/assets/:asset", async (c) => {
   const body: AssetDetail = {
     ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count,
     burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),
+    escrow: escrowRaw.toString(), escrow_normalized: norm(escrowRaw),
     circulating: circRaw.toString(), circulating_normalized: norm(circRaw),
     quality: scored && sig
       ? { tier: assetTier(scored.raw, state, sig.low_quality === 1), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
       : { tier: "Dormant", score: null },
     tags,
     sales: salesRes ?? { realized_usd: null, last_sale_usd: null, last_sale_time: null },
-    collection: collectionRes,
+    collection: collectionRes?.tag ?? null,
+    collection_site: collectionRes?.site ?? null,
     feed_counts: feedCountsRes,
   };
   return J(c, { result: body });
@@ -108,7 +113,8 @@ assets.get("/v2/assets/:asset", async (c) => {
 
 // Holder makeup — "who holds this asset?" by reputation tier + archetype + concentration. Surfaces the
 // quality of the holder base (a real asset is held by established collectors; a sybil-minted one by Casual
-// wallets — e.g. MINTS is ~94% Casual). Infra holders (exchange/vault/burn) are bucketed out.
+// wallets — e.g. MINTS is ~94% Casual). Non-reputation holders get their specific label
+// (Exchange/Deposit/Vault/Burn/Service), never a generic bucket. Rows sort by supply share, high→low.
 assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const a = c.req.param("asset").toUpperCase();
   const tip = await chainTip(c.env.DB);
@@ -117,8 +123,7 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const rows = await holderTiers(c.env.DB, a, expr, og, est, act).catch(() => []);
   const arche = await holderArchetypes(c.env.DB, a).catch(() => null);
   const top1 = await assetTop1Pct(c.env.DB, a).catch(() => null);
-  const order = ["OG", "Established", "Active", "Casual", "Infra"];
-  const tiers = rows.sort((x, y) => order.indexOf(x.tier) - order.indexOf(y.tier));
+  const tiers = rows.sort((x, y) => y.pct_supply - x.pct_supply);
   return J(c, { result: { asset: a, holders: arche?.holders ?? 0, tiers, archetypes: { creators: arche?.creators ?? 0, collectors: arche?.collectors ?? 0, whales: arche?.whales ?? 0 }, top_holder_pct: top1?.t ?? null } }, 300);
 });
 

@@ -96,7 +96,7 @@ const TRADE_ROW: Spec = {
   buyer: "string|null", seller: "string|null", tx_hash: "string|null",
 };
 const TRADE_VENUE_STATS: Spec = { venue: "string", trades: "number", assets: "number", last_time: "number|null", usd_known: "number|null" };
-const EXCHANGE_ROW: Spec = { addr: "string", assets_received: "number", in_peers: "number", first_blk: "number|null", last_blk: "number|null", name: "string" };
+const EXCHANGE_ROW: Spec = { addr: "string", assets_received: "number", in_peers: "number", first_block: "number|null", last_block: "number|null", name: "string" };
 const ADDRESS_SUMMARY: Spec = {
   xcp: "string|null", assets: "number", issued: "number", dispensers: "number", open_dispensers: "number",
   open_orders: "number", first_block: "number|null", last_block: "number|null", dispenser_trust: "number|null",

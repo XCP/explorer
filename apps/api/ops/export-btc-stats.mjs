@@ -59,13 +59,13 @@ async function esploraSummary(addr) {
     btc_sent: sent,
     btc_balance: received - sent,
     btc_txs: cs.tx_count ?? 0,
-    btc_first_blk: null, // full history paging is a bulk-node job; esplora mode records last activity only
-    btc_last_blk: null,
+    btc_first_block: null, // full history paging is a bulk-node job; esplora mode records last activity only
+    btc_last_block: null,
   };
   if (row.btc_txs > 0) {
     const txs = await getJson(`${BASE}/address/${addr}/txs`).catch(() => []);
     const confirmed = Array.isArray(txs) ? txs.find((t) => t.status?.confirmed) : null;
-    row.btc_last_blk = confirmed?.status?.block_height ?? null;
+    row.btc_last_block = confirmed?.status?.block_height ?? null;
   }
   return row;
 }

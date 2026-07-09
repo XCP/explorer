@@ -15,6 +15,8 @@ import { crawlScarceSales } from "./indexer/scarce-sales";
 import { classifyVaults } from "./indexer/vault-contents";
 import { crawlEmblemMeta } from "./indexer/emblem-meta";
 import { crawlEmblemTransfers } from "./indexer/emblem-transfers";
+import { crawlEmblemListings } from "./indexer/emblem-listings";
+import { crawlTokenscanCollections } from "./indexer/tokenscan-collections";
 import { buildScamAttribution } from "./indexer/emblem-scam";
 import { graphEval } from "./indexer/graph-eval";
 import { buildTrades } from "./indexer/trades";
@@ -43,7 +45,7 @@ admin.use("/admin/*", async (c, next) => {
 // Body: JSON array of rows (max 100/call); upserted atomically via batch.
 interface BtcStatsRow {
   addr: string; btc_received?: number; btc_sent?: number; btc_balance?: number;
-  btc_txs?: number; btc_first_blk?: number | null; btc_last_blk?: number | null;
+  btc_txs?: number; btc_first_block?: number | null; btc_last_block?: number | null;
 }
 admin.post("/admin/btc-stats", async (c) => {
   const rows = await c.req.json<BtcStatsRow[]>().catch(() => null);
@@ -51,14 +53,14 @@ admin.post("/admin/btc-stats", async (c) => {
   if (rows.length > 100) return c.json({ error: "max 100 rows per call" }, 400);
   const now = Math.floor(Date.now() / 1000);
   const stmt = c.env.DB.prepare(
-    `INSERT INTO btc_signals (addr, btc_received, btc_sent, btc_balance, btc_txs, btc_first_blk, btc_last_blk, updated_at)
+    `INSERT INTO btc_signals (addr, btc_received, btc_sent, btc_balance, btc_txs, btc_first_block, btc_last_block, updated_at)
      VALUES (?,?,?,?,?,?,?,?)
      ON CONFLICT(addr) DO UPDATE SET btc_received=excluded.btc_received, btc_sent=excluded.btc_sent,
-       btc_balance=excluded.btc_balance, btc_txs=excluded.btc_txs, btc_first_blk=excluded.btc_first_blk,
-       btc_last_blk=excluded.btc_last_blk, updated_at=excluded.updated_at`);
+       btc_balance=excluded.btc_balance, btc_txs=excluded.btc_txs, btc_first_block=excluded.btc_first_block,
+       btc_last_block=excluded.btc_last_block, updated_at=excluded.updated_at`);
   await c.env.DB.batch(rows.filter((r) => typeof r.addr === "string" && r.addr.length > 0).map((r) =>
     stmt.bind(r.addr, r.btc_received ?? 0, r.btc_sent ?? 0, r.btc_balance ?? 0, r.btc_txs ?? 0,
-      r.btc_first_blk ?? null, r.btc_last_blk ?? null, now)));
+      r.btc_first_block ?? null, r.btc_last_block ?? null, now)));
   return c.json({ ok: true, upserted: rows.length });
 });
 
@@ -119,6 +121,35 @@ admin.post("/admin/crawl-scarce", async (c) => c.json(await crawlScarceSales(c.e
 
 admin.post("/admin/crawl-emblem", async (c) => {
   return c.json(await crawlEmblemStep(c.env));
+});
+
+// Refresh live Emblem listings from the Sequence Marketplace API (rotating contract subset per call). Loop
+// this to sweep all ~36 contracts; the cron also advances it ~hourly.
+admin.post("/admin/crawl-emblem-listings", async (c) => c.json(await crawlEmblemListings(c.env)));
+
+// Fold in the tokenscan project directory (~60 collections + sites) as source='tokenscan' collection tags.
+admin.post("/admin/crawl-tokenscan", async (c) => c.json(await crawlTokenscanCollections(c.env)));
+
+// Promote a reviewed collection candidate to a real collection: tag ALL of an issuer's uncollected media
+// assets with {slug, name, site?} as source='discovered'. Body: { issuer, slug, name?, site? }. The
+// candidate discovery board (/v2/collections/candidates) is where issuers are eyeballed before promotion.
+admin.post("/admin/promote-collection", async (c) => {
+  const { issuer, slug, name, site } = await c.req.json<{ issuer?: string; slug?: string; name?: string; site?: string }>();
+  if (!issuer || !slug) return c.json({ error: "issuer and slug are required" }, 400);
+  const meta = JSON.stringify({ collection: name || slug, ...(site ? { site } : {}) });
+  const rows = await c.env.DB.prepare(
+    `SELECT a.asset FROM assets a
+      WHERE a.issuer=? AND a.mime_type IS NOT NULL
+        AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND source IN ('collection','tokenscan','digirare','discovered'))
+        AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag IN ('stamp','src20','src721'))`
+  ).bind(issuer).all<{ asset: string }>();
+  const assets = (rows.results ?? []).map((r) => r.asset);
+  for (let i = 0; i < assets.length; i += 100) {
+    await c.env.DB.batch(assets.slice(i, i + 100).map((a) =>
+      c.env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'discovered',?)`).bind(a, slug, meta)));
+  }
+  await c.env.DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
+  return c.json({ issuer, slug, name: name || slug, tagged: assets.length });
 });
 
 // Advance deterministic asset-supply maintenance one step (recomputes supply from our own ledger —

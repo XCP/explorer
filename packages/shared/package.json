@@ -14,6 +14,8 @@
     "./trades": "./src/trades.ts",
     "./stats": "./src/stats.ts",
     "./emblem": "./src/emblem.ts",
-    "./graph": "./src/graph.ts"
+    "./graph": "./src/graph.ts",
+    "./radar": "./src/radar.ts",
+    "./collections": "./src/collections.ts"
   }
 }

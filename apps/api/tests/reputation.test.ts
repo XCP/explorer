@@ -31,7 +31,7 @@ const sw = (label: string) => ASSET_FACTORS.find((f) => f.label === label)!.weig
 /* ---------- independent re-derivations of the raw score ---------- */
 
 const addrDecay = (row: any, tip: number) =>
-  Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_blk))));
+  Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_block))));
 const assetDecay = (row: any) =>
   Math.max(SCALARS.assetDecayFloor, SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)));
 
@@ -39,8 +39,8 @@ function expectedAddrRaw(row: any, tip: number): number {
   const B = SCALARS.blockScale;
   let r = 0;
   // age transform is decayed then WINSORIZED at SCALARS.addrAgeCap (cap pulled from config, not hardcoded).
-  r += aw("age") * Math.min(SCALARS.addrAgeCap, ((tip - num(row.first_blk)) / B) * addrDecay(row, tip));
-  r += aw("span") * ((num(row.last_blk) - num(row.first_blk)) / B);
+  r += aw("age") * Math.min(SCALARS.addrAgeCap, ((tip - num(row.first_block)) / B) * addrDecay(row, tip));
+  r += aw("span") * ((num(row.last_block) - num(row.first_block)) / B);
   r += aw("creator") * ln(num(row.survived_assets));
   r += aw("dividends") * ln(num(row.dividends));
   r += aw("locked") * ln(num(row.locked_assets));
@@ -51,7 +51,7 @@ function expectedAddrRaw(row: any, tip: number): number {
   r += aw("xcp") * ln(num(row.xcp));
   r += aw("dex") * ln(num(row.dex_trades));
   r += aw("stamps") * ln(num(row.stamps_created));
-  if (num(row.last_blk) >= SCALARS.modernActiveBlock) r += SCALARS.modernActiveBonus;
+  if (num(row.last_block) >= SCALARS.modernActiveBlock) r += SCALARS.modernActiveBonus;
   return r;
 }
 
@@ -116,7 +116,7 @@ test("breakdown keys are exactly the weighted factor labels", () => {
 
 test("scoreAddress: a substantive row matches the independent re-derivation (no modern bonus branch)", () => {
   const row = {
-    first_blk: 300000, last_blk: 850000, // < modernActiveBlock, so NO bonus
+    first_block: 300000, last_block: 850000, // < modernActiveBlock, so NO bonus
     survived_assets: 5, dividends: 2, locked_assets: 3, btc_fees: 1.5, btc_spent: 4,
     dispense_btc: 0.5, assets_held: 40, xcp: 1000, dex_trades: 12, stamps_created: 0,
   };
@@ -128,12 +128,12 @@ test("scoreAddress: a substantive row matches the independent re-derivation (no 
 });
 
 test("scoreAddress: modern-active bonus is applied once, exactly SCALARS.modernActiveBonus", () => {
-  const base = { first_blk: 300000, survived_assets: 5, assets_held: 40, xcp: 1000, dex_trades: 12 };
+  const base = { first_block: 300000, survived_assets: 5, assets_held: 40, xcp: 1000, dex_trades: 12 };
   const tip = 960000;
-  const quiet = scoreAddress({ ...base, last_blk: SCALARS.modernActiveBlock - 1 }, tip);
-  const modern = scoreAddress({ ...base, last_blk: SCALARS.modernActiveBlock }, tip);
+  const quiet = scoreAddress({ ...base, last_block: SCALARS.modernActiveBlock - 1 }, tip);
+  const modern = scoreAddress({ ...base, last_block: SCALARS.modernActiveBlock }, tip);
   assert.equal(modern.breakdown.modern, SCALARS.modernActiveBonus, "modern breakdown line = bonus");
-  near(modern.raw, expectedAddrRaw({ ...base, last_blk: SCALARS.modernActiveBlock }, tip), "modern raw");
+  near(modern.raw, expectedAddrRaw({ ...base, last_block: SCALARS.modernActiveBlock }, tip), "modern raw");
   assert(!("modern" in quiet.breakdown), "one block below the cutoff earns no bonus");
 });
 

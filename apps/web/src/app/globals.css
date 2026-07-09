@@ -80,6 +80,10 @@ body {
 .sh-top { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .sh-top img.icon { width:52px; height:52px; border-radius:8px; border:1px solid var(--border2); background:#14171d; object-fit:cover; }
 .sh-name { font-size:var(--fs-h1); font-weight:700; color:var(--t1); letter-spacing:0; font-family:var(--mono); }
+/* Subasset H1: the top-level (parent) segment links home. It inherits the H1 colour so it reads as plain
+   title text, and only reveals itself as a link on hover — then it takes the accent. */
+.sh-name a { color:inherit; text-decoration:none; }
+.sh-name a:hover { color:var(--color-accent); }
 .chips { display:flex; gap:6px; flex-wrap:wrap; }
 .chip { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
 .chip.grail { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
@@ -115,6 +119,12 @@ body {
 .card { border:1px solid var(--border2); border-radius:8px; background:var(--panel); }
 .card h2 { font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); padding:11px 14px; border-bottom:1px solid var(--border2); }
 .card .body { padding:4px 14px 8px; }
+/* holder-makeup header toggle — Supply / Holders lens, quiet mono pills that light on the active one */
+.card h2.mkhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.mktoggle { display:inline-flex; gap:2px; }
+.mktoggle button { font-family:var(--mono); font-size:9px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--t4); background:transparent; border:0; border-radius:4px; padding:2px 6px; cursor:pointer; }
+.mktoggle button:hover { color:var(--t2); }
+.mktoggle button.on { color:var(--accent); background:rgba(56,189,248,.09); }
 .row { display:flex; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid #14171d; font-size:var(--fs-sm); }
 .row:last-child { border-bottom:none; }
 .row .k { color:var(--t4); }
@@ -150,8 +160,7 @@ main > .ctxband { margin-bottom:10px; }
 .plate .cap b { color:var(--t3); font-weight:500; }
 .magcol { display:flex; flex-direction:column; gap:16px; }
 
-/* the merged About+Market card — KV rows, nothing else (makeup got its own card) */
-.factcard .body { padding-top:2px; }
+/* the "Asset info" KV card — headed like Holder makeup, so it inherits the standard .card .body padding */
 
 /* stand-in note for not-yet-designed feeds */
 .standin-note { border:1px dashed #34404f; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); color:var(--t4); background:rgba(56,189,248,.03); }

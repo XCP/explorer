@@ -29,7 +29,7 @@ import { EMBLEM_DDL } from "./emblem";
 
 
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
-  addr TEXT PRIMARY KEY, first_blk INTEGER, last_blk INTEGER DEFAULT 0, out_peers INTEGER DEFAULT 0,
+  addr TEXT PRIMARY KEY, first_block INTEGER, last_block INTEGER DEFAULT 0, out_peers INTEGER DEFAULT 0,
   in_peers INTEGER DEFAULT 0, dispense_btc REAL DEFAULT 0, dispenses INTEGER DEFAULT 0,
   dividends INTEGER DEFAULT 0, assets_issued INTEGER DEFAULT 0, locked_assets INTEGER DEFAULT 0,
   btc_spent REAL DEFAULT 0, btc_fees REAL DEFAULT 0, assets_held INTEGER DEFAULT 0,
@@ -111,14 +111,39 @@ const UNITS: FeatureUnit[] = [
 
   // ===== ADDRESS · peers & activity span (from sends ~1.75M → heavy full scan, gated daily) =====
   { name: "addr_send_out", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: `INSERT INTO address_signals (addr,first_blk,out_peers) SELECT source,MIN(block_index),COUNT(DISTINCT destination) FROM sends WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET first_blk=MIN(address_signals.first_blk,excluded.first_blk),out_peers=excluded.out_peers`,
-    scoped: (ph) => `INSERT INTO address_signals (addr,first_blk,out_peers) SELECT source,MIN(block_index),COUNT(DISTINCT destination) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET first_blk=MIN(address_signals.first_blk,excluded.first_blk),out_peers=excluded.out_peers` },
+    full: `INSERT INTO address_signals (addr,first_block,out_peers) SELECT source,MIN(block_index),COUNT(DISTINCT destination) FROM sends WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET first_block=MIN(address_signals.first_block,excluded.first_block),out_peers=excluded.out_peers`,
+    scoped: (ph) => `INSERT INTO address_signals (addr,first_block,out_peers) SELECT source,MIN(block_index),COUNT(DISTINCT destination) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET first_block=MIN(address_signals.first_block,excluded.first_block),out_peers=excluded.out_peers` },
   { name: "addr_send_in", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: `INSERT INTO address_signals (addr,in_peers,first_blk,last_blk) SELECT destination,COUNT(DISTINCT source),MIN(block_index),MAX(block_index) FROM sends WHERE destination IS NOT NULL GROUP BY destination ON CONFLICT(addr) DO UPDATE SET in_peers=excluded.in_peers,first_blk=MIN(address_signals.first_blk,excluded.first_blk),last_blk=MAX(address_signals.last_blk,excluded.last_blk)`,
-    scoped: (ph) => `INSERT INTO address_signals (addr,in_peers,first_blk,last_blk) SELECT destination,COUNT(DISTINCT source),MIN(block_index),MAX(block_index) FROM sends WHERE destination IS NOT NULL AND destination IN (${ph}) GROUP BY destination ON CONFLICT(addr) DO UPDATE SET in_peers=excluded.in_peers,first_blk=MIN(address_signals.first_blk,excluded.first_blk),last_blk=MAX(address_signals.last_blk,excluded.last_blk)` },
+    full: `INSERT INTO address_signals (addr,in_peers,first_block,last_block) SELECT destination,COUNT(DISTINCT source),MIN(block_index),MAX(block_index) FROM sends WHERE destination IS NOT NULL GROUP BY destination ON CONFLICT(addr) DO UPDATE SET in_peers=excluded.in_peers,first_block=MIN(address_signals.first_block,excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)`,
+    scoped: (ph) => `INSERT INTO address_signals (addr,in_peers,first_block,last_block) SELECT destination,COUNT(DISTINCT source),MIN(block_index),MAX(block_index) FROM sends WHERE destination IS NOT NULL AND destination IN (${ph}) GROUP BY destination ON CONFLICT(addr) DO UPDATE SET in_peers=excluded.in_peers,first_block=MIN(address_signals.first_block,excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
   { name: "addr_last", scope: "address", reads: ["sends"], heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: `INSERT INTO address_signals (addr,last_blk) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_blk=MAX(address_signals.last_blk,excluded.last_blk)`,
-    scoped: (ph) => `INSERT INTO address_signals (addr,last_blk) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_blk=MAX(address_signals.last_blk,excluded.last_blk)` },
+    full: `INSERT INTO address_signals (addr,last_block) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_block=MAX(address_signals.last_block,excluded.last_block)`,
+    scoped: (ph) => `INSERT INTO address_signals (addr,last_block) SELECT source,MAX(block_index) FROM sends WHERE source IS NOT NULL AND source IN (${ph}) GROUP BY source ON CONFLICT(addr) DO UPDATE SET last_block=MAX(address_signals.last_block,excluded.last_block)` },
+
+  // ===== ADDRESS · first/last SEEN across the FULL event spectrum (not just sends) =====
+  // first_block was previously derived ONLY from sends (addr_send_in/out above), so a wallet that acquired an
+  // asset through a NON-send path — bought from a dispenser, was granted an issuance, minted a fairmint,
+  // matched a DEX order — and never *sent* anything had a NULL first_block. ~65k such real holders (mostly
+  // collectors who bought a card from a dispenser) then read as "no history" and were age-less. These three
+  // units MIN/MAX the block over every remaining credit path; they compose with the send builders (MIN never
+  // raises a lower first_block). periodic (full-rebuild + cron, no per-block scope): first-appearance is
+  // slow-moving, and a multi-table union can't be single-placeholder dirty-scoped anyway. D1 caps compound
+  // SELECT terms low, so one builder per source rather than one big union.
+  { name: "addr_disp_seen", scope: "address", reads: ["dispenses"], periodic: true,
+    full: `INSERT INTO address_signals (addr,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
+      SELECT source a, block_index b FROM dispenses WHERE source IS NOT NULL
+      UNION ALL SELECT destination, block_index FROM dispenses WHERE destination IS NOT NULL
+    ) GROUP BY a ON CONFLICT(addr) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
+  { name: "addr_grant_seen", scope: "address", reads: ["issuances", "fairmints"], periodic: true,
+    full: `INSERT INTO address_signals (addr,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
+      SELECT issuer a, block_index b FROM issuances WHERE issuer IS NOT NULL
+      UNION ALL SELECT source, block_index FROM fairmints WHERE source IS NOT NULL
+    ) GROUP BY a ON CONFLICT(addr) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
+  { name: "addr_dex_seen", scope: "address", reads: ["order_matches"], periodic: true,
+    full: `INSERT INTO address_signals (addr,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
+      SELECT tx0_address a, block_index b FROM order_matches WHERE tx0_address IS NOT NULL
+      UNION ALL SELECT tx1_address, block_index FROM order_matches WHERE tx1_address IS NOT NULL
+    ) GROUP BY a ON CONFLICT(addr) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
 
   // ===== ADDRESS · dispenser economics (from dispenses) =====
   // MERCHANT ATTRIBUTION TO THE CREATOR (Phase B addendum): dispense revenue is credited to the human operator

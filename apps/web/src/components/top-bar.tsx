@@ -24,7 +24,7 @@ const EXPLORE: NavGroup[] = [
   { heading: "Chain", links: [["Transactions", "/transactions"], ["Broadcasts", "/broadcasts"]] },
 ];
 const DISCOVER: NavGroup[] = [
-  { links: [["Mempool", "/mempool"], ["Collections", "/collections"], ["Leaderboards", "/leaderboards"], ["Firsts", "/firsts"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Network Stats", "/stats"]] },
+  { links: [["Radar", "/radar"], ["Mempool", "/mempool"], ["Collections", "/collections"], ["Leaderboards", "/leaderboards"], ["Firsts", "/firsts"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Network Stats", "/stats"]] },
 ];
 
 function WalletButton({ full = false }: { full?: boolean }) {

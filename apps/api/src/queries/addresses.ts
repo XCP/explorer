@@ -178,3 +178,49 @@ export function reputationTop(db: D1Database, expr: string, notInfra: string): P
      FROM address_signals WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`
   );
 }
+
+/** The scoring funnel: every address in the mirror, split into infrastructure (by kind) vs the rest. The
+ *  read layer derives no-history = total − infrastructure − scored. Powers the /reputation "who counts" act. */
+export function reputationFunnel(db: D1Database): Promise<{
+  total: number; infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number;
+} | null> {
+  return one<{ total: number; infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number }>(
+    db,
+    `SELECT COUNT(*) total,
+       SUM(CASE WHEN is_exchange=1 OR is_deposit=1 OR is_burn=1 OR COALESCE(is_emblem_vault,0)=1 OR COALESCE(likely_service,0)=1 THEN 1 ELSE 0 END) infra,
+       SUM(CASE WHEN is_exchange=1 THEN 1 ELSE 0 END) exchanges,
+       SUM(CASE WHEN is_deposit=1 THEN 1 ELSE 0 END) deposits,
+       SUM(CASE WHEN COALESCE(is_emblem_vault,0)=1 THEN 1 ELSE 0 END) vaults,
+       SUM(CASE WHEN is_burn=1 THEN 1 ELSE 0 END) burns,
+       SUM(CASE WHEN COALESCE(likely_service,0)=1 THEN 1 ELSE 0 END) services
+     FROM address_signals`
+  );
+}
+
+/** Score histogram over the scored population — integer-binned raw scores (0..cap, the tail lumped at cap)
+ *  for the distribution curve on /reputation. `expr`/`notInfra` are the same config-driven fragments the
+ *  distribution + tier reads use; `cap` is an interpolated literal (not user input). */
+export function reputationHistogram(
+  db: D1Database, expr: string, notInfra: string, cap: number
+): Promise<{ bin: number; count: number }[]> {
+  return q<{ bin: number; count: number }>(
+    db,
+    `WITH r AS (SELECT MAX(0, MIN(${cap}, CAST((${expr}) AS INTEGER))) b FROM address_signals WHERE ${notInfra})
+     SELECT b bin, COUNT(*) count FROM r GROUP BY b ORDER BY b`
+  );
+}
+
+/** One reputation tier's membership — real users whose raw score falls in [minRaw, maxRaw), ranked. The
+ *  bounds are config-sourced tier cutoffs (interpolated, not user input); the caller passes a large sentinel
+ *  for the top (OG) tier's open upper bound. Powers the /reputation/:tier deep-link leaderboard. */
+export function reputationTierMembers(
+  db: D1Database, expr: string, notInfra: string, minRaw: number, maxRaw: number, limit: number, offset: number
+): Promise<ReputationTopRow[]> {
+  return q<ReputationTopRow>(
+    db,
+    `SELECT addr, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
+     FROM address_signals WHERE ${notInfra} AND (${expr})>=${minRaw} AND (${expr})<${maxRaw}
+     ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
+    limit, offset
+  );
+}

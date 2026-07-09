@@ -66,8 +66,8 @@ export interface AssetSignalsRow {
 /** Mirror of the `address_signals` table (ADDR_DDL in signals.ts). */
 export interface AddressSignalsRow {
   addr: string;
-  first_blk: number | null;
-  last_blk: number;
+  first_block: number | null;
+  last_block: number;
   out_peers: number;
   in_peers: number;
   dispense_btc: number;
@@ -102,11 +102,12 @@ export interface AddressSignalsRow {
   dump_scams: number; // bad-actor: high-supply single-unit Emblem "collectible" dumps funded by this address (migration 0035)
 }
 
-/** Mirror of the polymorphic `tags` table (migration 0012). */
+/** Mirror of the polymorphic `tags` table (migration 0012 + 0037 meta). */
 export interface TagRow {
   entity_type: "address" | "asset";
   entity_id: string;
   tag: string; // exchange|vault|trader|og|creator|grail|stamp|src20|has_media|…
-  source: "computed" | "curated" | "manual" | string;
+  source: "computed" | "curated" | "manual" | "collection" | "tokenscan" | string;
   value: number | null;
+  meta: string | null; // optional JSON sidecar (migration 0037) — e.g. {"collection","site"} for a collection tag
 }

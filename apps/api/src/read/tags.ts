@@ -6,7 +6,7 @@
  */
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { router, J, lim, off, round, cached } from "./respond";
-import { rawSqlExpr, ASSET_FACTORS, assetScore, assetTier, type MarketState } from "../reputation/score";
+import { rawSqlExpr, ASSET_FACTORS, CONVICTION_FACTORS, assetScore, assetTier, convictionScore, type MarketState } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
 import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "../queries/tags";
 
@@ -16,14 +16,18 @@ export const tags = router();
 // (rawSqlExpr(ASSET_FACTORS) minus the flat low_quality penalty), so a tag's aggregate ranks on the exact
 // same scale as a single asset's score. `low_quality` resolves against asset_signals in the query context.
 const ASSET_RAW = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
+// The Conviction RAW expression (who holds it + scarcity, no market inputs) — the community-strength axis the
+// aggregate rolls up per collection. The query zeroes it for low_quality members (mirrors scoreConviction).
+const CONV_RAW = rawSqlExpr(CONVICTION_FACTORS, 0);
 
-// Enrich the aggregate with the headline tier + 0-100 score derived from the median raw (the single source
-// of truth for raw→tier lives in reputation/score, so it's applied here, not duplicated in the web).
+// Enrich the aggregate with the headline tier + 0-100 scores derived from the median/mean raws (the single
+// source of truth for raw→tier/percentile lives in reputation/score, so it's applied here, not in the web).
 function enrich(r: TagStatsBase): TagStatsRow {
   return {
     ...r,
     median_score: r.median_raw != null ? assetScore(r.median_raw) : null,
     median_tier: r.median_raw != null ? assetTier(r.median_raw, "market") : null,
+    conviction_score: r.avg_conviction != null ? convictionScore(r.avg_conviction) : null,
   };
 }
 
@@ -31,7 +35,7 @@ function enrich(r: TagStatsBase): TagStatsRow {
 // key), so it's D1-cached at ttl 600 like the other global aggregates.
 tags.get("/v2/tags", async (c) =>
   cached(c, "tags:all", { ttl: 600, edge: 120 }, async () => ({
-    result: (await listTagStats(c.env.DB, ASSET_RAW)).map(enrich),
+    result: (await listTagStats(c.env.DB, ASSET_RAW, CONV_RAW)).map(enrich),
   }))
 );
 
@@ -39,7 +43,7 @@ tags.get("/v2/tags", async (c) =>
 // percentile score). Standard envelope with null-terminated next_offset; the aggregate repeats per page.
 tags.get("/v2/tags/:tag", async (c) => {
   const tag = c.req.param("tag");
-  const stats = await getTagStats(c.env.DB, ASSET_RAW, tag);
+  const stats = await getTagStats(c.env.DB, ASSET_RAW, CONV_RAW, tag);
   if (!stats) return c.json({ error: "Tag not found" }, 404);
   const limit = lim(c), offset = off(c);
   const rows = await listTagAssetMembers(c.env.DB, ASSET_RAW, tag, limit, offset);

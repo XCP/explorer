@@ -17,6 +17,8 @@ import { trades } from "./trades";
 import { mempool } from "./mempool";
 import { tags } from "./tags";
 import { graph } from "./graph";
+import { radar } from "./radar";
+import { candidates } from "./candidates";
 
 export const read = router();
 read.route("/", stats);
@@ -31,3 +33,5 @@ read.route("/", trades);
 read.route("/", mempool);
 read.route("/", tags);
 read.route("/", graph);
+read.route("/", radar);
+read.route("/", candidates);

@@ -27,6 +27,9 @@ export function ContextBand({ detail, collectionAssets }: {
           <b>Part of {collectionLabel(detail.collection)}</b>
           {collectionAssets != null && <span> · {commas(collectionAssets)} assets in collection</span>}
         </span>
+        {detail.collection_site && (
+          <a href={detail.collection_site} target="_blank" rel="noopener noreferrer">Project site ↗</a>
+        )}
         <Link href={`/tag/${encodeURIComponent(detail.collection)}`}>View collection →</Link>
       </div>
     );

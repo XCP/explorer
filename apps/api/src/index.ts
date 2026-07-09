@@ -20,6 +20,8 @@ import { crawlScarceSales } from "./indexer/scarce-sales";
 import { classifyVaults } from "./indexer/vault-contents";
 import { crawlEmblemMeta } from "./indexer/emblem-meta";
 import { crawlEmblemTransfers } from "./indexer/emblem-transfers";
+import { crawlEmblemListings } from "./indexer/emblem-listings";
+import { crawlTokenscanCollections } from "./indexer/tokenscan-collections";
 import { buildScamAttribution } from "./indexer/emblem-scam";
 import { maybeBuildGraph } from "./indexer/graph";
 import { buildTrades } from "./indexer/trades";
@@ -38,6 +40,7 @@ export interface Env {
   ADMIN_TOKEN: string;
   ALCHEMY_KEY: string;          // Alchemy NFT API key (Emblem Vault token-id enumeration, primary)
   ETHERSCAN_KEY: string;        // Etherscan API key (Emblem enumeration fallback)
+  SEQUENCE_ACCESS_KEY: string;  // Sequence Marketplace API project access key (live Emblem listings)
 }
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
@@ -60,6 +63,16 @@ async function maybeCrawlCollections(env: Env): Promise<void> {
   await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('collections_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
 }
 
+// Refresh the tokenscan collection directory (~60 projects + sites) → source='tokenscan' tags. A single
+// static-file fetch; the directory changes rarely, so ~weekly is plenty.
+async function maybeCrawlTokenscan(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='tokenscan_synced_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 1008) return; // ~1 week of blocks
+  await crawlTokenscanCollections(env);
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('tokenscan_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
 // Continue the Emblem-sales backfill a bounded step, gated to ~hourly so we crawl Alchemy getNFTSales
 // steadily (rotating one contract per call) without hammering it every 2-min tick.
 async function maybeCrawlEmblemSales(env: Env): Promise<void> {
@@ -68,6 +81,17 @@ async function maybeCrawlEmblemSales(env: Env): Promise<void> {
   if (tip - last < 6) return; // ~1 hour of blocks
   await crawlEmblemSales(env);
   await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('emblem_sales_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
+}
+
+// Refresh live Emblem listings (Sequence Marketplace API), gated to ~hourly. Rotates a subset of the ~36
+// Emblem contracts per call, so a full listings refresh completes over a handful of hours without hammering
+// the API. No-ops until SEQUENCE_ACCESS_KEY is set / Sequence has indexed orders for a contract.
+async function maybeCrawlEmblemListings(env: Env): Promise<void> {
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='emblem_listings_synced_blk'`).first<{ value: string }>())?.value) || "0", 10);
+  if (tip - last < 6) return; // ~1 hour of blocks
+  await crawlEmblemListings(env);
+  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('emblem_listings_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
 }
 
 // FULL tags self-heal (~daily). The per-tick cascade rebuilds computed tags only for the entities it touched;
@@ -166,10 +190,14 @@ export default {
         try { await maybeAnalyze(env); } catch (e) { console.error("maybeAnalyze", e); }
         // Collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf, ~daily.
         try { await maybeCrawlCollections(env); } catch (e) { console.error("crawlCollections", e); }
+        // Fold in the tokenscan project directory (~60 collections + sites) as source='tokenscan' tags, ~weekly.
+        try { await maybeCrawlTokenscan(env); } catch (e) { console.error("crawlTokenscan", e); }
         // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
         try { await maybeCrawlEmblemSales(env); } catch (e) { console.error("crawlEmblemSales", e); }
         // Recover post-April-2024 sales getNFTSales stopped indexing (getAssetTransfers + Seaport decode).
         try { await crawlEmblemTransfers(env); } catch (e) { console.error("crawlEmblemTransfers", e); }
+        // Refresh live Emblem listings (Sequence Marketplace API) so the Radar can flag "buyable on ETH", ~hourly.
+        try { await maybeCrawlEmblemListings(env); } catch (e) { console.error("crawlEmblemListings", e); }
         // Continue the Scarce.city sales sweep (Bitcoin-native marketplace; one bounded asset batch per tick).
         try { await crawlScarceSales(env); } catch (e) { console.error("crawlScarceSales", e); }
         // Classify Emblem vault contents/crack state (real vs scam sales) — one bounded vault batch per tick.

@@ -132,6 +132,21 @@ export function assetBurnedText(db: D1Database, asset: string): Promise<{ burned
   );
 }
 
+/** Protocol-escrowed supply — inventory locked in open dispensers + open DEX orders. Counterparty
+ *  debits the `give` amount out of balances at creation/open with no offsetting credit, so this supply
+ *  is real and circulating yet held by no address (invisible to any balances-based holder view). Verified
+ *  to reconcile exactly: address balances + utxo balances + this escrow = total supply. BigInt-exact TEXT. */
+export function assetEscrowText(db: D1Database, asset: string): Promise<{ escrow: string | null } | null> {
+  return one<{ escrow: string | null }>(
+    db,
+    `SELECT CAST(
+       (SELECT COALESCE(SUM(CAST(give_remaining AS INTEGER)),0) FROM dispensers WHERE asset=? AND status=0)
+       + (SELECT COALESCE(SUM(CAST(give_remaining AS INTEGER)),0) FROM orders WHERE give_asset=? AND status='open')
+       AS TEXT) escrow`,
+    asset, asset
+  );
+}
+
 /** Precomputed asset-quality signal row (feeds the composed score). */
 export function assetSignalsRow(db: D1Database, asset: string): Promise<AssetSignalsRow | null> {
   return one<AssetSignalsRow>(db, `SELECT * FROM asset_signals WHERE asset=?`, asset);
@@ -174,13 +189,14 @@ export function holderTiers(
   return q<HolderTierRow>(
     db,
     `WITH h AS (
-       SELECT CAST(b.quantity AS REAL) q,
-         (sg.is_exchange=1 OR sg.is_deposit=1 OR sg.is_burn=1 OR sg.is_emblem_vault=1 OR sg.likely_service=1) infra,
-         (${expr}) raw, sg.survived_assets surv, sg.assets_held held
+       SELECT CAST(b.quantity AS REAL) q, sg.is_exchange xch, sg.is_deposit dep,
+         sg.is_emblem_vault vlt, sg.is_burn brn, sg.likely_service svc, (${expr}) raw
        FROM balances b JOIN address_signals sg ON sg.addr=b.holder
        WHERE b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0),
      tot AS (SELECT SUM(q) s FROM h)
-     SELECT CASE WHEN infra THEN 'Infra' WHEN raw>=${og} THEN 'OG' WHEN raw>=${est} THEN 'Established'
+     SELECT CASE WHEN xch=1 THEN 'Exchange' WHEN dep=1 THEN 'Deposit' WHEN vlt=1 THEN 'Vault'
+                 WHEN brn=1 THEN 'Burn' WHEN svc=1 THEN 'Service'
+                 WHEN raw>=${og} THEN 'OG' WHEN raw>=${est} THEN 'Established'
                  WHEN raw>=${act} THEN 'Active' ELSE 'Casual' END tier,
        COUNT(*) holders, ROUND(100.0*SUM(q)/(SELECT s FROM tot),1) pct_supply
      FROM h GROUP BY tier`,
@@ -259,7 +275,11 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
   return q<BalanceRow>(
     db,
     `SELECT b.holder, b.holder_type, b.quantity, b.quantity_normalized,
-            COALESCE(s.is_burn,0) is_burn, COALESCE(s.is_exchange,0) is_exchange
+            CASE WHEN s.is_burn=1 THEN 'burn' WHEN s.is_exchange=1 THEN 'exchange'
+                 WHEN s.is_emblem_vault=1 THEN 'vault' WHEN s.is_deposit=1 THEN 'deposit'
+                 WHEN s.likely_service=1 THEN 'service' WHEN s.survived_assets>=20 THEN 'creator'
+                 WHEN s.assets_held>=500 THEN 'whale' WHEN s.assets_held>=100 THEN 'collector'
+                 END role
      FROM balances b LEFT JOIN address_signals s ON s.addr=b.holder
      WHERE b.asset=? AND CAST(b.quantity AS INTEGER)>0 ORDER BY CAST(b.quantity AS INTEGER) DESC LIMIT ? OFFSET ?`,
     asset, limit, offset
@@ -401,10 +421,21 @@ export function assetFeedCounts(db: D1Database, asset: string, issuer: string | 
   );
 }
 
-/** The asset's curated collection tag (tags with source='collection'; first wins). */
-export async function assetCollection(db: D1Database, asset: string): Promise<string | null> {
-  const r = await one<{ tag: string }>(db, `SELECT tag FROM tags WHERE entity_type='asset' AND entity_id=? AND source='collection' LIMIT 1`, asset);
-  return r?.tag ?? null;
+/** The asset's collection tag + project site. Considers both collection sources — the curated pepe.wtf
+ *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
+ *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green
+ *  "Part of …" band, so tokenscan-only projects (Rare Pigeons, Age of Chains, …) now show it too. */
+export async function assetCollection(db: D1Database, asset: string): Promise<{ tag: string; site: string | null } | null> {
+  const r = await one<{ tag: string; meta: string | null }>(
+    db,
+    `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source IN ('collection','tokenscan','digirare','discovered')
+     ORDER BY CASE source WHEN 'collection' THEN 0 WHEN 'tokenscan' THEN 1 WHEN 'digirare' THEN 2 ELSE 3 END LIMIT 1`,
+    asset
+  );
+  if (!r) return null;
+  let site: string | null = null;
+  try { site = r.meta ? ((JSON.parse(r.meta) as { site?: string }).site ?? null) : null; } catch { /* non-JSON meta */ }
+  return { tag: r.tag, site };
 }
 
 /** Collector cohort: assets most co-held with this one. Excludes XCP (currency everyone holds); the b1

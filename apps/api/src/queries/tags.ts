@@ -11,20 +11,26 @@ import type { TagStatsRow, TagMemberRow } from "@xcp/shared/tags";
 import { q, one } from "../db";
 
 /** The aggregate stats a query produces; the handler enriches with median_score/median_tier. */
-export type TagStatsBase = Omit<TagStatsRow, "median_score" | "median_tier">;
+export type TagStatsBase = Omit<TagStatsRow, "median_score" | "median_tier" | "conviction_score">;
 
 // Shared aggregate SQL: `mem` = one row per (tag, entity); `asset_mem` = its asset members joined to
 // signals (drops assets without a signals row so the median rank is over real, scored members only).
-// `{WHERE}` is spliced empty (population) or `WHERE t.tag=?` (single tag). `${expr}` resolves against
-// asset_signals `s` (its columns are unqualified in rawSqlExpr; `mem` shares no column names with it).
-const AGG = (expr: string, whereTag: boolean) => `
+// `whereTag` scopes to one tag (population when false). `expr` = quality raw; `convExpr` = Conviction raw
+// (the community/scarcity axis) — both resolve against asset_signals `s` (unqualified in rawSqlExpr; the
+// `mem` CTE shares no column names with it). Beyond quality, we roll the per-asset community signals we
+// already compute (Conviction, holder DEX-sophistication, creator-held %) UP to the collection, plus the
+// collection's meta ({collection, site}) — so a tag reads as a COMMUNITY, not just a bag of cards.
+const AGG = (expr: string, convExpr: string, whereTag: boolean) => `
   WITH mem AS (
-    SELECT t.tag, t.entity_type, t.entity_id, MIN(t.source) source
+    SELECT t.tag, t.entity_type, t.entity_id, MIN(t.source) source, MIN(t.meta) meta
     FROM tags t ${whereTag ? "WHERE t.tag=?" : ""}
     GROUP BY t.tag, t.entity_type, t.entity_id
   ),
   asset_mem AS (
-    SELECT m.tag, (${expr}) raw, s.low_quality, s.max_realized_usd, s.holders
+    SELECT m.tag, (${expr}) raw,
+      (CASE WHEN s.low_quality=1 THEN 0 ELSE (${convExpr}) END) conv,
+      s.avg_holder_dex holder_dex, s.pct_creator_holders creator_pct,
+      s.low_quality, s.max_realized_usd, s.holders
     FROM mem m JOIN asset_signals s ON m.entity_type='asset' AND s.asset=m.entity_id
   ),
   ranked AS (
@@ -36,28 +42,29 @@ const AGG = (expr: string, whereTag: boolean) => `
   ),
   astat AS (
     SELECT tag, COUNT(*) n_assets, ROUND(AVG(raw), 2) mean_raw,
+      ROUND(AVG(conv), 2) avg_conviction, ROUND(AVG(holder_dex), 1) avg_holder_dex, ROUND(AVG(creator_pct)) avg_creator_pct,
       ROUND(100.0*SUM(low_quality)/COUNT(*), 1) pct_low_quality,
       ROUND(SUM(COALESCE(max_realized_usd, 0)), 2) total_realized_usd, SUM(COALESCE(holders, 0)) total_holders
     FROM asset_mem GROUP BY tag
   ),
   cnt AS (
-    SELECT tag, MIN(entity_type) entity_type, MIN(source) source, COUNT(*) n,
+    SELECT tag, MIN(entity_type) entity_type, MIN(source) source, MIN(meta) meta, COUNT(*) n,
       SUM(CASE WHEN entity_type='address' THEN 1 ELSE 0 END) n_addresses
     FROM mem GROUP BY tag
   )
-  SELECT c.tag, c.entity_type, c.source, c.n, COALESCE(a.n_assets, 0) n_assets, c.n_addresses,
-    a.mean_raw, m.median_raw, a.pct_low_quality,
+  SELECT c.tag, c.entity_type, c.source, c.meta, c.n, COALESCE(a.n_assets, 0) n_assets, c.n_addresses,
+    a.mean_raw, m.median_raw, a.avg_conviction, a.avg_holder_dex, a.avg_creator_pct, a.pct_low_quality,
     COALESCE(a.total_realized_usd, 0) total_realized_usd, COALESCE(a.total_holders, 0) total_holders
   FROM cnt c LEFT JOIN astat a ON a.tag=c.tag LEFT JOIN med m ON m.tag=c.tag`;
 
-/** Population aggregate over EVERY distinct tag (asset + address). `expr` = config-driven raw-quality SQL. */
-export function listTagStats(db: D1Database, expr: string): Promise<TagStatsBase[]> {
-  return q<TagStatsBase>(db, `${AGG(expr, false)} ORDER BY c.tag`);
+/** Population aggregate over EVERY distinct tag (asset + address). `expr`/`convExpr` = config-driven SQL. */
+export function listTagStats(db: D1Database, expr: string, convExpr: string): Promise<TagStatsBase[]> {
+  return q<TagStatsBase>(db, `${AGG(expr, convExpr, false)} ORDER BY c.tag`);
 }
 
 /** The aggregate row for a single tag (same math, scoped to one tag). Null when the tag doesn't exist. */
-export function getTagStats(db: D1Database, expr: string, tag: string): Promise<TagStatsBase | null> {
-  return one<TagStatsBase>(db, AGG(expr, true), tag);
+export function getTagStats(db: D1Database, expr: string, convExpr: string, tag: string): Promise<TagStatsBase | null> {
+  return one<TagStatsBase>(db, AGG(expr, convExpr, true), tag);
 }
 
 /** Internal member row: the wire fields plus the state inputs (trades/dispenses) the handler needs to

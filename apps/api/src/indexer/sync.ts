@@ -205,13 +205,13 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
 
 /* ---------- reorg rollback ---------- */
 
-/** Delete every row with block_index > blk from a table, in bounded batches. A single unbounded DELETE over a
+/** Delete every row with block_index > block from a table, in bounded batches. A single unbounded DELETE over a
  *  large range (e.g. a deep/erroneous rollback) allocates the whole change set at once and NOMEMs D1, so we
  *  loop with a rowid+LIMIT subquery until a short batch signals we're done. */
-async function deleteAbove(db: D1Database, table: string, blk: number): Promise<void> {
+async function deleteAbove(db: D1Database, table: string, block: number): Promise<void> {
   const BATCH = 5000;
   for (;;) {
-    const r = await db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE block_index > ? LIMIT ${BATCH})`).bind(blk).run();
+    const r = await db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE block_index > ? LIMIT ${BATCH})`).bind(block).run();
     if ((r.meta.changes ?? 0) < BATCH) break;
   }
 }

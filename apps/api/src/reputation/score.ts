@@ -5,6 +5,7 @@
  */
 import {
   type Factor, SCALARS, ADDRESS_FACTORS, ASSET_FACTORS, ASSET_PENALTY, ADDRESS_PCT, ASSET_PCT, ASSET_TIERS, ADDRESS_TIERS,
+  CONVICTION_FACTORS, CONVICTION_PCT,
 } from "./config";
 import type { AssetSignalsRow, AddressSignalsRow } from "../schema";
 
@@ -21,7 +22,7 @@ const ln = (x: number) => Math.log(1 + Math.max(0, x));
 // staleness decay multipliers (gentle hyperbolic, floored) — see SCALARS. Applied to legacy time-terms so an
 // aged-but-inactive entity decays toward dormant instead of coasting on historical standing.
 const assetDecay = (row: FeatureRow) => Math.max(SCALARS.assetDecayFloor, SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)));
-const addrDecay = (row: FeatureRow, tip: number) => Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_blk))));
+const addrDecay = (row: FeatureRow, tip: number) => Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_block))));
 
 /* ---------- single-row scoring (read endpoint) ---------- */
 
@@ -50,10 +51,12 @@ function factorValue(f: Factor, row: FeatureRow, tip: number): number {
     const circ = Math.max(1, supply * (100 - num(row.burned_pct)) / 100);
     return SCALARS.scarcityOffset - Math.log10(circ);
   }
+  // graph trust is a tiny PPR mass (~1e-4); scale ×1e6 into a usable log range for the Conviction signal.
+  if (f.key === "__graph_trust") return ln(num(row.graph_trust) * 1e6);
   switch (f.transform) {
     // address age: decays if idle, then WINSORIZED at SCALARS.addrAgeCap so pure longevity can't dominate (H2 lab).
-    case "age": return Math.min(SCALARS.addrAgeCap, ((tip - num(row.first_blk)) / SCALARS.blockScale) * addrDecay(row, tip));
-    case "span": return (num(row.last_blk) - num(row.first_blk)) / SCALARS.blockScale; // __span (address)
+    case "age": return Math.min(SCALARS.addrAgeCap, ((tip - num(row.first_block)) / SCALARS.blockScale) * addrDecay(row, tip));
+    case "span": return (num(row.last_block) - num(row.first_block)) / SCALARS.blockScale; // __span (address)
     case "linear": return num(row[f.key]) / 100;
     default: return ln(num(row[f.key])); // "log"
   }
@@ -75,7 +78,7 @@ function sumFactors(factors: Factor[], row: FeatureRow, tip: number): Scored {
 
 export function scoreAddress(row: Partial<AddressScoreRow>, tip: number): Scored {
   const s = sumFactors(ADDRESS_FACTORS, row as unknown as FeatureRow, tip);
-  if (num(row.last_blk) >= SCALARS.modernActiveBlock) { s.raw += SCALARS.modernActiveBonus; s.breakdown.modern = SCALARS.modernActiveBonus; }
+  if (num(row.last_block) >= SCALARS.modernActiveBlock) { s.raw += SCALARS.modernActiveBonus; s.breakdown.modern = SCALARS.modernActiveBonus; }
   return s;
 }
 
@@ -96,6 +99,16 @@ export function percentile(raw: number, a: Anchors): number {
 }
 export const addressScore = (raw: number) => Math.round(percentile(raw, ADDRESS_PCT));
 export const assetScore = (raw: number) => Math.round(percentile(raw, ASSET_PCT));
+
+/** Conviction — the "who holds it + how scarce" score, ORTHOGONAL to market (no trade/realized inputs).
+ *  Junk (low_quality) has zero conviction. Pairs with assetScore to surface undervalued grails (Conviction
+ *  high, market low). Uses the same config-driven scorer, so it shares factorValue/rawSqlExpr parity. */
+export function scoreConviction(row: Partial<AssetSignalsRow>): Scored {
+  if (num((row as unknown as FeatureRow).low_quality) === 1) return { raw: 0, breakdown: {} };
+  return sumFactors(CONVICTION_FACTORS, row as unknown as FeatureRow, 0);
+}
+export const convictionScore = (raw: number) => Math.round(percentile(raw, CONVICTION_PCT));
+export { CONVICTION_FACTORS };
 
 // Asset quality tier (the primary display). state: "market" = ever traded/dispensed (ranked into a tier);
 // "held" = issued & held but no market (Untraded); "none" = no holders (Dormant). Tiers cut on raw.
@@ -133,14 +146,15 @@ export function rawSqlExpr(factors: Factor[], tip: number): string {
     if (!f.weight || f.key === "xcp") continue;
     const w = f.weight, B = SCALARS.blockScale;
     const aDk = `MAX(${SCALARS.assetDecayFloor},${SCALARS.assetDecayHalflife}.0/(${SCALARS.assetDecayHalflife}.0+COALESCE(recency_blocks,0)))`; // asset staleness decay
-    const adDk = `MAX(${SCALARS.addrDecayFloor},${SCALARS.addrDecayHalflife}.0/(${SCALARS.addrDecayHalflife}.0+MAX(0,${tip}-COALESCE(last_blk,${tip}))))`; // address idle decay
+    const adDk = `MAX(${SCALARS.addrDecayFloor},${SCALARS.addrDecayHalflife}.0/(${SCALARS.addrDecayHalflife}.0+MAX(0,${tip}-COALESCE(last_block,${tip}))))`; // address idle decay
     if (f.key === "__realized_usd") terms.push(`${w}*LN(1+MAX(0,COALESCE(max_realized_usd,0)))*((COALESCE(distinct_traders,0)+COALESCE(distinct_dispense_buyers,0))*1.0/(COALESCE(distinct_traders,0)+COALESCE(distinct_dispense_buyers,0)+3.0))`);
     else if (f.key === "__trades_per_holder") terms.push(`${w}*LN(1+MAX(0,COALESCE(trades,0)*1.0/NULLIF(holders,0)))`);
     else if (f.key === "__asset_age") terms.push(`${w}*(COALESCE(age_blocks,0)/${B}.0)*${aDk}`);
     else if (f.key === "__durability") terms.push(`${w}*((COALESCE(last_trade_blk,0)-COALESCE(first_trade_blk,0))/${B}.0)*(COALESCE(distinct_traders,0)*1.0/(COALESCE(distinct_traders,0)+3.0))*${aDk}`);
     else if (f.key === "__circulating_scarcity") terms.push(`${w}*(CASE WHEN COALESCE(supply,0)<=0 THEN 0 ELSE ${SCALARS.scarcityOffset} - LN(MAX(1.0,COALESCE(supply,0)*(100-COALESCE(burned_pct,0))/100.0))/LN(10) END)`);
-    else if (f.transform === "age") terms.push(`${w}*MIN(${SCALARS.addrAgeCap},((${tip}-COALESCE(first_blk,${tip}))/${B}.0)*${adDk})`); // age transform winsorized (mirrors score.ts Math.min)
-    else if (f.transform === "span") terms.push(`${w}*((COALESCE(last_blk,0)-COALESCE(first_blk,0))/${B}.0)`);
+    else if (f.key === "__graph_trust") terms.push(`${w}*LN(1+MAX(0,COALESCE(graph_trust,0)*1000000.0))`);
+    else if (f.transform === "age") terms.push(`${w}*MIN(${SCALARS.addrAgeCap},((${tip}-COALESCE(first_block,${tip}))/${B}.0)*${adDk})`); // age transform winsorized (mirrors score.ts Math.min)
+    else if (f.transform === "span") terms.push(`${w}*((COALESCE(last_block,0)-COALESCE(first_block,0))/${B}.0)`);
     else if (f.transform === "linear") terms.push(`${w}*(COALESCE(${f.key},0)/100.0)`);
     else terms.push(`${w}*LN(1+MAX(0,COALESCE(${f.key},0)))`);
   }

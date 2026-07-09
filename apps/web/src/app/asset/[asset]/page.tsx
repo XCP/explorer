@@ -12,7 +12,7 @@ import { ContextBand } from "@/components/context-band";
 import { HolderMakeup } from "@/components/holder-makeup";
 import { PendingActions } from "@/components/pending-actions";
 import { GraphTrustChip } from "@/components/graph-trust-chip";
-import { collectionLabel, commas, short, timeAgo, usdCompact } from "@/lib/format";
+import { collectionLabel, commas, compact, short, timeAgo, usdCompact } from "@/lib/format";
 
 // Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
 // Returns null on 404 — only the PAGE calls notFound() (notFound() inside generateMetadata renders
@@ -53,7 +53,13 @@ function assetStats(item: AssetDetail): SectionStat[] {
   const stats: SectionStat[] = [];
   if (item.quality) stats.push({ label: "Score", value: item.quality.score ?? "—", detail: item.quality.tier });
   stats.push({ label: "Holders", value: commas(item.holder_count) });
-  stats.push({ label: "Supply", value: commas(item.supply_normalized), detail: item.locked ? "locked" : undefined });
+  // Circulating = supply − burned (the derived circulating_normalized when present, else compute it).
+  // Compacted (100B, 3.4M) since headline magnitude beats exactness; the exact total lives in Asset info.
+  const circulating = item.circulating_normalized
+    ?? (item.supply_normalized != null && item.burned_normalized != null
+      ? Number(item.supply_normalized) - Number(item.burned_normalized)
+      : item.supply_normalized);
+  stats.push({ label: "Circulating", value: compact(circulating), detail: item.locked ? "locked" : undefined });
   if (item.sales?.realized_usd != null) {
     stats.push({ label: "Realized", value: usdCompact(item.sales.realized_usd), detail: "lifetime" });
   }
@@ -96,8 +102,12 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
     item.supply_normalized != null ? `${commas(item.supply_normalized)} supply` : null,
   ].filter(Boolean).join(" · ");
 
-  // v19 overview: pending (transient) above the .mag grid — museum plate left, fact card +
-  // holder-makeup card right. Nothing else.
+  // Market data card renders only when the asset actually trades (a price, a sale, or realized value);
+  // untraded assets skip the box entirely rather than show empty rows.
+  const hasMarket = market?.last_price != null || item.sales?.last_sale_usd != null || item.sales?.realized_usd != null;
+
+  // v19 overview: pending (transient) above the .mag grid — museum plate left, then the stacked
+  // right column: Asset info, Market data (when traded), Holder makeup.
   const overview = (
     <>
       <PendingActions asset={item.asset} />
@@ -111,27 +121,46 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
         </div>
         <div className="magcol">
           <div className="card factcard">
+            <h2>Asset info</h2>
             <div className="body">
               <div className="row"><span className="k">Issuer</span><span className="amt mono">{item.issuer ? <Link href={`/address/${item.issuer}`}>{short(item.issuer)}</Link> : "—"}</span></div>
-              {collection && <div className="row"><span className="k">Collection</span><span className="amt"><Link href={`/tag/${encodeURIComponent(collection)}`}>{collectionLabel(collection)}</Link></span></div>}
-              <div className="row"><span className="k">Supply</span><span className="amt mono">{commas(item.supply_normalized)}{item.locked ? <> <span className="time">locked</span></> : null}</span></div>
-              {market?.last_price != null && <div className="row"><span className="k">Price</span><span className="amt mono">{commas(market.last_price)} XCP</span></div>}
-              {item.sales?.last_sale_usd != null && <div className="row"><span className="k">Last sale</span><span className="amt mono">{usdCompact(item.sales.last_sale_usd)} <span className="time">{timeAgo(item.sales.last_sale_time)}</span></span></div>}
-              {item.sales?.realized_usd != null && <div className="row"><span className="k">Realized</span><span className="amt mono">{usdCompact(item.sales.realized_usd)} <span className="time">lifetime</span></span></div>}
+              {item.owner && item.owner !== item.issuer && <div className="row"><span className="k">Owner</span><span className="amt mono"><Link href={`/address/${item.owner}`}>{short(item.owner)}</Link></span></div>}
+              <div className="row"><span className="k">Issued</span><span className="amt mono">{commas(item.supply_normalized)}{item.locked ? <> <span className="time">locked</span></> : null}</span></div>
+              {item.burned_normalized != null && Number(item.burned_normalized) > 0 && <div className="row"><span className="k">Burned</span><span className="amt mono">{commas(item.burned_normalized)}</span></div>}
+              {item.escrow_normalized != null && Number(item.escrow_normalized) > 0 && <div className="row"><span className="k">Escrow</span><span className="amt mono">{commas(item.escrow_normalized)} <span className="time">for sale</span></span></div>}
             </div>
           </div>
+          {hasMarket && (
+            <div className="card">
+              <h2>Market data</h2>
+              <div className="body">
+                {market?.last_price != null && <div className="row"><span className="k">Price</span><span className="amt mono">{commas(market.last_price)} XCP</span></div>}
+                {item.sales?.last_sale_usd != null && <div className="row"><span className="k">Last sale</span><span className="amt mono">{usdCompact(item.sales.last_sale_usd)} <span className="time">{timeAgo(item.sales.last_sale_time)}</span></span></div>}
+                {item.sales?.realized_usd != null && <div className="row"><span className="k">Realized</span><span className="amt mono">{usdCompact(item.sales.realized_usd)} <span className="time">lifetime</span></span></div>}
+              </div>
+            </div>
+          )}
           <HolderMakeup asset={item.asset} />
         </div>
       </div>
     </>
   );
 
+  // Subasset H1: link the top-level (parent) segment home. A subasset displays as PARENT.CHILD (its
+  // longname); the part before the first dot is the owning named asset with its own page. Non-subassets
+  // (no dot) render as plain text. The parent link inherits the H1 colour until hover (see .sh-name a).
+  const displayName = item.asset_longname || item.asset;
+  const dot = displayName.indexOf(".");
+  const nameNode = dot > 0
+    ? <><Link href={`/asset/${encodeURIComponent(displayName.slice(0, dot))}`}>{displayName.slice(0, dot)}</Link>{displayName.slice(dot)}</>
+    : displayName;
+
   return (
     <>
       <SectionHeader flush>
         <SectionIdentity
           visual={<img className="icon" src={`https://cdn.xcp.io/img/icon/${encodeURIComponent(item.asset)}`} alt="" />}
-          name={item.asset_longname || item.asset}
+          name={nameNode}
           chips={<>
             {item.tags?.includes("grail") && <SectionChip variant="grail">GRAIL</SectionChip>}
             <GraphTrustChip kind="assets" id={item.asset} />

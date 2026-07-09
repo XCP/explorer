@@ -77,7 +77,7 @@ function useTabOverflow(tabCount: number) {
 // no card wrapper; the overview content brings its own cards. Works with server-rendered nodes:
 // the RSC page passes the ReactNode across the client boundary as a prop.
 // `banner` (optional, inBand only) renders between the tab-bar band and the panel — the v19
-// contextual band slot; it persists across tabs.
+// contextual band slot; it shows ONLY while the Overview tab is active (current === null).
 // `context` is the page subject (asset/address) — RecordTable suppresses the columns the page
 // already answers and signs quantities from the subject's perspective (R4).
 export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, banner, context }: {
@@ -174,7 +174,7 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
         <div className="section-head flow-root w-screen ml-[calc(50%-50vw)] !mt-0">
           <div className="sh-in" style={{ paddingTop: 0, paddingBottom: 0 }}>{bar}</div>
         </div>
-        {banner}
+        {current === null && banner}
         <div className="panel">{panelBody}</div>
       </>
     );

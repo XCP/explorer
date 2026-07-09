@@ -30,7 +30,7 @@ export const SCALARS = {
   // Staleness DECAY (2026-06-28): legacy time-terms are multiplied by halflife/(halflife+inactive_blocks),
   // floored — so an aged-but-inactive entity decays toward dormant instead of coasting. Gentle ("starts to
   // decay"): ~half credit after the half-life, never below the floor. Assets decay on time-since-last-trade
-  // (recency_blocks); addresses on time-since-last-activity (tip-last_blk).
+  // (recency_blocks); addresses on time-since-last-activity (tip-last_block).
   assetDecayHalflife: 420480, assetDecayFloor: 0.6,  // ~8 years, gentle — assets are durable stores; a quiet
   //                                                     year shouldn't knock a real grail (RAREPEPE) off Bluechip
   addrDecayHalflife: 157680,  addrDecayFloor: 0.2,   // ~3 years — people go inactive; idle OGs should decay more
@@ -42,7 +42,7 @@ export const SCALARS = {
 };
 
 /* ---------- ADDRESS reputation ---------- */
-// raw = Σ weight·transform(signal) (+ modern bonus). __age/__span use first_blk/last_blk.
+// raw = Σ weight·transform(signal) (+ modern bonus). __age/__span use first_block/last_block.
 export const ADDRESS_FACTORS: Factor[] = [
   { key: "__age",           weight: 2.0, transform: "age",    label: "age",       why: "longevity on-chain — transform CAPPED at SCALARS.addrAgeCap ('was early' ≠ 'is reputable'; H2 lab 2026-06-27)" },
   { key: "__span",          weight: 1.0, transform: "span",   label: "span",      why: "active lifespan, not just early arrival" },
@@ -130,6 +130,26 @@ export const ASSET_FACTORS: Factor[] = [
   { key: "pct_creator_holders", weight: 0.5, transform: "linear", label: "creators",    why: "held by proven creators" },
 ];
 export const ASSET_PENALTY = { lowQuality: -6.0 }; // wash/bridge/curated junk
+
+/* ---------- CONVICTION (2026-07-09) — WHO holds it, deliberately ORTHOGONAL to market/realized value ----------
+// The dislocation engine: the asset-quality score above answers "what has the market PAID for this?"; Conviction
+// answers "who HOLDS it, and how scarce is it?" — with ZERO trade/realized/volume inputs. When Conviction is high
+// but realized value is low → an undervalued / undiscovered grail (the smart money holds it, the market hasn't
+// priced it). When market ≫ conviction → a pumped shell. Same signals as the community axis, promoted and
+// isolated from the market family. NOT gameable the way volume is: you can't fake being held by proven creators
+// and active traders across a scarce supply. Radar surface ranks by Conviction with realized value held low. */
+export const CONVICTION_FACTORS: Factor[] = [
+  { key: "avg_holder_dex",        weight: 2.0, transform: "log",    label: "sophistication", why: "held by active DEX traders — a sophisticated holder base, not passive airdrop wallets" },
+  { key: "pct_creator_holders",   weight: 1.5, transform: "linear", label: "creator_held",   why: "held by proven creators — peer validation from people who make things" },
+  { key: "__circulating_scarcity", weight: 1.5, transform: "linear", label: "scarcity",      why: "genuinely scarce circulating supply (burn-adjusted) — a small real float" },
+  { key: "holder_breadth",        weight: 1.0, transform: "log",    label: "holder_depth",   why: "held by DEEP collectors (avg holdings-breadth of its holders) — serious collections, not one-offs" },
+  { key: "__graph_trust",         weight: 1.0, transform: "log",    label: "network",        why: "sits in the trusted collector/creator network (graph trust) — provenance, not stats" },
+  { key: "holders",               weight: 0.5, transform: "log",    label: "distribution",   why: "distributed to real holders (breadth), not a single wallet" },
+  { key: "top1_pct",              weight: -0.6, transform: "linear", label: "concentration",  why: "PENALTY: dominated by one whale = not broad conviction, one holder can dump it" },
+];
+// raw→0-100 anchors. Calibrated over 155k scored assets (low_quality=0, holders≥1): median 5.0, p90 17.6,
+// p99 25.6, max 31.2. A big cluster sits at ~5 (scarcity-only baseline for held-but-quiet cards) — floor 2.
+export const CONVICTION_PCT = { floor: 2.0, p50: 5.0, p90: 17.6, p99: 25.6, max: 31.5 };
 
 /* ---------- output mapping ---------- */
 // raw -> 0-100 percentile via piecewise-linear anchors. RECALIBRATE from /v2/reputation/review after any

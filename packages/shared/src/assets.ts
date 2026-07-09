@@ -62,13 +62,17 @@ export interface AssetDetail {
   supply_normalized: string | null;
   burned?: string;
   burned_normalized?: string;
+  // escrow = supply locked in open dispensers + open DEX orders (debited from balances, held by no address)
+  escrow?: string;
+  escrow_normalized?: string;
   circulating?: string;
   circulating_normalized?: string;
   holder_count: number;
   quality?: AssetQuality;
   tags?: string[];
   sales?: AssetSales;
-  collection?: string | null; // curated collection tag (tags.source='collection'), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
+  collection?: string | null; // collection tag (pepe.wtf source='collection' or tokenscan), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
+  collection_site?: string | null; // project site when the collection came from the tokenscan directory (its meta.site)
   feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
 }
 
@@ -113,9 +117,13 @@ export interface AssetListRow {
   first_issuance_block_index: number | null;
 }
 
+/** The single most-specific classification of an asset holder, for the holders-table badge. Custody
+ *  labels win over behavior; behavior buckets are mutually exclusive by threshold. Absent = plain holder. */
+export type HolderRole = "burn" | "exchange" | "vault" | "deposit" | "service" | "creator" | "whale" | "collector";
+
 /** Balance rows. Two read shapes share this:
  *   - GET /v2/addresses/:a/balances → asset/quantity + divisible/asset_longname/stamp
- *   - GET /v2/assets/:a/balances    → holder/holder_type/quantity + is_burn/is_exchange
+ *   - GET /v2/assets/:a/balances    → holder/holder_type/quantity + role
  *  Fields not selected by a given endpoint are simply absent (hence optional). Mirror: balances. */
 export interface BalanceRow {
   asset: string;
@@ -124,8 +132,7 @@ export interface BalanceRow {
   // asset-scoped (holders of an asset)
   holder?: string;
   holder_type?: "address" | "utxo";
-  is_burn?: 0 | 1;
-  is_exchange?: 0 | 1;
+  role?: HolderRole | null;
   // address-scoped (an address's holdings)
   divisible?: 0 | 1 | null;
   asset_longname?: string | null;
