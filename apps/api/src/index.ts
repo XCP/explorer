@@ -9,7 +9,7 @@
  */
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { syncEvents } from "./indexer/sync";
+import { syncEvents, backfillLedger } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
@@ -164,6 +164,17 @@ export default {
       try { const r = await syncEvents(env, { maxEvents: 10000 }); caughtUp = !!r?.caught_up; } catch (e) { console.error("syncEvents", e); }
       // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
       if (caughtUp) {
+        // One-off historical credit/debit ledger backfill (migration 0038): while indexer_state
+        // 'ledger_backfill_active'='1', walk a bounded batch of the event stream and insert only CREDIT/DEBIT
+        // rows (isolated — never touches balances/mirror/signals, so no contention risk). Runs FIRST so it gets
+        // tick budget; clears the flag when caught up. Grinds through history over a day or two, hands-free.
+        try {
+          const bf = await env.DB.prepare("SELECT value FROM indexer_state WHERE key='ledger_backfill_active'").first<{ value: string }>();
+          if (bf?.value === "1") {
+            const r = await backfillLedger(env, { maxEvents: 10000 });
+            if (r.caught_up) await env.DB.prepare("UPDATE indexer_state SET value='0' WHERE key='ledger_backfill_active'").run();
+          }
+        } catch (e) { console.error("backfillLedger", e); }
         // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).
         // Returns needs_backfill until the first full rebuild cycle completes and anchors the cursor at tip.
         // Its return carries the dirty entity sets, which we reuse for the scoped tag rebuild below (one
