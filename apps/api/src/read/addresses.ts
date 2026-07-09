@@ -13,14 +13,14 @@ import {
 
 export const addresses = router();
 
-// Real-user population filter shared by every reputation-tier read: excludes infrastructure (exchange /
-// deposit / burn / vault / service), then keeps anyone who HOLDS an asset or has done something on-chain.
-// NOTE: we deliberately do NOT gate on first_block. first_block is derived only from the sends table
-// (signals.ts addr_send_in/out), so a dispense-buyer or issuer who never *sent* an asset has a NULL
-// first_block — ~65k real users (mostly collectors who bought a card from a dispenser) were wrongly
-// excluded by that gate. Holding a real asset is history; that's enough to be scored. Fixed predicate
-// over address_signals columns — never user input, so safe to interpolate into the WHERE.
-const NOT_INFRA = `is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 AND (assets_held>0 OR survived_assets>0 OR dex_trades>0 OR dispenses>0 OR btc_fees>0 OR assets_issued>0 OR dividends>0)`;
+// Real-user population filter shared by every reputation-tier read. The ONLY thing that isn't a real
+// user is infrastructure (exchange / deposit / burn / vault / service). EVERYTHING ELSE that we know
+// about appeared on-chain doing SOMETHING — received or sent an asset, bought from a dispenser, created
+// one, issued, traded — and therefore has history. "No history" is a contradiction: if it were truly
+// historyless we wouldn't have a row for it. So the gate is "not infrastructure AND has any on-chain
+// footprint": a comprehensive first_block (any appearance — see signals.ts addr_*_seen builders), send
+// peers, BTC spent, a holding, or any earned signal. This collapses the old "no history" bucket to ~0.
+const NOT_INFRA = `is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 AND (first_block IS NOT NULL OR in_peers>0 OR out_peers>0 OR COALESCE(btc_spent,0)>0 OR assets_held>0 OR survived_assets>0 OR dex_trades>0 OR dispenses>0 OR btc_fees>0 OR assets_issued>0 OR dividends>0)`;
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
   const result = await listBalances(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });

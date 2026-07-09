@@ -144,6 +144,14 @@ const UNITS: FeatureUnit[] = [
       SELECT tx0_address a, block_index b FROM order_matches WHERE tx0_address IS NOT NULL
       UNION ALL SELECT tx1_address, block_index FROM order_matches WHERE tx1_address IS NOT NULL
     ) GROUP BY a ON CONFLICT(address) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
+  // dispenser CREATORS — someone who opened a dispenser (source = the dispenser box, origin = the human
+  // funder) but whose dispenser never sold has no dispense row, so this is their only appearance. Without
+  // it they'd read "no history" despite having set up a shop on-chain.
+  { name: "addr_dispenser_seen", scope: "address", reads: ["dispensers"], periodic: true,
+    full: `INSERT INTO address_signals (address,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
+      SELECT source a, block_index b FROM dispensers WHERE source IS NOT NULL
+      UNION ALL SELECT origin, block_index FROM dispensers WHERE origin IS NOT NULL
+    ) GROUP BY a ON CONFLICT(address) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
 
   // ===== ADDRESS · dispenser economics (from dispenses) =====
   // MERCHANT ATTRIBUTION TO THE CREATOR (Phase B addendum): dispense revenue is credited to the human operator

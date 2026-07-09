@@ -189,12 +189,12 @@ test("contract: GET /v2/vaults — VaultsPayload", async (t) => {
   const p = (await getJson("/v2/vaults")).result;
   assert.ok(p && typeof p === "object", "vaults.result must be an object");
   if (p.summary !== null) {
-    assertShape(p.summary, { vault_records: "number", funded_vaults: "number", assets_vaulted: "number", funders: "number", crackers: "number" }, "vaults.summary.");
+    assertShape(p.summary, { total_vaults: "number", counterparty_vaults: "number", foreign_vaults: "number", funded_vaults: "number", scam_shells: "number", sales: "number", realized_usd: "number" }, "vaults.summary.");
   }
   assertRows(p.top_assets, { asset: "string", asset_longname: "string|null", vaults: "number" }, "vaults.top_assets");
   assertRows(p.top_funders, { address: "string", vaults: "number" }, "vaults.top_funders");
   assertRows(p.top_crackers, { address: "string", vaults: "number" }, "vaults.top_crackers");
-  assertRows(p.activity, { t: "number", v: "number" }, "vaults.activity");
+  assertRows(p.sales_activity, { t: "number", v: "number" }, "vaults.sales_activity");
 });
 
 test("contract: GET /v2/mempool — MempoolActionRow envelope (may be empty)", async (t) => {
