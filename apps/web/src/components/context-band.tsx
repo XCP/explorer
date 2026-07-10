@@ -29,20 +29,16 @@ export function ContextBand({ detail, collectionAssets }: {
     const label = collectionLabel(detail.collection);
     return (
       <div className="ctxband collection">
-        {/* "Part of" reads as the lead on desktop and as an eyebrow on mobile — it frames what the band means. */}
-        <span className="cb-eyebrow">Part of</span>
-        {/* The name IS the project link: its own site when we have one (else our collection page). */}
-        <b className="cb-name">
-          {site
-            ? <a href={site} target="_blank" rel="noopener noreferrer">{label} ↗</a>
-            : <Link href={tagHref}>{label}</Link>}
-        </b>
-        {hasSC && <span className="cb-sc">Series {detail.collection_series} · Card {detail.collection_card}</span>}
-        <span className="cb-flow">
-          {collectionAssets != null && <span className="cb-count">{commas(collectionAssets)} cards</span>}
-          {collectionAssets != null && <span className="cb-dot">·</span>}
-          <Link className="cb-view" href={tagHref}>View collection →</Link>
+        {/* One bold phrase, "Part of <Name>", where the name is the only link — its own site when we have one,
+            else our collection page. Series/card + the collection size trail in muted text. */}
+        <span className="msg">
+          <b>Part of {site
+            ? <a href={site} target="_blank" rel="noopener noreferrer">{label}</a>
+            : <Link href={tagHref}>{label}</Link>}</b>
+          {hasSC && <span> · Series {detail.collection_series} · Card {detail.collection_card}</span>}
+          {collectionAssets != null && <span> · {commas(collectionAssets)} cards in collection</span>}
         </span>
+        <Link className="cb-view" href={tagHref}>View collection →</Link>
       </div>
     );
   }

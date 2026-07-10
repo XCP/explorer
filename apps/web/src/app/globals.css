@@ -142,26 +142,18 @@ body {
 .ctxband { border:1px solid; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .ctxband .msg b { font-weight:600; }
 .ctxband a { margin-left:auto; font-weight:600; white-space:nowrap; }
-/* collection band — refined inline on desktop, centered placard on mobile (design-lab options 1 + 3) */
-.ctxband.collection { border-color:#1d7f42; background:rgba(22,101,52,.12); color:#86efac; gap:6px 12px; }
-.ctxband.collection a { color:#86efac; margin-left:0; }   /* reset the shared .ctxband a margin-left:auto */
+/* collection band — the original one-line phrase: "Part of <Name> · Series · N cards in collection" then the
+   View link right. The name is the only link (its own site if we have one, else our collection page). */
+.ctxband.collection { border-color:#1d7f42; background:rgba(22,101,52,.12); color:#86efac; }
+.ctxband.collection .msg b { font-weight:650; }
+.ctxband.collection .msg span { color:#6bbc85; }                 /* muted tail: series/card + count */
+.ctxband.collection .msg a { margin-left:0; color:inherit; }     /* name link: inline in the bold phrase */
+.ctxband.collection .msg a:hover { color:#bbf7d0; }
+.ctxband.collection a { color:#86efac; }
 .ctxband.collection a:hover { color:#bbf7d0; }
-.ctxband.collection .cb-eyebrow { color:#6bbc85; }   /* "Part of" — a muted inline lead on desktop */
-.ctxband.collection .cb-name { font-weight:650; }
-.ctxband.collection .cb-sc { font-family:var(--mono); color:#6bbc85; font-size:.92em; font-variant-numeric:tabular-nums; }
-.ctxband.collection .cb-flow { display:contents; }        /* desktop: count sits left, link cluster pushes right */
-.ctxband.collection .cb-count { color:#6bbc85; font-variant-numeric:tabular-nums; }
-.ctxband.collection .cb-count::before { content:"·"; color:#1d7f42; margin-right:8px; }
-.ctxband.collection .cb-dot { display:none; }
-.ctxband.collection .cb-flow a:first-of-type { margin-left:auto; }  /* right-hand link cluster (site/view) */
-@media (max-width:560px){
-  .ctxband.collection { flex-direction:column; align-items:center; text-align:center; gap:5px; }
-  .ctxband.collection .cb-eyebrow { display:block; font:600 10px/1 var(--mono); letter-spacing:.15em; text-transform:uppercase; color:#6bbc85; }
-  .ctxband.collection .cb-name { font-size:1.2em; }
-  .ctxband.collection .cb-flow { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
-  .ctxband.collection .cb-count::before { content:none; }
-  .ctxband.collection .cb-dot { display:inline; color:#1d7f42; }
-  .ctxband.collection .cb-flow a:first-of-type { margin-left:0; }
+@media (max-width:560px){   /* phones: center the phrase, drop the View link below it */
+  .ctxband.collection { flex-direction:column; align-items:center; text-align:center; gap:6px; }
+  .ctxband.collection a.cb-view { margin-left:0; }
 }
 .ctxband.integrity { border-color:#8a6420; background:rgba(120,86,27,.12); color:var(--amber); }
 .ctxband.integrity .msg span { color:#c9a94f; }
