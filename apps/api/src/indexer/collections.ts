@@ -24,6 +24,16 @@ const PEPEWTF: Record<string, string> = {
 
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+// Same collection curated under two feed slugs (pepe.wtf vs tokenscan) → one canonical tag, so the /collections
+// list stops showing dupes and volume isn't double-counted. Applied in BOTH crawlers (collections + tokenscan)
+// so neither can re-create a duplicate. Keys are the slugs each feed would otherwise emit; value is canonical.
+const CANONICAL: Record<string, string> = {
+  "dank-rare": "dank-directory", // pepe.wtf "Dank Rares"  ≡ tokenscan "Dank Directory"
+  "fake-common": "fake-commons", // pepe.wtf "Fake Commons" (we slugged singular) ≡ tokenscan "Fake Commons"
+  "bitcorns": "bitcorn",         // tokenscan "Bitcorns"    ≡ pepe.wtf/curated "Bitcorn"
+};
+export const canonicalCollection = (tag: string): string => CANONICAL[tag] ?? tag;
+
 interface Member {
   name: string;
   series: number | null;
@@ -59,7 +69,8 @@ async function fetchMembers(slug: string): Promise<Member[]> {
 
 export async function crawlCollections(env: Env): Promise<Record<string, unknown>> {
   const out: { collections: Record<string, string | number>; artists?: number; total_collection_tags?: number } = { collections: {} };
-  for (const [slug, tag] of Object.entries(PEPEWTF)) {
+  for (const [slug, rawTag] of Object.entries(PEPEWTF)) {
+    const tag = canonicalCollection(rawTag);
     let members: Member[];
     try { members = await fetchMembers(slug); }
     catch (e) { out.collections[tag] = `err:${String(e).slice(0, 40)}`; continue; }
