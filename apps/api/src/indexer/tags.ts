@@ -61,6 +61,11 @@ const ASSET_RULES: Rule[] = [
   { tag: "durable",  key: "asset", sql: `SELECT 'asset',asset,'durable','computed' FROM asset_signals WHERE (last_trade_blk-first_trade_blk)>=43800` },
   { tag: "broad",    key: "asset", sql: `SELECT 'asset',asset,'broad','computed' FROM asset_signals WHERE holders>=50` },
   { tag: "vaulted",  key: "asset", sql: `SELECT 'asset',asset,'vaulted','computed' FROM asset_signals WHERE asset IN (SELECT b.asset FROM emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND CAST(b.quantity AS INTEGER)>0)` },
+  // Provenance — Counterparty predates the Ethereum NFT era. Immutable (first issuance never moves); the BTC
+  // block cutoffs are the milestone dates: pre-ethereum = before ETH genesis 2015-07-30 (blk 367561);
+  // pre-cryptopunks = before CryptoPunks V1 2017-06-09 (blk 470436). Read from the assets table, not signals.
+  { tag: "pre-ethereum",    key: "asset", sql: `SELECT 'asset',asset,'pre-ethereum','computed' FROM assets WHERE first_issuance_block_index<367561` },
+  { tag: "pre-cryptopunks", key: "asset", sql: `SELECT 'asset',asset,'pre-cryptopunks','computed' FROM assets WHERE first_issuance_block_index<470436` },
 ];
 // NOTE: `has_media` (asset has real art in the CDN) is NOT computed here — it's a persistent tag with
 // source='media', written directly by the xcp-cdn ingest when it stores art (and backfilled once from the
@@ -81,6 +86,9 @@ const COMPUTED_RULES: Rule[] = [...ADDR_RULES, ...ASSET_RULES, ...ASSET_TYPE_RUL
 // intrinsic asset-type tags + protocol/curated/manual/collection/media tags untouched).
 const ADDR_BEHAVIORAL_TAGS = ADDR_RULES.map((r) => `'${r.tag}'`).join(",");
 const ASSET_BEHAVIORAL_TAGS = ASSET_RULES.map((r) => `'${r.tag}'`).join(",");
+// Intrinsic asset-type tags — immutable once issued (an asset's type never changes). The behavioral-only
+// rebuild leaves these in place instead of churning ~254k rows every daily self-heal (58% of all computed tags).
+const ASSET_TYPE_TAGS = ASSET_TYPE_RULES.map((r) => `'${r.tag}'`).join(",");
 
 // Curated grail labels (source='curated') now live in the `curated` table (kind='grail', migration 0022),
 // editable via /admin/curated. They are the validation anchors — known-iconic assets, the ground truth we
@@ -100,14 +108,29 @@ async function tipBlock(env: Env): Promise<number> {
 /**
  * FULL self-healing rebuild (canonical): drop every computed tag and re-derive from the rules. Curated /
  * protocol / manual / collection / media tags (other `source` values) are left untouched. Idempotent.
+ *
+ * `includeTypes` (default true) governs the intrinsic asset-type tags (named/subasset/numeric). They're
+ * immutable — an asset's type never changes — and are seeded per-issuance by buildTagsScoped, so the frequent
+ * daily self-heal passes `false` to skip re-deriving all ~254k of them (a full `assets` scan + DELETE churn
+ * every run). The on-demand admin rebuild keeps the default (true) to re-seed them as ground truth.
  */
-export async function buildTags(env: Env): Promise<Record<string, unknown>> {
+export async function buildTags(env: Env, opts: { includeTypes?: boolean } = {}): Promise<Record<string, unknown>> {
+  const { includeTypes = true } = opts;
   const tip = await tipBlock(env);
-  // refresh computed tags only (leave curated/manual/protocol/collection/media intact)
-  await env.DB.prepare(`DELETE FROM tags WHERE source='computed'`).run();
+  // refresh computed tags only (leave curated/manual/protocol/collection/media intact). Behavioral-only runs
+  // also leave the immutable asset-type tags in place.
+  // Per-rule ATOMIC swap instead of a global DELETE-then-rebuild: for each computed tag, delete its prior rows
+  // and re-derive them in ONE D1 batch (a transaction). No computed tag is ever empty mid-run, and a crash
+  // between rules leaves every not-yet-processed tag at its prior value — the set is never globally wiped.
+  // (includeTypes=false simply omits the immutable asset-type rules, so those tags are never touched.)
+  const rulesToRun = includeTypes ? COMPUTED_RULES : [...ADDR_RULES, ...ASSET_RULES];
   let rules = 0;
-  for (const r of COMPUTED_RULES) {
-    await env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql.replace(/\{TIP\}/g, String(tip))}`).run();
+  for (const r of rulesToRun) {
+    const insert = `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql.replace(/\{TIP\}/g, String(tip))}`;
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM tags WHERE source='computed' AND tag=?`).bind(r.tag),
+      env.DB.prepare(insert),
+    ]);
     rules++;
   }
   // upsert curated grail labels from the curated table (source='curated'; idempotent)
