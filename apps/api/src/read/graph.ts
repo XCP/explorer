@@ -23,14 +23,14 @@ const clampLimit = (v: string | undefined, def: number, max: number) => Math.min
 
 graph.get("/v2/graph/address/:address", async (c) => {
   const address = c.req.param("address");
-  const { nodes, edges } = await addressEgo(c.env.DB, address, clampLimit(c.req.query("limit"), 60, 200));
-  return J(c, { result: { center: address, scope: "address-ego", nodes, edges } as GraphSubgraph }, 120);
+  const { nodes, edges, stats } = await addressEgo(c.env.DB, address, clampLimit(c.req.query("limit"), 60, 200));
+  return J(c, { result: { center: address, scope: "address-ego", nodes, edges, stats } as GraphSubgraph }, 120);
 });
 
 graph.get("/v2/graph/asset/:asset", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const { nodes, edges } = await assetHolders(c.env.DB, asset, clampLimit(c.req.query("limit"), 80, 300));
-  return J(c, { result: { center: asset, scope: "asset-holders", nodes, edges } as GraphSubgraph }, 120);
+  const { nodes, edges, stats } = await assetHolders(c.env.DB, asset, clampLimit(c.req.query("limit"), 80, 300));
+  return J(c, { result: { center: asset, scope: "asset-holders", nodes, edges, stats } as GraphSubgraph }, 120);
 });
 
 graph.get("/v2/reputation/graph", (c) =>

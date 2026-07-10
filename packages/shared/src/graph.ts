@@ -18,16 +18,28 @@ export interface GraphNode {
   kind: "address" | "asset";
   label: string;
   weight: number;
-  center?: boolean; // the queried entity, for styling
+  center?: boolean;  // the queried entity, for styling
+  cluster?: number;  // connected-component id among the peripheral nodes; -1 = independent (no interlinks)
 }
 export interface GraphEdge {
   source: string;
   target: string;
   weight: number;
+  spoke?: boolean;   // center→peripheral (asset↔holder) vs a peripheral↔peripheral interaction edge
+}
+/** The diagnostic the graph is FOR: how interconnected the peripheral crowd is. High interconnected/largest
+ *  relative to total = a coordinated ring (sybil/wash/insider); ~0 = an independent, organic crowd. */
+export interface GraphStats {
+  peripheral: "holders" | "neighbours";
+  total: number;           // peripheral node count
+  interconnected: number;  // peripheral nodes that sit in a multi-node cluster
+  clusters: number;        // number of multi-node clusters
+  largest_cluster: number; // size of the biggest cluster
 }
 export interface GraphSubgraph {
   center: string;
   scope: "address-ego" | "asset-holders";
   nodes: GraphNode[];
   edges: GraphEdge[];
+  stats: GraphStats;
 }

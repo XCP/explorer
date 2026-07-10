@@ -1,45 +1,61 @@
 /**
  * Bounded sub-graph extraction for visualization — small, renderable slices of the address interaction graph
  * (graph_edges: directed, weighted src→dst, w = ln(1+interactions)) and the asset↔holder bipartite graph
- * (balances). Everything is capped to a node budget; the full graph (~650k nodes / 1.7M edges) is never
- * returned whole. Separate from queries/graph.ts (reputation scores) — this owns TOPOLOGY, that owns SCORES.
+ * (balances). The point is TOPOLOGY, not a table: for every scope we also pull the edges AMONG the peripheral
+ * nodes and cluster them, so a coordinated ring (holders/neighbours that all interact) reads at a glance while
+ * an organic, independent crowd stays a diffuse cloud. Capped to a node budget; the full graph is never whole.
  */
-import type { GraphNode, GraphEdge } from "@xcp/shared/graph";
+import type { GraphNode, GraphEdge, GraphStats } from "@xcp/shared/graph";
 import { q } from "../db";
 
-/** Addresses/assets are base58 / bech32 / uppercase-alnum — safe to inline in an IN(...) list once filtered
- *  to that charset, which sidesteps the bound-variable ceiling when the set is ~80 ids. */
 const inList = (ids: string[]) =>
   ids.filter((s) => /^[a-zA-Z0-9._]+$/.test(s)).map((s) => `'${s}'`).join(",") || "''";
 
-/** One address's ego-network: the center + its top-N neighbours by combined edge weight, plus every edge that
- *  runs among that node set (center↔neighbour spokes + neighbour interlinks). Two bounded reads. */
-export async function addressEgo(db: D1Database, addr: string, limit: number): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+/** Connected components over the peripheral node set (union-find). Returns a cluster id per node — but only
+ *  members of a multi-node component get a real cluster; isolated nodes get -1 (they're independent, the
+ *  healthy signal). Also returns the diagnostic stats the graph is FOR. */
+function cluster(ids: string[], edges: { source: string; target: string }[]): { clusterOf: Map<string, number>; stats: Omit<GraphStats, "peripheral"> } {
+  const parent = new Map(ids.map((i) => [i, i]));
+  const find = (x: string): string => { let r = x; while (parent.get(r) !== r) r = parent.get(r)!; while (parent.get(x) !== r) { const n = parent.get(x)!; parent.set(x, r); x = n; } return r; };
+  for (const e of edges) if (parent.has(e.source) && parent.has(e.target)) { const a = find(e.source), b = find(e.target); if (a !== b) parent.set(a, b); }
+  const size = new Map<string, number>();
+  for (const id of ids) { const r = find(id); size.set(r, (size.get(r) ?? 0) + 1); }
+  // assign cluster ids only to roots of multi-member components, largest first for stable colouring
+  const bigRoots = [...size.entries()].filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1]).map(([r]) => r);
+  const rootCluster = new Map(bigRoots.map((r, i) => [r, i]));
+  const clusterOf = new Map<string, number>();
+  for (const id of ids) clusterOf.set(id, rootCluster.get(find(id)) ?? -1);
+  const interconnected = ids.filter((id) => clusterOf.get(id)! >= 0).length;
+  const largest = bigRoots.length ? size.get(bigRoots[0])! : 0;
+  return { clusterOf, stats: { total: ids.length, interconnected, clusters: bigRoots.length, largest_cluster: largest } };
+}
+
+/** One address's ego-network: center + top-N neighbours, WITH neighbour↔neighbour interlinks, clustered so a
+ *  clique (a coordinated circle around the hub) stands out from a hub that merely bridges unrelated parties. */
+export async function addressEgo(db: D1Database, addr: string, limit: number): Promise<{ nodes: GraphNode[]; edges: GraphEdge[]; stats: GraphStats }> {
   const nbrs = await q<{ id: string; w: number }>(
     db,
-    `WITH nbr AS (
-       SELECT dst id, w FROM graph_edges WHERE src=?1
-       UNION ALL
-       SELECT src id, w FROM graph_edges WHERE dst=?1
-     )
+    `WITH nbr AS (SELECT dst id, w FROM graph_edges WHERE src=?1 UNION ALL SELECT src id, w FROM graph_edges WHERE dst=?1)
      SELECT id, ROUND(SUM(w),3) w FROM nbr WHERE id<>?1 GROUP BY id ORDER BY w DESC LIMIT ?2`,
     addr, limit
   );
-  const ids = [addr, ...nbrs.map((n) => n.id)];
-  const set = inList(ids);
-  const edges = await q<GraphEdge>(
-    db, `SELECT src source, dst target, ROUND(w,3) weight FROM graph_edges WHERE src IN (${set}) AND dst IN (${set})`);
-  const insum = await q<{ id: string; insum: number }>(db, `SELECT id, ROUND(insum,3) insum FROM graph_node WHERE id IN (${set})`);
-  const inById = new Map(insum.map((r) => [r.id, r.insum]));
-  const nodes: GraphNode[] = ids.map((id) => ({
-    id, kind: "address", label: id.slice(0, 8) + "…", weight: inById.get(id) ?? 0, center: id === addr,
-  }));
-  return { nodes, edges };
+  const peripheral = nbrs.map((n) => n.id);
+  const set = inList([addr, ...peripheral]);
+  const allEdges = await q<GraphEdge>(db, `SELECT src source, dst target, ROUND(w,3) weight FROM graph_edges WHERE src IN (${set}) AND dst IN (${set})`);
+  // interlinks = edges NOT touching the center → the diagnostic (do the neighbours know each other?)
+  const interlinks = allEdges.filter((e) => e.source !== addr && e.target !== addr);
+  const { clusterOf, stats } = cluster(peripheral, interlinks);
+  const wById = new Map(nbrs.map((n) => [n.id, n.w]));
+  const nodes: GraphNode[] = [
+    { id: addr, kind: "address", label: addr.slice(0, 8) + "…", weight: Math.max(...nbrs.map((n) => n.w), 1), center: true, cluster: -1 },
+    ...peripheral.map((id) => ({ id, kind: "address" as const, label: id.slice(0, 8) + "…", weight: wById.get(id) ?? 0, cluster: clusterOf.get(id) ?? -1 })),
+  ];
+  return { nodes, edges: allEdges, stats: { ...stats, peripheral: "neighbours" } };
 }
 
-/** One asset's holder star: the asset node + its top-N address holders, edges weighted by normalized balance.
- *  Bipartite (asset ↔ addresses) — the "who owns this card" picture. */
-export async function assetHolders(db: D1Database, asset: string, limit: number): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+/** One asset's holder cohesion: the asset + its top-N holders, PLUS the interaction edges among the holders.
+ *  Independent holders = a diffuse ring around the asset; a sybil/wash cluster = holders wired to each other. */
+export async function assetHolders(db: D1Database, asset: string, limit: number): Promise<{ nodes: GraphNode[]; edges: GraphEdge[]; stats: GraphStats }> {
   const holders = await q<{ holder: string; qty: number }>(
     db,
     `SELECT holder, CAST(quantity_normalized AS REAL) qty FROM balances
@@ -47,10 +63,17 @@ export async function assetHolders(db: D1Database, asset: string, limit: number)
      ORDER BY CAST(quantity AS INTEGER) DESC LIMIT ?2`,
     asset, limit
   );
+  const ids = holders.map((h) => h.holder);
+  const set = inList(ids);
+  const holderEdges = ids.length ? await q<GraphEdge>(db, `SELECT src source, dst target, ROUND(w,3) weight FROM graph_edges WHERE src IN (${set}) AND dst IN (${set})`) : [];
+  const { clusterOf, stats } = cluster(ids, holderEdges);
   const nodes: GraphNode[] = [
-    { id: asset, kind: "asset", label: asset, weight: holders.length, center: true },
-    ...holders.map((h) => ({ id: h.holder, kind: "address" as const, label: h.holder.slice(0, 8) + "…", weight: h.qty })),
+    { id: asset, kind: "asset", label: asset, weight: holders.length, center: true, cluster: -1 },
+    ...holders.map((h) => ({ id: h.holder, kind: "address" as const, label: h.holder.slice(0, 8) + "…", weight: h.qty, cluster: clusterOf.get(h.holder) ?? -1 })),
   ];
-  const edges: GraphEdge[] = holders.map((h) => ({ source: asset, target: h.holder, weight: h.qty }));
-  return { nodes, edges };
+  const edges: GraphEdge[] = [
+    ...holders.map((h) => ({ source: asset, target: h.holder, weight: h.qty, spoke: true })),
+    ...holderEdges,
+  ];
+  return { nodes, edges, stats: { ...stats, peripheral: "holders" } };
 }
