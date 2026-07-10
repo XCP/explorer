@@ -429,8 +429,8 @@ export function assetFeedCounts(db: D1Database, asset: string, issuer: string | 
 export async function assetCollection(db: D1Database, asset: string): Promise<{ tag: string; site: string | null; series: number | null; card: number | null } | null> {
   const r = await one<{ tag: string; meta: string | null }>(
     db,
-    `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source IN ('collection','tokenscan','digirare','issuer','discovered')
-     ORDER BY CASE source WHEN 'collection' THEN 0 WHEN 'tokenscan' THEN 1 WHEN 'digirare' THEN 2 WHEN 'issuer' THEN 3 ELSE 4 END LIMIT 1`,
+    `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source IN ('manual','collection','tokenscan','digirare','issuer','discovered')
+     ORDER BY CASE source WHEN 'manual' THEN 0 WHEN 'collection' THEN 1 WHEN 'tokenscan' THEN 2 WHEN 'digirare' THEN 3 WHEN 'issuer' THEN 4 ELSE 5 END LIMIT 1`,
     asset
   );
   if (!r) return null;
