@@ -32,9 +32,12 @@ export interface GraphEdge {
 export interface GraphStats {
   peripheral: "holders" | "neighbours";
   total: number;           // peripheral node count
-  interconnected: number;  // peripheral nodes that sit in a multi-node cluster
-  clusters: number;        // number of multi-node clusters
-  largest_cluster: number; // size of the biggest cluster
+  edges_among: number;     // interaction edges among the peripheral crowd (excl. the center spokes)
+  cohesion: number;        // edges_among / total — edges per peripheral node; the headline (organic ≈ <1, ring ≫)
+  strong_edges: number;    // repeated (heavy-weight) edges — the coordination signal
+  interconnected: number;  // peripheral nodes in a strong multi-node cluster
+  clusters: number;        // number of strong multi-node clusters
+  largest_cluster: number; // size of the biggest strong cluster
 }
 export interface GraphSubgraph {
   center: string;
