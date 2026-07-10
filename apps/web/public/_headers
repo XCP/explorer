@@ -1,0 +1,5 @@
+# Cloudflare Workers Static Assets header rules. Everything under /_next/static is content-hashed (the
+# filename changes whenever the bytes change), so it's safe — and correct — to cache it forever and skip the
+# per-load revalidation the default (max-age=0, must-revalidate) forces.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
