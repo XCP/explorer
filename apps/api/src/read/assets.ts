@@ -2,7 +2,7 @@
  *  market data (xcpdex), and the research reads (collector cohort, holder quality). Handlers stay thin:
  *  parse → query (queries/assets.ts owns the SQL) → respond. The BigInt supply derivation and the
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
-import type { AssetDetail } from "@xcp/shared/assets";
+import type { AssetDetail, AssetActivityMonth } from "@xcp/shared/assets";
 import { router, J, lim, off, round, cached } from "./respond";
 import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
@@ -11,7 +11,8 @@ import {
   assetSignalsRow, assetTags, assetSales, assetCollection, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
-  listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetQualitySignals,
+  listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetCollectionCohort, assetQualitySignals, latestUsdRate,
+  assetActivityVenues, assetActivityFlows, assetActiveUsers,
 } from "../queries/assets";
 
 export const assets = router();
@@ -50,7 +51,7 @@ assets.get("/v2/assets/:asset", async (c) => {
         description: A === "XCP" ? "Counterparty native currency" : "Bitcoin",
         issuer: null, owner: null, supply_normalized, holder_count,
       };
-      return J(c, { result: body });
+      return J(c, { result: body }, 300); // native token — near-static
     }
     return c.json({ error: "Asset not found" }, 404);
   }
@@ -108,7 +109,9 @@ assets.get("/v2/assets/:asset", async (c) => {
     collection_site: collectionRes?.site ?? null,
     feed_counts: feedCountsRes,
   };
-  return J(c, { result: body });
+  // 120s: the asset's headline data (supply, holders, score, tags) drifts slowly; a 2-min cache window cuts
+  // cold-miss recomputes 4× vs the 30s default while staying fresh enough for an explorer.
+  return J(c, { result: body }, 120);
 });
 
 // Holder makeup — "who holds this asset?" by reputation tier + archetype + concentration. Surfaces the
@@ -214,16 +217,138 @@ assets.get("/v2/assets/:asset/pool-matches", async (c) => {
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
+// Comprehensive monthly on-chain activity for the Activity tab — built from OUR mirror across every event
+// kind (DEX orders/matches, dispensers/dispenses, sends, issuances/fairmints/destructions/dividends). Two
+// union reads (kept under D1's term cap) merged by month.
+assets.get("/v2/assets/:asset/activity", async (c) => {
+  const a = c.req.param("asset").toUpperCase();
+  const [venues, flows] = await Promise.all([
+    assetActivityVenues(c.env.DB, a).catch(() => []),
+    assetActivityFlows(c.env.DB, a).catch(() => []),
+  ]);
+  const byMonth = new Map<string, AssetActivityMonth>();
+  const row = (m: string) => byMonth.get(m) ?? { month: m, orders: 0, dispensers: 0, sends: 0, supply: 0 };
+  for (const v of venues) byMonth.set(v.month, { ...row(v.month), orders: v.orders, dispensers: v.dispensers });
+  for (const f of flows) byMonth.set(f.month, { ...row(f.month), sends: f.sends, supply: f.supply });
+  const result = [...byMonth.values()].sort((x, y) => x.month.localeCompare(y.month));
+  return J(c, { result }, 300);
+});
+
+// Most active users of the asset — addresses ranked by lifetime credits + debits (how much they've USED it,
+// not their balance). From the credits/debits ledger.
+assets.get("/v2/assets/:asset/active-users", async (c) => {
+  const result = await assetActiveUsers(c.env.DB, c.req.param("asset").toUpperCase(), lim(c, 15, 50));
+  return J(c, { result }, 300);
+});
+
+// CIP-25 JSON descriptor: a description that points to a .json file (optionally `;<sha256>`, and the legacy
+// `@`/`*` prefixes). Returns the https URL + optional hash, or null if the description isn't a JSON pointer.
+function parseJsonDescriptor(desc: string): { url: string; hash: string | null } | null {
+  let s = desc.trim();
+  if (!s) return null;
+  if (s.startsWith("@") || s.startsWith("*")) s = s.slice(1).trim();
+  const semi = s.indexOf(";");
+  let url = (semi >= 0 ? s.slice(0, semi) : s).trim();
+  const hashPart = semi >= 0 ? s.slice(semi + 1).trim() : "";
+  if (!/\.json(\?|#|$)/i.test(url) && !url.toLowerCase().includes(".json")) return null;
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url; // default a schemeless pointer to TLS…
+  // …but do NOT force explicit http -> https: many early hosts (rarepepedirectory.com, coinsite) are http-only
+  // with broken/absent certs, and forcing TLS just yields a 526. Server-side fetch has no mixed-content limit.
+  return { url, hash: /^[a-f0-9]{64}$/i.test(hashPart) ? hashPart.toLowerCase() : null };
+}
+
+// Arweave's minted metadata/image URLs frequently carry a filename sub-path ("/SILKR.json", "/x.png") that
+// 404s, while the data itself is addressable at the bare transaction id. Drop the sub-path to recover it.
+// (Community-confirmed workaround: the tx hash is the real address — https://viewblock.io/arweave/tx/<id>.)
+function arweaveBareUrl(url: string): string | null {
+  const m = url.match(/^(https?:\/\/(?:[a-z0-9-]+\.)?arweave\.net\/[A-Za-z0-9_-]{20,})\/.+$/i);
+  return m ? m[1] : null;
+}
+
+// Ordered fetch candidates for a JSON pointer: the URL as-given, then the arweave bare-tx fallback, then an
+// http downgrade for hosts whose https is broken. First 2xx wins.
+function jsonCandidates(url: string): string[] {
+  const out = [url];
+  const bare = arweaveBareUrl(url);
+  if (bare) out.push(bare);
+  if (/^https:\/\//i.test(url)) out.push(url.replace(/^https:/i, "http:"));
+  return [...new Set(out)];
+}
+
+// Arweave / ar.io gateways answer intermittently — the same tx can 404 on a cold gateway node and then 200 on
+// the next hit — so retry those a few times before giving up. Non-gateway hosts get a single shot. First 2xx wins.
+async function fetchFirstOk(urls: string[]): Promise<{ res: Response | null; lastStatus: number }> {
+  let lastStatus = 0;
+  for (const u of urls) {
+    const tries = /arweave\.net\/|\.ar\.io\//i.test(u) ? 3 : 1;
+    for (let i = 0; i < tries; i++) {
+      const r = await fetch(u, { redirect: "follow", signal: AbortSignal.timeout(8000), headers: { "user-agent": "xcp.io/1.0", accept: "application/json,*/*" } }).catch(() => null);
+      if (r && r.ok) return { res: r, lastStatus };
+      if (r) lastStatus = r.status;
+    }
+  }
+  return { res: null, lastStatus };
+}
+
+// The image URLs *inside* these arweave JSONs carry the same "/<filename>.png" sub-path that 404s, so rewrite
+// any arweave image URL to its bare tx id before handing the JSON to the client to render. Only touches URLs
+// ending in an image extension — website/external_url links are left alone.
+function fixArweaveImageUrls<T>(v: T): T {
+  if (typeof v === "string") {
+    const m = v.match(/^(https?:\/\/(?:[a-z0-9-]+\.)?arweave\.net\/[A-Za-z0-9_-]{20,})\/[^/]+\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i);
+    return (m ? m[1] : v) as T;
+  }
+  if (Array.isArray(v)) return v.map(fixArweaveImageUrls) as T;
+  if (v && typeof v === "object") {
+    const o: Record<string, unknown> = {};
+    for (const k in v as Record<string, unknown>) o[k] = fixArweaveImageUrls((v as Record<string, unknown>)[k]);
+    return o as T;
+  }
+  return v;
+}
+
+// Enhanced asset info (CIP-25): if the description points to a JSON file, fetch it SERVER-SIDE (fixes the CORS
+// failures a client fetch hits on non-CORS hosts), cap size/time, and verify the optional ;sha256 hash. We
+// return the parsed object only — never execute anything; the client sanitizes HTML fields with DOMPurify.
+assets.get("/v2/assets/:asset/enhanced", async (c) => {
+  const r = await getAsset(c.env.DB, c.req.param("asset").toUpperCase());
+  const ptr = parseJsonDescriptor(r?.description || "");
+  if (!ptr) return J(c, { result: null }, 300);
+  try {
+    // Try the pointer as-given, then the arweave bare-tx and http fallbacks (retrying flaky gateways).
+    const { res, lastStatus } = await fetchFirstOk(jsonCandidates(ptr.url));
+    if (!res) return J(c, { result: { url: ptr.url, error: lastStatus ? `source returned ${lastStatus}` : "source unreachable" } }, 60);
+    const text = (await res.text()).slice(0, 262144); // 256KB cap
+    if (ptr.hash) {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (hex !== ptr.hash) return J(c, { result: { url: ptr.url, error: "content hash does not match the on-chain hash" } }, 300);
+    }
+    const json = fixArweaveImageUrls(JSON.parse(text));
+    return J(c, { result: { json, url: ptr.url, verified: !!ptr.hash } }, 300);
+  } catch {
+    return J(c, { result: { url: ptr.url, error: "could not load or parse the JSON" } }, 60);
+  }
+});
+
 // market data for an asset (vs XCP) from xcpdex — cross-app composition via the service binding
 assets.get("/v2/assets/:asset/market", async (c) => {
   const a = c.req.param("asset").toUpperCase();
   try {
     const res = await c.env.XCPDEX.fetch(`https://xcpdex-api/pair/${encodeURIComponent(a)}_XCP`);
     if (!res.ok) return J(c, { result: null }, 120);
-    const p = await res.json<{ last_price?: number | null; volume_7d?: number | null; trade_count_7d?: number | null; price_change_7d?: number | null }>();
+    const p = await res.json<{ last_price?: number | null; volume_7d?: number | null; trade_count_7d?: number | null; price_change_7d?: number | null; best_ask?: number | null }>();
+    // Floor price = the lowest open DEX ask (best_ask, in XCP) converted to USD via the current XCP rate.
+    // Only when there's actually an ask standing; source labels where it came from (an order, for now).
+    let floor_usd: number | null = null, floor_source: string | null = null;
+    if (p.best_ask != null) {
+      const rate = await latestUsdRate(c.env.DB, "XCP").catch(() => null);
+      if (rate?.usd) { floor_usd = p.best_ask * rate.usd; floor_source = "Order"; }
+    }
     return J(c, { result: {
       pair: `${a}/XCP`, last_price: p.last_price ?? null, volume_7d: p.volume_7d ?? null,
       trades_7d: p.trade_count_7d ?? null, price_change_7d: p.price_change_7d ?? null,
+      floor_usd, floor_source,
     } }, 120);
   } catch { return J(c, { result: null }, 60); }
 });
@@ -238,6 +363,21 @@ assets.get("/v2/assets/:asset/subassets", async (c) => {
 assets.get("/v2/assets/:asset/cohort", async (c) => {
   const rows = await assetCohort(c.env.DB, c.req.param("asset").toUpperCase(), lim(c, 18, 36));
   return J(c, { result: rows }, 300);
+});
+
+// The Related tab's two strips — each related asset carries WHY it's related: the % of the subject's
+// holders that also hold it. `collection` = same-collection siblings ranked by that overlap; `cohort` =
+// the broadest co-held assets OUTSIDE the collection (so the two strips never repeat). The collection is
+// resolved server-side, so the tab needs only the asset.
+assets.get("/v2/assets/:asset/related", async (c) => {
+  const asset = c.req.param("asset").toUpperCase();
+  const coll = await assetCollection(c.env.DB, asset).catch(() => null);
+  const tag = coll?.tag ?? null;
+  const [collection, cohort] = await Promise.all([
+    tag ? assetCollectionCohort(c.env.DB, asset, tag, 12).catch(() => []) : Promise.resolve([]),
+    assetCohort(c.env.DB, asset, 6, tag).catch(() => []),
+  ]);
+  return J(c, { result: { collection, cohort } }, 300);
 });
 
 // Holder quality (aggregate, non-creepy) + trading integrity for an asset — the "is this cap table
