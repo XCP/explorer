@@ -146,7 +146,7 @@ body {
 .ctxband.collection { border-color:#1d7f42; background:rgba(22,101,52,.12); color:#86efac; gap:6px 12px; }
 .ctxband.collection a { color:#86efac; margin-left:0; }   /* reset the shared .ctxband a margin-left:auto */
 .ctxband.collection a:hover { color:#bbf7d0; }
-.ctxband.collection .cb-eyebrow { display:none; }
+.ctxband.collection .cb-eyebrow { color:#6bbc85; }   /* "Part of" — a muted inline lead on desktop */
 .ctxband.collection .cb-name { font-weight:650; }
 .ctxband.collection .cb-sc { font-family:var(--mono); color:#6bbc85; font-size:.92em; font-variant-numeric:tabular-nums; }
 .ctxband.collection .cb-flow { display:contents; }        /* desktop: count sits left, link cluster pushes right */
