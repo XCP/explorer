@@ -43,14 +43,33 @@ export default function GraphExperiment() {
         </button>
       </div>
       {state === "error" && <p style={{ color: "#f87171" }}>Couldn&apos;t load that one.</p>}
-      {data && (
-        <>
-          <p style={{ color: "#6bbc85", fontSize: 12, margin: "0 0 8px" }}>
-            {data.nodes.length} nodes · {data.edges.length} edges · centered on {data.center}
-          </p>
-          <GraphView data={data} />
-        </>
-      )}
+      {data && (() => {
+        const s = data.stats;
+        // Cohesion = interaction edges per peripheral node. Organic crowds sit well under 1 (holders barely
+        // interact); a wash/sybil/insider ring runs many× that because it trades among itself repeatedly.
+        const coordinated = s.cohesion >= 2.5 || s.strong_edges >= s.total;
+        return (
+          <>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, margin: "0 0 8px" }}>
+              <span style={{ color: "#8b93a0" }}>{s.total} {s.peripheral} · {s.edges_among} interaction edges</span>
+              <span style={{
+                fontWeight: 600, padding: "2px 9px", borderRadius: 999,
+                color: coordinated ? "#fca5a5" : "#6bbc85",
+                background: coordinated ? "rgba(239,68,68,.12)" : "rgba(22,101,52,.14)",
+                border: `1px solid ${coordinated ? "#7f1d1d" : "#1a5c36"}`,
+              }}>
+                cohesion {s.cohesion.toFixed(2)} · {coordinated
+                  ? `⚠ coordinated — ${s.strong_edges} repeated ties, largest ring ${s.largest_cluster}`
+                  : "organic crowd"}
+              </span>
+            </div>
+            <p style={{ color: "#5b636f", fontSize: 11.5, margin: "0 0 10px" }}>
+              Cohesion = interaction edges per {s.peripheral.replace(/s$/, "")}. Grey nodes are independent; a coloured cluster is a set that <em>repeatedly</em> trades among itself — a coordinated ring lights up as one big colour, an organic crowd stays grey and sparse.
+            </p>
+            <GraphView data={data} />
+          </>
+        );
+      })()}
     </div>
   );
 }
