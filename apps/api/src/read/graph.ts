@@ -9,11 +9,29 @@
  *   GET /v2/assets/:asset/graph         -> { result: { trust, distrust, tier } }  (60s)
  * `tier` is the pure graphTier() classifier (trusted / distrusted / unscored — never a continuum).
  */
+import type { GraphSubgraph } from "@xcp/shared/graph";
 import { router, cached, J } from "./respond";
 import { graphOverview, graphScore, graphCuts } from "../queries/graph";
+import { addressEgo, assetHolders } from "../queries/graph-extract";
 import { graphTier } from "../indexer/graph-core";
 
 export const graph = router();
+
+// Bounded, renderable sub-graphs for the viz experiment. limit clamps the node budget so a hub can't return
+// its whole neighbourhood. GET /v2/graph/address/:a (ego-network) · /v2/graph/asset/:a (holder star).
+const clampLimit = (v: string | undefined, def: number, max: number) => Math.min(Math.max(parseInt(v || "", 10) || def, 1), max);
+
+graph.get("/v2/graph/address/:address", async (c) => {
+  const address = c.req.param("address");
+  const { nodes, edges } = await addressEgo(c.env.DB, address, clampLimit(c.req.query("limit"), 60, 200));
+  return J(c, { result: { center: address, scope: "address-ego", nodes, edges } as GraphSubgraph }, 120);
+});
+
+graph.get("/v2/graph/asset/:asset", async (c) => {
+  const asset = c.req.param("asset").toUpperCase();
+  const { nodes, edges } = await assetHolders(c.env.DB, asset, clampLimit(c.req.query("limit"), 80, 300));
+  return J(c, { result: { center: asset, scope: "asset-holders", nodes, edges } as GraphSubgraph }, 120);
+});
 
 graph.get("/v2/reputation/graph", (c) =>
   cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.DB) })));

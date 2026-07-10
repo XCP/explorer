@@ -10,3 +10,24 @@ export interface GraphEntityScore {
   distrust: number;
   tier: GraphTier;
 }
+
+/** Renderable sub-graph (bounded) — GET /v2/graph/address/:a · /v2/graph/asset/:a. Nodes/edges only; the
+ *  client lays them out. `weight` is a size hint (in-trust for addresses, holder count / balance otherwise). */
+export interface GraphNode {
+  id: string;
+  kind: "address" | "asset";
+  label: string;
+  weight: number;
+  center?: boolean; // the queried entity, for styling
+}
+export interface GraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+}
+export interface GraphSubgraph {
+  center: string;
+  scope: "address-ego" | "asset-holders";
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
