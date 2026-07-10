@@ -10,6 +10,7 @@ import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags } from "./indexer/tags";
 import { crawlCollections } from "./indexer/collections";
+import { buildHolderCohesion } from "./indexer/holder-cohesion";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { crawlScarceSales } from "./indexer/scarce-sales";
 import { classifyVaults } from "./indexer/vault-contents";
@@ -177,6 +178,13 @@ admin.post("/admin/build-tags", async (c) => {
 // manual trigger here to rebuild on demand.
 admin.post("/admin/crawl-collections", async (c) => {
   return c.json(await crawlCollections(c.env));
+});
+
+// Batch-compute holder cohesion onto asset_signals. Cursored: body {after, limit} → {processed, next, sample}.
+admin.post("/admin/cohesion", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { after?: string; limit?: number };
+  const limit = Math.min(Math.max(body?.limit ?? 40, 1), 120);
+  return c.json(await buildHolderCohesion(c.env, body?.after ?? "", limit));
 });
 
 // Index Emblem vault sales (Alchemy getNFTSales) into emblem_sales. Loop until contract_done cycles; the
