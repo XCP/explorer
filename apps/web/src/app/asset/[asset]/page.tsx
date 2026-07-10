@@ -138,6 +138,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
           </div>
         </div>
         <div className="magcol">
+          <AssetDescription asset={item.asset} description={item.description} />
           <div className="card factcard">
             <h2>Asset info</h2>
             <div className="body">
@@ -158,7 +159,6 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
               {item.burned_normalized != null && Number(item.burned_normalized) > 0 && <div className="row"><span className="k">Burned</span><span className="amt mono">{amount(item.burned_normalized, item.divisible)}</span></div>}
             </div>
           </div>
-          <AssetDescription asset={item.asset} description={item.description} />
           {hasMarket && (
             <div className="card">
               <h2>Market data</h2>
