@@ -36,7 +36,9 @@ const cDest: Col = { label: "Destination", priority: 2, w: "minmax(120px,1fr)", 
 
 // order display via base/quote: pair (base linked + quote), side, price (in quote), amount (base).
 // Price precision follows the exchange recipe; the unit is answered by the Pair column (R6).
-const fmtPrice = (n: number) => (n === 0 ? "—" : n >= 1 ? commas(n.toFixed(4)) : n.toPrecision(3));
+// Prices are quoted in a divisible asset (XCP/BTC), so a sub-1 price carries up to 8 satoshi decimals —
+// show them in full rather than sig-fig-rounding to ~3 places (which silently dropped precision).
+const fmtPrice = (n: number) => (n === 0 ? "—" : n >= 1 ? commas(n.toFixed(4)) : parseFloat(n.toFixed(8)).toLocaleString(undefined, { maximumFractionDigits: 8 }));
 const side = (d: "buy" | "sell") => <span className={`side ${d}`}>{d}</span>;
 const pairCell = (base: string, quote: string) => (
   <span className="inline-flex max-w-full items-center gap-1 font-mono"><Link href={`/asset/${base}`} className="text-zinc-100 truncate">{base}</Link><span className="text-zinc-600 shrink-0">/{quote}</span></span>

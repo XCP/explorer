@@ -9,6 +9,20 @@ export const commas = (v?: string | number | null) => {
   return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
 };
 
+// A protocol quantity rendered per the asset's divisibility — the counterparty-core rule (see
+// verbose.py inject_normalized_quantity): an INDIVISIBLE asset has no fractional part (0 dp), a DIVISIBLE
+// asset carries satoshi precision shown at the FULL 8 dp, so we never silently round precision away (the
+// mixed 3-6 dp the sig-fig formatters produced). For exact quantity rows (supply, balances, amounts) —
+// not the compact headline stats. `divisible` must come from the asset; default true = the always-divisible
+// XCP/BTC money fields.
+export const amount = (v?: string | number | null, divisible: boolean | 0 | 1 = true) => {
+  if (v == null || v === "") return "—";
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return String(v);
+  const dp = divisible ? 8 : 0;
+  return n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+};
+
 // Compact large COUNTS/caps (1.2K, 3.4M, 5.6B, 7.8T) — for count-like columns where exactness isn't essential.
 // Values below 100k keep full grouping (explorer users usually want exact small counts). Not for quantities.
 const strip = (s: string) => s.replace(/\.0+$/, "");

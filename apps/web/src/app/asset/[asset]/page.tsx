@@ -13,7 +13,7 @@ import { AssetDescription } from "@/components/asset-description";
 import { ContextBand } from "@/components/context-band";
 import { HolderMakeup } from "@/components/holder-makeup";
 import { PendingActions } from "@/components/pending-actions";
-import { collectionLabel, commas, compact, short, timeAgo, usdCompact } from "@/lib/format";
+import { amount, collectionLabel, commas, compact, short, timeAgo, usdCompact } from "@/lib/format";
 
 // Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
 // Returns null on 404 — only the PAGE calls notFound() (notFound() inside generateMetadata renders
@@ -151,8 +151,9 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                 </>
               )}
               {item.first_issuance_block_index != null && <div className="row"><span className="k">Issued</span><span className="amt mono">{fullDate(item.first_issuance_block_time) ?? "—"} <span className="time">blk {commas(item.first_issuance_block_index)}</span></span></div>}
-              <div className="row"><span className="k">Supply</span><span className="amt mono">{commas(item.supply_normalized)}{item.locked ? <> <span className="time">locked</span></> : null}</span></div>
-              {item.burned_normalized != null && Number(item.burned_normalized) > 0 && <div className="row"><span className="k">Burned</span><span className="amt mono">{commas(item.burned_normalized)}</span></div>}
+              <div className="row"><span className="k">Supply</span><span className="amt mono">{amount(item.supply_normalized, item.divisible)}{item.locked ? <> <span className="time">locked</span></> : null}</span></div>
+              <div className="row"><span className="k">Divisible</span><span className="amt mono">{item.divisible ? "Yes" : "No"} <span className="time">{item.divisible ? "8 decimals" : "whole units"}</span></span></div>
+              {item.burned_normalized != null && Number(item.burned_normalized) > 0 && <div className="row"><span className="k">Burned</span><span className="amt mono">{amount(item.burned_normalized, item.divisible)}</span></div>}
             </div>
           </div>
           <AssetDescription asset={item.asset} description={item.description} />
