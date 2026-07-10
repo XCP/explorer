@@ -81,7 +81,7 @@ export function AssetDescription({ asset, description }: { asset: string; descri
           </p>
         )}
         {state === "error" && <p className="mt-2 text-xs text-red-400">{result?.error || "Could not load the JSON."}</p>}
-        {state === "done" && result?.json && <AssetEnhancedInfo data={result.json} verified={result.verified} />}
+        {state === "done" && result?.json && <AssetEnhancedInfo data={result.json} verified={result.verified} onClose={() => { setState("idle"); setResult(null); }} />}
       </div>
     </div>
   );
