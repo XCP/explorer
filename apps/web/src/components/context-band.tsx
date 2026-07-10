@@ -21,16 +21,21 @@ export function ContextBand({ detail, collectionAssets }: {
     );
   }
   if (detail.collection) {
+    // Refined inline on desktop, centered placard on mobile (design-lab options 1 + 3). One markup: `.cb-flow`
+    // is display:contents on desktop (count sits left, links push right) and a centered meta row on mobile.
+    const tagHref = `/tag/${encodeURIComponent(detail.collection)}`;
+    const hasSC = detail.collection_series != null && detail.collection_card != null;
     return (
       <div className="ctxband collection">
-        <span className="msg">
-          <b>Part of {collectionLabel(detail.collection)}</b>
-          {collectionAssets != null && <span> · {commas(collectionAssets)} assets in collection</span>}
+        <span className="cb-eyebrow">Part of</span>
+        <b className="cb-name"><Link href={tagHref}>{collectionLabel(detail.collection)}</Link></b>
+        {hasSC && <span className="cb-sc">Series {detail.collection_series} · Card {detail.collection_card}</span>}
+        <span className="cb-flow">
+          {collectionAssets != null && <span className="cb-count">{commas(collectionAssets)} cards</span>}
+          {collectionAssets != null && <span className="cb-dot">·</span>}
+          {detail.collection_site && <a href={detail.collection_site} target="_blank" rel="noopener noreferrer">Project site ↗</a>}
+          <Link className="cb-view" href={tagHref}>View collection →</Link>
         </span>
-        {detail.collection_site && (
-          <a href={detail.collection_site} target="_blank" rel="noopener noreferrer">Project site ↗</a>
-        )}
-        <Link href={`/tag/${encodeURIComponent(detail.collection)}`}>View collection →</Link>
       </div>
     );
   }

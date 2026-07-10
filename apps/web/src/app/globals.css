@@ -74,7 +74,11 @@ body {
 .pagehead p b { color:var(--t3); font-weight:500; }
 
 /* section header — asset flavor. ONE tab bar: Overview + the feeds. */
-.section-head { border-bottom:1px solid var(--border); background:var(--panel2); }
+/* line-height:normal matches the lab (design-lab/v19-banner.html sets no line-height, so the whole band
+   renders at the browser default ~1.2). Without this the band inherits Tailwind Preflight's global 1.5,
+   which pads half-leading above/below the name, chips, stat labels/values, and tabs — the loose vertical
+   rhythm the v19 reference doesn't have. Same fix already applied to .pagehead h1 ("preflight leak"). */
+.section-head { border-bottom:1px solid var(--border); background:var(--panel2); line-height:normal; }
 /* 1200px per v19; the app shell main is also 1200px */
 .sh-in { max-width:1200px; margin:0 auto; padding:18px 16px 0; }
 .sh-top { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
@@ -138,10 +142,27 @@ body {
 .ctxband { border:1px solid; border-radius:8px; padding:10px 14px; font-size:var(--fs-xs); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .ctxband .msg b { font-weight:600; }
 .ctxband a { margin-left:auto; font-weight:600; white-space:nowrap; }
-.ctxband.collection { border-color:#1d7f42; background:rgba(22,101,52,.12); color:#86efac; }
-.ctxband.collection .msg span { color:#6bbc85; }
-.ctxband.collection a { color:#86efac; }
+/* collection band — refined inline on desktop, centered placard on mobile (design-lab options 1 + 3) */
+.ctxband.collection { border-color:#1d7f42; background:rgba(22,101,52,.12); color:#86efac; gap:6px 12px; }
+.ctxband.collection a { color:#86efac; margin-left:0; }   /* reset the shared .ctxband a margin-left:auto */
 .ctxband.collection a:hover { color:#bbf7d0; }
+.ctxband.collection .cb-eyebrow { display:none; }
+.ctxband.collection .cb-name { font-weight:650; }
+.ctxband.collection .cb-sc { font-family:var(--mono); color:#6bbc85; font-size:.92em; font-variant-numeric:tabular-nums; }
+.ctxband.collection .cb-flow { display:contents; }        /* desktop: count sits left, link cluster pushes right */
+.ctxband.collection .cb-count { color:#6bbc85; font-variant-numeric:tabular-nums; }
+.ctxband.collection .cb-count::before { content:"·"; color:#1d7f42; margin-right:8px; }
+.ctxband.collection .cb-dot { display:none; }
+.ctxband.collection .cb-flow a:first-of-type { margin-left:auto; }  /* right-hand link cluster (site/view) */
+@media (max-width:560px){
+  .ctxband.collection { flex-direction:column; align-items:center; text-align:center; gap:5px; }
+  .ctxband.collection .cb-eyebrow { display:block; font:600 10px/1 var(--mono); letter-spacing:.15em; text-transform:uppercase; color:#6bbc85; }
+  .ctxband.collection .cb-name { font-size:1.2em; }
+  .ctxband.collection .cb-flow { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+  .ctxband.collection .cb-count::before { content:none; }
+  .ctxband.collection .cb-dot { display:inline; color:#1d7f42; }
+  .ctxband.collection .cb-flow a:first-of-type { margin-left:0; }
+}
 .ctxband.integrity { border-color:#8a6420; background:rgba(120,86,27,.12); color:var(--amber); }
 .ctxband.integrity .msg span { color:#c9a94f; }
 .ctxband.integrity a { color:var(--amber); }
@@ -155,7 +176,11 @@ main > .ctxband { margin-bottom:10px; }
 /* ── overview: museum plate left (~40%), two quiet cards right ── */
 .mag { display:grid; grid-template-columns:2fr 3fr; gap:16px; align-items:start; }
 .plate { border:1px solid var(--border2); border-radius:8px; background:var(--panel); padding:22px 22px 16px; }
-.plate img { width:100%; display:block; border:1px solid var(--border2); background:#14171d; }
+/* aspect-ratio:1 reserves a square up front so the hero doesn't reflow much as the art loads (CLS); it's the
+   neutral middle across portrait cards and square stamps (measured better than a 5/7 portrait guess). AssetArt's
+   `natural` mode overrides it inline with the image's true ratio once the pixels arrive. A perfect-zero-CLS
+   reserve would need the image's real dimensions server-side (CDN format=json) — deferred. */
+.plate img { width:100%; display:block; border:1px solid var(--border2); background:#14171d; aspect-ratio:1; object-fit:contain; }
 .plate .cap { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; font-family:var(--mono); font-size:var(--fs-2xs); color:var(--t4); letter-spacing:.03em; }
 .plate .cap b { color:var(--t3); font-weight:500; }
 .magcol { display:flex; flex-direction:column; gap:16px; }
@@ -287,6 +312,7 @@ a.view:hover { color:var(--accent); }
    app's data needs: open (unlocked assets), og/neutral (address archetypes), distrusted (graph). ── */
 .chip.open { color:var(--amber); border-color:#8a6420; background:rgba(120,86,27,.15); } /* unlocked = caution, amber not red */
 .chip.og { color:#c4b5fd; border-color:rgba(109,40,217,.6); background:rgba(76,29,149,.15); }
+.chip.collection { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); } /* collection membership = the green band, as a chip */
 .chip.distrusted { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
 .chip.neutral { color:#d4d4d8; border-color:#3f3f46; background:rgba(39,39,42,.3); }
 /* app glue: quiet .btn2 rendered as <a> keeps its text color under the global a:hover accent */
