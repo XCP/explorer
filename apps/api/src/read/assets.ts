@@ -8,7 +8,7 @@ import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_
 import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
 import {
   listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText, assetEscrowText,
-  assetSignalsRow, assetTags, assetSales, assetCollection, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
+  assetSignalsRow, assetTags, assetSales, assetCollection, assetArtist, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
   listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetCollectionCohort, assetQualitySignals, latestUsdRate,
@@ -34,7 +34,7 @@ assets.get("/v2/featured", async (c) => {
 
 assets.get("/v2/assets/:asset", async (c) => {
   const a = c.req.param("asset");
-  const r = await getAsset(c.env.DB, a);
+  let r = await getAsset(c.env.DB, a);
   if (!r) {
     // XCP and BTC are native assets with no issuance row. XCP supply = proof-of-burn minus all XCP
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
@@ -53,11 +53,16 @@ assets.get("/v2/assets/:asset", async (c) => {
       };
       return J(c, { result: body }, 300); // native token — near-static
     }
-    return c.json({ error: "Asset not found" }, 404);
+    // Not native and not found — retry ONCE before declaring 404. `one()` throws (→ 500) on a real DB error,
+    // so a null here is either a genuine miss or a transient empty read (a D1 hiccup, or a read landing mid
+    // full-reindex when `assets` is being rebuilt). A retry confirms real absence, so we only ever emit — and
+    // let the web cache — a 404 for an asset that truly isn't there.
+    r = await getAsset(c.env.DB, a);
+    if (!r) return c.json({ error: "Asset not found" }, 404);
   }
   // The five reads below are independent — run them concurrently (wall-time = slowest, not the sum;
   // the sequential version was the classic multiple-round-trips D1 anti-pattern).
-  const [holder_count, sup, burn, esc, sigRes, tagsRes, salesRes, collectionRes, feedCountsRes] = await Promise.all([
+  const [holder_count, sup, burn, esc, sigRes, tagsRes, salesRes, collectionRes, artistRes, feedCountsRes] = await Promise.all([
     holderCount(c.env.DB, r.asset),
     // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
     // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
@@ -73,6 +78,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
     assetSales(c.env.DB, r.asset).catch(() => null),
     assetCollection(c.env.DB, r.asset).catch(() => null),
+    assetArtist(c.env.DB, r.asset).catch(() => null),
     // per-feed tab counts (the detail page's tab bar) — same filters as the feed list endpoints
     assetFeedCounts(c.env.DB, r.asset, r.issuer).catch(() => null),
   ]);
@@ -107,6 +113,9 @@ assets.get("/v2/assets/:asset", async (c) => {
     sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
     collection: collectionRes?.tag ?? null,
     collection_site: collectionRes?.site ?? null,
+    collection_series: collectionRes?.series ?? null,
+    collection_card: collectionRes?.card ?? null,
+    artist: artistRes ? { tag: artistRes.tag, name: artistRes.name, slug: artistRes.slug } : null,
     feed_counts: feedCountsRes,
   };
   // 120s: the asset's headline data (supply, holders, score, tags) drifts slowly; a 2-min cache window cuts

@@ -73,6 +73,9 @@ export interface AssetDetail {
   sales?: AssetSales;
   collection?: string | null; // collection tag (pepe.wtf source='collection' or tokenscan), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
   collection_site?: string | null; // project site when the collection came from the tokenscan directory (its meta.site)
+  collection_series?: number | null; // pepe.wtf series number within the collection (e.g. Rare Pepe Series 1–36)
+  collection_card?: number | null;  // pepe.wtf card number within the series (the canonical ordinal position)
+  artist?: { tag: string; name: string; slug: string } | null; // pepe.wtf artist; `tag` is the /tags/<artist-slug> route
   feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
 }
 

@@ -426,7 +426,7 @@ export function assetFeedCounts(db: D1Database, asset: string, issuer: string | 
  *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
  *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green
  *  "Part of …" band, so tokenscan-only projects (Rare Pigeons, Age of Chains, …) now show it too. */
-export async function assetCollection(db: D1Database, asset: string): Promise<{ tag: string; site: string | null } | null> {
+export async function assetCollection(db: D1Database, asset: string): Promise<{ tag: string; site: string | null; series: number | null; card: number | null } | null> {
   const r = await one<{ tag: string; meta: string | null }>(
     db,
     `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source IN ('collection','tokenscan','digirare','issuer','discovered')
@@ -434,9 +434,27 @@ export async function assetCollection(db: D1Database, asset: string): Promise<{ 
     asset
   );
   if (!r) return null;
-  let site: string | null = null;
-  try { site = r.meta ? ((JSON.parse(r.meta) as { site?: string }).site ?? null) : null; } catch { /* non-JSON meta */ }
-  return { tag: r.tag, site };
+  // pepe.wtf collection meta = {serie,card}; tokenscan meta = {site}. Parse whichever this row carries.
+  let site: string | null = null, series: number | null = null, card: number | null = null;
+  try {
+    const m = r.meta ? (JSON.parse(r.meta) as { site?: string; series?: number; card?: number }) : null;
+    if (m) { site = m.site ?? null; series = m.series ?? null; card = m.card ?? null; }
+  } catch { /* non-JSON meta */ }
+  return { tag: r.tag, site, series, card };
+}
+
+/** The card's artist, from the pepe.wtf-sourced source='artist' tag (its slug powers /tags/<artist-slug>). */
+export async function assetArtist(db: D1Database, asset: string): Promise<{ tag: string; name: string; slug: string } | null> {
+  const r = await one<{ tag: string; meta: string | null }>(
+    db,
+    `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source='artist' LIMIT 1`,
+    asset
+  );
+  if (!r?.meta) return null;
+  try {
+    const m = JSON.parse(r.meta) as { name?: string; slug?: string };
+    return m.name ? { tag: r.tag, name: m.name, slug: m.slug || r.tag.replace(/^artist-/, "") } : null;
+  } catch { return null; }
 }
 
 /** Collector cohort: assets most co-held with this one. Excludes XCP (currency everyone holds); the b1

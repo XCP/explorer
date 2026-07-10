@@ -150,6 +150,8 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                   {item.owner && <div className="row"><span className="k">Owner</span><span className="amt mono"><Link href={`/address/${item.owner}`}>{short(item.owner)}</Link></span></div>}
                 </>
               )}
+              {item.artist && <div className="row"><span className="k">Artist</span><span className="amt mono"><Link href={`/tag/${encodeURIComponent(item.artist.tag)}`}>{item.artist.name}</Link></span></div>}
+              {item.collection_series != null && item.collection_card != null && <div className="row"><span className="k">Series</span><span className="amt mono">Series {item.collection_series} <span className="time">Card {item.collection_card}</span></span></div>}
               {item.first_issuance_block_index != null && <div className="row"><span className="k">Issued</span><span className="amt mono">{fullDate(item.first_issuance_block_time) ?? "—"} <span className="time">blk {commas(item.first_issuance_block_index)}</span></span></div>}
               <div className="row"><span className="k">Supply</span><span className="amt mono">{amount(item.supply_normalized, item.divisible)}{item.locked ? <> <span className="time">locked</span></> : null}</span></div>
               <div className="row"><span className="k">Divisible</span><span className="amt mono">{item.divisible ? "Yes" : "No"} <span className="time">{item.divisible ? "8 decimals" : "whole units"}</span></span></div>
