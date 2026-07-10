@@ -317,7 +317,15 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
   try {
     // Try the pointer as-given, then the arweave bare-tx and http fallbacks (retrying flaky gateways).
     const { res, lastStatus } = await fetchFirstOk(jsonCandidates(ptr.url));
-    if (!res) return J(c, { result: { url: ptr.url, error: lastStatus ? `source returned ${lastStatus}` : "source unreachable" } }, 60);
+    if (!res) {
+      // Distinguish a permanently-dead metadata host (DNS gone / Cloudflare 52x origin errors) from a transient
+      // blip, and say so plainly — the asset's art is served separately and is unaffected. Cache dead hosts longer.
+      let host = "the metadata source";
+      try { host = new URL(ptr.url).host; } catch { /* keep default */ }
+      const offline = !lastStatus || (lastStatus >= 520 && lastStatus <= 530);
+      const error = offline ? `The metadata host (${host}) is offline — the on-chain art above is unaffected.` : `source returned ${lastStatus}`;
+      return J(c, { result: { url: ptr.url, error } }, offline ? 3600 : 60);
+    }
     const text = (await res.text()).slice(0, 262144); // 256KB cap
     if (ptr.hash) {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
