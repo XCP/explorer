@@ -65,18 +65,20 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
     catch (e) { out.collections[tag] = `err:${String(e).slice(0, 40)}`; continue; }
     if (!members.length) { out.collections[tag] = "empty(kept prior)"; continue; } // transient-safe: don't wipe
 
-    // Rebuild this collection's membership from scratch (drop stale, re-insert the fresh set with serie/card).
-    await env.DB.prepare(`DELETE FROM tags WHERE tag=? AND source='collection'`).bind(tag).run();
+    // UPSERT-then-reconcile (never delete-first): the collection is never emptied mid-run, a partial feed
+    // can't nuke it, and a crash between steps just leaves the prior set intact. `source='manual'` members
+    // are outside this entirely (a different source) — the crawl never sees or touches them.
+    const curRows = await env.DB.prepare(`SELECT entity_id FROM tags WHERE tag=? AND source='collection'`).bind(tag).all<{ entity_id: string }>();
+    const cur = new Set((curRows.results || []).map((r) => r.entity_id));
+
+    // 1) upsert the fresh set (membership + serie/card; artist tags spread across collections so are upsert-only).
     const stmts: D1PreparedStatement[] = [];
     for (const m of members) {
       const meta = m.series != null || m.card != null ? JSON.stringify({ series: m.series, card: m.card }) : null;
-      // Canonical intra-collection sort key: Series 1 Card 1 = 1001, Series 2 Card 1 = 2001, …
-      const value = m.series != null && m.card != null ? m.series * 1000 + m.card : null;
+      const value = m.series != null && m.card != null ? m.series * 1000 + m.card : null; // sort key: S1C1=1001, S2C1=2001…
       stmts.push(env.DB.prepare(
         `INSERT OR REPLACE INTO tags (entity_type,entity_id,tag,source,value,meta) VALUES ('asset',?,?,'collection',?,?)`
       ).bind(m.name, tag, value, meta));
-      // Artist tag (source='artist'): upsert rather than delete-by-tag — an artist spans collections, so we
-      // must not wipe their other cards when rebuilding one collection.
       if (m.artist) {
         stmts.push(env.DB.prepare(
           `INSERT OR REPLACE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'artist',?)`
@@ -84,7 +86,18 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
       }
     }
     for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
-    out.collections[tag] = members.length;
+
+    // 2) reconcile removals: drop feed members that vanished from the fresh set — but only when the pull looks
+    //    complete. Cap one run's prune at 20% (min 10); a bigger drop signals a short/partial feed, so we keep
+    //    the stale rows rather than risk gutting the collection on a bad response.
+    const fresh = new Set(members.map((m) => m.name));
+    const stale = [...cur].filter((n) => !fresh.has(n));
+    const cap = Math.max(10, Math.floor(cur.size * 0.2));
+    if (stale.length && stale.length <= cap) {
+      const del = stale.map((n) => env.DB.prepare(`DELETE FROM tags WHERE tag=? AND entity_id=? AND source='collection'`).bind(tag, n));
+      for (let i = 0; i < del.length; i += 100) await env.DB.batch(del.slice(i, i + 100));
+    }
+    out.collections[tag] = stale.length > cap ? `${members.length} (+${stale.length} stale kept — feed looked short)` : members.length;
   }
   const nc = await env.DB.prepare(`SELECT COUNT(*) c FROM tags WHERE source='collection'`).first<{ c: number }>();
   const na = await env.DB.prepare(`SELECT COUNT(DISTINCT tag) c FROM tags WHERE source='artist'`).first<{ c: number }>();
