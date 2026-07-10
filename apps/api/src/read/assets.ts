@@ -104,7 +104,7 @@ assets.get("/v2/assets/:asset", async (c) => {
       ? { tier: assetTier(scored.raw, state, sig.low_quality === 1), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
       : { tier: "Dormant", score: null },
     tags,
-    sales: salesRes ?? { realized_usd: null, last_sale_usd: null, last_sale_time: null },
+    sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
     collection: collectionRes?.tag ?? null,
     collection_site: collectionRes?.site ?? null,
     feed_counts: feedCountsRes,
@@ -323,7 +323,7 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
       let host = "the metadata source";
       try { host = new URL(ptr.url).host; } catch { /* keep default */ }
       const offline = !lastStatus || (lastStatus >= 520 && lastStatus <= 530);
-      const error = offline ? `The metadata host (${host}) is offline — the on-chain art above is unaffected.` : `source returned ${lastStatus}`;
+      const error = offline ? `The metadata host (${host}) is offline.` : `source returned ${lastStatus}`;
       return J(c, { result: { url: ptr.url, error } }, offline ? 3600 : 60);
     }
     const text = (await res.text()).slice(0, 262144); // 256KB cap

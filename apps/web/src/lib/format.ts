@@ -32,7 +32,12 @@ export const usdCompact = (v?: number | null) => {
   if (a >= 1e9) return "$" + strip((v / 1e9).toFixed(1)) + "B";
   if (a >= 1e6) return "$" + strip((v / 1e6).toFixed(1)) + "M";
   if (a >= 1e3) return "$" + strip((v / 1e3).toFixed(1)) + "K";
-  return "$" + (a >= 1 ? Math.round(v).toLocaleString() : v.toFixed(2));
+  if (a >= 1) return "$" + Math.round(v).toLocaleString();
+  if (a >= 0.01) return "$" + v.toFixed(2);
+  // Sub-cent per-unit prices (cheap cards trade at fractions of a cent) — keep ~2 significant figures so
+  // "$0.0030" doesn't collapse to a useless "$0.00".
+  if (a > 0) return "$" + v.toFixed(Math.min(8, Math.max(2, 1 - Math.floor(Math.log10(a)))));
+  return "$0.00";
 };
 
 // Collection tags are slugs ("rare-pepe"); surfaces show them as display names ("Rare Pepe").

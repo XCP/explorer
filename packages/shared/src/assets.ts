@@ -1,7 +1,7 @@
 /** Asset surfaces — detail, quality, holders (GET /v2/assets/:asset and its sub-reads). */
 
 export type AssetQualityTier =
-  | "Bluechip" | "Established" | "Active" | "Speculative" // ranked (has a market)
+  | "Bluechip" | "Premium" | "Notable" | "Speculative" // ranked (has a market) — the asset RATING ladder
   | "Untraded" | "Dormant"; // non-ranked states
 
 /** Composed quality object on AssetDetail. Non-ranked assets get just { tier, score: null }. */
@@ -16,7 +16,7 @@ export interface AssetQuality {
 /** Per-asset money stats from the unified trades ledger (AssetDetail.sales). */
 export interface AssetSales {
   realized_usd: number | null; // lifetime SUM(usd_value) across every venue
-  last_sale_usd: number | null; // the most recent USD-known sale
+  last_price_usd: number | null; // per-unit USD price of the most recent USD-known sale (usd_value ÷ quantity)
   last_sale_time: number | null; // unix seconds of that sale
 }
 
@@ -100,11 +100,50 @@ export interface FeaturedAsset {
   score: number;
 }
 
+/** GET /v2/assets/:asset/activity — one row per month of the asset's on-chain life, from our own mirror.
+ *  Every event kind is counted and rolled into the four mediums people think in. Monthly (not daily) keeps
+ *  the payload tiny — the chart buckets monthly anyway. Powers the Activity tab time-series. */
+export interface AssetActivityMonth {
+  month: string;      // YYYY-MM
+  orders: number;     // DEX: order matches + orders opened
+  dispensers: number; // BTC: dispenses + dispensers opened
+  sends: number;      // plain transfers
+  supply: number;     // issuances + fairmints + destructions + dividends
+}
+
+/** GET /v2/assets/:asset/enhanced — CIP-25 enhanced asset info. When the on-chain description points to a
+ *  JSON file, the API fetches it server-side (CORS-free), caps it, and verifies the optional `;sha256` hash;
+ *  the client renders + sanitizes it. `json` is the raw CIP-25 object; `verified` = the hash matched. */
+export interface AssetEnhanced {
+  json?: Record<string, unknown>;
+  url?: string;
+  verified?: boolean;
+  error?: string;
+}
+
+/** GET /v2/assets/:asset/active-users — addresses ranked by lifetime credits + debits of the asset: who has
+ *  USED it the most (moved it in/out), independent of current balance. Backed by the credits/debits ledger. */
+export interface AssetActiveUser {
+  address: string;
+  credits: number;  // times the asset was credited to this address
+  debits: number;   // times it was debited from this address
+  activity: number; // credits + debits
+}
+
 /** GET /v2/assets/:asset/cohort — "holders of X also collect…" ranked by shared-holder count. */
 export interface AssetCohortRow {
   asset: string;
   asset_longname: string | null;
-  shared: number;
+  shared: number;          // holders of the subject asset that also hold this one
+  pct?: number | null;     // `shared` as % of the subject asset's holders — the "why it's related" figure
+}
+
+/** GET /v2/assets/:asset/related — the Related tab's two strips, each row carrying its co-hold reason
+ *  (`pct`% of the subject's holders also hold it). `collection` = same-collection siblings ranked by that
+ *  overlap; `cohort` = the broadest co-held assets outside the collection. */
+export interface AssetRelated {
+  collection: AssetCohortRow[];
+  cohort: AssetCohortRow[];
 }
 
 /** Asset-list rows (GET /v2/addresses/:a/issued, /v2/assets/:a/subassets, from-issuer). */
@@ -184,4 +223,6 @@ export interface AssetMarket {
   volume_7d: number | null;
   trades_7d: number | null;
   price_change_7d: number | null;
+  floor_usd: number | null;    // lowest open ask converted to USD — the header "Floor price"
+  floor_source: string | null; // where the floor came from ("Order")
 }

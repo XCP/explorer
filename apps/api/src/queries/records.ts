@@ -53,7 +53,7 @@ const FEEDS: Record<RecordKind, RecordFeed> = {
   orders: { select: ORDER_SELECT, orderCol: "o.block_index" },
   order_matches: { select: ORDER_MATCH_SELECT, orderCol: "om.block_index" },
   sweeps: { select: `SELECT tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status FROM sweeps` },
-  fairminters: { select: `SELECT tx_hash,block_index,block_time,source,asset,asset_longname,price,hard_cap,soft_cap,divisible,earned_quantity,paid_quantity,status FROM fairminters` },
+  fairminters: { select: `SELECT tx_hash,block_index,block_time,source,asset,asset_longname,price,quantity_by_price,hard_cap,soft_cap,divisible,earned_quantity,paid_quantity,status FROM fairminters` },
   fairmints: { select: FAIRMINT_SELECT, orderCol: "f.block_index" },
   destructions: { select: `SELECT tx_hash,block_index,block_time,source,asset,quantity_normalized,tag,status FROM destructions` },
   burns: { select: `SELECT tx_hash,block_index,block_time,source,burned_normalized,earned_normalized,status FROM burns` },

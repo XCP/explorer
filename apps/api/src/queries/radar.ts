@@ -45,8 +45,9 @@ export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]
   return q<BuyableAsset>(
     db,
     `WITH px AS (SELECT usd FROM prices WHERE currency='BTC' ORDER BY day DESC LIMIT 1),
-     disp AS ( -- cheapest open dispenser per asset (BTC)
-       SELECT asset, MIN(CAST(satoshirate_normalized AS REAL)) ask_btc
+     disp AS ( -- cheapest open dispenser per asset, per UNIT of the card (satoshirate is priced per dispense,
+               -- which can hand out give_quantity>1 units, so divide to get the effective one-unit BTC price)
+       SELECT asset, MIN(CAST(satoshirate_normalized AS REAL) / NULLIF(CAST(give_quantity_normalized AS REAL), 0)) ask_btc
          FROM dispensers
         WHERE status=0 AND CAST(give_remaining_normalized AS REAL) > 0
         GROUP BY asset

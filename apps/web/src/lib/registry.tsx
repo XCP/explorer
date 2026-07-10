@@ -79,10 +79,16 @@ export const ASSET_LIST_COLS: Col<AssetListRow>[] = [
 // One denomination per column, matching the header exactly (owner rule): BTC columns hold fixed
 // 8dp; sats columns hold comma-grouped integers.
 const btc8 = (n?: string | number | null) => { const v = Number(n); return n != null && n !== "" && Number.isFinite(v) ? v.toFixed(8) : "—"; };
+// Effective price for ONE unit of the card: a dispenser's satoshirate is charged per dispense, which can hand
+// out give_quantity>1 units, so divide by the give amount to get the per-unit BTC price (not the bundle price).
+const btcPerUnit = (rate?: string | number | null, give?: string | number | null) => {
+  const r = Number(rate), g = Number(give);
+  return rate != null && rate !== "" && Number.isFinite(r) && Number.isFinite(g) && g > 0 ? (r / g).toFixed(8) : "—";
+};
 const sats = (n?: number | null) => (n != null && Number.isFinite(n) ? Math.round(n).toLocaleString() : "—");
 export const DISPENSER_COLS: Col<DispenserRow>[] = [
   { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset) },
-  { label: "Price (BTC)", numeric: true, priority: 1, cell: (r) => btc8(r.satoshirate_normalized) },
+  { label: "Price (BTC)", numeric: true, priority: 1, cell: (r) => btcPerUnit(r.satoshirate_normalized, r.give_quantity_normalized) },
   { label: "Available", numeric: true, priority: 2, cell: (r) => commas(r.give_remaining_normalized) },
   { label: "Sales", numeric: true, priority: 3, w: "70px", cell: (r) => compact(r.dispense_count) },
   { label: "Source", priority: 4, omitOn: "address", cell: (r) => (
@@ -228,7 +234,14 @@ export const REGISTRY: Registry = {
   ] },
   fairminters: { slug: "fairminters", title: "Fairminters", cols: [
     { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", omitOn: "asset", cell: (r) => assetCell(r.asset, r.asset_longname) },
-    { label: "Price (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.price)) },
+    { label: "Price (XCP)", numeric: true, priority: 1, cell: (r) => {
+      // Effective price for ONE unit: `price` buys `quantity_by_price` asset units (raw; ÷1e8 when divisible),
+      // so divide the XCP paid by the units minted rather than showing the per-batch price.
+      const xcp = fromSats(r.price);
+      if (xcp == null) return "—";
+      const units = fromSats(r.quantity_by_price, r.divisible);
+      return commas(units && units > 0 ? xcp / units : xcp);
+    } },
     { label: "Minted", numeric: true, priority: 2, w: "70px", cell: (r) => {
       const cap = Number(r.hard_cap), earned = Number(r.earned_quantity);
       if (!cap || !Number.isFinite(earned)) return "—";
