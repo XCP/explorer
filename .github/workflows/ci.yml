@@ -32,7 +32,6 @@ jobs:
       - name: Check generated Cloudflare binding types
         working-directory: apps/web
         run: npx wrangler types --env-interface CloudflareEnv --include-runtime=false --check worker-configuration.d.ts
-      - run: npm run build -w xcp-explorer-web
       - name: Build OpenNext Worker
         working-directory: apps/web
-        run: npx opennextjs-cloudflare build --skipNextBuild
+        run: npx opennextjs-cloudflare build
