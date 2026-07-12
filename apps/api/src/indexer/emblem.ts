@@ -15,6 +15,7 @@
 import type { Env } from "#api/env";
 import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
 import { fetchEtherscanMintLogs } from "#api/integrations/etherscan-logs";
+import { fetchEmblemCuratedCollections } from "#api/integrations/emblem-curated";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
@@ -22,7 +23,6 @@ import {
 } from "#api/indexer/state";
 
 const META = "https://v2.emblemvault.io/meta";
-const CURATED = "https://v2.emblemvault.io/curated";
 const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
 const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
 const ZERO_TOPIC = "0x" + "0".repeat(64);
@@ -55,15 +55,10 @@ const LEGACY_CONTRACTS: string[] = [
 
 // Counterparty-bearing Emblem contracts (collectionChain 'xcp' / addressChain BTC / nativeAssets ⊇ XCP|BTC)
 // from /curated, merged with the legacy set above.
-async function counterpartyContracts(): Promise<string[]> {
+async function counterpartyContracts(): Promise<{ contracts: string[]; complete: boolean }> {
   const out = new Set<string>(LEGACY_CONTRACTS.map((a) => a.toLowerCase()));
   try {
-    const list = (await (await fetch(CURATED, { signal: AbortSignal.timeout(15000) })).json()) as Array<{
-      nativeAssets?: string[];
-      collectionChain?: string;
-      addressChain?: string;
-      contracts?: Record<string, string>;
-    }>;
+    const list = await fetchEmblemCuratedCollections();
     for (const c of list) {
       const na: string[] = c?.nativeAssets || [];
       const isCp =
@@ -71,10 +66,10 @@ async function counterpartyContracts(): Promise<string[]> {
       const address = c?.contracts?.["1"];
       if (isCp && typeof address === "string" && address.startsWith("0x")) out.add(address.toLowerCase());
     }
+    return { contracts: [...out], complete: true };
   } catch {
-    /* keep legacy + whatever we have */
+    return { contracts: [...out], complete: false };
   }
-  return [...out];
 }
 
 // PRIMARY enumerate+resolve in one: token id + BTC address straight from Alchemy metadata.
@@ -143,8 +138,9 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
 
   let contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
   if (!contracts.length) {
-    contracts = await counterpartyContracts();
-    if (contracts.length) await setState(env.DB, "emblem_contracts", JSON.stringify(contracts));
+    const discovered = await counterpartyContracts();
+    contracts = discovered.contracts;
+    if (discovered.complete && contracts.length) await setState(env.DB, "emblem_contracts", JSON.stringify(contracts));
   }
 
   if (contracts.length && (ak || ek)) {
