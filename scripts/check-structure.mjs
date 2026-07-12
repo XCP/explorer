@@ -12,6 +12,9 @@ function walk(dir) {
     if (statSync(p).isDirectory()) {
       walk(p);
     } else if (/\.(ts|tsx)$/.test(name)) {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*\.(ts|tsx)$/.test(name)) {
+        failures.push(`source filename: ${p} — use kebab-case`);
+      }
       const source = readFileSync(p, "utf8");
       if (/^export\s+\*\s+from\s+/m.test(source)) {
         failures.push(`export-all barrel: ${p} — export and import concrete modules directly`);
