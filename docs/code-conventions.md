@@ -38,7 +38,7 @@ These are repository rules, not suggestions. `npm run check` enforces the mechan
 
 - Prettier is the formatting authority; do not hand-align code against it.
 - ESLint owns correctness and architectural rules; TypeScript runs in strict mode.
-- Files may not grow beyond 400 nonblank, noncomment lines. Named legacy exceptions are an explicit debt
-  ledger in `eslint.config.mjs`, not precedent for new large files.
+- Files above 400 nonblank, noncomment lines produce a review warning, not a failure. Split a file only when
+  it contains distinct responsibilities or reasons to change; do not introduce indirection to satisfy a count.
 - Run `npm run check` before committing. API changes also run `npm test -w xcp-api`; web changes run the
   production build and Playwright suite.

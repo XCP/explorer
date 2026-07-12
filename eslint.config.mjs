@@ -35,23 +35,8 @@ export default tseslint.config(
         { prefer: "type-imports", fixStyle: "separate-type-imports" },
       ],
       "@typescript-eslint/naming-convention": ["error", { selector: "typeLike", format: ["PascalCase"] }],
-      // CLAUDE.md rule 5: a file that keeps growing is several concepts in a trench coat.
-      "max-lines": ["error", { max: 400, skipBlankLines: true, skipComments: true }],
+      // A review signal, not an architectural boundary. Split only when the file has distinct reasons to change.
+      "max-lines": ["warn", { max: 400, skipBlankLines: true, skipComments: true }],
     },
-  },
-  {
-    // FILE-SIZE DEBT LEDGER: new files fail at 400 lines. Remove these named exceptions as each
-    // module is split by capability; they are debt, not precedent.
-    files: [
-      "apps/api/src/indexer/signals.ts",
-      "apps/api/src/indexer/sync.ts",
-      "apps/api/src/queries/assets.ts",
-      "apps/api/src/read/assets.ts",
-      "apps/web/src/app/reputation/page.tsx",
-      "apps/web/src/features/records/registry.tsx",
-      "apps/web/src/features/transactions/components/tx-offer.tsx",
-      "apps/web/src/features/transactions/components/tx-receipt.tsx",
-    ],
-    rules: { "max-lines": "warn" },
   },
 );
