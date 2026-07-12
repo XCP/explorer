@@ -12,6 +12,7 @@ import type { Env } from "../index";
 export const PRICES_DDL = `CREATE TABLE IF NOT EXISTS prices (
   day TEXT NOT NULL, currency TEXT NOT NULL, usd REAL, PRIMARY KEY (day, currency))`;
 const PRICES_IDX = `CREATE INDEX IF NOT EXISTS idx_prices_cur_day ON prices(currency, day)`;
+const XCP_BTC_DDL = `CREATE TABLE IF NOT EXISTS xcp_btc_daily (day TEXT PRIMARY KEY, xcpbtc REAL NOT NULL)`;
 
 const CB = "https://api.exchange.coinbase.com/products";
 // Coinbase product + first-listed day (unix sec) per currency.
@@ -45,6 +46,7 @@ async function cbWindow(product: string, start: number, end: number): Promise<nu
 export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   await env.DB.prepare(PRICES_DDL).run();
   await env.DB.prepare(PRICES_IDX).run();
+  await env.DB.prepare(XCP_BTC_DDL).run();
   const now = Math.floor(Date.now() / 1000);
   const out: Record<string, unknown> = {};
 
@@ -69,22 +71,21 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     out[cur] = filled;
   }
 
-  // XCP/USD = forward-filled daily VWAP XCP/BTC (from our own DEX) × that day's BTC/USD.
-  await env.DB.prepare(`
-    WITH xbtc AS (
-      SELECT date(block_time,'unixepoch') day,
-        SUM(CASE WHEN forward_asset='BTC' THEN forward_quantity ELSE backward_quantity END) * 1.0
-        / NULLIF(SUM(CASE WHEN forward_asset='XCP' THEN forward_quantity ELSE backward_quantity END), 0) AS xcpbtc
-      FROM order_matches
-      WHERE status='completed' AND ((forward_asset='XCP' AND backward_asset='BTC') OR (forward_asset='BTC' AND backward_asset='XCP'))
-      GROUP BY day
-    )
-    INSERT OR REPLACE INTO prices (day, currency, usd)
-    SELECT b.day, 'XCP',
-      (SELECT x.xcpbtc FROM xbtc x WHERE x.day <= b.day ORDER BY x.day DESC LIMIT 1) * b.usd
-    FROM prices b
-    WHERE b.currency='BTC'
-      AND (SELECT x.xcpbtc FROM xbtc x WHERE x.day <= b.day ORDER BY x.day DESC LIMIT 1) IS NOT NULL`).run();
+  // Fold order matches once into a tiny indexed daily series. The former non-materialized CTE was searched
+  // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
+  await env.DB.prepare(`DELETE FROM xcp_btc_daily`).run();
+  await env.DB.prepare(`INSERT INTO xcp_btc_daily (day,xcpbtc)
+    SELECT date(block_time,'unixepoch'),
+      SUM(CASE WHEN forward_asset='BTC' THEN forward_quantity ELSE backward_quantity END) * 1.0
+      / NULLIF(SUM(CASE WHEN forward_asset='XCP' THEN forward_quantity ELSE backward_quantity END), 0)
+    FROM order_matches
+    WHERE status='completed' AND ((forward_asset='XCP' AND backward_asset='BTC') OR (forward_asset='BTC' AND backward_asset='XCP'))
+    GROUP BY date(block_time,'unixepoch')`).run();
+  await env.DB.prepare(`INSERT OR REPLACE INTO prices (day,currency,usd)
+    SELECT b.day,'XCP',
+      (SELECT x.xcpbtc FROM xcp_btc_daily x WHERE x.day<=b.day ORDER BY x.day DESC LIMIT 1)*b.usd
+    FROM prices b WHERE b.currency='BTC'
+      AND EXISTS (SELECT 1 FROM xcp_btc_daily x WHERE x.day<=b.day)`).run();
 
   const c = await env.DB.prepare(`SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`).all();
   out.calendar = c.results ?? [];

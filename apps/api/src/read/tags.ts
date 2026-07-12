@@ -32,10 +32,10 @@ function enrich(r: TagStatsBase): TagStatsRow {
 }
 
 // GET /v2/tags — every distinct tag with its population aggregate. A pure population read (no per-entity
-// key), so it gets a one-hour D1 cache plus a day-long stale window. D1 Insights measured this population
-// aggregation at ~8.1m rows / 11.4s per cold run, so no user should block on an expired value.
+// key), so it gets a daily D1 cache aligned with the daily full tag/signal self-heal. D1 Insights measured
+// this population aggregation at ~8.5m rows / 14s; refreshing it hourly recomputed unchanged source data.
 tags.get("/v2/tags", async (c) =>
-  cached(c, "tags:all", { ttl: 3600, edge: 300, swr: 86400 }, async () => ({
+  cached(c, "tags:all", { ttl: 86400, edge: 300, swr: 86400 }, async () => ({
     result: (await listTagStats(c.env.DB, ASSET_RAW, CONV_RAW)).map(enrich),
   }))
 );
