@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  reactCompiler: true,
   typedRoutes: true,
   // @xcp/shared ships raw .ts (types + a couple of const arrays) — let Next compile it.
   transpilePackages: ["@xcp/shared"],
