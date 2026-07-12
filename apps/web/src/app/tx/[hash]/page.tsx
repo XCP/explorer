@@ -4,7 +4,6 @@ import type { TxView } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
 import { TxLive } from "@/components/tx-view";
 import { KIND_TITLE } from "@/lib/tx";
-import { artUrl } from "@/lib/art";
 import { short } from "@/lib/format";
 
 /**
@@ -29,7 +28,7 @@ async function loadTx(hash: string): Promise<TxView | null> {
 function shareCopy(v: TxView, hash: string): { title: string; description: string; image?: string } {
   const a = v.action;
   const state = v.status === "mempool" ? "unconfirmed" : `${v.confirmations} confirmation${v.confirmations === 1 ? "" : "s"}`;
-  const art = (asset?: string | null) => (asset ? artUrl(asset, 800) : undefined);
+  const art = (asset?: string | null) => (asset ? `https://cdn.xcp.io/img/full/${encodeURIComponent(asset)}?image=1` : undefined); // always-a-picture (the resize proxy 415s on video)
   const btc = (sats?: string | number | null) => { const n = Number(sats); return Number.isFinite(n) && n > 0 ? `${(n / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} BTC` : null; };
   if (a?.kind === "dispenser" || a?.kind === "refill") {
     const d = a.dispenser;

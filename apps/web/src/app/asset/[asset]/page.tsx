@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ asset: st
   const usable = raw && !/^(stamp:|ord:|data:)/i.test(raw) && !/\S{80,}/.test(raw) ? raw : "";
   const description = (usable
     || `Counterparty asset ${name} — ${commas(item.holder_count)} holders, supply ${commas(item.supply_normalized)}.`).slice(0, 200);
-  const image = `https://cdn.xcp.io/img/full/${encodeURIComponent(item.asset)}`;
+  const image = `https://cdn.xcp.io/img/full/${encodeURIComponent(item.asset)}?image=1`; // always-a-picture: video assets unfurl with a frame
   return {
     title: name,
     description,
@@ -131,7 +131,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
       <AssetClassifications tags={item.tags} />
       <div className="mag">
         <div className="plate">
-          <AssetArt asset={item.asset} stamp={item.tags?.includes("stamp")} priority natural w={900} />
+          <AssetArt asset={item.asset} stamp={item.tags?.includes("stamp")} video={item.tags?.includes("video")} priority natural w={900} />
           <div className="cap">
             <span><b>{item.asset_longname || item.asset}</b> · {collection ? collectionLabel(collection) : "Counterparty asset"}</span>
             {capRight && <span>{capRight}</span>}

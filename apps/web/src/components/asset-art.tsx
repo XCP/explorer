@@ -15,11 +15,12 @@ import { artUrl, rawArtUrl } from "@/lib/art";
  *     No per-asset metadata needed; each stage only triggers on the previous one's onError.
  */
 export function AssetArt({
-  asset, className = "", natural = false, stamp = false, priority = false, w = 640,
-}: { asset: string; className?: string; natural?: boolean; stamp?: boolean; priority?: boolean; w?: number }) {
+  asset, className = "", natural = false, stamp = false, priority = false, w = 640, video = false,
+}: { asset: string; className?: string; natural?: boolean; stamp?: boolean; priority?: boolean; w?: number; video?: boolean }) {
   const [pixel, setPixel] = useState(stamp || asset[0] === "A"); // initial guess avoids a flash before load
   const [ratio, setRatio] = useState<string | undefined>();
-  const [stage, setStage] = useState<"resized" | "raw" | "video">("resized");
+  // `video` = the wire's one-bit hint (the ingest-stamped tag) — skip the error cascade entirely
+  const [stage, setStage] = useState<"resized" | "raw" | "video">(video ? "video" : "resized");
 
   if (stage === "video") {
     return (
