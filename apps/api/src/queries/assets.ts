@@ -401,13 +401,6 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
   );
 }
 
-/** One count per detail-page feed tab — scalar subselects with the SAME filters as the per-asset
- *  list queries above (trades / issuances / dispensers / dispenses / orders-either-side / sends /
- *  subassets-by-longname-prefix / fairmints / dividends-either-side / destructions /
- *  pools-either-leg-or-lp) and the
- *  from-issuer feed (listIssued's issuer-or-owner predicate in
- *  queries/addresses.ts), so each tab's count matches its table. `issuer` may be null (native path
- *  never reaches here, but an assets row can lack an issuer) — the from_issuer count is then 0. */
 /** The asset's collection tag + project site. Considers both collection sources — the curated pepe.wtf
  *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
  *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green

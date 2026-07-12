@@ -41,16 +41,18 @@ assets.get("/v2/assets/:asset", async (c) => {
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
     const A = a.toUpperCase();
     if (A === "XCP" || A === "BTC") {
-      let supply_normalized: string | null = null;
-      if (A === "XCP") {
-        const sup = await xcpNativeSupply(c.env.DB);
-        supply_normalized = (Number(sup?.supply ?? 0) / 1e8).toFixed(8);
-      }
-      const holder_count = await holderCount(c.env.DB, A);
+      const [sup, holder_count, feed_counts] = await Promise.all([
+        A === "XCP" ? xcpNativeSupply(c.env.DB) : Promise.resolve(null),
+        holderCount(c.env.DB, A),
+        readAssetFeedCounts(c.env.DB, A, null).catch(() => null),
+      ]);
+      const supply_normalized = A === "XCP"
+        ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8)
+        : null;
       const body: AssetDetail = {
         asset: A, asset_longname: null, type: "native", divisible: 1, locked: 1,
         description: A === "XCP" ? "Counterparty native currency" : "Bitcoin",
-        issuer: null, owner: null, supply_normalized, holder_count,
+        issuer: null, owner: null, supply_normalized, holder_count, feed_counts,
       };
       return J(c, { result: body }, 300); // native token — near-static
     }

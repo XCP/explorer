@@ -79,6 +79,11 @@ const ASSET_DETAIL: Spec = {
   divisible: "number", locked: "number", description: "string|null", supply_normalized: "string|null", holder_count: "number",
 };
 const ASSET_QUALITY: Spec = { tier: "string", score: "number|null", raw: "number?", breakdown: "object?", low_quality: "boolean?" };
+const ASSET_FEED_COUNTS: Spec = {
+  sales: "number", issuances: "number", dispensers: "number", dispenses: "number", orders: "number",
+  sends: "number", subassets: "number", from_issuer: "number", fairmints: "number", dividends: "number",
+  destructions: "number", pools: "number",
+};
 const SEND_ROW: Spec = {
   tx_hash: "string", block_index: "number", block_time: "number|null", source: "string|null", destination: "string|null",
   asset: "string|null", quantity_normalized: "string|null", send_type: "string|null", status: "string|null",
@@ -160,6 +165,9 @@ test("contract: GET /v2/assets/XCP — AssetDetail native reduced path", async (
   const j = await getJson("/v2/assets/XCP");
   assertShape(j.result, ASSET_DETAIL, "XCP.");
   assert.equal(j.result.type, "native", "XCP must report type=native");
+  assertShape(j.result.feed_counts, ASSET_FEED_COUNTS, "XCP.feed_counts.");
+  assert.ok(j.result.feed_counts.sends > 0, "XCP should earn its Sends tab");
+  assert.ok(j.result.feed_counts.orders > 0, "XCP should earn its Orders tab");
 });
 
 test("contract: GET /v2/sends?limit=2 — SendRow list", async (t) => {
