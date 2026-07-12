@@ -9,15 +9,8 @@
  * refreshed on the cron. Transient-safe: a failed/empty fetch leaves the existing tokenscan tags untouched.
  */
 import type { Env } from "#api/env";
+import { fetchTokenscanDirectory, type TokenscanCollection } from "#api/integrations/tokenscan-directory";
 import { canonicalCollection, EXCLUDED_COLLECTIONS } from "#api/indexer/collections";
-
-const NFTS_URL = "https://tokenscan.io/js/nfts.js";
-
-interface TsCollection {
-  name?: string;
-  site?: string;
-  cards?: string[];
-}
 
 const slugify = (s: string) =>
   s
@@ -26,19 +19,13 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "");
 const assetOf = (card: string) => card.replace(/\.[^.]+$/, "").trim(); // "RAREPIGEON.png" -> "RAREPIGEON"
 
-async function fetchNftData(): Promise<TsCollection[]> {
-  const r = await fetch(NFTS_URL, { headers: { "user-agent": "xcp.io-indexer" }, signal: AbortSignal.timeout(30000) });
-  if (!r.ok) throw new Error(`tokenscan nfts.js ${r.status}`);
-  const t = await r.text();
-  const a = t.indexOf("["),
-    b = t.lastIndexOf("]"); // the file is `NFT_DATA = [ … ]`; slice the array literal out
-  if (a < 0 || b < 0 || b < a) throw new Error("NFT_DATA array not found");
-  return JSON.parse(t.slice(a, b + 1)) as TsCollection[];
+async function fetchNftData(): Promise<TokenscanCollection[]> {
+  return fetchTokenscanDirectory();
 }
 
 /** Refresh the tokenscan collection tags (asset → project, with {collection, site} meta). */
 export async function crawlTokenscanCollections(env: Env): Promise<Record<string, unknown>> {
-  let data: TsCollection[];
+  let data: TokenscanCollection[];
   try {
     data = await fetchNftData();
   } catch (e) {
