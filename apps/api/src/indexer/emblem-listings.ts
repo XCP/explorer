@@ -7,56 +7,18 @@
  * stale/expired ones. Requires SEQUENCE_ACCESS_KEY; no-ops without it (so the rest of the cron is unaffected).
  */
 import type { Env } from "#api/env";
+import { fetchSequenceListingsPage } from "#api/integrations/sequence";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
   setIndexerState as setState,
 } from "#api/indexer/state";
 
-const SEQ_BASE = "https://marketplace-api.sequence.app/mainnet/rpc/Marketplace/ListCollectiblesWithLowestListing";
-const PAGE_SIZE = 100;
 const MAX_PAGES_PER_CONTRACT = 5; // includeEmpty=false returns only listed tokens, so this is plenty
 const CONTRACTS_PER_RUN = 6; // rotate through all ~36 Emblem contracts over several hourly runs
 const MAP_CHUNK = 90; // stay under D1's 100 bound-param cap on the token_id IN-list
-const REQUEST_TIMEOUT_MS = 20_000;
 
 // The lowest-listing order fields we read (Sequence webrpc Order — services/marketplace/marketplace.gen.go).
-interface SeqOrder {
-  orderId?: string;
-  marketplace?: string | number;
-  tokenId?: string | null;
-  priceUSD?: number;
-  priceAmount?: string;
-  priceCurrencyAddress?: string;
-  validUntil?: string; // ISO-8601
-}
-interface CollectibleOrder {
-  metadata?: { tokenId?: string };
-  order?: SeqOrder | null;
-  listing?: SeqOrder | null;
-}
-interface ListResp {
-  collectibles?: CollectibleOrder[];
-  page?: { more?: boolean };
-  error?: string;
-  msg?: string;
-}
-
-async function fetchPage(key: string, contract: string, page: number): Promise<ListResp> {
-  const r = await fetch(SEQ_BASE, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Access-Key": key },
-    body: JSON.stringify({
-      contractAddress: contract,
-      filter: { includeEmpty: false },
-      page: { page, pageSize: PAGE_SIZE },
-    }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!r.ok) throw new Error(`Sequence listings request failed: ${r.status}`);
-  return r.json() as Promise<ListResp>;
-}
-
 // A live ask flattened to what emblem_listings stores (asset resolved separately, in a batched lookup).
 interface Ask {
   tokenId: string;
@@ -72,7 +34,7 @@ interface Ask {
 async function sweepContract(key: string, contract: string): Promise<Ask[]> {
   const asks: Ask[] = [];
   for (let page = 1; page <= MAX_PAGES_PER_CONTRACT; page++) {
-    const resp = await fetchPage(key, contract, page);
+    const resp = await fetchSequenceListingsPage(key, contract, page);
     if (resp.error) break; // registered-but-empty contracts just return no collectibles; a hard error stops this contract
     for (const it of resp.collectibles ?? []) {
       const o = it.listing ?? it.order;
