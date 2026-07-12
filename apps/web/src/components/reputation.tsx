@@ -4,7 +4,7 @@ import { ShieldCheck, Stamp, Wallet, Store, Building2, Coins, Crown, ArrowDownTo
 import type { AddressReputation } from "@xcp/shared/addresses";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { commas } from "@/lib/format";
 
 // Composed address reputation: intrinsic, earned-only (mud/dust-proof), validated predictive.

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReputationTiersOverview, ReputationTierMembers } from "@xcp/shared/addresses";
-import { getJson, type Envelope } from "@/lib/api";
+import { getJson, type Envelope } from "@/lib/api/server";
 import { SectionHeader, SectionIdentity, SectionStats } from "@/components/section-header";
 import { addrCell } from "@/lib/cells";
 import { commas } from "@/lib/format";

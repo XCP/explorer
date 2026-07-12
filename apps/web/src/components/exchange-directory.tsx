@@ -2,7 +2,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import type { ExchangesPayload } from "@xcp/shared/addresses";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card, Stat } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { AssetIcon } from "@/components/ui/badges";

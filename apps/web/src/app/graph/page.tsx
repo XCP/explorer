@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { GraphSubgraph } from "@xcp/shared/graph";
-import { apiUrl } from "@/lib/api";
+import { apiUrl } from "@/lib/api/url";
 import { GraphView } from "@/components/graph-view";
 
 // R&D scratch page: render a bounded sub-graph from /v2/graph/{address|asset}/:id with reagraph. Not linked in

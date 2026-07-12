@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import useSWR from "swr";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Skeleton } from "@/components/ui/feedback";
 import { AsyncContent } from "@/components/ui/async-content";
 import { SecondaryButton } from "@/components/ui/buttons";

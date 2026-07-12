@@ -2,7 +2,7 @@
 import useSWR from "swr";
 import type { AddressReputation } from "@xcp/shared/addresses";
 import type { Envelope } from "@xcp/shared/envelope";
-import { apiUrl } from "@/lib/api";
+import { apiUrl } from "@/lib/api/url";
 
 /** The address band's Reputation stat value — a tiny client island so the server-rendered stat strip
  *  can lead with the composed score. Null score (new/quiet/infra address) reads as a dash. */

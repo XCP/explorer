@@ -2,7 +2,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import type { AssetActivityMonth, AssetActiveUser } from "@xcp/shared/assets";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Skeleton } from "@/components/ui/feedback";
 import { commas, short } from "@/lib/format";
 import { AssetActivityChart } from "@/components/asset-activity-chart";

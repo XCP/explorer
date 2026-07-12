@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import useSWR from "swr";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { AreaChart } from "@/components/ui/charts";
 

@@ -39,8 +39,7 @@ npm run deploy -w xcp-explorer-web
 - `src/components/ui/` — shared visual primitives.
 - `src/components/` — current shared and feature components; these are being grouped into `chrome/` and
   feature-owned folders as described in the architecture assessment.
-- `src/lib/api.ts` — current shared URL, browser fetcher, and server binding access; scheduled to split into
-  explicit client/server modules.
+- `src/lib/api/` — environment-neutral URL construction plus explicit browser and server/Cloudflare clients.
 - `src/lib/hooks.ts` — shared SWR hooks for live and paginated reads.
 - `src/lib/registry.tsx` — typed record-table definitions.
 - `src/lib/cells.tsx` — shared record-table cell renderers and column contracts.

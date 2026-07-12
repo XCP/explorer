@@ -3,7 +3,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { useState } from "react";
 import type { BitcoinTxIo, BitcoinTxSummary } from "@xcp/shared/chain";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { btcAmt } from "@/lib/tx";

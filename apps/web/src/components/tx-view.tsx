@@ -5,7 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { CheckCircle2, Clock, XCircle } from "lucide-react";
 import type { TxView } from "@xcp/shared/chain";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card, KV } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
 import { RecordTable } from "@/components/record-table";

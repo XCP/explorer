@@ -2,7 +2,7 @@
 import useSWR from "swr";
 import { GitBranch } from "lucide-react";
 import type { AddressConnectionRow, AddressLineageRow } from "@xcp/shared/addresses";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { addrCell } from "@/lib/cells";

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Trophy, CalendarDays, LockOpen } from "lucide-react";
 import type { AssetDetail, AssetMarket } from "@xcp/shared/assets";
 import type { TagDetail } from "@xcp/shared/tags";
-import { getJson, NotFoundError, type Envelope } from "@/lib/api";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
 import { AssetArt } from "@/components/asset-art";
 import { AssetTabs } from "@/components/asset-tabs";

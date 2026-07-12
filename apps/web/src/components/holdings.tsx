@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { AddressBalanceRow } from "@xcp/shared/addresses";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { AsyncContent } from "@/components/ui/async-content";

@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { AssetHolderMakeup } from "@xcp/shared/assets";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { commas } from "@/lib/format";
 
 // The four reputation tiers deep-link to their explainer + leaderboard; infra rows (Burn/Exchange/…) don't.

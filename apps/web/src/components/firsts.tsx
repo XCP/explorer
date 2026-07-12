@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import useSWR from "swr";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { AssetIcon } from "@/components/ui/badges";
 import { Skeleton } from "@/components/ui/feedback";

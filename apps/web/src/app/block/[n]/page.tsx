@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { BlockDetail, BlockTxSummary } from "@xcp/shared/chain";
-import { getJson, NotFoundError, type Envelope } from "@/lib/api";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { Card, KV } from "@/components/ui/card";
 import { AsyncContent } from "@/components/ui/async-content";
 import { RecordTable } from "@/components/record-table";

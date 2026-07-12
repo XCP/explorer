@@ -2,7 +2,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { useState } from "react";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { AssetIcon } from "@/components/ui/badges";
 import { Board } from "@/components/board";
 import { commas } from "@/lib/format";

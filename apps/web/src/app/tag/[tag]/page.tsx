@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { TagDetail } from "@xcp/shared/tags";
-import { getJson, NotFoundError, type Envelope } from "@/lib/api";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { Stat } from "@/components/ui/card";
 import { ScoreBadge } from "@/components/ui/score-badge";
 import { TagMembers } from "@/components/tag-members";

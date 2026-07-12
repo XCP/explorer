@@ -2,7 +2,7 @@
 import useSWR from "swr";
 import type { GraphEntityScore } from "@xcp/shared/graph";
 import type { Envelope } from "@xcp/shared/envelope";
-import { apiUrl } from "@/lib/api";
+import { apiUrl } from "@/lib/api/url";
 
 /**
  * The graph-reputation trait chip (see apps/api/docs/graph-reputation.md). Tier display rules:

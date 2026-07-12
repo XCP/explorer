@@ -1,7 +1,7 @@
 "use client";
 import useSWR from "swr";
 import type { NetworkStats as NetworkStatsPayload } from "@xcp/shared/stats";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card, Stat } from "@/components/ui/card";
 import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";

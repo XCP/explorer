@@ -4,7 +4,7 @@ import useSWR from "swr";
 import type { FeaturedAsset } from "@xcp/shared/assets";
 import type { RadarPayload } from "@xcp/shared/radar";
 import type { TradeRow } from "@xcp/shared/trades";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { useTrades } from "@/lib/hooks";
 import { AssetArt } from "@/components/asset-art";
 import { AssetIcon } from "@/components/ui/badges";

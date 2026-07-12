@@ -1,7 +1,7 @@
 "use client";
 import useSWR from "swr";
 import type { TxEvent } from "@xcp/shared/chain";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { eventChip } from "@/lib/mempool";

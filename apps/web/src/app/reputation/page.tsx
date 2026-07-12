@@ -5,7 +5,7 @@ import {
   Vault, ArrowDownToLine, Building2, Flame, Server, ArrowRight, Layers, ShieldAlert, type LucideIcon,
 } from "lucide-react";
 import type { ReputationTiersOverview } from "@xcp/shared/addresses";
-import { getJson, type Envelope } from "@/lib/api";
+import { getJson, type Envelope } from "@/lib/api/server";
 import { commas } from "@/lib/format";
 
 export const metadata: Metadata = {

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { AssetCohortRow, AssetRelated } from "@xcp/shared/assets";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { collectionLabel, commas } from "@/lib/format";
 import { artUrl } from "@/lib/art";
 

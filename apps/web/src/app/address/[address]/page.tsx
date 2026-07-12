@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { AddressSummary } from "@xcp/shared/addresses";
-import { getJson, NotFoundError, type Envelope } from "@/lib/api";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
 import { CopyButton } from "@/components/copy-button";
 import { GraphTrustChip } from "@/components/graph-trust-chip";

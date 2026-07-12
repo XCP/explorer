@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { TxView } from "@xcp/shared/chain";
-import { getJson, NotFoundError, type Envelope } from "@/lib/api";
+import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { TxLive } from "@/components/tx-view";
 import { KIND_TITLE } from "@/lib/tx";
 import { short } from "@/lib/format";

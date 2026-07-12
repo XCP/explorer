@@ -7,7 +7,7 @@ import type { MempoolActionRow } from "@xcp/shared/mempool";
 import type { SyncOverview } from "@xcp/shared/stats";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
-import { apiUrl, type Envelope } from "./api";
+import { apiUrl, type Envelope } from "./api/url";
 
 // Generic list/detail hooks over the explorer read API. Pagination via offset.
 function useList<T = unknown>(path: string, params?: Record<string, string | number | undefined>) {

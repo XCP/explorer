@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { AssetEnhanced } from "@xcp/shared/assets";
-import { apiUrl } from "@/lib/api";
+import { apiUrl } from "@/lib/api/url";
 
 // The sanitizer and JSON renderer are only needed after an explicit inspect action. Keeping this
 // as a separate client chunk avoids charging every asset-page visit for an uncommon tool.

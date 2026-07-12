@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
 import type { RadarPayload, RadarAsset, BuyableAsset } from "@xcp/shared/radar";
-import { apiUrl, type Envelope } from "@/lib/api";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { AssetIcon } from "@/components/ui/badges";
