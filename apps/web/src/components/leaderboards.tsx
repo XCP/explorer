@@ -7,19 +7,28 @@ import { AssetIcon } from "@/components/ui/badges";
 import { Board } from "@/components/board";
 import { commas } from "@/lib/format";
 
+type LeaderboardScalar = string | number | null | undefined;
+type LeaderboardRow = Record<string, LeaderboardScalar>;
+
 // Chain-wide leaderboards (creators, collectors, assets, reputation, stamps). Client island (the
 // low-quality toggle is interactive) rendered by the thin server page that owns the static metadata.
 export function Leaderboards() {
   const [showLowQ, setShowLowQ] = useState(false);
   // The leaderboards payload is a bag of ad-hoc board rows whose columns vary per board (see the
   // Leaderboards DTO) — kept deliberately loose so each board's render can read its own metric field.
-  const { data } = useSWR<Envelope<Record<string, any[]>>>(apiUrl("/v2/leaderboards", showLowQ ? { include_hidden: 1 } : {}));
+  const { data } = useSWR<Envelope<Record<string, LeaderboardRow[]>>>(apiUrl("/v2/leaderboards", showLowQ ? { include_hidden: 1 } : {}));
   const d = data?.result ?? {};
 
-  const Addr = (a: string) => <Link href={`/address/${a}`} className="font-mono flex-1 min-w-0 break-all">{a}</Link>;
-  const Asset = (asset: string, longname?: string) => (
+  const Addr = (value: LeaderboardScalar) => {
+    const address = String(value ?? "");
+    return <Link href={`/address/${address}`} className="font-mono flex-1 min-w-0 break-all">{address}</Link>;
+  };
+  const Asset = (value: LeaderboardScalar, longname?: LeaderboardScalar) => {
+    const asset = String(value ?? "");
+    return (
     <Link href={`/asset/${asset}`} className="flex items-center gap-2 flex-1 min-w-0"><AssetIcon asset={asset} size={16} /><span className="truncate">{longname || asset}</span></Link>
-  );
+    );
+  };
   const val = (t: string) => <span className="font-mono text-zinc-400 text-xs shrink-0">{t}</span>;
 
   return (
