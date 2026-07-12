@@ -49,12 +49,11 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
     `SELECT rowid, asset FROM assets WHERE rowid > ? ORDER BY rowid LIMIT ?`
   ).bind(cursor, ASSETS_PER_RUN).all<{ rowid: number; asset: string }>()).results || [];
 
-  const out: { from: number; to: number; assets: number; sales_found: number; wrapped?: boolean; total?: number } =
+  const out: { from: number; to: number; assets: number; sales_found: number; wrapped?: boolean } =
     { from: cursor, to: cursor, assets: rows.length, sales_found: 0 };
   if (!rows.length) { // past the end — wrap to re-sweep for new sales next tick
     await setState(env, "scarce_cursor", "0");
     out.wrapped = true;
-    out.total = (await env.DB.prepare(`SELECT COUNT(*) c FROM scarce_city_sales`).first<{ c: number }>())?.c ?? 0;
     return out;
   }
 
@@ -83,6 +82,5 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   const last = rows[rows.length - 1].rowid;
   await setState(env, "scarce_cursor", String(last));
   out.to = last;
-  out.total = (await env.DB.prepare(`SELECT COUNT(*) c FROM scarce_city_sales`).first<{ c: number }>())?.c ?? 0;
   return out;
 }

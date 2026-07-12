@@ -179,6 +179,5 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
     resolved += done.length;
   }
   out.resolved = resolved;
-  out.table = await env.DB.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN resolved=0 THEN 1 ELSE 0 END) unresolved, SUM(CASE WHEN btc_address IS NOT NULL THEN 1 ELSE 0 END) btc FROM emblem_vaults`).first();
   return out;
 }

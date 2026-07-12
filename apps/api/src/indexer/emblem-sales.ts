@@ -65,7 +65,7 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
 
   const out: {
     contract: string; inserted: number; pages: number;
-    err?: string; sample?: NftSale; contract_done?: boolean; total_sales?: number;
+    err?: string; sample?: NftSale; contract_done?: boolean;
   } = { contract, inserted: 0, pages: 0 };
   for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
     let url = `${ALCHEMY_SALES(key)}?contractAddress=${contract}&order=asc&limit=${PAGE}`;
@@ -93,6 +93,5 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
   }
   await setState(env, `emblem_sales_cur_${contract}`, cursor);
   if (!cursor) { await setState(env, "emblem_sales_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
-  out.total_sales = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_sales`).first<{ c: number }>())?.c ?? 0;
   return out;
 }

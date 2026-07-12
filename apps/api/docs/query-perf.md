@@ -58,6 +58,9 @@ Slow-moving first/last-seen repair passes and global infrastructure classificati
 They previously ran 24-39 times/day; `addr_grant_seen` alone consumed ~224s/day, while the deposit classifier
 rewrote ~11.2M rows/day despite infrastructure membership being stable.
 
+Bounded Emblem/Scarce crawler responses report the batch and cursor state without recounting their complete
+staging tables. Completion and retry logic never depended on those telemetry-only totals.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code

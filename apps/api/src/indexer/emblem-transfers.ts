@@ -87,6 +87,5 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   // page runs dry the contract is caught up to tip → bump its cursor past the last block and rotate contracts.
   if (tr?.pageKey) { await setState(env, pkKey, tr.pageKey); out.more = true; }
   else { await setState(env, pkKey, ""); await setState(env, curKey, String(maxBlock + 1)); await setState(env, "emblem_tx_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
-  out.total_sales = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_sales`).first<{ c: number }>())?.c ?? 0;
   return out;
 }

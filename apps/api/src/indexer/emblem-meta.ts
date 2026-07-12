@@ -57,8 +57,6 @@ export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>
   const out: Record<string, unknown> = { fetched: rows.length, claims_cp: 0, has_contents: 0, fraud: 0 };
   if (!rows.length) {
     out.done = true;
-    out.remaining = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE vault_kind='foreign' AND meta_crawled=0`).first<{ c: number }>())?.c ?? 0;
-    out.classified = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE meta_crawled=1`).first<{ c: number }>())?.c ?? 0;
     return out;
   }
 
