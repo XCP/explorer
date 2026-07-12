@@ -43,6 +43,9 @@ recomputed an unchanged 8.5M-row/14s population hourly). Migration 0046 material
 the price calendar now scans order matches once and performs indexed day seeks instead of re-running a CTE
 for every BTC day (~8.3M rows per refresh before the change).
 
+Migration 0047 adds a partial burn-address index and the `assets_burned` rebuild fixes its join order to
+start from the tiny curated burn set. The former plan drove from all sends and took 39s in D1 Insights.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code

@@ -307,7 +307,7 @@ const UNITS: FeatureUnit[] = [
   // Burner signal: distinct CLEAN assets sent to a known burn address (creators burning their own supply —
   // PEPECASH, Bitcorn — is a credible pro-holder/deflation act). Depends on is_burn + asset low_quality.
   { name: "addr_burned_out", scope: "address", reads: ["sends"], dependsOn: ["addr_is_burn", "asset_lowq"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: `INSERT INTO address_signals (address,assets_burned) SELECT s.source,COUNT(DISTINCT s.asset) FROM sends s JOIN address_signals b ON b.address=s.destination AND b.is_burn=1 LEFT JOIN asset_signals a ON a.asset=s.asset WHERE s.source IS NOT NULL AND COALESCE(a.low_quality,0)=0 GROUP BY s.source ON CONFLICT(address) DO UPDATE SET assets_burned=excluded.assets_burned` },
+    full: `INSERT INTO address_signals (address,assets_burned) SELECT s.source,COUNT(DISTINCT s.asset) FROM address_signals b CROSS JOIN sends s ON s.destination=b.address LEFT JOIN asset_signals a ON a.asset=s.asset WHERE b.is_burn=1 AND s.source IS NOT NULL AND COALESCE(a.low_quality,0)=0 GROUP BY s.source ON CONFLICT(address) DO UPDATE SET assets_burned=excluded.assets_burned` },
 
   // ===== ADDRESS · dispenser-operator trust (from dispensers + dispenses) =====
   // Dispenser-operator trust = longevity-weighted track record (validated: at the top it's 100% legit
