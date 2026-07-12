@@ -58,6 +58,20 @@ First-wave tables, in expected value order:
 5. `order_matches`: replace the 129-character composite id with `(tx0_index, tx1_index)` while rebuilding
    the public id at the boundary.
 
+Production probes supporting the prototype (2026-07-12):
+
+- all 1,770,387 sends have a non-null `tx_index`; none point to a missing transaction, so their repeated
+  `tx_hash` can be reconstructed without loss;
+- 45,603 `source_address` and 46,229 `destination_address` values differ from the generic source/destination,
+  so those semantic columns remain independently interned;
+- 58,262 balances refer to asset strings absent from the canonical `assets` table, so `asset_dictionary`
+  is an observed-value dictionary rather than a lossy FK to registered assets;
+- 46,779 UTXO balances use ~66-character one-use holders; these are split into BLOB hash plus integer vout
+  instead of being placed in a dictionary that would add overhead without deduplication.
+
+The executable DDL and index-plan tests live in `src/indexer/compact-primary-prototype.ts` and
+`tests/compact-primary-prototype.test.ts`. They are intentionally not a production migration.
+
 Values that may point outside the mirrored transaction set remain raw BLOB hashes rather than forced
 foreign keys. Small tables are normalized only when their indexes or repeated columns produce measurable
 savings.

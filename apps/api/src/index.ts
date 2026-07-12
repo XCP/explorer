@@ -176,7 +176,9 @@ export default {
         try {
           const bf = await env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='backfill_active'").first<{ value: string }>();
           if (bf?.value === "1") {
-            const r = await backfillLedger(env, { maxEvents: 10000 });
+            // Multi-row compact inserts keep a 50k pass comfortably bounded while reducing the
+            // one-time migration from roughly a day to a few hours. The function hard-caps at 50k.
+            const r = await backfillLedger(env, { maxEvents: 50000 });
             if (r.caught_up) {
               await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
               const parity = await verifyLedgerParity(env);
