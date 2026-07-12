@@ -2,12 +2,12 @@
 import { useState } from "react";
 import type { BlockRow } from "@xcp/shared/chain";
 import { useBlocks } from "@/lib/hooks";
-import { type Col, blockCell, timeCell, mono } from "@/lib/cells";
+import { type Col, blockCell, timeCell, mono } from "@/features/records/cells";
 import { commas, short } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 
 const PAGE = 25;
 

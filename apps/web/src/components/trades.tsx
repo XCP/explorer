@@ -2,12 +2,12 @@
 import { useState } from "react";
 import type { TradeRow } from "@xcp/shared/trades";
 import { useTrades, useTradeStats } from "@/lib/hooks";
-import { type Col, blockCell, addrCell, assetCell, timeCell, viewCell } from "@/lib/cells";
+import { type Col, blockCell, addrCell, assetCell, timeCell, viewCell } from "@/features/records/cells";
 import { commas, compact } from "@/lib/format";
 import { Stat } from "@/components/ui/card";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 
 // Unified sales feed across every venue — DEX order-matches, dispenser sales, Emblem-vault NFT sales.
 // Typed end-to-end (TradeRow from @xcp/shared): the reference implementation for explorer pages. Client

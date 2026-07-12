@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReputationTiersOverview, ReputationTierMembers } from "@xcp/shared/addresses";
 import { getJson, type Envelope } from "@/lib/api/server";
 import { SectionHeader, SectionIdentity, SectionStats } from "@/components/section-header";
-import { addrCell } from "@/lib/cells";
+import { addrCell } from "@/features/records/cells";
 import { commas } from "@/lib/format";
 
 const VALID = new Set(["og", "established", "active", "casual"]);

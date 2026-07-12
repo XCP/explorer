@@ -1,7 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
-import { ASSET_LIST_COLS, DISPENSER_COLS, REGISTRY } from "@/lib/registry";
+import { ASSET_LIST_COLS, DISPENSER_COLS, REGISTRY } from "@/features/records/registry";
 
 // The address detail page's tabbed activity (sends, issuances, dispensers, …). A client island: the
 // column `cell` renderers are functions (can't cross the server→client boundary). Feed tabs reuse

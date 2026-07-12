@@ -3,9 +3,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TxAction } from "@xcp/shared/chain";
 import type { SendRow } from "@xcp/shared/records";
-import { RecordTable } from "@/components/record-table";
-import { REGISTRY } from "@/lib/registry";
-import { assetChip, statusPill, dispenserPill, sweepFlagsBadge, type Col } from "@/lib/cells";
+import { RecordTable } from "@/features/records/components/record-table";
+import { REGISTRY } from "@/features/records/registry";
+import { assetChip, statusPill, dispenserPill, sweepFlagsBadge, type Col } from "@/features/records/cells";
 import { btcAmt, xcpAmt } from "@/lib/tx";
 import { amount, commas, fromSats, short } from "@/lib/format";
 

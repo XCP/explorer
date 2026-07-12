@@ -5,9 +5,9 @@ import { useTag } from "@/lib/hooks";
 import { Card } from "@/components/ui/card";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 import { ScoreBadge } from "@/components/ui/score-badge";
-import { type Col, assetCell } from "@/lib/cells";
+import { type Col, assetCell } from "@/features/records/cells";
 import { commas, compact } from "@/lib/format";
 
 // A tag's asset members, best composed-quality first — each row's tier/score is computed server-side.

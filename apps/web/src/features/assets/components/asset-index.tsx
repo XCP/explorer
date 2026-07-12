@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useAssets } from "@/lib/hooks";
 import { AsyncContent } from "@/components/ui/async-content";
 import { SecondaryButton } from "@/components/ui/buttons";
-import { RecordTable } from "@/components/record-table";
-import { assetCell, addrCell, blockCell, lockStateCell, type Col, type SortState } from "@/lib/cells";
+import { RecordTable } from "@/features/records/components/record-table";
+import { assetCell, addrCell, blockCell, lockStateCell, type Col, type SortState } from "@/features/records/cells";
 import type { AssetIndexRow } from "@xcp/shared/assets";
 import { commas } from "@/lib/format";
 

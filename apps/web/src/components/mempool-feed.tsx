@@ -2,12 +2,12 @@
 import { useState } from "react";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import { useMempool } from "@/lib/hooks";
-import { type Col, addrCell, assetCell, timeCell, viewCell } from "@/lib/cells";
+import { type Col, addrCell, assetCell, timeCell, viewCell } from "@/features/records/cells";
 import { eventChip, kindOf, MEMPOOL_KINDS, type MempoolKind } from "@/lib/mempool";
 import { commas } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 
 // Protocol-wide live view of unconfirmed Counterparty actions. Client island (10s polling + kind filter)
 // rendered by the thin server page that owns the static metadata — the reference idiom (see app/trades).

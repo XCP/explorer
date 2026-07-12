@@ -5,9 +5,9 @@ import type { TagStatsRow } from "@xcp/shared/tags";
 import { useTags } from "@/lib/hooks";
 import { Card } from "@/components/ui/card";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 import { ScoreBadge } from "@/components/ui/score-badge";
-import { type Col, type SortState } from "@/lib/cells";
+import { type Col, type SortState } from "@/features/records/cells";
 import { commas, compact, collectionLabel } from "@/lib/format";
 
 // Just the collection tags: curated art & collectible PROJECTS (pepe.wtf 'collection' + the tokenscan

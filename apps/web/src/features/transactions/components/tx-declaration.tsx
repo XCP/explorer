@@ -2,7 +2,7 @@
 import Link from "next/link";
 import type { TxAction } from "@xcp/shared/chain";
 import { AssetArt } from "@/features/assets/components/asset-art";
-import { lockStateCell, betTypeBadge, statusPill } from "@/lib/cells";
+import { lockStateCell, betTypeBadge, statusPill } from "@/features/records/cells";
 import { xcpAmt } from "@/lib/tx";
 import { commas, short } from "@/lib/format";
 

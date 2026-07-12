@@ -8,7 +8,7 @@ import { orderView, matchView } from "@/lib/trading-pair";
 import { lockStateCell,
   type Col, type RecordContext, blockCell, txCell, addrCell, addrEndsCell, assetCell, assetChip, timeCell, viewCell,
   signedQty, statusPill, dispenserPill, sendTypeChip, actionBadge, sweepFlagsBadge, betTypeBadge, tchip,
-} from "@/lib/cells";
+} from "@/features/records/cells";
 import { AssetIcon } from "@/components/ui/badges";
 
 // The record catalog — for each RecordKind the explorer serves as a list feed, its URL slug, page

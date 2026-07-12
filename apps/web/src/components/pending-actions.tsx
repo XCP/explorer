@@ -2,10 +2,10 @@
 import { Clock } from "lucide-react";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import { useAddressMempool, useAssetMempool } from "@/lib/hooks";
-import { type Col, addrCell, assetCell, viewCell } from "@/lib/cells";
+import { type Col, addrCell, assetCell, viewCell } from "@/features/records/cells";
 import { eventChip } from "@/lib/mempool";
 import { commas } from "@/lib/format";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 
 // "Pending" island for an entity page (asset or address). Renders NOTHING when the entity has no
 // unconfirmed actions — the common case, so it follows the return-null idiom of the relationship panels.

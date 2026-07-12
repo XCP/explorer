@@ -5,8 +5,8 @@ import type { BlockDetail, BlockTxSummary } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { Card, KV } from "@/components/ui/card";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
-import { type Col, txCell, addrCell } from "@/lib/cells";
+import { RecordTable } from "@/features/records/components/record-table";
+import { type Col, txCell, addrCell } from "@/features/records/cells";
 import { commas, short, ts } from "@/lib/format";
 
 // Returns null on 404; only the page calls notFound() (notFound() in generateMetadata renders the

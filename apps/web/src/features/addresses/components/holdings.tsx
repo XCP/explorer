@@ -8,8 +8,8 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { AsyncContent } from "@/components/ui/async-content";
 import { AssetArt } from "@/features/assets/components/asset-art";
-import { RecordTable } from "@/components/record-table";
-import { assetCell } from "@/lib/cells";
+import { RecordTable } from "@/features/records/components/record-table";
+import { assetCell } from "@/features/records/cells";
 import { commas } from "@/lib/format";
 
 // Holdings as a visual collection (the owner's #1 want) — a wall of the actual card art, sorted by

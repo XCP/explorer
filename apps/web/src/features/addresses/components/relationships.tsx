@@ -5,7 +5,7 @@ import type { AddressConnectionRow, AddressLineageRow } from "@xcp/shared/addres
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
-import { addrCell } from "@/lib/cells";
+import { addrCell } from "@/features/records/cells";
 import { commas } from "@/lib/format";
 
 // Top counterparties merged across sends + dispenses + DEX trades — the address's on-chain social

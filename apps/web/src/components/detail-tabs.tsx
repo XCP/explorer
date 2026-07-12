@@ -5,8 +5,8 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Skeleton } from "@/components/ui/feedback";
 import { AsyncContent } from "@/components/ui/async-content";
 import { SecondaryButton } from "@/components/ui/buttons";
-import { RecordTable } from "@/components/record-table";
-import type { Col, RecordContext } from "@/lib/cells";
+import { RecordTable } from "@/features/records/components/record-table";
+import type { Col, RecordContext } from "@/features/records/cells";
 import { useStats } from "@/lib/hooks";
 
 /** A tab is either a record feed (path + columns + optional mono count) or a self-contained panel

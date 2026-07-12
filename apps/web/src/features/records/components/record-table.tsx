@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Col, RecordContext, SortState } from "@/lib/cells";
+import type { Col, RecordContext, SortState } from "@/features/records/cells";
 
 // Single source of truth for rendering a record list, on the v20 .rt/.tr grammar (globals.css —
 // ported verbatim from design-lab/v20-tables.html, the owner-approved acceptance reference).

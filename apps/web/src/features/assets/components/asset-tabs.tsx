@@ -5,8 +5,8 @@ import type { AssetFeedCounts, BalanceRow, HolderRole } from "@xcp/shared/assets
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { RelatedTab } from "@/features/assets/components/related-tab";
 import { AssetActivity } from "@/features/assets/components/asset-activity";
-import { type Col, addrCell } from "@/lib/cells";
-import { POOL_COLS, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS, FAIRMINT_COLS, DIVIDEND_COLS, DESTRUCTION_COLS, REGISTRY } from "@/lib/registry";
+import { type Col, addrCell } from "@/features/records/cells";
+import { POOL_COLS, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS, FAIRMINT_COLS, DIVIDEND_COLS, DESTRUCTION_COLS, REGISTRY } from "@/features/records/registry";
 import { TRADE_COLS } from "@/components/trades";
 import { commas, short } from "@/lib/format";
 

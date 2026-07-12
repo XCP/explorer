@@ -2,10 +2,10 @@
 import { useState } from "react";
 import type { RecordKind, RecordRowMap } from "@xcp/shared/records";
 import { useIndex, useStats } from "@/lib/hooks";
-import { REGISTRY } from "@/lib/registry";
+import { REGISTRY } from "@/features/records/registry";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
-import { RecordTable } from "@/components/record-table";
+import { RecordTable } from "@/features/records/components/record-table";
 
 // Generic explorer index page — config-driven (see lib/registry.tsx). Offset Prev/Next pagination.
 // The dense v19 .xtable brings its own card chrome; the chain tip (same SWR key as the footer
