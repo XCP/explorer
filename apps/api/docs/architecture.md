@@ -6,7 +6,8 @@ A short list of genuinely-global computations can't be done per-block; those run
 
 ## System picture
 
-Three indexers stand side by side, feeding one database:
+Three indexers stand side by side. The analytical mirror lives in the primary D1; append-only
+credit/debit provenance lives in the compact `xcpio-ledger` D1 so it can grow independently:
 
 1. **Counterparty replayer** (`indexer/sync.ts` + `events/`) — the pure 1:1 mirror. Nothing derived
    ever lands in its tables; re-indexing from genesis reproduces them exactly.
@@ -43,6 +44,7 @@ API's layered caching.
   the data, so entities carry no behavior — the model *is* the schema plus the DTOs.
 
 See `docs/refactor-proposal.md` (repo root) for the migration plan toward the target patterns.
+See `storage-compaction.md` for the multi-D1 capacity plan and its cutover invariants.
 
 ---
 

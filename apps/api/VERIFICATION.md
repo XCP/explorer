@@ -33,7 +33,10 @@ Run a handful by hand to catch shape/normalization drift the counts miss:
 - **Reorg cursor**: confirm `last_block_hash` checkpoint matches CP's hash at our tip block.
 
 ## Storage budget
-- D1 size vs the <10GB target: `wrangler d1 info xcpio` (or CF dashboard). If approaching the limit, apply the PR #3294 normalization recipe (address interning, asset_index, hashes→BLOB(32)).
+- Primary D1 size vs the <10GB target: inspect `xcpio` in Cloudflare. The compact provenance-ledger
+  migration is active; its progress and remaining gates are documented in `docs/storage-compaction.md`.
+- Compact-ledger progress: query `ledger_state` and `COUNT(*) FROM ledger_events` in `xcpio-ledger`.
+  `read_cutover` must remain `0` until both historical cursors finish and exact count parity passes.
 
 ## Interpreting diffs
 - **ours < cp by a small, steady amount** → just behind tip; re-run after catch-up.

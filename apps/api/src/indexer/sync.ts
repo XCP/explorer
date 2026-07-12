@@ -329,6 +329,10 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
     "fairminters", "fairmints", "pools", "pool_matches", "pool_liquidity",
     "bets", "bet_matches", "bet_match_resolutions", "rps", "rps_matches", "credits", "debits", "blocks"];
   for (const t of tables) await deleteAbove(env.DB, t, rollbackTo);
+  // The compact provenance ledger is a second physical database, so it cannot participate in
+  // the main D1 transaction/cascade. Delete its orphaned branch explicitly before replay; otherwise
+  // INSERT OR IGNORE on a reused event_index would preserve stale pre-reorg data forever.
+  await deleteAbove(env.LEDGER_DB, "ledger_events", rollbackTo);
   // reopen orders/dispensers closed after rollback
   await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();
   await env.DB.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();
