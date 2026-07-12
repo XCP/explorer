@@ -42,7 +42,7 @@ apps/web        Next.js 15 on OpenNext/Cloudflare — xcp.io / xcp-web.me-bbe.wo
   src/lib/      api.ts, registry.tsx (record catalog → columns per kind), cells.tsx (v20 cell
                 grammar), format.ts, art.ts (CDN image URLs), tx.ts
   src/components/ flat; RecordTable renders every table on the v20 grammar
-packages/shared the WIRE contract only (one file per domain); D1 row shapes live in apps/api/src/schema.ts
+packages/shared the WIRE contract only (one file per domain); D1 row shapes live in apps/api/src/storage-types.ts
 design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — port VERBATIM, never freelance
 ```
 

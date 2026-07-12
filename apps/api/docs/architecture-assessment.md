@@ -229,9 +229,9 @@ production Workers. Treat compatibility-date updates as tested dependency upgrad
 
 ### P2 — Separate storage rows, wire DTOs, and upstream DTOs more visibly
 
-`schema.ts` is a reasonable start, but its name is ambiguous: it is TypeScript storage-row interfaces,
-not the authoritative D1 schema. Rename toward `storage-types.ts` or place types beside their owning query
-modules. Use consistent suffixes:
+`storage-types.ts` now makes its scope explicit: it contains TypeScript storage-row interfaces,
+not the authoritative D1 schema. Types may move beside their owning query modules when that improves ownership.
+Use consistent suffixes:
 
 - `*Row` for D1 rows;
 - `*Dto` or the existing semantic shared name for wire contracts;

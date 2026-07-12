@@ -16,7 +16,7 @@ import {
   CONVICTION_FACTORS,
   CONVICTION_PCT,
 } from "#api/reputation/config";
-import type { AssetSignalsRow, AddressSignalsRow } from "#api/schema";
+import type { AssetSignalsRow, AddressSignalsRow } from "#api/storage-types";
 
 // The address reputation row = the stored address_signals row + the two derived columns the scorer reads
 // (mirrors queries/addresses.ts AddressReputationRow, defined locally to keep this module import-light).

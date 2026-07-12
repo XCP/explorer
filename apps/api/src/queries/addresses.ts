@@ -22,7 +22,7 @@ import type {
   ReputationDistribution,
   ReputationTopRow,
 } from "@xcp/shared/addresses";
-import type { AddressSignalsRow } from "#api/schema";
+import type { AddressSignalsRow } from "#api/storage-types";
 import { q, one } from "#api/db";
 import { ADDRESS_LEDGER_SQL } from "#api/queries/compact-ledger";
 

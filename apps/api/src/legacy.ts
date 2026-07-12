@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "#api/env";
-import type { AssetRow } from "#api/schema";
+import type { AssetRow } from "#api/storage-types";
 
 type Ctx = Context<{ Bindings: Env }>;
 

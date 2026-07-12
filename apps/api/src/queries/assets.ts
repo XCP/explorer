@@ -33,7 +33,7 @@ import type {
   PoolRow,
   PoolMatchRow,
 } from "@xcp/shared/records";
-import type { AssetSignalsRow, AssetRow } from "#api/schema";
+import type { AssetSignalsRow, AssetRow } from "#api/storage-types";
 import { q, one } from "#api/db";
 import { ORDER_SELECT, DISPENSE_SELECT, FAIRMINT_SELECT } from "#api/queries/records";
 
