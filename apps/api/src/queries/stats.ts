@@ -5,7 +5,7 @@
  * counts/totals row shapes are the wire contract (@xcp/shared/stats).
  */
 import type { StatsOverview, SyncOverview, NetworkStats } from "@xcp/shared/stats";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 /** The lifetime-counts half of NetworkStats (everything the totals query does not supply). */
 export type NetworkCounts = Omit<NetworkStats, "btc_fees" | "xcp_destroyed">;

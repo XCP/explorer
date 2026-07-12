@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCounterpartyJson } from "../src/indexer/codec";
+import { parseCounterpartyJson } from "#api/indexer/codec";
 
 // the BigInt extraction the ingestion path uses (mirror of bi() in sync.ts for string inputs)
 const bi = (v: any) => BigInt(String(v).split(".")[0]);

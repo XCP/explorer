@@ -2,8 +2,8 @@
  *  and close state change (give_remaining/dispense_count/status/scheduled close); REFILL_DISPENSER is its
  *  own history row (the dispenser's counters reset arrives separately via DISPENSER_UPDATE); DISPENSE is a
  *  single buy. Escrow in/out flows through CREDIT/DEBIT (balance.ts). */
-import { type Handler, str } from "./context";
-import { normalize } from "../codec";
+import { type Handler, str } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
 
 const open: Handler = ({ p, b, bt, div }, ctx) => {
   ctx.stmts.push((db) =>

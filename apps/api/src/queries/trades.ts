@@ -3,7 +3,7 @@
  * the result in the envelope; the row shape is the wire contract (@xcp/shared/trades).
  */
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
-import { q } from "../db";
+import { q } from "#api/db";
 
 const COLS = `venue, asset, block_time, block_index, quantity, currency, total, price, usd_value, buyer, seller, tx_hash`;
 

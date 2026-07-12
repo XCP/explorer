@@ -9,7 +9,7 @@
  * matching block) — then order only the handful of rows inside that single earliest block. Verified to return
  * the identical row while turning the SCAN+TEMP-B-TREE into a SEARCH ... USING INDEX (block_index=?).
  */
-import { one } from "../db";
+import { one } from "#api/db";
 
 /** One firsts-catalog entry: a display label + the SQL that finds its earliest row. */
 export interface First {

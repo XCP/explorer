@@ -2,7 +2,7 @@
  *  the event has no lp_asset), POOL_MATCH (a swap, with fee detail), and NEW_POOL_DEPOSIT/WITHDRAWAL
  *  (liquidity legs; deposit mints LP, withdraw burns it). LP token + reserve balances flow through
  *  CREDIT/DEBIT (balance.ts). */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const open: Handler = ({ p, b }, ctx) => {
   ctx.stmts.push((db) =>

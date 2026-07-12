@@ -3,7 +3,7 @@
  *  parse → query (queries/assets.ts owns the SQL) → respond. The BigInt supply derivation and the
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
 import type { AssetDetail, AssetActivityMonth } from "@xcp/shared/assets";
-import { router, J, lim, off, round, cached } from "./respond";
+import { router, J, lim, off, round, cached } from "#api/read/respond";
 import {
   scoreAsset,
   assetScore,
@@ -14,8 +14,8 @@ import {
   rawSqlExpr,
   ASSET_FACTORS,
   ADDRESS_FACTORS,
-} from "../reputation/score";
-import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "../reputation/config";
+} from "#api/reputation/score";
+import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "#api/reputation/config";
 import {
   listAssets,
   featuredAssets,
@@ -53,9 +53,9 @@ import {
   assetActivityVenues,
   assetActivityFlows,
   assetActiveUsers,
-} from "../queries/assets";
-import { assetAccounting } from "../queries/asset-accounting";
-import { readAssetFeedCounts } from "../queries/asset-feed-counts";
+} from "#api/queries/assets";
+import { assetAccounting } from "#api/queries/asset-accounting";
+import { readAssetFeedCounts } from "#api/queries/asset-feed-counts";
 
 export const assets = router();
 

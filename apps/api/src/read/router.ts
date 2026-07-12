@@ -4,21 +4,21 @@
  * path prefixes, so mount order is not significant. Balances already store raw + normalized, so no
  * divisibility joins are needed at read time.
  */
-import { router } from "./respond";
-import { stats } from "./stats";
-import { assets } from "./assets";
-import { addresses } from "./addresses";
-import { chain } from "./chain";
-import { emblem } from "./emblem";
-import { firsts } from "./firsts";
-import { vaults } from "./vaults";
-import { exchanges } from "./exchanges";
-import { trades } from "./trades";
-import { mempool } from "./mempool";
-import { tags } from "./tags";
-import { graph } from "./graph";
-import { radar } from "./radar";
-import { candidates } from "./candidates";
+import { router } from "#api/read/respond";
+import { stats } from "#api/read/stats";
+import { assets } from "#api/read/assets";
+import { addresses } from "#api/read/addresses";
+import { chain } from "#api/read/chain";
+import { emblem } from "#api/read/emblem";
+import { firsts } from "#api/read/firsts";
+import { vaults } from "#api/read/vaults";
+import { exchanges } from "#api/read/exchanges";
+import { trades } from "#api/read/trades";
+import { mempool } from "#api/read/mempool";
+import { tags } from "#api/read/tags";
+import { graph } from "#api/read/graph";
+import { radar } from "#api/read/radar";
+import { candidates } from "#api/read/candidates";
 
 export const read = router();
 

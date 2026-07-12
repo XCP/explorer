@@ -23,18 +23,18 @@
  *
  * Note: address_signals.rep_score (personalized-PageRank) is maintained separately (expensive); untouched here.
  */
-import type { Env } from "../env";
-import { getIndexerState as getState, setIndexerState as setState } from "./state";
-import { CURATED_LOWQ_SQL, EXCHANGES_SQL, CURATED_BURNS_SQL } from "./curated";
-import { EMBLEM_DDL } from "./emblem";
+import type { Env } from "#api/env";
+import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import { CURATED_LOWQ_SQL, EXCHANGES_SQL, CURATED_BURNS_SQL } from "#api/indexer/curated";
+import { EMBLEM_DDL } from "#api/indexer/emblem";
 import {
   ASSET_FEED_COUNT_SOURCES,
   FEED_COUNT_COLUMNS,
   feedCountResetSql,
   feedCountWriteSql,
   type FeedCountColumn,
-} from "./asset-feed-counts";
-import { NETWORK_STATS_REBUILD_SQL } from "./network-stats";
+} from "#api/indexer/asset-feed-counts";
+import { NETWORK_STATS_REBUILD_SQL } from "#api/indexer/network-stats";
 
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
   address TEXT PRIMARY KEY, first_block INTEGER, last_block INTEGER DEFAULT 0, out_peers INTEGER DEFAULT 0,

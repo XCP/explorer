@@ -1,7 +1,7 @@
 /** ASSET_DESTRUCTION — burns supply (incl. XCP fee-burns like the attach-to-utxo gas fee, which CP
  *  records here). Lowers supply, so the asset is enqueued for deterministic recompute. */
-import { type Handler, str } from "./context";
-import { normalize } from "../codec";
+import { type Handler, str } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
 
 const destroy: Handler = ({ ev, p, b, bt, div }, ctx) => {
   ctx.stmts.push((db) =>

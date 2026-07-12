@@ -2,8 +2,8 @@
  *  UTXO operations ATTACH_TO_UTXO / DETACH_FROM_UTXO / UTXO_MOVE. Balances move via CREDIT/DEBIT (see
  *  balance.ts); here we record the send row, incl. utxo<->address provenance and the attach gas fee.
  *  Invalid sends are indexed too (marked by status; they emit no CREDIT/DEBIT so balances are unaffected). */
-import { type Handler, cap } from "./context";
-import { normalize } from "../codec";
+import { type Handler, cap } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
 
 const send: Handler = ({ ev, p, b, bt, div }, ctx) => {
   const stype =

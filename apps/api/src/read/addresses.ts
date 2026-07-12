@@ -2,7 +2,7 @@
  *  assets, and the relationship reads (connections graph, sweep-based identity lineage). SQL lives in
  *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
  *  reputation logic, not SQL. */
-import { router, J, lim, off, round, cached } from "./respond";
+import { router, J, lim, off, round, cached } from "#api/read/respond";
 import {
   scoreAddress,
   addressScore,
@@ -10,9 +10,9 @@ import {
   type AddrState,
   rawSqlExpr,
   ADDRESS_FACTORS,
-} from "../reputation/score";
-import { classifyPersona } from "../reputation/persona";
-import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
+} from "#api/reputation/score";
+import { classifyPersona } from "#api/reputation/persona";
+import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "#api/reputation/config";
 import {
   listBalances,
   listSends,
@@ -32,7 +32,7 @@ import {
   reputationTierMembers,
   reputationFunnel,
   reputationHistogram,
-} from "../queries/addresses";
+} from "#api/queries/addresses";
 
 export const addresses = router();
 

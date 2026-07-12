@@ -3,29 +3,29 @@
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance.
  */
 import { Hono } from "hono";
-import type { Env } from "./env";
-import { syncEvents, backfillLedger } from "./indexer/sync";
-import { runSignalsStep, runSignalsCascade, verifySignals } from "./indexer/signals";
-import { crawlEmblemStep } from "./indexer/emblem";
-import { crawlAssetSupply } from "./indexer/asset-supply";
-import { buildTags } from "./indexer/tags";
-import { crawlCollections } from "./indexer/collections";
-import { buildHolderCohesion } from "./indexer/holder-cohesion";
-import { crawlEmblemSales } from "./indexer/emblem-sales";
-import { crawlScarceSales } from "./indexer/scarce-sales";
-import { classifyVaults } from "./indexer/vault-contents";
-import { crawlEmblemMeta } from "./indexer/emblem-meta";
-import { crawlEmblemTransfers } from "./indexer/emblem-transfers";
-import { crawlEmblemListings } from "./indexer/emblem-listings";
-import { crawlTokenscanCollections } from "./indexer/tokenscan-collections";
-import { buildScamAttribution } from "./indexer/emblem-scam";
-import { graphEval } from "./indexer/graph-eval";
-import { buildTrades } from "./indexer/trades";
-import { buildGraphTrust } from "./indexer/graph";
-import { crawlPrices, applyTradeUsd } from "./indexer/prices";
-import { curatedList, curatedUpsert, curatedDelete } from "./queries/curated";
-import { requireAdmin } from "./middleware/admin-auth";
-import { boundedInteger, optionalBoundedInteger } from "./http/numbers";
+import type { Env } from "#api/env";
+import { syncEvents, backfillLedger } from "#api/indexer/sync";
+import { runSignalsStep, runSignalsCascade, verifySignals } from "#api/indexer/signals";
+import { crawlEmblemStep } from "#api/indexer/emblem";
+import { crawlAssetSupply } from "#api/indexer/asset-supply";
+import { buildTags } from "#api/indexer/tags";
+import { crawlCollections } from "#api/indexer/collections";
+import { buildHolderCohesion } from "#api/indexer/holder-cohesion";
+import { crawlEmblemSales } from "#api/indexer/emblem-sales";
+import { crawlScarceSales } from "#api/indexer/scarce-sales";
+import { classifyVaults } from "#api/indexer/vault-contents";
+import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
+import { crawlEmblemTransfers } from "#api/indexer/emblem-transfers";
+import { crawlEmblemListings } from "#api/indexer/emblem-listings";
+import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
+import { buildScamAttribution } from "#api/indexer/emblem-scam";
+import { graphEval } from "#api/indexer/graph-eval";
+import { buildTrades } from "#api/indexer/trades";
+import { buildGraphTrust } from "#api/indexer/graph";
+import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
+import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated";
+import { requireAdmin } from "#api/middleware/admin-auth";
+import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 
 export const admin = new Hono<{ Bindings: Env }>();
 

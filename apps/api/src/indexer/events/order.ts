@@ -2,7 +2,7 @@
  *  status-only updates, and BTC_PAY (completes a BTC-leg match). Counterparty's *_UPDATE events carry only changed
  *  fields, so they UPDATE — never re-INSERT (which would wipe the row). Escrow/settlement balances flow
  *  through CREDIT/DEBIT (balance.ts). */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const open: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

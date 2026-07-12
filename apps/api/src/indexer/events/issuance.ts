@@ -3,9 +3,9 @@
  *  divisibility is NOT touched here (a bare event could carry a falsy value and flip it) — it legally
  *  changes only via a CIP03 reset, applied explicitly below. Supply is recomputed deterministically
  *  (asset enqueued in supplyDirty) — see asset-supply.ts. */
-import { type Handler, cap } from "./context";
-import { normalize } from "../codec";
-import { classifyStamp } from "./stamp";
+import { type Handler, cap } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
+import { classifyStamp } from "#api/indexer/events/stamp";
 
 const issuance: Handler = ({ ev, p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

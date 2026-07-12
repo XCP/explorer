@@ -1,7 +1,7 @@
 /** SWEEP — moves an address's entire balances and/or asset ownership to a destination. The balance moves
  *  emit CREDIT/DEBIT (balance.ts) and ownership transfers emit ASSET_TRANSFER (issuance.ts); here we just
  *  record the sweep row (flags/memo/fee). */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const sweep: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

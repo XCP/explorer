@@ -13,8 +13,8 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
-import { parseCounterpartyJson } from "../indexer/codec";
-import { router, J, type Ctx } from "./respond";
+import { parseCounterpartyJson } from "#api/indexer/codec";
+import { router, J, type Ctx } from "#api/read/respond";
 
 // The subset of a raw Counterparty mempool event we read. `params` is an open bag of protocol fields;
 // we pick only the ones that flatten into a display row — the field NAMES vary by message type (an order

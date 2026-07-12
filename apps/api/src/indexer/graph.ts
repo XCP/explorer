@@ -19,9 +19,9 @@
  *   ITERATE: ~20 degree-normalized PPR passes (damping 0.85) per slot as set-based UPDATE-JOINs; slots 0..K-1
  *          forward (trust subsets), slot K reverse (distrust). trust = MIN over the k subsets; distrust = slot K.
  */
-import type { Env } from "../env";
-import { getIndexerState as getState, setIndexerState as setState } from "./state";
-import { q } from "../db";
+import type { Env } from "#api/env";
+import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import { q } from "#api/db";
 import {
   K,
   DISTRUST_SLOT,
@@ -35,9 +35,9 @@ import {
   NODE_INSERTS,
   RANK_INIT,
   SEED_APPLY,
-} from "./graph-core";
-import { rawSqlExpr } from "../reputation/score";
-import { ASSET_FACTORS, ASSET_TIERS } from "../reputation/config";
+} from "#api/indexer/graph-core";
+import { rawSqlExpr } from "#api/reputation/score";
+import { ASSET_FACTORS, ASSET_TIERS } from "#api/reputation/config";
 
 const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per admin call
 

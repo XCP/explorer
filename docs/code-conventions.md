@@ -7,9 +7,9 @@ These are repository rules, not suggestions. `npm run check` enforces the mechan
 - Import concrete modules directly. Do not create barrel `index.ts` files or `export *` re-export hubs.
 - Web source uses the `@/` alias, including imports within the same folder. One module should have one
   searchable import identity.
-- API source currently uses explicit relative imports. Do not add a TypeScript-only API alias: emitted Node
-  tests do not rewrite `paths`, and Wrangler resolution must agree with the test runtime before an alias is
-  adopted. Package imports are the preferred future route if both runtimes are configured together.
+- API source and tests use the native `#api/*` package import map. Its conditional targets resolve source
+  TypeScript for TypeScript/Wrangler and emitted JavaScript for Node tests, so all three environments share
+  the same specifier without relying on TypeScript `paths` rewriting.
 - Use `import type` when an import is erased at runtime. Avoid importing the Worker composition root from
   lower-level modules; bindings live in `env.ts`.
 - Feature code belongs under `features/<domain>`; shared visual primitives belong under `components/ui`;

@@ -11,7 +11,7 @@
  * All written as non-computed sources, so buildTags' computed-tag rebuild leaves them intact. Rebuild is
  * per-collection and transient-safe: a fetch that returns empty/errors leaves that collection untouched.
  */
-import type { Env } from "../env";
+import type { Env } from "#api/env";
 
 // pepe.wtf collection slug -> our tag slug. `stamps` (26k) is intentionally excluded — we already carry a
 // protocol-derived `stamp` tag; folding all Bitcoin Stamps in here would swamp the collection layer.

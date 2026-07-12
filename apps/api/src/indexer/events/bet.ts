@@ -1,7 +1,7 @@
 /** Legacy bets (feed-based wagers). OPEN_BET escrows a wager; *_UPDATE carry only changed fields (apply
  *  remainings / status, never re-INSERT a match — that would wipe it); BET_MATCH_RESOLUTION records the
  *  settlement outcome. Wager escrow + settlement balances flow through CREDIT/DEBIT (balance.ts). */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const openBet: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

@@ -5,9 +5,9 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { ExchangesPayload, ExchangeRow } from "@xcp/shared/addresses";
-import { router, cached } from "./respond";
-import { exchangeWallets, exchangeTopAssets, exchangeSummary } from "../queries/exchanges";
-import { exchangeNames } from "../queries/curated";
+import { router, cached } from "#api/read/respond";
+import { exchangeWallets, exchangeTopAssets, exchangeSummary } from "#api/queries/exchanges";
+import { exchangeNames } from "#api/queries/curated";
 
 export const exchanges = router();
 

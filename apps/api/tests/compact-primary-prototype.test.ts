@@ -7,7 +7,7 @@ import {
   COMPACT_BALANCES_BY_ADDRESS_SQL,
   COMPACT_TOTAL_BY_ASSET_SQL,
   ORDER_MATCH_PUBLIC_ID_SQL,
-} from "../src/indexer/compact-primary-prototype";
+} from "#api/indexer/compact-primary-prototype";
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");

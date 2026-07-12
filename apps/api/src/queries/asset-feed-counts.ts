@@ -1,5 +1,5 @@
 import type { AssetFeedCounts } from "@xcp/shared/assets";
-import { one } from "../db";
+import { one } from "#api/db";
 
 /** Canonical live aggregation, retained as the rollout fallback and production parity oracle. */
 export function readAssetFeedCountsLive(

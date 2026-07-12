@@ -4,7 +4,7 @@
  * btc_address) map; Emblem is never trusted for contents.
  */
 import type { EmblemStats, EmblemAssetRow, EmblemVaultRow } from "@xcp/shared/emblem";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 export interface Page {
   limit: number;

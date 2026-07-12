@@ -6,7 +6,7 @@
  * an organic, independent crowd stays a diffuse cloud. Capped to a node budget; the full graph is never whole.
  */
 import type { GraphNode, GraphEdge, GraphStats } from "@xcp/shared/graph";
-import { q } from "../db";
+import { q } from "#api/db";
 
 const inList = (ids: string[]) =>
   ids

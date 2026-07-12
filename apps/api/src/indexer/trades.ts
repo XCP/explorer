@@ -8,8 +8,8 @@
  * the emblem_sales staging table each pass — idempotent via INSERT OR IGNORE on the (venue,ref) key). `usd_value`
  * is filled here only where it's free (USDC sales); XCP/BTC/ETH→USD backfill is a later pass over a price feed.
  */
-import type { Env } from "../env";
-import { getIndexerStateInt as getState, setIndexerState as setState } from "./state";
+import type { Env } from "#api/env";
+import { getIndexerStateInt as getState, setIndexerState as setState } from "#api/indexer/state";
 
 // Schema lives in migrations/0021_trades_prices.sql.
 

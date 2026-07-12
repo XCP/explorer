@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boundedInteger, optionalBoundedInteger } from "../src/http/numbers";
+import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 
 test("bounded integers accept whole decimals and enforce both bounds", () => {
   const bounds = { defaultValue: 50, min: 1, max: 100 };

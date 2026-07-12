@@ -23,9 +23,9 @@
  *  - MAINTENANCE: recompute the dirty queue (assets touched by a supply-changing event, queued by
  *    sync.ts) + XCP every run, then the small fairminter/pool derivations.
  */
-import type { Env } from "../env";
-import { getIndexerState as getState, setIndexerState as setState } from "./state";
-import { normalize } from "./codec";
+import type { Env } from "#api/env";
+import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import { normalize } from "#api/indexer/codec";
 
 const BACKFILL_BATCH = 2000; // assets per backfill step (per-asset SUM is asset-indexed)
 const DIRTY_PER_RUN = 400; // dirty assets recomputed per maintenance tick

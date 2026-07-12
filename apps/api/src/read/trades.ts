@@ -7,8 +7,8 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
-import { router, J, cached, lim, off } from "./respond";
-import { listTrades, tradeVenueStats } from "../queries/trades";
+import { router, J, cached, lim, off } from "#api/read/respond";
+import { listTrades, tradeVenueStats } from "#api/queries/trades";
 
 export const trades = router();
 

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { ADDRESS_LEDGER_SQL } from "../src/queries/compact-ledger";
+import { ADDRESS_LEDGER_SQL } from "#api/queries/compact-ledger";
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");

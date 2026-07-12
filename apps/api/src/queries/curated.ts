@@ -3,7 +3,7 @@
  * lists. The signal passes read the table via the `…_SQL` subquery fragments in indexer/curated.ts;
  * these helpers cover the read handlers (exchange-name labelling) and the /admin/curated CRUD.
  */
-import { q } from "../db";
+import { q } from "#api/db";
 
 export interface CuratedRow {
   kind: string;

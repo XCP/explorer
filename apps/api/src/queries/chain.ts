@@ -5,7 +5,7 @@
  * recent-first record feeds live next door in queries/records.ts.
  */
 import type { BlockRow, BlockDetail, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 const BLOCK_COLS = `block_index, block_hash, block_time, transaction_count`;
 

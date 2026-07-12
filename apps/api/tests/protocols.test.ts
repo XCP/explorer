@@ -4,8 +4,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyStamp } from "../src/indexer/events/stamp";
-import { classifyBtns } from "../src/indexer/events/btns";
+import { classifyStamp } from "#api/indexer/events/stamp";
+import { classifyBtns } from "#api/indexer/events/btns";
 
 test("classic PNG stamp (raw base64) -> STAMP", () => {
   const r = classifyStamp("stamp:iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAAC");

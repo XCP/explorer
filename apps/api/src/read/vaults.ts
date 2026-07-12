@@ -5,7 +5,7 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { VaultsPayload } from "@xcp/shared/emblem";
-import { router, cached } from "./respond";
+import { router, cached } from "#api/read/respond";
 import {
   vaultSummary,
   vaultSalesByClass,
@@ -14,7 +14,7 @@ import {
   vaultTopFunders,
   vaultTopCrackers,
   vaultSalesActivity,
-} from "../queries/vaults";
+} from "#api/queries/vaults";
 
 export const vaults = router();
 

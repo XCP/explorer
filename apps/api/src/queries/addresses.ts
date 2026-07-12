@@ -22,9 +22,9 @@ import type {
   ReputationDistribution,
   ReputationTopRow,
 } from "@xcp/shared/addresses";
-import type { AddressSignalsRow } from "../schema";
-import { q, one } from "../db";
-import { ADDRESS_LEDGER_SQL } from "./compact-ledger";
+import type { AddressSignalsRow } from "#api/schema";
+import { q, one } from "#api/db";
+import { ADDRESS_LEDGER_SQL } from "#api/queries/compact-ledger";
 
 export interface Page {
   limit: number;

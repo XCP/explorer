@@ -14,7 +14,7 @@
  * (≥ secondaryRatio of the primary) surfaces as a secondary so mixed players read honestly ("Creator · also
  * collects"). A ranked user who clears no floor is a light Collector (holding is the default participation).
  */
-import { PERSONA } from "./config";
+import { PERSONA } from "#api/reputation/config";
 
 export type Persona = "creator" | "collector" | "merchant" | "trader" | "service" | "dormant";
 

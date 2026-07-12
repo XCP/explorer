@@ -5,8 +5,8 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { Env } from "../env";
-import { boundedInteger } from "../http/numbers";
+import type { Env } from "#api/env";
+import { boundedInteger } from "#api/http/numbers";
 
 export type ReadApp = Hono<{ Bindings: Env }>;
 export type Ctx = Context<{ Bindings: Env }>;

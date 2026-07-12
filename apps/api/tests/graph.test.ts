@@ -25,7 +25,7 @@ import {
   K,
   DISTRUST_SLOT,
   PASSES,
-} from "../src/indexer/graph-core";
+} from "#api/indexer/graph-core";
 
 const CONTROL_SLOT = K + 1; // slot 4: the plain-PPR control (single vector over ALL trust seeds, no MIN).
 

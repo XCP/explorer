@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getIndexerState, getIndexerStateInt, setIndexerState } from "../src/indexer/state";
+import { getIndexerState, getIndexerStateInt, setIndexerState } from "#api/indexer/state";
 
 function stateDatabase(initial: Record<string, string> = {}): D1Database {
   const values = new Map(Object.entries(initial));

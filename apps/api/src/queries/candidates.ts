@@ -6,7 +6,7 @@
  * are exactly the overlooked projects the tagged sources miss.
  */
 import type { CollectionCandidate } from "@xcp/shared/collections";
-import { q } from "../db";
+import { q } from "#api/db";
 
 // The query row = the wire shape, but samples arrive as one GROUP_CONCAT string (split in the handler).
 export type CandidateRow = Omit<CollectionCandidate, "samples"> & { samples: string | null };

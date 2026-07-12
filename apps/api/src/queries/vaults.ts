@@ -5,7 +5,7 @@
  */
 import type { VaultsPayload } from "@xcp/shared/emblem";
 import type { MetricPoint } from "@xcp/shared/stats";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 type VaultSummary = NonNullable<VaultsPayload["summary"]>;
 type VaultTopAsset = VaultsPayload["top_assets"][number];

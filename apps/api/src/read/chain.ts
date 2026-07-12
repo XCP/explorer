@@ -2,9 +2,9 @@
  *  queries/chain.ts (blocks/tx) and queries/records.ts (the 21 per-kind feeds). */
 import { RECORD_KINDS } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
-import { parseCounterpartyJson } from "../indexer/codec";
-import { router, J, lim, off, type Ctx } from "./respond";
-import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "../queries/chain";
+import { parseCounterpartyJson } from "#api/indexer/codec";
+import { router, J, lim, off, type Ctx } from "#api/read/respond";
+import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
   listRecords,
   classifyTx,
@@ -12,10 +12,10 @@ import {
   dispensesOfDispenser,
   dispenserTotals,
   matchesOfOrder,
-} from "../queries/records";
-import { assetCollection, assetBrief } from "../queries/assets";
-import { mempoolTxActions } from "./mempool";
-import { boundedInteger } from "../http/numbers";
+} from "#api/queries/records";
+import { assetCollection, assetBrief } from "#api/queries/assets";
+import { mempoolTxActions } from "#api/read/mempool";
+import { boundedInteger } from "#api/http/numbers";
 
 export const chain = router();
 

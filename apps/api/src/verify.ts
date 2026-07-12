@@ -4,10 +4,10 @@
  * backfill is caught up (tip parity) — see VERIFICATION.md for methodology + thresholds.
  */
 import { Hono } from "hono";
-import type { Env } from "./env";
-import { requireAdmin } from "./middleware/admin-auth";
-import { boundedInteger, optionalBoundedInteger } from "./http/numbers";
-import { parseCounterpartyJson } from "./indexer/codec";
+import type { Env } from "#api/env";
+import { requireAdmin } from "#api/middleware/admin-auth";
+import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
+import { parseCounterpartyJson } from "#api/indexer/codec";
 
 export const verify = new Hono<{ Bindings: Env }>();
 

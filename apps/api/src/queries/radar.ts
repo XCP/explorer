@@ -5,9 +5,9 @@
  * CONVICTION_FACTORS the scorer uses (rawSqlExpr parity), so the board and the per-asset score never drift.
  */
 import type { RadarAsset, BuyableAsset } from "@xcp/shared/radar";
-import { q } from "../db";
-import { rawSqlExpr } from "../reputation/score";
-import { CONVICTION_FACTORS, CONVICTION_PCT } from "../reputation/config";
+import { q } from "#api/db";
+import { rawSqlExpr } from "#api/reputation/score";
+import { CONVICTION_FACTORS, CONVICTION_PCT } from "#api/reputation/config";
 
 // Conviction raw as SQL (no tip terms in CONVICTION_FACTORS, so 0). Bare column names resolve against
 // asset_signals inside the CTEs below (no join there ⇒ no ambiguity with the assets table's `supply`).

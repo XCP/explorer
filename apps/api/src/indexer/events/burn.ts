@@ -1,6 +1,6 @@
 /** BURN — BTC burned to create XCP (genesis-era mechanic). `earned` is the XCP minted; it's the
  *  positive term in the deterministic XCP supply (see asset-supply.ts). */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const burn: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

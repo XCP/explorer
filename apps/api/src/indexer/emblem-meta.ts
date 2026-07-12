@@ -12,7 +12,7 @@
  * The verdict is combined into trades.sale_class at fold time (indexer/trades.ts). Bounded + self-draining
  * (marks meta_crawled=1); cron / admin driven.
  */
-import type { Env } from "../env";
+import type { Env } from "#api/env";
 
 const META = (id: string) => `https://v2.emblemvault.io/meta/${encodeURIComponent(id)}`;
 const PER_RUN = 80; // vaults per step (bounded under the Worker subrequest/CPU budget)

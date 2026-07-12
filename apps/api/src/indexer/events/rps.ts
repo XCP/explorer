@@ -1,7 +1,7 @@
 /** Legacy rock-paper-scissors. OPEN_RPS escrows a wager; *_UPDATE carry only changed fields (UPDATE,
  *  never re-INSERT a match). RPS_RESOLVE's status is the resolve TX's own status ("valid"), NOT the match
  *  conclusion (that arrives via RPS_MATCH_UPDATE), so it must not write rps_matches.status. */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const openRps: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

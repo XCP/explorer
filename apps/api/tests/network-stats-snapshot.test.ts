@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { NETWORK_STATS_REBUILD_SQL } from "../src/indexer/network-stats";
+import { NETWORK_STATS_REBUILD_SQL } from "#api/indexer/network-stats";
 
 test("network stats snapshot matches exact source counts and totals", () => {
   const db = new DatabaseSync(":memory:");

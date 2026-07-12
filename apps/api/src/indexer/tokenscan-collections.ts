@@ -8,8 +8,8 @@
  * Written as tags with source='tokenscan' (buildTags' computed rebuild leaves non-computed sources intact),
  * refreshed on the cron. Transient-safe: a failed/empty fetch leaves the existing tokenscan tags untouched.
  */
-import type { Env } from "../env";
-import { canonicalCollection, EXCLUDED_COLLECTIONS } from "./collections";
+import type { Env } from "#api/env";
+import { canonicalCollection, EXCLUDED_COLLECTIONS } from "#api/indexer/collections";
 
 const NFTS_URL = "https://tokenscan.io/js/nfts.js";
 

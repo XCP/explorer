@@ -2,6 +2,13 @@
   "name": "xcp-api",
   "version": "1.0.0",
   "private": true,
+  "imports": {
+    "#api/*": {
+      "types": "./src/*.ts",
+      "node": "./.test-dist/src/*.js",
+      "default": "./src/*.ts"
+    }
+  },
   "scripts": {
     "dev": "wrangler dev",
     "test": "tsc -p tsconfig.test.json && node --test \".test-dist/tests/**/*.test.js\"",

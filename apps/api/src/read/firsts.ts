@@ -5,8 +5,8 @@
  * live in queries/firsts.ts.
  */
 import type { FirstRow } from "@xcp/shared/stats";
-import { router, cached } from "./respond";
-import { FIRSTS, firstRecord } from "../queries/firsts";
+import { router, cached } from "#api/read/respond";
+import { FIRSTS, firstRecord } from "#api/queries/firsts";
 
 export const firsts = router();
 

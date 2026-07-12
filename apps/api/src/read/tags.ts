@@ -5,7 +5,7 @@
  * every SQL statement to queries/tags.ts. Parallel to read/assets.ts's /v2/featured + /v2/reputation/asset-*.
  */
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
-import { router, J, lim, off, round, cached } from "./respond";
+import { router, J, lim, off, round, cached } from "#api/read/respond";
 import {
   rawSqlExpr,
   ASSET_FACTORS,
@@ -14,9 +14,9 @@ import {
   assetTier,
   convictionScore,
   type MarketState,
-} from "../reputation/score";
-import { ASSET_PENALTY } from "../reputation/config";
-import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "../queries/tags";
+} from "#api/reputation/score";
+import { ASSET_PENALTY } from "#api/reputation/config";
+import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "#api/queries/tags";
 
 export const tags = router();
 

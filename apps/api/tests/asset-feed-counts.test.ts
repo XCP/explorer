@@ -6,7 +6,7 @@ import {
   FEED_COUNT_COLUMNS,
   feedCountResetSql,
   feedCountWriteSql,
-} from "../src/indexer/asset-feed-counts";
+} from "#api/indexer/asset-feed-counts";
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");

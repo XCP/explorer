@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import type { Env } from "../src/env";
-import { readAdminToken, requireAdmin } from "../src/middleware/admin-auth";
+import type { Env } from "#api/env";
+import { readAdminToken, requireAdmin } from "#api/middleware/admin-auth";
 
 function requestShape(authorization?: string, token?: string) {
   return {

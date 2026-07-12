@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runScheduledJob } from "../src/scheduler/job";
+import { runScheduledJob } from "#api/scheduler/job";
 
 test("scheduled jobs return successful results and emit a structured outcome", async () => {
   const events: unknown[] = [];

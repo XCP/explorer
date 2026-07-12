@@ -6,9 +6,9 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { RadarPayload } from "@xcp/shared/radar";
-import { router, cached } from "./respond";
-import { radarUndervalued, radarBuyable } from "../queries/radar";
-import { convictionScore } from "../reputation/score";
+import { router, cached } from "#api/read/respond";
+import { radarUndervalued, radarBuyable } from "#api/queries/radar";
+import { convictionScore } from "#api/reputation/score";
 
 export const radar = router();
 

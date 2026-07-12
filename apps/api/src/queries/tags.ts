@@ -8,7 +8,7 @@
  * asset members that have a signals row (nulls excluded from the rank so the middle index is exact).
  */
 import type { TagStatsRow, TagMemberRow } from "@xcp/shared/tags";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 /** The aggregate stats a query produces; the handler enriches with median_score/median_tier. */
 export type TagStatsBase = Omit<TagStatsRow, "median_score" | "median_tier" | "conviction_score">;

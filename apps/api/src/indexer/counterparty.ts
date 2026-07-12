@@ -1,5 +1,5 @@
 /** Counterparty HTTP client — fetch + decode (precision-safe) with good-citizen backoff. */
-import { parseCounterpartyJson } from "./codec";
+import { parseCounterpartyJson } from "#api/indexer/codec";
 
 export async function counterpartyJson<T = unknown>(api: string, path: string): Promise<T> {
   // On rate-limit (429) or upstream 5xx, wait and retry instead of hammering Counterparty.

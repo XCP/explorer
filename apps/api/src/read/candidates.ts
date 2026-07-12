@@ -5,8 +5,8 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { CollectionCandidatesPayload } from "@xcp/shared/collections";
-import { router, cached } from "./respond";
-import { collectionCandidates } from "../queries/candidates";
+import { router, cached } from "#api/read/respond";
+import { collectionCandidates } from "#api/queries/candidates";
 
 export const candidates = router();
 

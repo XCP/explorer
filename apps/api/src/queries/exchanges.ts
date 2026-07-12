@@ -3,7 +3,7 @@
  * in the handler; these functions return the raw CEX-wallet rows, most-deposited assets, and the counts.
  */
 import type { ExchangeRow, ExchangesPayload } from "@xcp/shared/addresses";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 /** A curated CEX wallet before operator-name labelling (the handler adds `name`). */
 export type ExchangeWalletRow = Omit<ExchangeRow, "name">;

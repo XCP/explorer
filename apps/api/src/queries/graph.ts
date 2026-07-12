@@ -4,8 +4,8 @@
  * distrusted leaderboards. Tier classification itself is the pure graphTier() in src/indexer/graph.ts — the
  * COUNT(*) CASE here mirrors it exactly (unscored: t<=0 AND d<=0; distrusted: d>t; trusted: t>0 AND d<=t).
  */
-import { q, one } from "../db";
-import type { GraphCuts } from "../indexer/graph-core";
+import { q, one } from "#api/db";
+import type { GraphCuts } from "#api/indexer/graph-core";
 
 export interface GraphScoreRow {
   trust: number;

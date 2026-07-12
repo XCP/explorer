@@ -10,10 +10,10 @@
  * `tier` is the pure graphTier() classifier (trusted / distrusted / unscored — never a continuum).
  */
 import type { GraphSubgraph } from "@xcp/shared/graph";
-import { router, cached, J } from "./respond";
-import { graphOverview, graphScore, graphCuts } from "../queries/graph";
-import { addressEgo, assetHolders } from "../queries/graph-extract";
-import { graphTier } from "../indexer/graph-core";
+import { router, cached, J } from "#api/read/respond";
+import { graphOverview, graphScore, graphCuts } from "#api/queries/graph";
+import { addressEgo, assetHolders } from "#api/queries/graph-extract";
+import { graphTier } from "#api/indexer/graph-core";
 
 export const graph = router();
 

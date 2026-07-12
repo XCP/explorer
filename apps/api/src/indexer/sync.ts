@@ -16,12 +16,12 @@
  * tables, restore balances from the nearest snapshot, reset the event cursor, replay forward. Balance
  * snapshots are written only near the tip (FOLLOWING window) and pruned keep-one-below-cutoff.
  */
-import type { Env } from "../env";
-import { normalize } from "./codec";
-import { type Ev, type Stmt, type Ctx, bi, str } from "./events/context";
-import { dispatch } from "./events/dispatch";
-import { counterpartyJson } from "./counterparty";
-import { hashToBytes } from "./compact-codec";
+import type { Env } from "#api/env";
+import { normalize } from "#api/indexer/codec";
+import { type Ev, type Stmt, type Ctx, bi, str } from "#api/indexer/events/context";
+import { dispatch } from "#api/indexer/events/dispatch";
+import { counterpartyJson } from "#api/indexer/counterparty";
+import { hashToBytes } from "#api/indexer/compact-codec";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)

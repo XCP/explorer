@@ -20,7 +20,7 @@ import {
   assetTier,
   percentile,
   rawSqlExpr,
-} from "../src/reputation/score";
+} from "#api/reputation/score";
 import {
   SCALARS,
   ADDRESS_FACTORS,
@@ -30,7 +30,7 @@ import {
   ASSET_PCT,
   ASSET_TIERS,
   ADDRESS_TIERS,
-} from "../src/reputation/config";
+} from "#api/reputation/config";
 
 // mirror the engine's own numeric primitives (score.ts) so the re-derivation uses the identical definitions.
 const num = (v: any) => Number(v) || 0;

@@ -1,8 +1,8 @@
 /** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards. */
-import { router, cached, J } from "./respond";
-import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
-import { ASSET_PENALTY } from "../reputation/config";
-import { boundedInteger } from "../http/numbers";
+import { router, cached, J } from "#api/read/respond";
+import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "#api/reputation/score";
+import { ASSET_PENALTY } from "#api/reputation/config";
+import { boundedInteger } from "#api/http/numbers";
 import {
   homeOverview,
   syncOverview,
@@ -12,7 +12,7 @@ import {
   maxBlock,
   leaderboards,
   type MetricName,
-} from "../queries/stats";
+} from "#api/queries/stats";
 
 export const stats = router();
 

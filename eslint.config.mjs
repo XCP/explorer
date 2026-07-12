@@ -24,6 +24,23 @@ export default tseslint.config(
     },
   },
   {
+    files: ["apps/api/{src,tests}/**/*.{ts,tsx}"],
+    languageOptions: { parser: tseslint.parser, parserOptions: { ecmaVersion: "latest" } },
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["./*", "../*"],
+              message: "Use the native #api/* package import so Node and Wrangler share one resolution path.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["apps/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.ts"],
     languageOptions: { parser: tseslint.parser, parserOptions: { ecmaVersion: "latest" } },
     plugins: { "@typescript-eslint": tseslint.plugin },

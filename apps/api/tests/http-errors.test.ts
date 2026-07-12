@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HTTPException } from "hono/http-exception";
-import { describeHttpError, requestId } from "../src/http/errors";
+import { describeHttpError, requestId } from "#api/http/errors";
 
 test("expected HTTP errors retain their status and safe public message", () => {
   const failure = describeHttpError(new HTTPException(404, { message: "asset not found" }));

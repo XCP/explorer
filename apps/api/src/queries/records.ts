@@ -6,7 +6,7 @@
  * (a short page ends the feed) so the UI never pays for a COUNT(*) over millions of rows.
  */
 import type { RecordKind, RecordRowMap, CancelRow, DispenserRefillRow, PoolLiquidityRow } from "@xcp/shared/records";
-import { q, one } from "../db";
+import { q, one } from "#api/db";
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even
 // though they have no assets row). Powers the base/quote price math on the client. Aliases the orders

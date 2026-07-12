@@ -8,32 +8,32 @@
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance — so catch-up never contends.
  */
 import { Hono } from "hono";
-import type { Env } from "./env";
-export type { Env } from "./env";
-import { describeHttpError, requestId } from "./http/errors";
-import { syncEvents, backfillLedger, verifyLedgerParity } from "./indexer/sync";
-import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./indexer/signals";
-import { crawlEmblemStep } from "./indexer/emblem";
-import { crawlAssetSupply } from "./indexer/asset-supply";
-import { buildTags, buildTagsScoped } from "./indexer/tags";
-import { buildIssuerCollections } from "./indexer/issuer-collections";
-import { crawlCollections } from "./indexer/collections";
-import { crawlEmblemSales } from "./indexer/emblem-sales";
-import { crawlScarceSales } from "./indexer/scarce-sales";
-import { classifyVaults } from "./indexer/vault-contents";
-import { crawlEmblemMeta } from "./indexer/emblem-meta";
-import { crawlEmblemTransfers } from "./indexer/emblem-transfers";
-import { crawlEmblemListings } from "./indexer/emblem-listings";
-import { crawlTokenscanCollections } from "./indexer/tokenscan-collections";
-import { buildScamAttribution } from "./indexer/emblem-scam";
-import { maybeBuildGraph } from "./indexer/graph";
-import { buildTrades } from "./indexer/trades";
-import { crawlPrices, applyTradeUsd } from "./indexer/prices";
-import { runScheduledJob } from "./scheduler/job";
-import { read } from "./read/router";
-import { verify } from "./verify";
-import { legacy } from "./legacy";
-import { admin } from "./admin";
+import type { Env } from "#api/env";
+export type { Env } from "#api/env";
+import { describeHttpError, requestId } from "#api/http/errors";
+import { syncEvents, backfillLedger, verifyLedgerParity } from "#api/indexer/sync";
+import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "#api/indexer/signals";
+import { crawlEmblemStep } from "#api/indexer/emblem";
+import { crawlAssetSupply } from "#api/indexer/asset-supply";
+import { buildTags, buildTagsScoped } from "#api/indexer/tags";
+import { buildIssuerCollections } from "#api/indexer/issuer-collections";
+import { crawlCollections } from "#api/indexer/collections";
+import { crawlEmblemSales } from "#api/indexer/emblem-sales";
+import { crawlScarceSales } from "#api/indexer/scarce-sales";
+import { classifyVaults } from "#api/indexer/vault-contents";
+import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
+import { crawlEmblemTransfers } from "#api/indexer/emblem-transfers";
+import { crawlEmblemListings } from "#api/indexer/emblem-listings";
+import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
+import { buildScamAttribution } from "#api/indexer/emblem-scam";
+import { maybeBuildGraph } from "#api/indexer/graph";
+import { buildTrades } from "#api/indexer/trades";
+import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
+import { runScheduledJob } from "#api/scheduler/job";
+import { read } from "#api/read/router";
+import { verify } from "#api/verify";
+import { legacy } from "#api/legacy";
+import { admin } from "#api/admin";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.

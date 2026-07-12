@@ -1,6 +1,6 @@
 /** NEW_TRANSACTION: the raw Counterparty transaction envelope. `data` is intentionally not stored (blob; can be
  *  megabytes for stamps — images live in R2). */
-import type { Handler } from "./context";
+import type { Handler } from "#api/indexer/events/context";
 
 const newTransaction: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

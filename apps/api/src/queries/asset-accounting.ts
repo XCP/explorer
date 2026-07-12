@@ -1,4 +1,4 @@
-import { one } from "../db";
+import { one } from "#api/db";
 
 export interface AssetAccounting {
   holder_count: number;

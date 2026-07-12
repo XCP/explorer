@@ -1,7 +1,7 @@
 /** ASSET_DIVIDEND — pays holders of `asset` a per-unit amount of `dividend_asset`. Per-holder credits +
  *  the source debit + the XCP fee all emit CREDIT/DEBIT (balance.ts); the fee is also part of deterministic
  *  XCP supply. Here we record the dividend declaration. */
-import { type Handler, str } from "./context";
+import { type Handler, str } from "#api/indexer/events/context";
 
 const dividend: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>

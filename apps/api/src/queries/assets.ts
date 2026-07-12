@@ -33,9 +33,9 @@ import type {
   PoolRow,
   PoolMatchRow,
 } from "@xcp/shared/records";
-import type { AssetSignalsRow, AssetRow } from "../schema";
-import { q, one } from "../db";
-import { ORDER_SELECT, DISPENSE_SELECT, FAIRMINT_SELECT } from "./records";
+import type { AssetSignalsRow, AssetRow } from "#api/schema";
+import { q, one } from "#api/db";
+import { ORDER_SELECT, DISPENSE_SELECT, FAIRMINT_SELECT } from "#api/queries/records";
 
 /* ---------- index + search ---------- */
 
