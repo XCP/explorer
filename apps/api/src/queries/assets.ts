@@ -101,16 +101,9 @@ export async function holderCount(db: D1Database, asset: string): Promise<number
 
 /** Native XCP supply = proof-of-burn minus everything destroyed (destructions + issuance/sweep/dividend fees).
  *  Returned as an exact int64 from SQLite; the handler normalizes. */
-export function xcpNativeSupply(db: D1Database): Promise<{ supply: number | null } | null> {
-  return one<{ supply: number | null }>(
-    db,
-    `SELECT (SELECT COALESCE(SUM(CAST(earned AS INTEGER)),0) FROM burns)
-          - (SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) FROM destructions WHERE asset='XCP' AND status LIKE 'valid%')
-          - (SELECT COALESCE(SUM(CAST(amt AS INTEGER)),0) FROM (
-              SELECT fee_paid amt FROM issuances WHERE status LIKE 'valid%' AND fee_paid IS NOT NULL
-              UNION ALL SELECT fee_paid FROM sweeps WHERE fee_paid IS NOT NULL
-              UNION ALL SELECT fee_paid FROM dividends WHERE fee_paid IS NOT NULL)) supply`
-  );
+export function xcpNativeSupply(db: D1Database): Promise<{ supply: string } | null> {
+  return one<{ supply: string }>(db,
+    `SELECT xcp_supply supply FROM network_stats_snapshot WHERE singleton=1`);
 }
 
 /** The one-line issuance brief an offer storefront shows about its asset: total supply + locked. */

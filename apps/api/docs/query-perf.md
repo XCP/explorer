@@ -56,6 +56,9 @@ Exact counts, BTC fees, and XCP destroyed now cost one row read instead of scans
 Production parity was zero for every field; the old aggregate read 14.5M rows in 7.8s, while the snapshot
 lookup read one row in 0.23ms. The live tip and indexer cursor remain independently current.
 
+Migration 0045 extends the singleton with exact raw-unit XCP supply. Native XCP detail no longer folds burns,
+destructions, and protocol fees on every cold asset request; production parity against the former expression is exact.
+
 ### Index inventory note
 Mirror tables are already well-indexed (`block_index`, `source`/`destination`/`asset` + `block_index DESC`),
 and `balances` even has an **expression index** `idx_bal_asset_qty ON balances(asset, CAST(quantity AS INTEGER)
