@@ -13,7 +13,7 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
-import { parseCounterpartyJson } from "#api/indexer/codec";
+import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, type Ctx } from "#api/read/respond";
 
 // The subset of a raw Counterparty mempool event we read. `params` is an open bag of protocol fields;
@@ -99,9 +99,11 @@ function normalizeRow(e: MempoolEvent): MempoolActionRow {
 // mempool hiccup never 5xxs a page that embeds it.
 async function fetchActions(c: Ctx, path: string): Promise<MempoolActionRow[]> {
   try {
-    const r = await fetch(`${c.env.COUNTERPARTY_API_BASE}${path}`, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return [];
-    const j = parseCounterpartyJson(await r.text()) as { result?: MempoolEvent[] };
+    const j = await counterpartyJson<{ result?: MempoolEvent[] }>(c.env.COUNTERPARTY_API_BASE, path, {
+      timeoutMs: 8_000,
+      maxRetries: 0,
+      malformedRetries: 0,
+    });
     const rows: MempoolActionRow[] = [];
     for (const e of j.result ?? []) if (ACTION_EVENTS.has(e.event)) rows.push(normalizeRow(e));
     return rows;

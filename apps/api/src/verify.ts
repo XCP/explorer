@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { Env } from "#api/env";
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
-import { parseCounterpartyJson } from "#api/indexer/codec";
+import { counterpartyJson as fetchCounterpartyJson } from "#api/integrations/counterparty";
 
 export const verify = new Hono<{ Bindings: Env }>();
 
@@ -38,8 +38,7 @@ const SUPPLY_ASSETS = ["XCP", "PEPECASH", "RAREPEPE"];
 
 async function counterpartyJson<T = unknown>(base: string, path: string): Promise<T | null> {
   try {
-    const r = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(20000) });
-    return r.ok ? (parseCounterpartyJson(await r.text()) as T) : null; // preserve >2^53 integers (supply parity)
+    return await fetchCounterpartyJson<T>(base, `/${path}`);
   } catch {
     return null;
   }
