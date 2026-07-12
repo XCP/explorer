@@ -115,7 +115,7 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
       const d = await counterpartyJson<{ result?: Ev[]; next_cursor?: number | null }>(
         api, `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`);
       const rows = d.result || [];
-      const page: Stmt[] = [];
+      const records: unknown[][] = [];
       const addresses = new Set<string>();
       const assets = new Set<string>();
       for (const ev of rows) {
@@ -126,24 +126,35 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
           addresses.add(holder);
           assets.add(p.asset);
           if (utxoAddress) addresses.add(utxoAddress);
-          page.push((db) => db.prepare(
-            `INSERT OR IGNORE INTO ledger_events
-               (event_index,direction,block_index,tx_hash,address_id,asset_id,quantity,calling_function,utxo_address_id)
-             SELECT ?,?,?,?,ad.address_id,ast.asset_id,?,?,ua.address_id
-               FROM address_dictionary ad JOIN asset_dictionary ast
-               LEFT JOIN address_dictionary ua ON ua.address=?
-              WHERE ad.address=? AND ast.asset=?`,
-          ).bind(ev.event_index, k.type === "CREDIT" ? 1 : 0, ev.block_index, hashToBytes(ev.tx_hash),
-            str(p.quantity) ?? "0", str(p.calling_function ?? null), utxoAddress, holder, p.asset));
+          records.push([
+            ev.event_index, k.type === "CREDIT" ? 1 : 0, ev.block_index, hashToBytes(ev.tx_hash),
+            holder, p.asset, str(p.quantity) ?? "0", str(p.calling_function ?? null), utxoAddress,
+          ]);
           written++;
         }
         processed++;
       }
-      if (page.length) {
+      if (records.length) {
         const dictionary: Stmt[] = [
           ...[...addresses].map((address): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address)),
           ...[...assets].map((asset): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset)),
         ];
+        const page: Stmt[] = [];
+        // Ten rows per statement stays below D1's bind-variable ceiling and cuts event-write
+        // statements by 90% compared with one INSERT per row.
+        for (let i = 0; i < records.length; i += 10) {
+          const group = records.slice(i, i + 10);
+          const values = group.map(() =>
+            `(?,?,?,?,(SELECT address_id FROM address_dictionary WHERE address=?),` +
+            `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,` +
+            `(SELECT address_id FROM address_dictionary WHERE address=?))`).join(",");
+          const binds = group.flat();
+          page.push((db) => db.prepare(
+            `INSERT OR IGNORE INTO ledger_events
+               (event_index,direction,block_index,tx_hash,address_id,asset_id,quantity,calling_function,utxo_address_id)
+             VALUES ${values}`,
+          ).bind(...binds));
+        }
         await batchAll(env.LEDGER_DB, [...dictionary, ...page]);
       }
       const nc = d.next_cursor;
