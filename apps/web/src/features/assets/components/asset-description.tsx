@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { AssetEnhanced } from "@xcp/shared/assets";
 import { apiUrl } from "@/lib/api/url";
+import { fetcher } from "@/lib/api/client";
 
 // The sanitizer and JSON renderer are only needed after an explicit inspect action. Keeping this
 // as a separate client chunk avoids charging every asset-page visit for an uncommon tool.
@@ -59,11 +60,9 @@ export function AssetDescription({ asset, description }: { asset: string; descri
   const load = async () => {
     setState("loading");
     try {
-      const res = await fetch(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/enhanced`), {
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!res.ok) throw new Error(`Enhanced asset API ${res.status}`);
-      const env = (await res.json()) as { result: AssetEnhanced | null };
+      const env = await fetcher<{ result: AssetEnhanced | null }>(
+        apiUrl(`/v2/assets/${encodeURIComponent(asset)}/enhanced`),
+      );
       setResult(env.result);
       setState(env.result && !env.result.error && env.result.json ? "done" : "error");
     } catch {

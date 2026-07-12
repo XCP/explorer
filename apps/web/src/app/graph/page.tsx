@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { GraphSubgraph } from "@xcp/shared/graph";
+import { fetcher } from "@/lib/api/client";
 import { apiUrl } from "@/lib/api/url";
 import { GraphView } from "@/components/graph-view";
 
@@ -15,11 +16,9 @@ export default function GraphExperiment() {
   const load = async () => {
     setState("loading");
     try {
-      const res = await fetch(apiUrl(`/v2/graph/${mode}/${encodeURIComponent(id.trim())}`), {
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!res.ok) throw new Error(`Graph API ${res.status}`);
-      const env = (await res.json()) as { result: GraphSubgraph | null };
+      const env = await fetcher<{ result: GraphSubgraph | null }>(
+        apiUrl(`/v2/graph/${mode}/${encodeURIComponent(id.trim())}`),
+      );
       setData(env.result);
       setState("idle");
     } catch {
