@@ -49,7 +49,7 @@ function assertRows(arr: any, spec: Spec, path: string): void {
 }
 
 async function getJson(path: string): Promise<any> {
-  const res = await fetch(BASE + path);
+  const res = await fetch(BASE + path, { signal: AbortSignal.timeout(20_000) });
   assert.ok(res.ok, `GET ${path} → HTTP ${res.status}`);
   return (await res.json()) as any;
 }
