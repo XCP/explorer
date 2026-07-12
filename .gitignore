@@ -18,3 +18,5 @@ coverage/
 .env.*
 .shots/
 .test-dist/
+test-results/
+playwright-report/
