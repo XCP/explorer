@@ -17,8 +17,11 @@ function walk(dir) {
       }
       const source = readFileSync(p, "utf8");
       const normalized = p.replaceAll("\\", "/");
-      if (normalized.startsWith("apps/api/src/indexer/") && /\bfetch\s*\(/.test(source)) {
-        failures.push(`provider fetch in indexer: ${p} — move network behavior to apps/api/src/integrations`);
+      const directFetch = /(^|[^\w.])fetch\s*\(/m.test(source);
+      const allowsDirectFetch =
+        normalized.startsWith("apps/api/src/integrations/") || normalized === "apps/api/src/legacy.ts";
+      if (normalized.startsWith("apps/api/src/") && directFetch && !allowsDirectFetch) {
+        failures.push(`provider fetch outside integrations: ${p} — move network behavior to apps/api/src/integrations`);
       }
       if (/^export\s+\*\s+from\s+/m.test(source)) {
         failures.push(`export-all barrel: ${p} — export and import concrete modules directly`);
