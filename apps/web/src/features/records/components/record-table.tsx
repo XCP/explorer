@@ -62,9 +62,8 @@ export function RecordTable<T>({
     const inner = c.srOnly ? <span className="sr-only">{c.label}</span> : c.label;
     if (c.sortKey && onSort) {
       const active = sort?.key === c.sortKey;
-      const ariaSort = active ? (sort!.dir === "asc" ? "ascending" : "descending") : "none";
       return (
-        <button type="button" className="th-sort" aria-sort={ariaSort} onClick={() => onSort(c.sortKey!)}>
+        <button type="button" className="th-sort" onClick={() => onSort(c.sortKey!)}>
           {inner}
           <span aria-hidden className={`th-arrow${active ? " on" : ""}`}>
             {active ? (sort!.dir === "asc" ? "↑" : "↓") : "↕"}
@@ -79,7 +78,20 @@ export function RecordTable<T>({
     <div className="rt" style={style} role="table" aria-label={label}>
       <div className="tr th" role="row">
         {visible.map((c) => (
-          <span key={c.label} role="columnheader" className={cellClass(c, true)}>
+          <span
+            key={c.label}
+            role="columnheader"
+            className={cellClass(c, true)}
+            aria-sort={
+              c.sortKey && onSort
+                ? sort?.key === c.sortKey
+                  ? sort.dir === "asc"
+                    ? "ascending"
+                    : "descending"
+                  : "none"
+                : undefined
+            }
+          >
             {header(c)}
           </span>
         ))}
