@@ -8,6 +8,7 @@
  * `prices(day, currency, usd)` is the calendar; `applyTradeUsd` maps each trade's day+currency onto it.
  */
 import type { Env } from "#api/env";
+import { fetchCoinbaseCandles } from "#api/integrations/coinbase";
 import { getIndexerStateInt as getState, setIndexerState as setState } from "#api/indexer/state";
 
 export const PRICES_DDL = `CREATE TABLE IF NOT EXISTS prices (
@@ -15,7 +16,6 @@ export const PRICES_DDL = `CREATE TABLE IF NOT EXISTS prices (
 const PRICES_IDX = `CREATE INDEX IF NOT EXISTS idx_prices_cur_day ON prices(currency, day)`;
 const XCP_BTC_DDL = `CREATE TABLE IF NOT EXISTS xcp_btc_daily (day TEXT PRIMARY KEY, xcpbtc REAL NOT NULL)`;
 
-const CB = "https://api.exchange.coinbase.com/products";
 // Coinbase product + first-listed day (unix sec) per currency.
 const COINS: Record<string, { product: string; start: number }> = {
   BTC: { product: "BTC-USD", start: 1437350400 }, // 2015-07-20
@@ -28,15 +28,8 @@ const WINDOWS_PER_CALL = 8; // ~2400 days per currency per admin call → backfi
 const isoDay = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10);
 
 // One Coinbase window: [[time, low, high, open, close, volume], ...] (close = index 4).
-async function cbWindow(product: string, start: number, end: number): Promise<number[][]> {
-  const u = `${CB}/${product}/candles?granularity=${DAY}&start=${new Date(start * 1000).toISOString()}&end=${new Date(end * 1000).toISOString()}`;
-  const r = await fetch(u, {
-    headers: { "user-agent": "xcp.io-indexer", accept: "application/json" },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!r.ok) throw new Error(`${product} ${r.status}`);
-  const d = await r.json();
-  return Array.isArray(d) ? (d as number[][]) : [];
+async function cbWindow(product: string, start: number, end: number) {
+  return fetchCoinbaseCandles(product, start, end, DAY);
 }
 
 /** Backfill BTC/ETH from Coinbase (resumable per-currency cursor), then re-derive XCP from our DEX × BTC. */
@@ -52,7 +45,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     let filled = 0;
     for (let w = 0; w < WINDOWS_PER_CALL && cursor < now; w++) {
       const end = Math.min(cursor + WIN, now);
-      let rows: number[][];
+      let rows: Awaited<ReturnType<typeof cbWindow>>;
       try {
         rows = await cbWindow(cfg.product, cursor, end);
       } catch (e) {
@@ -62,9 +55,9 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
       if (rows.length) {
         const stmts = rows.map((r) =>
           env.DB.prepare(`INSERT OR REPLACE INTO prices (day,currency,usd) VALUES (?,?,?)`).bind(
-            isoDay(r[0]),
+            isoDay(r.time),
             cur,
-            r[4],
+            r.close,
           ),
         );
         for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
