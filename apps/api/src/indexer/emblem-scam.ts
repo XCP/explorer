@@ -41,13 +41,21 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
         AND claimed_asset IN (SELECT contents_asset FROM emblem_vaults WHERE vault_kind='single' AND contents_asset IS NOT NULL)`,
   ).run();
 
-  // 2) Rebuild the scam-seller rollup off the flag (indexed; no correlated EXISTS).
-  await env.DB.prepare(`DELETE FROM emblem_scam_sellers`).run();
+  // 2) Refresh the scam-seller rollup without an empty generation: upsert the complete fresh set first,
+  // then remove sellers that are no longer derived from any flagged vault.
   await env.DB.prepare(
     `INSERT INTO emblem_scam_sellers (seller, scams)
      SELECT es.seller, COUNT(DISTINCT ev.token_id) FROM emblem_sales es
        JOIN emblem_vaults ev ON ev.token_id=es.token_id AND ev.contract=es.contract
-      WHERE ev.is_scam_shell=1 AND es.seller IS NOT NULL GROUP BY es.seller`,
+      WHERE ev.is_scam_shell=1 AND es.seller IS NOT NULL GROUP BY es.seller
+     ON CONFLICT(seller) DO UPDATE SET scams=excluded.scams`,
+  ).run();
+  await env.DB.prepare(
+    `DELETE FROM emblem_scam_sellers WHERE seller NOT IN (
+       SELECT DISTINCT es.seller FROM emblem_sales es
+       JOIN emblem_vaults ev ON ev.token_id=es.token_id AND ev.contract=es.contract
+       WHERE ev.is_scam_shell=1 AND es.seller IS NOT NULL
+     )`,
   ).run();
 
   // 3) (seller, funder, #real-vaults-funded) edges off the small rollup table.
