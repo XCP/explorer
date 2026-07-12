@@ -68,6 +68,9 @@ read ~1.06M rows in 6.3s versus the former all-balances plan's ~3.04M rows / 23.
 Daily metric series cache for six hours (rather than 30 minutes), and lifetime trade-venue aggregates cache
 hourly (rather than two minutes). Their live feeds remain independently fresh; only full-history regrouping is gated.
 
+Address send-derived repairs use one source grouping and one destination grouping. `last_block` is folded into
+the source pass and `assets_received` into the destination pass, removing two full sends scans per daily cycle.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code
