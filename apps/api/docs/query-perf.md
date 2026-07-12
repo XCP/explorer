@@ -54,6 +54,10 @@ Scarce.city's immutable staging rows are also folded by rowid cursor. Asset-supp
 fairminter totals, pool values) are tip-gated instead of repeating on every two-minute cron tick; the dirty
 asset queue continues draining independently even when the tip is unchanged.
 
+Slow-moving first/last-seen repair passes and global infrastructure classification are generation-gated daily.
+They previously ran 24-39 times/day; `addr_grant_seen` alone consumed ~224s/day, while the deposit classifier
+rewrote ~11.2M rows/day despite infrastructure membership being stable.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code

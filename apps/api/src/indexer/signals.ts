@@ -155,17 +155,17 @@ const UNITS: FeatureUnit[] = [
   // raises a lower first_block). periodic (full-rebuild + cron, no per-block scope): first-appearance is
   // slow-moving, and a multi-table union can't be single-placeholder dirty-scoped anyway. D1 caps compound
   // SELECT terms low, so one builder per source rather than one big union.
-  { name: "addr_disp_seen", scope: "address", reads: ["dispenses"], periodic: true,
+  { name: "addr_disp_seen", scope: "address", reads: ["dispenses"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (address,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
       SELECT source a, block_index b FROM dispenses WHERE source IS NOT NULL
       UNION ALL SELECT destination, block_index FROM dispenses WHERE destination IS NOT NULL
     ) GROUP BY a ON CONFLICT(address) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
-  { name: "addr_grant_seen", scope: "address", reads: ["issuances", "fairmints"], periodic: true,
+  { name: "addr_grant_seen", scope: "address", reads: ["issuances", "fairmints"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (address,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
       SELECT issuer a, block_index b FROM issuances WHERE issuer IS NOT NULL
       UNION ALL SELECT source, block_index FROM fairmints WHERE source IS NOT NULL
     ) GROUP BY a ON CONFLICT(address) DO UPDATE SET first_block=MIN(COALESCE(address_signals.first_block,excluded.first_block),excluded.first_block),last_block=MAX(address_signals.last_block,excluded.last_block)` },
-  { name: "addr_dex_seen", scope: "address", reads: ["order_matches"], periodic: true,
+  { name: "addr_dex_seen", scope: "address", reads: ["order_matches"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (address,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
       SELECT tx0_address a, block_index b FROM order_matches WHERE tx0_address IS NOT NULL
       UNION ALL SELECT tx1_address, block_index FROM order_matches WHERE tx1_address IS NOT NULL
@@ -173,7 +173,7 @@ const UNITS: FeatureUnit[] = [
   // dispenser CREATORS — someone who opened a dispenser (source = the dispenser box, origin = the human
   // funder) but whose dispenser never sold has no dispense row, so this is their only appearance. Without
   // it they'd read "no history" despite having set up a shop on-chain.
-  { name: "addr_dispenser_seen", scope: "address", reads: ["dispensers"], periodic: true,
+  { name: "addr_dispenser_seen", scope: "address", reads: ["dispensers"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `INSERT INTO address_signals (address,first_block,last_block) SELECT a,MIN(b),MAX(b) FROM (
       SELECT source a, block_index b FROM dispensers WHERE source IS NOT NULL
       UNION ALL SELECT origin, block_index FROM dispensers WHERE origin IS NOT NULL
@@ -237,15 +237,13 @@ const UNITS: FeatureUnit[] = [
   // ===== ADDRESS · infra classification (curated/heuristic gates — rarely change → PERIODIC) =====
   // archetype: exchange/hub (CURATED hard-coded list; heuristics false-positived whales + treasuries) then
   // burn (curated list) then deposit/forwarding (out_peers=1, holds nothing, sole dest is an exchange).
-  { name: "addr_is_exchange", scope: "address", reads: [], periodic: true,
+  { name: "addr_is_exchange", scope: "address", reads: [], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `UPDATE address_signals SET is_exchange = CASE WHEN address IN (${EXCHANGES_SQL}) THEN 1 ELSE 0 END` },
-  { name: "addr_is_burn", scope: "address", reads: [], periodic: true,
+  { name: "addr_is_burn", scope: "address", reads: [], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `UPDATE address_signals SET is_burn = CASE WHEN address IN (${CURATED_BURNS_SQL}) THEN 1 ELSE 0 END` },
-  // NOT heavyEveryBlocks: its sends access is an INDEXED SEEK via the ~23 exchange destinations (idx_adr_exchange),
-  // not a 1.75M full scan, and it's a cheap infra-flag UPDATE — not in the measured heavy set. Same for the other
-  // infra flag UPDATEs below (is_exchange/is_burn/is_emblem/likely_service): they rewrite the derived
-  // address_signals with a small membership CASE, they don't aggregate a >1M-row mirror table.
-  { name: "addr_is_deposit", scope: "address", reads: ["sends"], dependsOn: ["addr_is_exchange", "addr_send_out", "addr_held"], periodic: true,
+  // Its sends access is an indexed seek via the ~23 exchange destinations, but the UPDATE still rewrites the
+  // address population. Insights measured ~466k writes / 5s per pass, so infra flags self-heal daily.
+  { name: "addr_is_deposit", scope: "address", reads: ["sends"], dependsOn: ["addr_is_exchange", "addr_send_out", "addr_held"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `UPDATE address_signals SET is_deposit = CASE WHEN out_peers=1 AND assets_held=0 AND address IN (SELECT s.source FROM sends s JOIN address_signals e ON e.address=s.destination WHERE e.is_exchange=1) THEN 1 ELSE 0 END` },
 
   // ===== schema (asset) =====
@@ -322,7 +320,7 @@ const UNITS: FeatureUnit[] = [
 
   // ===== ADDRESS · Emblem vault + service heuristic (crawler/heuristic driven → PERIODIC) =====
   { name: "ddl_emblem", scope: "global", reads: [], periodic: true, full: EMBLEM_DDL },
-  { name: "addr_is_emblem", scope: "address", reads: [], periodic: true,
+  { name: "addr_is_emblem", scope: "address", reads: [], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `UPDATE address_signals SET is_emblem_vault = CASE WHEN address IN (SELECT btc_address FROM emblem_vaults) THEN 1 ELSE 0 END` },
   // vault_scams: BAD-ACTOR count. A Counterparty Emblem vault is only a real sale if the card was still
   // inside at sale time. When someone CRACKS one (sends OR sweeps the card back out — cracker_address, set
@@ -344,7 +342,7 @@ const UNITS: FeatureUnit[] = [
       GROUP BY ev.cracker_address
       ON CONFLICT(address) DO UPDATE SET vault_scams = excluded.vault_scams` },
   // likely_service: HEURISTIC flag for service-like addresses (huge inbound, no creation, not already infra).
-  { name: "addr_likely_service", scope: "address", reads: [], dependsOn: ["addr_is_exchange", "addr_is_burn", "addr_is_emblem", "addr_iss", "addr_send_in"], periodic: true,
+  { name: "addr_likely_service", scope: "address", reads: [], dependsOn: ["addr_is_exchange", "addr_is_burn", "addr_is_emblem", "addr_iss", "addr_send_in"], periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
     full: `UPDATE address_signals SET likely_service = CASE WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END` },
 
   // ===== ADDRESS · cross-protocol cohorts (stamps / SRC-20 / BTNS) =====
