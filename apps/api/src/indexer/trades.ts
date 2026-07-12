@@ -9,6 +9,7 @@
  * is filled here only where it's free (USDC sales); XCP/BTC/ETH→USD backfill is a later pass over a price feed.
  */
 import type { Env } from "../index";
+import { getIndexerStateInt as getState, setIndexerState as setState } from "./state";
 
 // Schema lives in migrations/0021_trades_prices.sql.
 
@@ -23,13 +24,6 @@ const ETH_TOKENS = [
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
 const WINDOW = 250_000; // Counterparty blocks materialized per on-chain venue per call
-
-async function getState(env: Env, k: string): Promise<number> {
-  return parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) || "0", 10);
-}
-async function setState(env: Env, k: string, v: number): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, String(v)).run();
-}
 
 /** DEX: an order_match where one side is XCP/BTC is a priced sale — that side is the money, the other the asset. */
 function dexSql(lo: number, hi: number) {
@@ -127,50 +121,50 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const out: Partial<TradesBuildProgress> = { tip };
   const writes: Record<string, number> = {};
 
-  const dcur = await getState(env, "trades_cur_dex");
+  const dcur = await getState(env.DB, "trades_cur_dex");
   if (dcur < tip) {
     const hi = Math.min(dcur + WINDOW, tip);
     const result = await env.DB.prepare(dexSql(dcur, hi)).run();
     writes.dex = result.meta.rows_written ?? 0;
-    await setState(env, "trades_cur_dex", hi);
+    await setState(env.DB, "trades_cur_dex", hi);
     out.dex = { from: dcur, to: hi };
   }
-  out.dex_done = (await getState(env, "trades_cur_dex")) >= tip;
+  out.dex_done = (await getState(env.DB, "trades_cur_dex")) >= tip;
 
-  const pcur = await getState(env, "trades_cur_dispense");
+  const pcur = await getState(env.DB, "trades_cur_dispense");
   if (pcur < tip) {
     const hi = Math.min(pcur + WINDOW, tip);
     const result = await env.DB.prepare(dispenseSql(pcur, hi)).run();
     writes.dispense = result.meta.rows_written ?? 0;
-    await setState(env, "trades_cur_dispense", hi);
+    await setState(env.DB, "trades_cur_dispense", hi);
     out.dispense = { from: pcur, to: hi };
   }
-  out.dispense_done = (await getState(env, "trades_cur_dispense")) >= tip;
+  out.dispense_done = (await getState(env.DB, "trades_cur_dispense")) >= tip;
 
   // New Emblem sales are folded by rowid cursor. Vault classification can change after a sale, so a daily
   // full reconciliation remains as the self-healing backstop instead of rewriting ~231k rows every 2 minutes.
   const emblemTip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM emblem_sales`).first<{ m: number }>())?.m) || 0;
-  const emblemCur = await getState(env, "trades_cur_emblem");
+  const emblemCur = await getState(env.DB, "trades_cur_emblem");
   const fullGen = Math.floor(tip / 144);
   if (emblemCur < emblemTip) {
     const result = await env.DB.prepare(emblemSql(`AND es.rowid>${emblemCur} AND es.rowid<=${emblemTip}`)).run();
     writes.emblem_new = result.meta.rows_written ?? 0;
-    await setState(env, "trades_cur_emblem", emblemTip);
+    await setState(env.DB, "trades_cur_emblem", emblemTip);
     // A genesis fold already used the current classification for every sale; do not immediately repeat it.
-    if (emblemCur === 0) await setState(env, "trades_emblem_full_gen", fullGen);
+    if (emblemCur === 0) await setState(env.DB, "trades_emblem_full_gen", fullGen);
   }
-  if (await getState(env, "trades_emblem_full_gen") < fullGen) {
+  if (await getState(env.DB, "trades_emblem_full_gen") < fullGen) {
     const result = await env.DB.prepare(emblemSql()).run();
     writes.emblem_reconcile = result.meta.rows_written ?? 0;
-    await setState(env, "trades_emblem_full_gen", fullGen);
+    await setState(env.DB, "trades_emblem_full_gen", fullGen);
   }
   // Scarce.city sales are immutable. Fold only staging rows beyond the saved rowid.
   const scarceTip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM scarce_city_sales`).first<{ m: number }>())?.m) || 0;
-  const scarceCur = await getState(env, "trades_cur_scarce");
+  const scarceCur = await getState(env.DB, "trades_cur_scarce");
   if (scarceCur < scarceTip) {
     const result = await env.DB.prepare(scarceSql(`AND s.rowid>${scarceCur} AND s.rowid<=${scarceTip}`)).run();
     writes.scarce = result.meta.rows_written ?? 0;
-    await setState(env, "trades_cur_scarce", scarceTip);
+    await setState(env.DB, "trades_cur_scarce", scarceTip);
   }
 
   out.writes = writes;

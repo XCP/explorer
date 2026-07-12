@@ -8,17 +8,11 @@
  * events (a trickle here; follow-up). Bounded + resumable (per-contract block cursor + pageKey). Cron/admin.
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { decodeOrderFulfilled, ORDER_FULFILLED_TOPIC } from "./seaport";
 
 const PAGE = 25;              // transfers per step ⇒ ≤25 receipt fetches/run (bounded subrequests)
 const FLOOR = 19_600_000;    // ~just before the getNFTSales cutoff (Apr 2024); INSERT OR IGNORE dedupes overlap
-
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 
 interface Transfer { hash: string; blockNum: string; tokenId?: string; erc1155Metadata?: { tokenId: string }[] }
 interface Receipt { logs?: { topics: string[]; data: string; logIndex: string }[] }
@@ -33,14 +27,14 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
     return ((await r.json()) as { result?: unknown }).result;
   };
 
-  const contracts: string[] = JSON.parse((await getState(env, "emblem_contracts")) || "[]");
+  const contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "[]");
   if (!contracts.length) return { skipped: "no contracts" };
-  let ci = parseInt((await getState(env, "emblem_tx_idx")) || "0", 10);
+  let ci = parseInt((await getState(env.DB, "emblem_tx_idx")) || "0", 10);
   if (ci >= contracts.length) ci = 0;
   const contract = contracts[ci];
   const curKey = `emblem_tx_cur_${contract}`, pkKey = `emblem_tx_pk_${contract}`;
-  const cursor = parseInt((await getState(env, curKey)) || String(FLOOR), 10); // scan START (held constant while paginating)
-  const pageKey = (await getState(env, pkKey)) || undefined;
+  const cursor = parseInt((await getState(env.DB, curKey)) || String(FLOOR), 10); // scan START (held constant while paginating)
+  const pageKey = (await getState(env.DB, pkKey)) || undefined;
 
   const params: Record<string, unknown> = { fromBlock: "0x" + cursor.toString(16), toBlock: "latest", contractAddresses: [contract], category: ["erc721", "erc1155"], order: "asc", maxCount: "0x" + PAGE.toString(16), withMetadata: false };
   if (pageKey) params.pageKey = pageKey;
@@ -85,7 +79,7 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
 
   // Advance: while a pageKey remains, keep the SAME fromBlock (cursor) and just save the pageKey. When the
   // page runs dry the contract is caught up to tip → bump its cursor past the last block and rotate contracts.
-  if (tr?.pageKey) { await setState(env, pkKey, tr.pageKey); out.more = true; }
-  else { await setState(env, pkKey, ""); await setState(env, curKey, String(maxBlock + 1)); await setState(env, "emblem_tx_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
+  if (tr?.pageKey) { await setState(env.DB, pkKey, tr.pageKey); out.more = true; }
+  else { await setState(env.DB, pkKey, ""); await setState(env.DB, curKey, String(maxBlock + 1)); await setState(env.DB, "emblem_tx_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
   return out;
 }

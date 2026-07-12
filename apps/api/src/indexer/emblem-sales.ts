@@ -50,12 +50,12 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
   await env.DB.prepare(EMBLEM_SALES_DDL).run();
   await env.DB.prepare(EMBLEM_SALES_IDX).run();
 
-  const contracts: string[] = JSON.parse((await getState(env, "emblem_contracts")) || "[]");
+  const contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "[]");
   if (!contracts.length) return { skipped: "no contracts" };
-  let ci = parseInt((await getState(env, "emblem_sales_idx")) || "0", 10);
+  let ci = parseInt((await getState(env.DB, "emblem_sales_idx")) || "0", 10);
   if (ci >= contracts.length) ci = 0;
   const contract = contracts[ci];
-  let cursor = (await getState(env, `emblem_sales_cur_${contract}`)) || "";
+  let cursor = (await getState(env.DB, `emblem_sales_cur_${contract}`)) || "";
 
   const out: {
     contract: string; inserted: number; pages: number;
@@ -85,7 +85,7 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
     cursor = d?.pageKey || "";
     if (!cursor) break;
   }
-  await setState(env, `emblem_sales_cur_${contract}`, cursor);
-  if (!cursor) { await setState(env, "emblem_sales_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
+  await setState(env.DB, `emblem_sales_cur_${contract}`, cursor);
+  if (!cursor) { await setState(env.DB, "emblem_sales_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
   return out;
 }

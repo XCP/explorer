@@ -19,16 +19,10 @@
  * so a single pass is never final). Cron / admin driven, like the other Emblem sidecars.
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const BATCH = 400; // vaults per step; aggregates join sends/balances on a vault ROWID RANGE (2 bound params,
                    // not an IN-list — D1 caps bound params at 100, so IN-lists can't scale the batch)
-
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 
 interface VaultRow { rowid: number; token_id: string; contract: string; btc_address: string }
 interface Classification {
@@ -44,7 +38,7 @@ const qn = (v: string | null): number => { const n = Number(v); return Number.is
 
 /** One bounded, resumable step: classify the next BATCH of resolved vaults from their send/balance history. */
 export async function classifyVaults(env: Env): Promise<Record<string, unknown>> {
-  const cursor = parseInt((await getState(env, "vault_contents_cursor")) || "0", 10);
+  const cursor = parseInt((await getState(env.DB, "vault_contents_cursor")) || "0", 10);
   const rows = (await env.DB.prepare(
     `SELECT rowid, token_id, contract, btc_address FROM emblem_vaults
       WHERE btc_address IS NOT NULL AND rowid > ? ORDER BY rowid LIMIT ?`
@@ -52,7 +46,7 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
 
   const out: Record<string, unknown> = { from: cursor, classified: 0, single: 0, multi: 0, foreign: 0, cracked: 0 };
   if (!rows.length) { // wrapped — re-sweep from the top next tick (vaults crack after minting)
-    await setState(env, "vault_contents_cursor", "0");
+    await setState(env.DB, "vault_contents_cursor", "0");
     out.wrapped = true;
     out.total = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE classified=1`).first<{ c: number }>())?.c ?? 0;
     return out;
@@ -137,7 +131,7 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
   out.classified = stmts.length;
 
-  await setState(env, "vault_contents_cursor", String(hi));
+  await setState(env.DB, "vault_contents_cursor", String(hi));
   out.to = hi;
   return out;
 }

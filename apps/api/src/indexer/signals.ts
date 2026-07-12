@@ -24,6 +24,7 @@
  * Note: address_signals.rep_score (personalized-PageRank) is maintained separately (expensive); untouched here.
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { CURATED_LOWQ_SQL, EXCHANGES_SQL, CURATED_BURNS_SQL } from "./curated";
 import { EMBLEM_DDL } from "./emblem";
 import {
@@ -469,20 +470,13 @@ const UNITS: FeatureUnit[] = [
   }
 })(UNITS);
 
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
-
 /**
  * STEPPED FULL REBUILD (canonical / repair / backfill). Runs the next `max` units' `.full` from a cursor,
  * wrapping to 0 when a cycle completes. On a completed cycle it hands the per-block cascade its starting
  * point (signals_cascade_block = current tip) so the cascade takes over from a known-good full rebuild.
  */
 export async function runSignalsStep(env: Env, max = 3): Promise<Record<string, unknown>> {
-  let i = parseInt((await getState(env, "signals_step")) || "0", 10);
+  let i = parseInt((await getState(env.DB, "signals_step")) || "0", 10);
   if (i >= UNITS.length || i < 0) i = 0;
   const tip = (await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number | null }>())?.m ?? 0;
   const ran: Record<string, number> = {};
@@ -495,21 +489,21 @@ export async function runSignalsStep(env: Env, max = 3): Promise<Record<string, 
       // share the same generation function of `tip`, so they always run in the same generation (never desync).
       const gen = Math.floor(tip / u.heavyEveryBlocks);
       const gkey = `signals_heavy_${u.name}_gen`;
-      const lastGen = parseInt((await getState(env, gkey)) ?? "-1", 10);
+      const lastGen = parseInt((await getState(env.DB, gkey)) ?? "-1", 10);
       if (lastGen >= gen) { gated.push(u.name); continue; } // still fresh this generation → skip the global scan
       const r = await env.DB.prepare(u.full).run();
       ran[u.name] = r?.meta?.rows_written ?? 0;
-      await setState(env, gkey, String(gen));
+      await setState(env.DB, gkey, String(gen));
       continue;
     }
     const r = await env.DB.prepare(u.full).run();
     ran[u.name] = r?.meta?.rows_written ?? 0;
   }
   const done = i >= UNITS.length;
-  await setState(env, "signals_step", done ? "0" : String(i));
+  await setState(env.DB, "signals_step", done ? "0" : String(i));
   if (done) {
     // full rebuild just reproduced the whole feature matrix → anchor the cascade cursor at the current tip.
-    await setState(env, "signals_cascade_block", String(tip));
+    await setState(env.DB, "signals_cascade_block", String(tip));
   }
   return { ran_passes: `${start}..${i - 1}`, of: UNITS.length, cycle_done: done, ran, gated };
 }
@@ -600,7 +594,7 @@ export interface SignalsCascadeResult {
 }
 
 export async function runSignalsCascade(env: Env): Promise<SignalsCascadeResult> {
-  const cur = await getState(env, "signals_cascade_block");
+  const cur = await getState(env.DB, "signals_cascade_block");
   if (cur == null) return { needs_backfill: true, note: "run a full runSignalsStep cycle first (it sets the cascade cursor to tip)" };
   const cursor = parseInt(cur, 10);
   const tip = (await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number | null }>())?.m ?? 0;
@@ -624,7 +618,7 @@ export async function runSignalsCascade(env: Env): Promise<SignalsCascadeResult>
     }
     ran[u.name] = wrote;
   }
-  await setState(env, "signals_cascade_block", String(hi));
+  await setState(env.DB, "signals_cascade_block", String(hi));
   // `dirty` carries the exact touched sets so the tag rebuild (buildTagsScoped) reuses THIS derivation —
   // one block-cursor scan, tags + signals always rebuilt over the same entities.
   return { from_block: lo, to_block: hi, tip, dirty_assets: assets.length, dirty_addrs: addrs.length, caught_up: hi >= tip, ran, dirty: { assets, addrs } };

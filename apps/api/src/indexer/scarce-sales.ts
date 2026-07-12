@@ -7,6 +7,7 @@
  * stream as the 'scarce.city' venue (BTC-priced). Idempotent on (asset, sold_at).
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const SALES_URL = (asset: string) => `https://scarce.city/api/marketplace/digital/${encodeURIComponent(asset)}/sales`;
 const ASSETS_PER_RUN = 90;   // bounded per cron tick (stays well under the Worker subrequest/CPU budget)
@@ -17,13 +18,6 @@ export const SCARCE_SALES_DDL = `CREATE TABLE IF NOT EXISTS scarce_city_sales (
 export const SCARCE_SALES_IDX = `CREATE INDEX IF NOT EXISTS idx_scarce_asset ON scarce_city_sales(asset)`;
 
 interface ScarceSale { assetName?: string; priceInBtc?: string | number; timestamp?: string }
-
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 
 /** One asset's sales, or [] on any miss (404 / HTML / network). Bounded timeout so one slow asset
  *  can't stall the whole run. */
@@ -44,7 +38,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   await env.DB.prepare(SCARCE_SALES_DDL).run();
   await env.DB.prepare(SCARCE_SALES_IDX).run();
 
-  const cursor = parseInt((await getState(env, "scarce_cursor")) || "0", 10);
+  const cursor = parseInt((await getState(env.DB, "scarce_cursor")) || "0", 10);
   const rows = (await env.DB.prepare(
     `SELECT rowid, asset FROM assets WHERE rowid > ? ORDER BY rowid LIMIT ?`
   ).bind(cursor, ASSETS_PER_RUN).all<{ rowid: number; asset: string }>()).results || [];
@@ -52,7 +46,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   const out: { from: number; to: number; assets: number; sales_found: number; wrapped?: boolean } =
     { from: cursor, to: cursor, assets: rows.length, sales_found: 0 };
   if (!rows.length) { // past the end — wrap to re-sweep for new sales next tick
-    await setState(env, "scarce_cursor", "0");
+    await setState(env.DB, "scarce_cursor", "0");
     out.wrapped = true;
     return out;
   }
@@ -80,7 +74,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   }
 
   const last = rows[rows.length - 1].rowid;
-  await setState(env, "scarce_cursor", String(last));
+  await setState(env.DB, "scarce_cursor", String(last));
   out.to = last;
   return out;
 }

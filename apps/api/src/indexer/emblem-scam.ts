@@ -14,13 +14,7 @@
  * Rebuildable from the mirror + Emblem metadata. Periodic (daily gate) — the whole cohort is tiny & stable.
  */
 import type { Env } from "../index";
-
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const HEAVY_DAILY = 144; // ~1 day of Counterparty blocks
 const HIGH_SUPPLY_DUMP = 1_000_000; // a card whose supply is ≥ this: one unit is a fungible fraction, not a collectible
@@ -30,7 +24,7 @@ interface Edge { sel: string; scams: number; funder: string; nv: number }
 /** Full rebuild of the shell-scam attribution. Gated to ~daily unless force=true (admin). */
 export async function buildScamAttribution(env: Env, force = false): Promise<Record<string, unknown>> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt((await getState(env, "scam_attrib_block")) || "0", 10);
+  const last = parseInt((await getState(env.DB, "scam_attrib_block")) || "0", 10);
   if (!force && tip - last < HEAVY_DAILY) return { skipped: "not due", tip, last };
 
   // 1) is_scam_shell = genuine empty shell: foreign + claims a card + holds nothing + the claimed card is
@@ -100,7 +94,7 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
     env.DB.prepare(`INSERT INTO address_signals (address, dump_scams) VALUES (?,?) ON CONFLICT(address) DO UPDATE SET dump_scams=excluded.dump_scams`).bind(r.address, r.n));
   for (let i = 0; i < dumpStmts.length; i += 50) await env.DB.batch(dumpStmts.slice(i, i + 50));
 
-  await setState(env, "scam_attrib_block", String(tip));
+  await setState(env.DB, "scam_attrib_block", String(tip));
   const shells = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE is_scam_shell=1`).first<{ c: number }>())?.c ?? 0;
   const dumpVaults = (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE is_dump=1`).first<{ c: number }>())?.c ?? 0;
   return {

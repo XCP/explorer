@@ -13,6 +13,7 @@
  * Resumable per-contract pageKey/block cursor in indexer_state; bounded per step (cron + admin driven).
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const ALCHEMY_NFT = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTsForContract`;
 const ETHERSCAN = "https://api.etherscan.io/v2/api?chainid=1";
@@ -31,12 +32,6 @@ export const EMBLEM_DDL =
 export const EMBLEM_IDX = `CREATE INDEX IF NOT EXISTS idx_emblem_btc ON emblem_vaults(btc_address)`;
 const EMBLEM_IDX2 = `CREATE INDEX IF NOT EXISTS idx_emblem_unresolved ON emblem_vaults(resolved)`;
 
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 const hexToDec = (hex: string) => BigInt(hex).toString();
 const pickBtc = (addrs: unknown): string | null => {
   if (!Array.isArray(addrs)) return null;
@@ -128,15 +123,15 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
   const now = Math.floor(Date.now() / 1000);
   const out: Record<string, unknown> = { enumerated: 0, resolved: 0 };
 
-  let contracts: string[] = JSON.parse((await getState(env, "emblem_contracts")) || "null") || [];
-  if (!contracts.length) { contracts = await counterpartyContracts(); if (contracts.length) await setState(env, "emblem_contracts", JSON.stringify(contracts)); }
+  let contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "null") || [];
+  if (!contracts.length) { contracts = await counterpartyContracts(); if (contracts.length) await setState(env.DB, "emblem_contracts", JSON.stringify(contracts)); }
 
   if (contracts.length && (ak || ek)) {
-    let ci = parseInt((await getState(env, "emblem_contract_idx")) || "0", 10);
+    let ci = parseInt((await getState(env.DB, "emblem_contract_idx")) || "0", 10);
     if (ci >= contracts.length) ci = 0;
     const contract = contracts[ci];
     const curKey = `emblem_cur_${contract}`;
-    const cursor = (await getState(env, curKey)) || "";
+    const cursor = (await getState(env.DB, curKey)) || "";
     const usingEs = cursor.startsWith("es:");
     try {
       let nextCursor = "";
@@ -163,8 +158,8 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
         out.enumerated = es.ids.length; nextCursor = es.cursor ? "es:" + es.cursor : "";
       }
       out.contract = contract;
-      if (nextCursor) await setState(env, curKey, nextCursor);
-      else { await setState(env, curKey, ""); await setState(env, "emblem_contract_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
+      if (nextCursor) await setState(env.DB, curKey, nextCursor);
+      else { await setState(env.DB, curKey, ""); await setState(env.DB, "emblem_contract_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
     } catch (e) { out.enum_err = String(e).slice(0, 120); }
   } else if (!ak && !ek) out.enum_skipped = "no keys";
 

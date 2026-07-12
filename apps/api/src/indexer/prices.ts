@@ -45,7 +45,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
 
   for (const [cur, cfg] of Object.entries(COINS)) {
-    let cursor = await getState(env, `prices_cur_${cur}`) || cfg.start;
+    let cursor = await getState(env.DB, `prices_cur_${cur}`) || cfg.start;
     let filled = 0;
     for (let w = 0; w < WINDOWS_PER_CALL && cursor < now; w++) {
       const end = Math.min(cursor + WIN, now);
@@ -61,7 +61,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
       cursor = end;
     }
     // don't pin the cursor at `now` while backfilling incompletely; leave a 2-day lip so the tail refreshes
-    await setState(env, `prices_cur_${cur}`, Math.min(cursor, now - 2 * DAY));
+    await setState(env.DB, `prices_cur_${cur}`, Math.min(cursor, now - 2 * DAY));
     out[cur] = filled;
   }
 
@@ -93,7 +93,7 @@ const USD_WINDOW = 200_000; // rows per apply call (rowid-windowed — contiguou
  *  day with no price untouched. Resumable via usd_cur; wraps to re-sweep for late prices / freshly added rows. */
 export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
-  let cur = await getState(env, "usd_cur");
+  let cur = await getState(env.DB, "usd_cur");
   if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs
   const hi = Math.min(cur + USD_WINDOW, tip);
   const result = await env.DB.prepare(`
@@ -103,6 +103,6 @@ export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> 
       AND rowid > ? AND rowid <= ?
       AND EXISTS (SELECT 1 FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
   `).bind(cur, hi).run();
-  await setState(env, "usd_cur", hi);
+  await setState(env.DB, "usd_cur", hi);
   return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip };
 }

@@ -82,11 +82,11 @@ async function mapAssets(env: Env, contract: string, tokenIds: string[]): Promis
 export async function crawlEmblemListings(env: Env): Promise<Record<string, unknown>> {
   const key = (env as { SEQUENCE_ACCESS_KEY?: string }).SEQUENCE_ACCESS_KEY;
   if (!key) return { skipped: "no SEQUENCE_ACCESS_KEY" };
-  const contracts: string[] = JSON.parse((await getState(env, "emblem_contracts")) || "[]");
+  const contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "[]");
   if (!contracts.length) return { skipped: "no contracts" };
 
   const now = Math.floor(Date.now() / 1000);
-  const start = parseInt((await getState(env, "emblem_listings_ci")) || "0", 10) % contracts.length;
+  const start = parseInt((await getState(env.DB, "emblem_listings_ci")) || "0", 10) % contracts.length;
   let upserts = 0, live = 0, failed = 0;
   const processed: string[] = [];
 
@@ -121,6 +121,6 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
   }
   // global expiry sweep
   await env.DB.prepare(`DELETE FROM emblem_listings WHERE expiry > 0 AND expiry < ?`).bind(now).run();
-  await setState(env, "emblem_listings_ci", String((start + CONTRACTS_PER_RUN) % contracts.length));
+  await setState(env.DB, "emblem_listings_ci", String((start + CONTRACTS_PER_RUN) % contracts.length));
   return { processed: processed.length, failed, live, upserts };
 }

@@ -24,17 +24,11 @@
  *    sync.ts) + XCP every run, then the small fairminter/pool derivations.
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { normalize } from "./codec";
 
 const BACKFILL_BATCH = 2000; // assets per backfill step (per-asset SUM is asset-indexed)
 const DIRTY_PER_RUN = 400;   // dirty assets recomputed per maintenance tick
-
-async function getState(db: D1Database, k: string): Promise<string | null> {
-  return (await db.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value ?? null;
-}
-async function setState(db: D1Database, k: string, v: string): Promise<void> {
-  await db.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 
 async function batch(db: D1Database, stmts: D1PreparedStatement[]): Promise<void> {
   for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));

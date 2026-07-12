@@ -20,6 +20,7 @@
  *          forward (trust subsets), slot K reverse (distrust). trust = MIN over the k subsets; distrust = slot K.
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { q } from "../db";
 import {
   K, DISTRUST_SLOT, PASSES, ASSET_PREFIX,
@@ -36,12 +37,6 @@ const K_BUILD = "graph_build_i";   // cursor into the build-op list
 const K_PASS = "graph_pass_i";     // cursor 0..(K+1)*PASSES over the interleaved slot-passes
 
 // ---- small state + chunk helpers (same shape as signals.ts) ----
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 const chunk = <T>(a: T[], n: number): T[][] => { const o: T[][] = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
 const int = (v: string | null, d: number): number => { const n = parseInt(v ?? "", 10); return Number.isFinite(n) ? n : d; };
 
@@ -166,30 +161,30 @@ export interface GraphBuildProgress {
 export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: boolean; bipartite?: boolean } = {}): Promise<GraphBuildProgress> {
   const work = Math.max(1, Math.min(40, opts.work ?? DEFAULT_WORK));
   if (opts.reset) {
-    await setState(env, K_PHASE, "build");
-    await setState(env, K_BUILD, "0");
-    await setState(env, K_PASS, "0");
+    await setState(env.DB, K_PHASE, "build");
+    await setState(env.DB, K_BUILD, "0");
+    await setState(env.DB, K_PASS, "0");
     // captured at reset so every resumed call constructs the same deterministic op list
-    await setState(env, "graph_bipartite", opts.bipartite ? "1" : "0");
+    await setState(env.DB, "graph_bipartite", opts.bipartite ? "1" : "0");
   }
-  const bipartite = (await getState(env, "graph_bipartite")) === "1";
-  let phase = (await getState(env, K_PHASE)) || "build";
+  const bipartite = (await getState(env.DB, "graph_bipartite")) === "1";
+  let phase = (await getState(env.DB, K_PHASE)) || "build";
   if (!["build", "iterate", "finalize", "done"].includes(phase)) phase = "build";
 
   if (phase === "build") {
     const ops = buildOps(bipartite);
-    let i = int(await getState(env, K_BUILD), 0);
+    let i = int(await getState(env.DB, K_BUILD), 0);
     if (i < 0 || i > ops.length) i = 0;
     const ran: string[] = [];
     for (let n = 0; n < work && i < ops.length; n++, i++) { await ops[i].exec(env); ran.push(ops[i].name); }
-    await setState(env, K_BUILD, String(i));
-    if (i >= ops.length) { await setState(env, K_PHASE, "iterate"); return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> iterate" }; }
+    await setState(env.DB, K_BUILD, String(i));
+    if (i >= ops.length) { await setState(env.DB, K_PHASE, "iterate"); return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> iterate" }; }
     return { phase: "build", done: false, build: { at: i, of: ops.length, ran } };
   }
 
   if (phase === "iterate") {
     const total = (K + 1) * PASSES;
-    let step = int(await getState(env, K_PASS), 0);
+    let step = int(await getState(env.DB, K_PASS), 0);
     if (step < 0 || step > total) step = 0;
     const ran: string[] = [];
     for (let n = 0; n < work && step < total; n++, step++) {
@@ -197,14 +192,14 @@ export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: b
       for (const sql of passStatements(slot, slot === DISTRUST_SLOT)) await env.DB.prepare(sql).run();
       ran.push(`slot${slot}#${Math.floor(step / (K + 1))}`);
     }
-    await setState(env, K_PASS, String(step));
-    if (step >= total) { await setState(env, K_PHASE, "finalize"); return { phase: "iterate", done: false, iterate: { step, of: total, ran }, note: "iteration complete -> finalize" }; }
+    await setState(env.DB, K_PASS, String(step));
+    if (step >= total) { await setState(env.DB, K_PHASE, "finalize"); return { phase: "iterate", done: false, iterate: { step, of: total, ran }, note: "iteration complete -> finalize" }; }
     return { phase: "iterate", done: false, iterate: { step, of: total, ran } };
   }
 
   if (phase === "finalize") {
     for (const sql of finalizeStatements()) await env.DB.prepare(sql).run();
-    await setState(env, K_PHASE, "done");
+    await setState(env.DB, K_PHASE, "done");
     return { phase: "finalize", done: true, finalize: true, note: "graph_trust/graph_distrust written to signals" };
   }
 
@@ -224,15 +219,15 @@ async function graphTip(env: Env): Promise<number> {
  * (incl. the freshly-seeded scam actors) trickles to completion over a few hours, once a week, on its own.
  */
 export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
-  const phase = (await getState(env, K_PHASE)) || "done";
+  const phase = (await getState(env.DB, K_PHASE)) || "done";
   if (phase === "done") {
     const tip = await graphTip(env);
-    const last = int(await getState(env, "graph_rebuilt_block"), 0);
-    if (last === 0) { await setState(env, "graph_rebuilt_block", String(tip)); return { skipped: "clock started" }; }
+    const last = int(await getState(env.DB, "graph_rebuilt_block"), 0);
+    if (last === 0) { await setState(env.DB, "graph_rebuilt_block", String(tip)); return { skipped: "clock started" }; }
     if (tip - last >= WEEK_BLOCKS) return await buildGraphTrust(env, { reset: true });
     return { skipped: `fresh (${tip - last}/${WEEK_BLOCKS} blocks to next rebuild)` };
   }
   const r = await buildGraphTrust(env, { work: 4 }); // single-driver (cron owns the rebuild); a few units/tick
-  if (r.done) await setState(env, "graph_rebuilt_block", String(await graphTip(env)));
+  if (r.done) await setState(env.DB, "graph_rebuilt_block", String(await graphTip(env)));
   return r;
 }
