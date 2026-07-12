@@ -9,7 +9,7 @@
  */
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { syncEvents, backfillLedger } from "./indexer/sync";
+import { syncEvents, backfillLedger, verifyLedgerParity } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
@@ -177,7 +177,12 @@ export default {
           const bf = await env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='backfill_active'").first<{ value: string }>();
           if (bf?.value === "1") {
             const r = await backfillLedger(env, { maxEvents: 10000 });
-            if (r.caught_up) await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
+            if (r.caught_up) {
+              await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
+              const parity = await verifyLedgerParity(env);
+              if (parity.ok) await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='1' WHERE key='read_cutover'").run();
+              else console.error("compact ledger parity", parity);
+            }
           }
         } catch (e) { console.error("backfillLedger", e); }
         // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).

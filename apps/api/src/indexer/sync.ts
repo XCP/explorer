@@ -155,6 +155,16 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
   return { processed, written, credit_done: !!done["CREDIT"], debit_done: !!done["DEBIT"], caught_up: !!done["CREDIT"] && !!done["DEBIT"] };
 }
 
+/** Exact row-count gate before reads switch databases. Dual-write keeps both sides current. */
+export async function verifyLedgerParity(env: Env): Promise<{ ok: boolean; legacy: number; compact: number }> {
+  const legacyRow = await env.DB.prepare(
+    `SELECT (SELECT COUNT(*) FROM credits)+(SELECT COUNT(*) FROM debits) n`,
+  ).first<{ n: number }>();
+  const compactRow = await env.LEDGER_DB.prepare(`SELECT COUNT(*) n FROM ledger_events`).first<{ n: number }>();
+  const legacy = Number(legacyRow?.n ?? -1), compact = Number(compactRow?.n ?? -2);
+  return { ok: legacy >= 0 && legacy === compact, legacy, compact };
+}
+
 /* ---------- balances: apply netted deltas for a chunk ---------- */
 
 async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<void> {

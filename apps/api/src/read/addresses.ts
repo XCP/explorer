@@ -37,8 +37,8 @@ addresses.get("/v2/addresses/:address/sends", async (c) => {
 // money-in/out history with each event's Counterparty reason. Empty until the ledger is backfilled by a reindex.
 addresses.get("/v2/addresses/:address/ledger", async (c) => {
   const page = { limit: lim(c), offset: off(c) };
-  const active = await c.env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='backfill_active'").first<{ value: string }>();
-  const result = active?.value === "0"
+  const cutover = await c.env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='read_cutover'").first<{ value: string }>();
+  const result = cutover?.value === "1"
     ? await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page)
     : await listAddressLedgerLegacy(c.env.DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
