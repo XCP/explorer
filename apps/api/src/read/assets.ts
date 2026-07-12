@@ -396,7 +396,7 @@ assets.get("/v2/assets/:asset/subassets", async (c) => {
 // held by everyone). Returns related assets ranked by shared-holder count, with art-ready names.
 assets.get("/v2/assets/:asset/cohort", async (c) => {
   const rows = await assetCohort(c.env.DB, c.req.param("asset").toUpperCase(), lim(c, 18, 36));
-  return J(c, { result: rows }, 300);
+  return J(c, { result: rows }, 3600);
 });
 
 // The Related tab's two strips — each related asset carries WHY it's related: the % of the subject's
@@ -411,7 +411,7 @@ assets.get("/v2/assets/:asset/related", async (c) => {
     tag ? assetCollectionCohort(c.env.DB, asset, tag, 12).catch(() => []) : Promise.resolve([]),
     assetCohort(c.env.DB, asset, 6, tag).catch(() => []),
   ]);
-  return J(c, { result: { collection, cohort } }, 300);
+  return J(c, { result: { collection, cohort } }, 3600);
 });
 
 // Holder quality (aggregate, non-creepy) + trading integrity for an asset — the "is this cap table

@@ -71,6 +71,9 @@ hourly (rather than two minutes). Their live feeds remain independently fresh; o
 Address send-derived repairs use one source grouping and one destination grouping. `last_block` is folded into
 the source pass and `assets_received` into the destination pass, removing two full sends scans per daily cycle.
 
+Reputation tiers use the persistent global SWR cache instead of recomputing the ~867k-row histogram per colo.
+Exchange/vault global aggregates refresh hourly; expensive holder-cohort relationships use a one-hour edge TTL.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code

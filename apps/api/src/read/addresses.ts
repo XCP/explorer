@@ -2,7 +2,7 @@
  *  assets, and the relationship reads (connections graph, sweep-based identity lineage). SQL lives in
  *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
  *  reputation logic, not SQL. */
-import { router, J, lim, off, round } from "./respond";
+import { router, J, lim, off, round, cached } from "./respond";
 import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, ADDRESS_FACTORS } from "../reputation/score";
 import { classifyPersona } from "../reputation/persona";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
@@ -137,7 +137,8 @@ addresses.get("/v2/reputation/review", async (c) => {
 // Public reputation-tiers overview — the real-user population split across OG/Established/Active/Casual,
 // each with its raw-score cutoff, plain-language meaning, and current head count. Backs the /reputation
 // page; each tier deep-links to its membership below.
-addresses.get("/v2/reputation/tiers", async (c) => {
+addresses.get("/v2/reputation/tiers", (c) =>
+  cached(c, "reputation:tiers", { ttl: 3600, edge: 300, swr: 86400 }, async () => {
   const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
   const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
@@ -160,8 +161,9 @@ addresses.get("/v2/reputation/tiers", async (c) => {
     total_addresses, infrastructure, scored, no_history: 0,
     by_kind: { exchanges: f?.exchanges ?? 0, deposits: f?.deposits ?? 0, vaults: f?.vaults ?? 0, burns: f?.burns ?? 0, services: f?.services ?? 0 },
   };
-  return J(c, { result: { total: scored, mean: d?.mean ?? 0, max: d?.max ?? 0, funnel, histogram, tiers } }, 300);
-});
+  return { result: { total: scored, mean: d?.mean ?? 0, max: d?.max ?? 0, funnel, histogram, tiers } };
+  })
+);
 
 // One reputation tier's definition + its ranked membership (paginated) — the deep-link target for the
 // tier labels in the Holder view and holders-table badges.
