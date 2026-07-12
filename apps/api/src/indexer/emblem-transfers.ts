@@ -8,6 +8,7 @@
  * events (a trickle here; follow-up). Bounded + resumable (per-contract block cursor + pageKey). Cron/admin.
  */
 import type { Env } from "#api/env";
+import { callAlchemyRpc } from "#api/integrations/alchemy-rpc";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
@@ -32,16 +33,7 @@ interface Receipt {
 export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unknown>> {
   const key = (env as { ALCHEMY_KEY?: string }).ALCHEMY_KEY;
   if (!key) return { skipped: "no ALCHEMY_KEY" };
-  const rpc = `https://eth-mainnet.g.alchemy.com/v2/${key}`;
-  const call = async (method: string, params: unknown[]) => {
-    const r = await fetch(rpc, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
-      signal: AbortSignal.timeout(25000),
-    });
-    return ((await r.json()) as { result?: unknown }).result;
-  };
+  const call = (method: string, params: unknown[]) => callAlchemyRpc(key, method, params);
 
   const contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
   if (!contracts.length) return { skipped: "no contracts" };
@@ -90,6 +82,7 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   }
 
   let maxBlock = cursor;
+  let receiptFailed = false;
   const inserts: ReturnType<typeof env.DB.prepare>[] = [];
   for (const [hash, { tokenIds, block }] of byTx) {
     maxBlock = Math.max(maxBlock, block);
@@ -97,6 +90,7 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
     try {
       rc = (await call("eth_getTransactionReceipt", [hash])) as Receipt | null;
     } catch {
+      receiptFailed = true;
       continue;
     }
     for (const lg of rc?.logs || []) {
@@ -127,6 +121,11 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   }
   for (let i = 0; i < inserts.length; i += 50) await env.DB.batch(inserts.slice(i, i + 50));
   out.sales = inserts.length;
+
+  if (receiptFailed) {
+    out.retry = true;
+    return out;
+  }
 
   // Advance: while a pageKey remains, keep the SAME fromBlock (cursor) and just save the pageKey. When the
   // page runs dry the contract is caught up to tip → bump its cursor past the last block and rotate contracts.
