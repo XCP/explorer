@@ -16,13 +16,17 @@ function walk(dir) {
         failures.push(`source filename: ${p} — use kebab-case`);
       }
       const source = readFileSync(p, "utf8");
+      const normalized = p.replaceAll("\\", "/");
+      if (normalized.startsWith("apps/api/src/indexer/") && /\bfetch\s*\(/.test(source)) {
+        failures.push(`provider fetch in indexer: ${p} — move network behavior to apps/api/src/integrations`);
+      }
       if (/^export\s+\*\s+from\s+/m.test(source)) {
         failures.push(`export-all barrel: ${p} — export and import concrete modules directly`);
       }
       if (!/^index\.(ts|tsx)$/.test(name)) continue;
       // CLAUDE.md rule 1: no barrel files. apps/api/src/index.ts is the Worker entrypoint
       // (wrangler main), not a barrel — the one allowed exception.
-      if (p.replaceAll("\\", "/") !== "apps/api/src/index.ts") {
+      if (normalized !== "apps/api/src/index.ts") {
         failures.push(`barrel file: ${p} — import files directly instead (CLAUDE.md rule 1)`);
       }
     }

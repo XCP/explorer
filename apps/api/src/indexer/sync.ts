@@ -20,7 +20,7 @@ import type { Env } from "#api/env";
 import { normalize } from "#api/indexer/codec";
 import { type Ev, type Stmt, type Ctx, bi, str } from "#api/indexer/events/context";
 import { dispatch } from "#api/indexer/events/dispatch";
-import { counterpartyJson } from "#api/indexer/counterparty";
+import { counterpartyJson } from "#api/integrations/counterparty";
 import { hashToBytes } from "#api/indexer/compact-codec";
 import { getIndexerStateStringArray } from "#api/indexer/state";
 

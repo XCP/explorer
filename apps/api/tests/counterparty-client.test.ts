@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCounterpartyResponse } from "#api/indexer/counterparty";
+import { parseCounterpartyResponse } from "#api/integrations/counterparty";
 
 test("Counterparty response parsing preserves large integer precision", () => {
   const response = parseCounterpartyResponse<{ result: { quantity: string } }>(

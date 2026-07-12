@@ -20,10 +20,10 @@ const backoff = (attempt: number, retryAfter = 0) =>
 export async function counterpartyJson<T = unknown>(api: string, path: string): Promise<T> {
   // On rate-limit (429) or upstream 5xx, wait and retry instead of hammering Counterparty.
   for (let attempt = 0; ; attempt++) {
-    const r = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(45000) });
-    if (r.ok) {
+    const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(45_000) });
+    if (response.ok) {
       try {
-        return parseCounterpartyResponse<T>(await r.text());
+        return parseCounterpartyResponse<T>(await response.text());
       } catch (error) {
         if (attempt < 2) {
           await backoff(attempt);
@@ -32,11 +32,11 @@ export async function counterpartyJson<T = unknown>(api: string, path: string): 
         throw error;
       }
     }
-    if ((r.status === 429 || r.status >= 500) && attempt < 4) {
-      const ra = parseInt(r.headers.get("retry-after") || "", 10);
-      await backoff(attempt, ra);
+    if ((response.status === 429 || response.status >= 500) && attempt < 4) {
+      const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+      await backoff(attempt, retryAfter);
       continue;
     }
-    throw new Error(`Counterparty ${path} ${r.status}`);
+    throw new Error(`Counterparty ${path} ${response.status}`);
   }
 }
