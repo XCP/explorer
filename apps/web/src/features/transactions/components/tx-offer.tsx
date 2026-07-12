@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { RecordTable } from "@/components/record-table";
 import { REGISTRY } from "@/lib/registry";
 import { viewCell, type Col } from "@/lib/cells";
-import { AssetArt } from "@/components/asset-art";
+import { AssetArt } from "@/features/assets/components/asset-art";
 import { usePrices } from "@/lib/prices";
 import { orderView } from "@/lib/trading-pair";
 import { btcAmt, xcpAmt, satsUsd, blocksEta } from "@/lib/tx";

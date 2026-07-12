@@ -6,12 +6,12 @@ import type { AssetDetail, AssetMarket } from "@xcp/shared/assets";
 import type { TagDetail } from "@xcp/shared/tags";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
-import { AssetArt } from "@/components/asset-art";
-import { AssetTabs } from "@/components/asset-tabs";
-import { AssetClassifications } from "@/components/asset-classifications";
-import { AssetDescription } from "@/components/asset-description";
-import { ContextBand } from "@/components/context-band";
-import { HolderMakeup } from "@/components/holder-makeup";
+import { AssetArt } from "@/features/assets/components/asset-art";
+import { AssetTabs } from "@/features/assets/components/asset-tabs";
+import { AssetClassifications } from "@/features/assets/components/asset-classifications";
+import { AssetDescription } from "@/features/assets/components/asset-description";
+import { ContextBand } from "@/features/assets/components/context-band";
+import { HolderMakeup } from "@/features/assets/components/holder-makeup";
 import { PendingActions } from "@/components/pending-actions";
 import { amount, collectionLabel, commas, compact, short, timeAgo, usdCompact } from "@/lib/format";
 

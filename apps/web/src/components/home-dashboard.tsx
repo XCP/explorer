@@ -6,7 +6,7 @@ import type { RadarPayload } from "@xcp/shared/radar";
 import type { TradeRow } from "@xcp/shared/trades";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { useTrades } from "@/lib/hooks";
-import { AssetArt } from "@/components/asset-art";
+import { AssetArt } from "@/features/assets/components/asset-art";
 import { AssetIcon } from "@/components/ui/badges";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";

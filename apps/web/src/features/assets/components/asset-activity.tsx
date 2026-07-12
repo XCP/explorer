@@ -5,7 +5,7 @@ import type { AssetActivityMonth, AssetActiveUser } from "@xcp/shared/assets";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Skeleton } from "@/components/ui/feedback";
 import { commas, short } from "@/lib/format";
-import { AssetActivityChart } from "@/components/asset-activity-chart";
+import { AssetActivityChart } from "@/features/assets/components/asset-activity-chart";
 // Static import (not next/dynamic): this whole panel is a DetailTabs entry that only ever renders after a
 // client-side tab click — it's never in the SSR tree — so lightweight-charts' DOM init in useEffect is safe,
 // and a static import dodges OpenNext's dynamic-chunk 404s. The chart still costs nothing until Activity is opened.

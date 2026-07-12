@@ -7,7 +7,7 @@ import { apiUrl } from "@/lib/api/url";
 // The sanitizer and JSON renderer are only needed after an explicit inspect action. Keeping this
 // as a separate client chunk avoids charging every asset-page visit for an uncommon tool.
 const AssetEnhancedInfo = dynamic(() =>
-  import("@/components/asset-enhanced-info").then((m) => m.AssetEnhancedInfo)
+  import("@/features/assets/components/asset-enhanced-info").then((m) => m.AssetEnhancedInfo)
 );
 
 const MAX = 220;

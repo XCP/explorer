@@ -7,7 +7,7 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { AsyncContent } from "@/components/ui/async-content";
-import { AssetArt } from "@/components/asset-art";
+import { AssetArt } from "@/features/assets/components/asset-art";
 import { RecordTable } from "@/components/record-table";
 import { assetCell } from "@/lib/cells";
 import { commas } from "@/lib/format";
