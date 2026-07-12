@@ -19,12 +19,18 @@ export function IndexPage<K extends RecordKind>({ name }: { name: K }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="pagehead"><h1>{def.title}</h1></div>
+      <div className="pagehead">
+        <h1>{def.title}</h1>
+      </div>
       <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat={def.title.toLowerCase()}>
         <RecordTable cols={def.cols} rows={rows} context={{ tip: tip ?? undefined, offset }} />
         <div className="flex gap-2 mt-1">
-          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
-          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
+          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
+            Prev
+          </SecondaryButton>
+          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
+            Next
+          </SecondaryButton>
         </div>
       </AsyncContent>
     </div>

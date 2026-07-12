@@ -18,14 +18,18 @@ test("combined asset accounting preserves exact int64 values and matches all fou
     INSERT INTO dispensers VALUES ('BIG','11',0),('BIG','99',1);
     INSERT INTO orders VALUES ('BIG','13','open'),('BIG','88','filled');
   `);
-  const row = db.prepare(`SELECT
+  const row = db
+    .prepare(
+      `SELECT
     (SELECT COUNT(*) FROM balances WHERE asset=?1 AND CAST(quantity AS INTEGER)>0) holder_count,
     CAST((SELECT SUM(CAST(quantity AS INTEGER)) FROM issuances WHERE asset=?1 AND status LIKE 'valid%')
        - (SELECT SUM(CAST(quantity AS INTEGER)) FROM destructions WHERE asset=?1 AND status LIKE 'valid%') AS TEXT) supply,
     CAST((SELECT SUM(CAST(b.quantity AS INTEGER)) FROM balances b JOIN address_signals s ON s.address=b.holder
       WHERE b.asset=?1 AND s.is_burn=1) AS TEXT) burned,
     CAST((SELECT SUM(CAST(give_remaining AS INTEGER)) FROM dispensers WHERE asset=?1 AND status=0)
-       + (SELECT SUM(CAST(give_remaining AS INTEGER)) FROM orders WHERE give_asset=?1 AND status='open') AS TEXT) escrow`).get("BIG") as Record<string, number | string>;
+       + (SELECT SUM(CAST(give_remaining AS INTEGER)) FROM orders WHERE give_asset=?1 AND status='open') AS TEXT) escrow`,
+    )
+    .get("BIG") as Record<string, number | string>;
   assert.equal(row.holder_count, 2);
   assert.equal(row.supply, "9007199254740997");
   assert.equal(row.burned, "7");

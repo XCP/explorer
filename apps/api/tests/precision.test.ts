@@ -12,10 +12,10 @@ import { parseCounterpartyJson } from "../src/indexer/codec";
 const bi = (v: any) => BigInt(String(v).split(".")[0]);
 
 const BIG = [
-  "9007199254740993",        // 2^53 + 1 — first integer JS Number can't represent exactly
-  "21000000000000000",       // ~PEPECASH-scale supply in minor units (> 2^53)
-  "9223372036854775807",     // max int64 (Counterparty's quantity domain ceiling)
-  "12345678901234567",       // arbitrary 17-digit
+  "9007199254740993", // 2^53 + 1 — first integer JS Number can't represent exactly
+  "21000000000000000", // ~PEPECASH-scale supply in minor units (> 2^53)
+  "9223372036854775807", // max int64 (Counterparty's quantity domain ceiling)
+  "12345678901234567", // arbitrary 17-digit
 ];
 
 test("preserves > 2^53 quantity as an exact string, not a rounded number", () => {
@@ -32,7 +32,11 @@ test("naive JSON.parse WOULD have lost precision (proves the fix is load-bearing
   const v = "9223372036854775807";
   const naive = JSON.parse(`{"quantity": ${v}}`).quantity; // number -> rounded
   assert.notEqual(String(naive), v, "sanity: naive parse loses precision here");
-  assert.equal((parseCounterpartyJson(`{"quantity": ${v}}`) as { quantity: unknown }).quantity, v, "parseCounterpartyJson keeps it exact");
+  assert.equal(
+    (parseCounterpartyJson(`{"quantity": ${v}}`) as { quantity: unknown }).quantity,
+    v,
+    "parseCounterpartyJson keeps it exact",
+  );
 });
 
 test("preserves large NEGATIVE integers", () => {
@@ -42,7 +46,9 @@ test("preserves large NEGATIVE integers", () => {
 });
 
 test("does NOT quote small/safe integers (block/tx/event indexes, timestamps stay numbers)", () => {
-  const parsed = parseCounterpartyJson(`{"block_index": 871234, "event_index": 12345678, "ts": 1718900000, "n15": 999999999999999}`) as Record<string, number>;
+  const parsed = parseCounterpartyJson(
+    `{"block_index": 871234, "event_index": 12345678, "ts": 1718900000, "n15": 999999999999999}`,
+  ) as Record<string, number>;
   assert.equal(typeof parsed.block_index, "number");
   assert.equal(parsed.block_index, 871234);
   assert.equal(typeof parsed.event_index, "number");
@@ -55,10 +61,10 @@ test("does NOT quote small/safe integers (block/tx/event indexes, timestamps sta
 test("works inside a realistic CP events envelope (nested objects in result array)", () => {
   const wire = `{"result":[{"event":"CREDIT","params":{"asset":"PEPECASH","quantity":21000000000000000,"block_index":800000}},{"event":"DEBIT","params":{"asset":"XCP","quantity":250000000}}]}`;
   const p = parseCounterpartyJson(wire) as { result: Array<{ params: { quantity: unknown; block_index?: number } }> };
-  assert.equal(p.result[0].params.quantity, "21000000000000000");          // big -> string
+  assert.equal(p.result[0].params.quantity, "21000000000000000"); // big -> string
   assert.equal(bi(p.result[0].params.quantity).toString(), "21000000000000000");
-  assert.equal(p.result[0].params.block_index, 800000);                    // small -> number
-  assert.equal(p.result[1].params.quantity, 250000000);                    // small -> number, still exact
+  assert.equal(p.result[0].params.block_index, 800000); // small -> number
+  assert.equal(p.result[1].params.quantity, 250000000); // small -> number, still exact
 });
 
 test("full round-trip: parse -> BigInt -> re-serialize -> parse is stable for big values", () => {

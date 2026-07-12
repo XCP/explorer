@@ -6,8 +6,8 @@ import { readAdminToken, requireAdmin } from "../src/middleware/admin-auth";
 
 function requestShape(authorization?: string, token?: string) {
   return {
-    header: (name: string) => name.toLowerCase() === "authorization" ? authorization : undefined,
-    query: (name: string) => name === "token" ? token : undefined,
+    header: (name: string) => (name.toLowerCase() === "authorization" ? authorization : undefined),
+    query: (name: string) => (name === "token" ? token : undefined),
   };
 }
 

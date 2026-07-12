@@ -9,8 +9,5 @@
     "outDir": ".test-dist",
     "rootDir": "."
   },
-  "include": [
-    "tests/node-test.d.ts",
-    "tests/**/*.test.ts"
-  ]
+  "include": ["tests/node-test.d.ts", "tests/**/*.test.ts"]
 }

@@ -16,8 +16,13 @@ export function SectionHeader({ children, flush = false }: { children: ReactNode
   // sit FLUSH — `!mb-0` cancels <main>'s space-y-6 (Tailwind v4 emits it as margin-bottom on non-last
   // children), which would otherwise open a 24px page-background stripe between the stats and the tabs.
   return (
-    <div className={`section-head ${FULL_BLEED}${flush ? " !mb-0" : ""}`} style={flush ? { borderBottom: "none" } : undefined}>
-      <div className="sh-in" style={flush ? undefined : { paddingBottom: 18 }}>{children}</div>
+    <div
+      className={`section-head ${FULL_BLEED}${flush ? " !mb-0" : ""}`}
+      style={flush ? { borderBottom: "none" } : undefined}
+    >
+      <div className="sh-in" style={flush ? undefined : { paddingBottom: 18 }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -30,7 +35,13 @@ export function SectionChip({ variant = "neutral", children }: { variant?: Secti
   return <span className={`chip ${variant}`}>{children}</span>;
 }
 
-export function SectionIdentity({ visual, name, chips, actions, compact = false }: {
+export function SectionIdentity({
+  visual,
+  name,
+  chips,
+  actions,
+  compact = false,
+}: {
   visual?: ReactNode;
   name: ReactNode;
   chips?: ReactNode;
@@ -42,8 +53,14 @@ export function SectionIdentity({ visual, name, chips, actions, compact = false 
     <div className="sh-top">
       {visual}
       <div className="min-w-0">
-        <h1 className="sh-name break-all" style={compact ? { fontSize: 16, fontWeight: 600 } : undefined}>{name}</h1>
-        {chips && <div className="chips" style={{ marginTop: 5 }}>{chips}</div>}
+        <h1 className="sh-name break-all" style={compact ? { fontSize: 16, fontWeight: 600 } : undefined}>
+          {name}
+        </h1>
+        {chips && (
+          <div className="chips" style={{ marginTop: 5 }}>
+            {chips}
+          </div>
+        )}
       </div>
       {actions && <div className="sh-actions">{actions}</div>}
     </div>
@@ -61,7 +78,12 @@ export function SectionStats({ stats }: { stats: SectionStat[] }) {
           <div className="l">{s.label}</div>
           <div className="v">
             {s.value}
-            {s.detail != null && <> <small>{s.detail}</small></>}
+            {s.detail != null && (
+              <>
+                {" "}
+                <small>{s.detail}</small>
+              </>
+            )}
           </div>
         </div>
       ))}

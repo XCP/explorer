@@ -12,9 +12,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260702.1",
-    "prettier": "^3.9.4",
-    "prettier-plugin-embed": "^0.5.1",
-    "prettier-plugin-sql": "^0.20.0",
     "typescript": "^6.0.3",
     "wrangler": "^4.107.0"
   },

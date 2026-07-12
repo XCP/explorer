@@ -12,10 +12,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  scoreAddress, scoreAsset, addressScore, assetScore, addressTier, assetTier, percentile, rawSqlExpr,
+  scoreAddress,
+  scoreAsset,
+  addressScore,
+  assetScore,
+  addressTier,
+  assetTier,
+  percentile,
+  rawSqlExpr,
 } from "../src/reputation/score";
 import {
-  SCALARS, ADDRESS_FACTORS, ASSET_FACTORS, ASSET_PENALTY, ADDRESS_PCT, ASSET_PCT, ASSET_TIERS, ADDRESS_TIERS,
+  SCALARS,
+  ADDRESS_FACTORS,
+  ASSET_FACTORS,
+  ASSET_PENALTY,
+  ADDRESS_PCT,
+  ASSET_PCT,
+  ASSET_TIERS,
+  ADDRESS_TIERS,
 } from "../src/reputation/config";
 
 // mirror the engine's own numeric primitives (score.ts) so the re-derivation uses the identical definitions.
@@ -31,9 +45,15 @@ const sw = (label: string) => ASSET_FACTORS.find((f) => f.label === label)!.weig
 /* ---------- independent re-derivations of the raw score ---------- */
 
 const addrDecay = (row: any, tip: number) =>
-  Math.max(SCALARS.addrDecayFloor, SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_block))));
+  Math.max(
+    SCALARS.addrDecayFloor,
+    SCALARS.addrDecayHalflife / (SCALARS.addrDecayHalflife + Math.max(0, tip - num(row.last_block))),
+  );
 const assetDecay = (row: any) =>
-  Math.max(SCALARS.assetDecayFloor, SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)));
+  Math.max(
+    SCALARS.assetDecayFloor,
+    SCALARS.assetDecayHalflife / (SCALARS.assetDecayHalflife + num(row.recency_blocks)),
+  );
 
 function expectedAddrRaw(row: any, tip: number): number {
   const B = SCALARS.blockScale;
@@ -56,20 +76,21 @@ function expectedAddrRaw(row: any, tip: number): number {
 }
 
 function expectedAssetRaw(row: any): number {
-  const B = SCALARS.blockScale, dA = assetDecay(row);
+  const B = SCALARS.blockScale,
+    dA = assetDecay(row);
   const supply = num(row.supply);
-  const circ = supply <= 0 ? 0 : Math.max(1, supply * (100 - num(row.burned_pct)) / 100);
+  const circ = supply <= 0 ? 0 : Math.max(1, (supply * (100 - num(row.burned_pct))) / 100);
   const dt = num(row.distinct_traders);
   let r = 0;
   // Phase B: primary realized-value factor, GATED by distinct buyers B/(B+3) (B = traders + dispense buyers)
   const gateB = dt + num(row.distinct_dispense_buyers);
   r += sw("value_usd") * ln(num(row.max_realized_usd)) * (gateB / (gateB + 3));
-  r += sw("value_btc") * ln(num(row.max_dispense_btc_clean));   // Phase B: value_btc now reads the self-dispense-guarded column
+  r += sw("value_btc") * ln(num(row.max_dispense_btc_clean)); // Phase B: value_btc now reads the self-dispense-guarded column
   r += sw("value_xcp") * ln(num(row.max_trade_xcp));
   r += sw("commerce") * ln(num(row.dispense_btc));
   r += sw("dispensers") * ln(num(row.distinct_dispensers));
-  r += sw("buyers") * ln(num(row.distinct_dispense_buyers));    // Phase B
-  r += sw("emblem") * ln(num(row.emblem_trades));               // Phase B
+  r += sw("buyers") * ln(num(row.distinct_dispense_buyers)); // Phase B
+  r += sw("emblem") * ln(num(row.emblem_trades)); // Phase B
   r += sw("demand_depth") * ln(num(row.trades) / (num(row.holders) || 1));
   r += sw("durability") * ((num(row.last_trade_blk) - num(row.first_trade_blk)) / B) * (dt / (dt + 3)) * dA;
   r += sw("traders") * ln(dt);
@@ -109,16 +130,28 @@ test("breakdown keys are exactly the weighted factor labels", () => {
   const weighted = new Set(ASSET_FACTORS.filter((f) => f.weight).map((f) => f.label));
   for (const k of Object.keys(s.breakdown)) assert(weighted.has(k), `unexpected breakdown key ${k}`);
   // zero-weight factors (e.g. pagerank on the address side) must never appear
-  assert(!("pagerank" in scoreAddress({ survived_assets: 3 }, 850000).breakdown), "zero-weight factor leaked into breakdown");
+  assert(
+    !("pagerank" in scoreAddress({ survived_assets: 3 }, 850000).breakdown),
+    "zero-weight factor leaked into breakdown",
+  );
 });
 
 /* ---------- a known good row scores where the re-derivation says ---------- */
 
 test("scoreAddress: a substantive row matches the independent re-derivation (no modern bonus branch)", () => {
   const row = {
-    first_block: 300000, last_block: 850000, // < modernActiveBlock, so NO bonus
-    survived_assets: 5, dividends: 2, locked_assets: 3, btc_fees: 1.5, btc_spent: 4,
-    dispense_btc: 0.5, assets_held: 40, xcp: 1000, dex_trades: 12, stamps_created: 0,
+    first_block: 300000,
+    last_block: 850000, // < modernActiveBlock, so NO bonus
+    survived_assets: 5,
+    dividends: 2,
+    locked_assets: 3,
+    btc_fees: 1.5,
+    btc_spent: 4,
+    dispense_btc: 0.5,
+    assets_held: 40,
+    xcp: 1000,
+    dex_trades: 12,
+    stamps_created: 0,
   };
   const tip = 870000;
   const s = scoreAddress(row, tip);
@@ -139,12 +172,26 @@ test("scoreAddress: modern-active bonus is applied once, exactly SCALARS.modernA
 
 test("scoreAsset: a market row matches the independent re-derivation (special transforms exercised)", () => {
   const row = {
-    max_realized_usd: 5000, max_dispense_btc_clean: 1.5, distinct_dispense_buyers: 8, emblem_trades: 3, // Phase B realized-value factors
-    max_trade_xcp: 5, dispense_btc: 3, distinct_dispensers: 4,
-    trades: 100, holders: 20, // demand_depth = ln(trades/holders)
-    last_trade_blk: 800000, first_trade_blk: 700000, distinct_traders: 10, recency_blocks: 50000, // durability + decay
-    burned_pct: 10, supply: 1000, // circulating scarcity
-    age_blocks: 200000, recent_events: 30, holder_breadth: 8, avg_holder_dex: 6, pct_creator_holders: 25,
+    max_realized_usd: 5000,
+    max_dispense_btc_clean: 1.5,
+    distinct_dispense_buyers: 8,
+    emblem_trades: 3, // Phase B realized-value factors
+    max_trade_xcp: 5,
+    dispense_btc: 3,
+    distinct_dispensers: 4,
+    trades: 100,
+    holders: 20, // demand_depth = ln(trades/holders)
+    last_trade_blk: 800000,
+    first_trade_blk: 700000,
+    distinct_traders: 10,
+    recency_blocks: 50000, // durability + decay
+    burned_pct: 10,
+    supply: 1000, // circulating scarcity
+    age_blocks: 200000,
+    recent_events: 30,
+    holder_breadth: 8,
+    avg_holder_dex: 6,
+    pct_creator_holders: 25,
     low_quality: 0,
   };
   const s = scoreAsset(row as Parameters<typeof scoreAsset>[0]);
@@ -192,7 +239,11 @@ test("addressTier: cuts exactly on each config minRaw", () => {
     const t = ADDRESS_TIERS[i];
     if (t.minRaw <= -1e8) continue;
     assert.equal(addressTier(t.minRaw, "ranked"), t.tier, `raw==${t.minRaw} is ${t.tier}`);
-    assert.notEqual(addressTier(t.minRaw - 1e-9, "ranked"), t.tier, `raw just below ${t.minRaw} drops out of ${t.tier}`);
+    assert.notEqual(
+      addressTier(t.minRaw - 1e-9, "ranked"),
+      t.tier,
+      `raw just below ${t.minRaw} drops out of ${t.tier}`,
+    );
   }
 });
 
@@ -238,7 +289,10 @@ test("percentile: below floor is 0, above max is clamped to 100", () => {
 
 test("rawSqlExpr: emits NO bind placeholders (the adversarial-review invariant)", () => {
   const tip = 912345;
-  for (const [name, factors] of [["address", ADDRESS_FACTORS], ["asset", ASSET_FACTORS]] as const) {
+  for (const [name, factors] of [
+    ["address", ADDRESS_FACTORS],
+    ["asset", ASSET_FACTORS],
+  ] as const) {
     const expr = rawSqlExpr(factors, tip);
     assert(!expr.includes("?"), `${name} population SQL must contain no '?' placeholders`);
     assert(expr.length > 0 && expr !== "0", `${name} expr should be a real expression`);
@@ -257,9 +311,9 @@ test("rawSqlExpr: address expression omits the xcp factor (per the score.ts cont
   assert(!/\bxcp\b/i.test(expr), "xcp must not appear as a column in the population SQL");
 });
 
-test("rawSqlExpr: an all-zero-weight factor list collapses to the literal \"0\"", () => {
+test('rawSqlExpr: an all-zero-weight factor list collapses to the literal "0"', () => {
   const expr = rawSqlExpr([{ key: "held", weight: 0, transform: "log", label: "held", why: "" }], 900000);
-  assert.equal(expr, "0", "no weighted terms → \"0\" (safe, non-empty SQL)");
+  assert.equal(expr, "0", 'no weighted terms → "0" (safe, non-empty SQL)');
 });
 
 /* ---------- low_quality hard tier gate (Phase B round 3) ---------- */
@@ -267,7 +321,7 @@ test("rawSqlExpr: an all-zero-weight factor list collapses to the literal \"0\""
 test("assetTier: low_quality caps at Speculative regardless of raw (OXBT case)", () => {
   assert.equal(assetTier(1000, "market", true), "Speculative");
   assert.equal(assetTier(1000, "market", false) !== "Speculative", true);
-  assert.equal(assetTier(1000, "held", true), "Untraded");   // non-market states unaffected
+  assert.equal(assetTier(1000, "held", true), "Untraded"); // non-market states unaffected
   assert.equal(assetTier(1000, "none", true), "Dormant");
 });
 
@@ -277,6 +331,6 @@ test("scoreAsset __realized_usd gate: thin-buyer sale is damped, broad demand pa
   const broad = scoreAsset({ ...base, distinct_dispense_buyers: 500 });
   // gate = B/(B+3): 2 buyers → 0.4, 500 buyers → ~0.994 (coarse tolerance: breakdown values are 2dp-rounded)
   const ratio = thin.breakdown.value_usd / broad.breakdown.value_usd;
-  assert(Math.abs(ratio - (2 / 5) / (500 / 503)) < 0.01, `gate ratio ${ratio}`);
+  assert(Math.abs(ratio - 2 / 5 / (500 / 503)) < 0.01, `gate ratio ${ratio}`);
   assert(thin.raw < broad.raw, "thin whale must score below broad demand at equal USD");
 });

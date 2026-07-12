@@ -45,5 +45,5 @@ trades.get("/v2/trades/stats", (c) =>
   // Lifetime venue aggregates scan the full ledger; hourly freshness is ample beside the live trade feed.
   cached(c, "trades:stats", { ttl: 3600, swr: 86400 }, async (): Promise<Envelope<TradeVenueStats[]>> => {
     return { result: await tradeVenueStats(c.env.DB) };
-  })
+  }),
 );

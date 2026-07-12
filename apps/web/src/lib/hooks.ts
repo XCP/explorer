@@ -7,7 +7,7 @@ import type { MempoolActionRow } from "@xcp/shared/mempool";
 import type { SyncOverview } from "@xcp/shared/stats";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
-import { apiUrl, type Envelope } from "./api/url";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 
 // Generic list/detail hooks over the explorer read API. Pagination via offset.
 function useList<T = unknown>(path: string, params?: Record<string, string | number | undefined>) {
@@ -34,12 +34,16 @@ export function useMempool() {
 }
 export function useAddressMempool(address?: string) {
   const { data } = useSWR<Envelope<MempoolActionRow[]>>(
-    address ? apiUrl(`/v2/addresses/${encodeURIComponent(address)}/mempool`) : null, { refreshInterval: 10_000 });
+    address ? apiUrl(`/v2/addresses/${encodeURIComponent(address)}/mempool`) : null,
+    { refreshInterval: 10_000 },
+  );
   return { rows: data?.result ?? [] };
 }
 export function useAssetMempool(asset?: string) {
   const { data } = useSWR<Envelope<MempoolActionRow[]>>(
-    asset ? apiUrl(`/v2/assets/${encodeURIComponent(asset)}/mempool`) : null, { refreshInterval: 10_000 });
+    asset ? apiUrl(`/v2/assets/${encodeURIComponent(asset)}/mempool`) : null,
+    { refreshInterval: 10_000 },
+  );
   return { rows: data?.result ?? [] };
 }
 export const useAssets = (query?: string, offset = 0, limit = 50, sort?: string, dir?: string) =>
@@ -47,7 +51,8 @@ export const useAssets = (query?: string, offset = 0, limit = 50, sort?: string,
 export const useBlocks = (offset = 0, limit = 25) => useList<BlockRow>("/v2/blocks", { offset, limit });
 // Generic index hook — one per explorer index page. `name` is the /v2/<name> list endpoint; bind the
 // row type per feed (e.g. useIndex<IssuanceRow>("issuances")) to type the rows it returns.
-export const useIndex = <T = unknown>(name: RecordKind, offset = 0, limit = 50) => useList<T>(`/v2/${name}`, { offset, limit });
+export const useIndex = <T = unknown>(name: RecordKind, offset = 0, limit = 50) =>
+  useList<T>(`/v2/${name}`, { offset, limit });
 
 // Unified trades ledger (typed end-to-end — the reference idiom for new hooks).
 export const useTrades = (filter: { venue?: string; currency?: string; asset?: string } = {}, offset = 0, limit = 50) =>
@@ -63,6 +68,8 @@ export function useTags() {
   return { rows: data?.result ?? [], error, isLoading };
 }
 export function useTag(tag: string, offset = 0, limit = 50) {
-  const { data, error, isLoading } = useSWR<Envelope<TagDetail>>(apiUrl(`/v2/tags/${encodeURIComponent(tag)}`, { offset, limit }));
+  const { data, error, isLoading } = useSWR<Envelope<TagDetail>>(
+    apiUrl(`/v2/tags/${encodeURIComponent(tag)}`, { offset, limit }),
+  );
   return { detail: data?.result, nextOffset: data?.next_offset, error, isLoading };
 }

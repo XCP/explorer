@@ -22,15 +22,18 @@ const COINS: Record<string, { product: string; start: number }> = {
   ETH: { product: "ETH-USD", start: 1463529600 }, // 2016-05-18
 };
 const DAY = 86400;
-const WIN = 300 * DAY;       // Coinbase caps candles at 300/request
-const WINDOWS_PER_CALL = 8;  // ~2400 days per currency per admin call → backfills in ~2 passes
+const WIN = 300 * DAY; // Coinbase caps candles at 300/request
+const WINDOWS_PER_CALL = 8; // ~2400 days per currency per admin call → backfills in ~2 passes
 
 const isoDay = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10);
 
 // One Coinbase window: [[time, low, high, open, close, volume], ...] (close = index 4).
 async function cbWindow(product: string, start: number, end: number): Promise<number[][]> {
   const u = `${CB}/${product}/candles?granularity=${DAY}&start=${new Date(start * 1000).toISOString()}&end=${new Date(end * 1000).toISOString()}`;
-  const r = await fetch(u, { headers: { "user-agent": "xcp.io-indexer", accept: "application/json" }, signal: AbortSignal.timeout(20000) });
+  const r = await fetch(u, {
+    headers: { "user-agent": "xcp.io-indexer", accept: "application/json" },
+    signal: AbortSignal.timeout(20000),
+  });
   if (!r.ok) throw new Error(`${product} ${r.status}`);
   const d = await r.json();
   return Array.isArray(d) ? (d as number[][]) : [];
@@ -45,16 +48,25 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
 
   for (const [cur, cfg] of Object.entries(COINS)) {
-    let cursor = await getState(env.DB, `prices_cur_${cur}`) || cfg.start;
+    let cursor = (await getState(env.DB, `prices_cur_${cur}`)) || cfg.start;
     let filled = 0;
     for (let w = 0; w < WINDOWS_PER_CALL && cursor < now; w++) {
       const end = Math.min(cursor + WIN, now);
       let rows: number[][];
-      try { rows = await cbWindow(cfg.product, cursor, end); }
-      catch (e) { out[`${cur}_err`] = String(e).slice(0, 60); break; }
+      try {
+        rows = await cbWindow(cfg.product, cursor, end);
+      } catch (e) {
+        out[`${cur}_err`] = String(e).slice(0, 60);
+        break;
+      }
       if (rows.length) {
         const stmts = rows.map((r) =>
-          env.DB.prepare(`INSERT OR REPLACE INTO prices (day,currency,usd) VALUES (?,?,?)`).bind(isoDay(r[0]), cur, r[4]));
+          env.DB.prepare(`INSERT OR REPLACE INTO prices (day,currency,usd) VALUES (?,?,?)`).bind(
+            isoDay(r[0]),
+            cur,
+            r[4],
+          ),
+        );
         for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
         filled += rows.length;
       }
@@ -68,20 +80,26 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   // Fold order matches once into a tiny indexed daily series. The former non-materialized CTE was searched
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
   await env.DB.prepare(`DELETE FROM xcp_btc_daily`).run();
-  await env.DB.prepare(`INSERT INTO xcp_btc_daily (day,xcpbtc)
+  await env.DB.prepare(
+    `INSERT INTO xcp_btc_daily (day,xcpbtc)
     SELECT date(block_time,'unixepoch'),
       SUM(CASE WHEN forward_asset='BTC' THEN forward_quantity ELSE backward_quantity END) * 1.0
       / NULLIF(SUM(CASE WHEN forward_asset='XCP' THEN forward_quantity ELSE backward_quantity END), 0)
     FROM order_matches
     WHERE status='completed' AND ((forward_asset='XCP' AND backward_asset='BTC') OR (forward_asset='BTC' AND backward_asset='XCP'))
-    GROUP BY date(block_time,'unixepoch')`).run();
-  await env.DB.prepare(`INSERT OR REPLACE INTO prices (day,currency,usd)
+    GROUP BY date(block_time,'unixepoch')`,
+  ).run();
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO prices (day,currency,usd)
     SELECT b.day,'XCP',
       (SELECT x.xcpbtc FROM xcp_btc_daily x WHERE x.day<=b.day ORDER BY x.day DESC LIMIT 1)*b.usd
     FROM prices b WHERE b.currency='BTC'
-      AND EXISTS (SELECT 1 FROM xcp_btc_daily x WHERE x.day<=b.day)`).run();
+      AND EXISTS (SELECT 1 FROM xcp_btc_daily x WHERE x.day<=b.day)`,
+  ).run();
 
-  const c = await env.DB.prepare(`SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`).all();
+  const c = await env.DB.prepare(
+    `SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`,
+  ).all();
   out.calendar = c.results ?? [];
   return out;
 }
@@ -96,13 +114,17 @@ export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> 
   let cur = await getState(env.DB, "usd_cur");
   if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs
   const hi = Math.min(cur + USD_WINDOW, tip);
-  const result = await env.DB.prepare(`
+  const result = await env.DB.prepare(
+    `
     UPDATE trades SET usd_value = total * (
       SELECT p.usd FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
     WHERE currency IN ('BTC','ETH','XCP') AND usd_value IS NULL
       AND rowid > ? AND rowid <= ?
       AND EXISTS (SELECT 1 FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
-  `).bind(cur, hi).run();
+  `,
+  )
+    .bind(cur, hi)
+    .run();
   await setState(env.DB, "usd_cur", hi);
   return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip };
 }

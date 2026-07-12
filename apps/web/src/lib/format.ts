@@ -56,7 +56,10 @@ export const usdCompact = (v?: number | null) => {
 
 // Collection tags are slugs ("rare-pepe"); surfaces show them as display names ("Rare Pepe").
 export const collectionLabel = (tag: string) =>
-  tag.split("-").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+  tag
+    .split("-")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
 
 // Raw protocol quantity → human units: divide by 1e8 only when divisible (R7 — never render raw
 // satoshi fields). Default divisible=true covers the always-divisible XCP/BTC fields.

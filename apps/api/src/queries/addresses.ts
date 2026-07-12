@@ -9,15 +9,27 @@
  * (config-derived, not user input) and passed in — the query owns the surrounding SQL.
  */
 import type {
-  AddressBalanceRow, AddressSendRow, AddressIssuanceRow, AddressDispenserRow,
-  AddressDispenseRow, AddressIssuedAssetRow, AddressSummary, AddressConnectionRow,
-  AddressLineageRow, AddressLedgerRow, ReputationDistribution, ReputationTopRow,
+  AddressBalanceRow,
+  AddressSendRow,
+  AddressIssuanceRow,
+  AddressDispenserRow,
+  AddressDispenseRow,
+  AddressIssuedAssetRow,
+  AddressSummary,
+  AddressConnectionRow,
+  AddressLineageRow,
+  AddressLedgerRow,
+  ReputationDistribution,
+  ReputationTopRow,
 } from "@xcp/shared/addresses";
 import type { AddressSignalsRow } from "../schema";
 import { q, one } from "../db";
 import { ADDRESS_LEDGER_SQL } from "./compact-ledger";
 
-export interface Page { limit: number; offset: number; }
+export interface Page {
+  limit: number;
+  offset: number;
+}
 
 /** The address_signals row plus the read-time extras the scorer needs (XCP balance + chain tip). */
 export type AddressReputationRow = AddressSignalsRow & { xcp: number | null; tip: number | null };
@@ -25,11 +37,7 @@ export type AddressReputationRow = AddressSignalsRow & { xcp: number | null; tip
 /** Provenance ledger — every raw credit (in) and debit (out) for an address, newest first (credits/debits,
  *  migration 0038). ?1 is the address (used by both legs); a 2-term union stays under D1's compound-SELECT cap. */
 export function listAddressLedger(db: D1Database, address: string, p: Page): Promise<AddressLedgerRow[]> {
-  return q<AddressLedgerRow>(
-    db,
-    ADDRESS_LEDGER_SQL,
-    address, p.limit, p.offset,
-  );
+  return q<AddressLedgerRow>(db, ADDRESS_LEDGER_SQL, address, p.limit, p.offset);
 }
 
 /** Temporary rollback/read-through path while the compact ledger is backfilling. */
@@ -40,7 +48,9 @@ export function listAddressLedgerPrimary(db: D1Database, address: string, p: Pag
      UNION ALL
      SELECT 'out' direction, block_index, tx_hash, asset, quantity, calling_function FROM debits WHERE address=?1
      ORDER BY block_index DESC, tx_hash LIMIT ?2 OFFSET ?3`,
-    address, p.limit, p.offset,
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -53,7 +63,9 @@ export function listBalances(db: D1Database, address: string, p: Page): Promise<
      FROM balances b LEFT JOIN assets a ON a.asset=b.asset
      WHERE b.holder=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0
      ORDER BY b.asset LIMIT ? OFFSET ?`,
-    address, p.limit, p.offset
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -63,7 +75,10 @@ export function listSends(db: D1Database, address: string, p: Page): Promise<Add
     db,
     `SELECT tx_hash, block_index, block_time, source, destination, asset, quantity_normalized, send_type, status
      FROM sends WHERE source=? OR destination=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    address, address, p.limit, p.offset
+    address,
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -73,7 +88,10 @@ export function listIssuances(db: D1Database, address: string, p: Page): Promise
     db,
     `SELECT tx_hash, block_index, block_time, asset, asset_longname, quantity_normalized, transfer, issuer, description, asset_events, status
      FROM issuances WHERE source=? OR issuer=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    address, address, p.limit, p.offset
+    address,
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -82,7 +100,9 @@ export function listDispensers(db: D1Database, address: string, p: Page): Promis
   return q<AddressDispenserRow>(
     db,
     `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status FROM dispensers WHERE source=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    address, p.limit, p.offset
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -93,7 +113,10 @@ export function listDispenses(db: D1Database, address: string, p: Page): Promise
     `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.destination,d.asset,d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,t.usd_value
      FROM dispenses d LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.id AS TEXT)
      WHERE d.source=? OR d.destination=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
-    address, address, p.limit, p.offset
+    address,
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -103,7 +126,10 @@ export function listIssued(db: D1Database, address: string, p: Page): Promise<Ad
     db,
     `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
      WHERE issuer=? OR owner=? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`,
-    address, address, p.limit, p.offset
+    address,
+    address,
+    p.limit,
+    p.offset,
   );
 }
 
@@ -132,7 +158,8 @@ export function addressReputationRow(db: D1Database, address: string): Promise<A
     `SELECT sg.*, (SELECT CAST(quantity_normalized AS REAL) FROM balances WHERE holder=? AND asset='XCP') xcp,
             (SELECT MAX(block_index) FROM blocks) tip
      FROM address_signals sg WHERE sg.address=?`,
-    address, address
+    address,
+    address,
   );
 }
 
@@ -153,7 +180,17 @@ export function addressConnections(db: D1Database, address: string, limit: numbe
         ) WHERE cp IS NOT NULL AND cp<>? GROUP BY cp
      ) g LEFT JOIN address_signals sg ON sg.address=g.cp
      WHERE COALESCE(sg.is_deposit,0)=0 ORDER BY g.interactions DESC LIMIT ?`,
-    address, address, address, address, address, address, address, address, address, address, limit
+    address,
+    address,
+    address,
+    address,
+    address,
+    address,
+    address,
+    address,
+    address,
+    address,
+    limit,
   );
 }
 
@@ -165,7 +202,8 @@ export function addressLineage(db: D1Database, address: string): Promise<Address
      UNION ALL
      SELECT 'in' direction, source counterparty, block_index, block_time FROM sweeps WHERE destination=?
      ORDER BY block_index`,
-    address, address
+    address,
+    address,
   );
 }
 
@@ -180,7 +218,12 @@ export function maxBlockIndex(db: D1Database): Promise<{ m: number | null } | nu
 
 /** Population raw-score band counts across the tier boundaries (one GROUP BY, no window sort). */
 export function reputationDistribution(
-  db: D1Database, expr: string, notInfra: string, vetCut: number, estCut: number, actCut: number
+  db: D1Database,
+  expr: string,
+  notInfra: string,
+  vetCut: number,
+  estCut: number,
+  actCut: number,
 ): Promise<ReputationDistribution | null> {
   return one<ReputationDistribution>(
     db,
@@ -190,7 +233,7 @@ export function reputationDistribution(
        SUM(CASE WHEN raw>=${estCut} AND raw<${vetCut} THEN 1 ELSE 0 END) established,
        SUM(CASE WHEN raw>=${actCut} AND raw<${estCut} THEN 1 ELSE 0 END) active,
        SUM(CASE WHEN raw<${actCut} THEN 1 ELSE 0 END) casual
-     FROM r`
+     FROM r`,
   );
 }
 
@@ -199,7 +242,7 @@ export function reputationTop(db: D1Database, expr: string, notInfra: string): P
   return q<ReputationTopRow>(
     db,
     `SELECT address, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
-     FROM address_signals WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`
+     FROM address_signals WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`,
   );
 }
 
@@ -207,7 +250,12 @@ export function reputationTop(db: D1Database, expr: string, notInfra: string): P
  *  builds the funnel as infrastructure + scored (the real-address total); "no history" is 0 by
  *  definition. Powers the /reputation "who counts" act. */
 export function reputationFunnel(db: D1Database): Promise<{
-  infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number;
+  infra: number;
+  exchanges: number;
+  deposits: number;
+  vaults: number;
+  burns: number;
+  services: number;
 } | null> {
   return one<{ infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number }>(
     db,
@@ -218,7 +266,7 @@ export function reputationFunnel(db: D1Database): Promise<{
        SUM(CASE WHEN COALESCE(is_emblem_vault,0)=1 THEN 1 ELSE 0 END) vaults,
        SUM(CASE WHEN is_burn=1 THEN 1 ELSE 0 END) burns,
        SUM(CASE WHEN COALESCE(likely_service,0)=1 THEN 1 ELSE 0 END) services
-     FROM address_signals`
+     FROM address_signals`,
   );
 }
 
@@ -226,12 +274,15 @@ export function reputationFunnel(db: D1Database): Promise<{
  *  for the distribution curve on /reputation. `expr`/`notInfra` are the same config-driven fragments the
  *  distribution + tier reads use; `cap` is an interpolated literal (not user input). */
 export function reputationHistogram(
-  db: D1Database, expr: string, notInfra: string, cap: number
+  db: D1Database,
+  expr: string,
+  notInfra: string,
+  cap: number,
 ): Promise<{ bin: number; count: number }[]> {
   return q<{ bin: number; count: number }>(
     db,
     `WITH r AS (SELECT MAX(0, MIN(${cap}, CAST((${expr}) AS INTEGER))) b FROM address_signals WHERE ${notInfra})
-     SELECT b bin, COUNT(*) count FROM r GROUP BY b ORDER BY b`
+     SELECT b bin, COUNT(*) count FROM r GROUP BY b ORDER BY b`,
   );
 }
 
@@ -239,13 +290,20 @@ export function reputationHistogram(
  *  bounds are config-sourced tier cutoffs (interpolated, not user input); the caller passes a large sentinel
  *  for the top (OG) tier's open upper bound. Powers the /reputation/:tier deep-link leaderboard. */
 export function reputationTierMembers(
-  db: D1Database, expr: string, notInfra: string, minRaw: number, maxRaw: number, limit: number, offset: number
+  db: D1Database,
+  expr: string,
+  notInfra: string,
+  minRaw: number,
+  maxRaw: number,
+  limit: number,
+  offset: number,
 ): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
     `SELECT address, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
      FROM address_signals WHERE ${notInfra} AND (${expr})>=${minRaw} AND (${expr})<${maxRaw}
      ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
-    limit, offset
+    limit,
+    offset,
   );
 }

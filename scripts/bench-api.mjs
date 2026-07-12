@@ -35,7 +35,9 @@ for (const path of paths) {
     if (!response.ok) failed = true;
   }
   timings.sort((a, b) => a - b);
-  console.log(`${status}\t${quantile(timings, 0.5).toFixed(0)}ms\t${quantile(timings, 0.95).toFixed(0)}ms\t${bytes}\t${path}`);
+  console.log(
+    `${status}\t${quantile(timings, 0.5).toFixed(0)}ms\t${quantile(timings, 0.95).toFixed(0)}ms\t${bytes}\t${path}`,
+  );
 }
 
 if (failed) process.exitCode = 1;

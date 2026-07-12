@@ -24,8 +24,14 @@ function fixture(): DatabaseSync {
 test("compact ledger preserves public block/hash ordering and offset pages", () => {
   const db = fixture();
   const rows = db.prepare(ADDRESS_LEDGER_SQL).all("addr", 3, 0) as { tx_hash: string | null; direction: string }[];
-  assert.deepEqual(rows.map((r) => r.tx_hash), [null, "aa".repeat(32), "bb".repeat(32)]);
-  assert.deepEqual(rows.map((r) => r.direction), ["in", "in", "in"]);
+  assert.deepEqual(
+    rows.map((r) => r.tx_hash),
+    [null, "aa".repeat(32), "bb".repeat(32)],
+  );
+  assert.deepEqual(
+    rows.map((r) => r.direction),
+    ["in", "in", "in"],
+  );
   const last = db.prepare(ADDRESS_LEDGER_SQL).get("addr", 1, 3) as { tx_hash: string; direction: string };
   assert.equal(last.tx_hash, "ff".repeat(32));
   assert.equal(last.direction, "out");
@@ -34,6 +40,12 @@ test("compact ledger preserves public block/hash ordering and offset pages", () 
 test("compact ledger filters through the indexed base table before decoding", () => {
   const db = fixture();
   const plan = db.prepare(`EXPLAIN QUERY PLAN ${ADDRESS_LEDGER_SQL}`).all("addr", 50, 0) as { detail: string }[];
-  assert.equal(plan.some((row) => row.detail.includes("idx_ledger_address_page")), true);
-  assert.equal(plan.some((row) => row.detail === "SCAN ledger_events"), false);
+  assert.equal(
+    plan.some((row) => row.detail.includes("idx_ledger_address_page")),
+    true,
+  );
+  assert.equal(
+    plan.some((row) => row.detail === "SCAN ledger_events"),
+    false,
+  );
 });

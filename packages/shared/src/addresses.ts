@@ -1,9 +1,17 @@
 /** Address surfaces — summary, reputation, relationships (GET /v2/addresses/:address/*, /v2/exchanges). */
 
 export type AddressTier =
-  | "OG" | "Established" | "Active" | "Casual" // ranked real users
-  | "Exchange" | "Exchange deposit" | "Vault" | "Burn" | "Service" // infrastructure states
-  | "Dormant" | "No history"; // non-ranked
+  | "OG"
+  | "Established"
+  | "Active"
+  | "Casual" // ranked real users
+  | "Exchange"
+  | "Exchange deposit"
+  | "Vault"
+  | "Burn"
+  | "Service" // infrastructure states
+  | "Dormant"
+  | "No history"; // non-ranked
 
 /** GET /v2/addresses/:address/balances — one held asset (raw + normalized are text; stamp flag from tags). */
 export interface AddressBalanceRow {
@@ -196,20 +204,20 @@ export interface ReputationTopRow {
 
 /** One reputation tier's public summary (definition + population) on the /reputation overview. */
 export interface ReputationTierSummary {
-  tier: string;    // OG | Established | Active | Casual
-  slug: string;    // og | established | active | casual — the deep-link segment
+  tier: string; // OG | Established | Active | Casual
+  slug: string; // og | established | active | casual — the deep-link segment
   min_raw: number; // inclusive raw-score cutoff
   meaning: string; // plain-language definition
-  count: number;   // real users currently in this tier
+  count: number; // real users currently in this tier
 }
 
 /** The scoring funnel — every mirror address narrowed to the scored real-user pool. `by_kind` breaks down
  *  the infrastructure that's filtered out. Shown as the "who counts" act on /reputation. */
 export interface ReputationFunnel {
   total_addresses: number; // every REAL address = infrastructure + scored (footprint-less rows excluded)
-  infrastructure: number;  // exchanges + deposits + vaults + burns + services
-  no_history: number;      // 0 by definition — a historyless row is a contradiction (see NOT_INFRA)
-  scored: number;          // the real-user pool that gets a tier
+  infrastructure: number; // exchanges + deposits + vaults + burns + services
+  no_history: number; // 0 by definition — a historyless row is a contradiction (see NOT_INFRA)
+  scored: number; // the real-user pool that gets a tier
   by_kind: { exchanges: number; deposits: number; vaults: number; burns: number; services: number };
 }
 

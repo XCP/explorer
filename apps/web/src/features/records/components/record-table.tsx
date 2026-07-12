@@ -11,9 +11,20 @@ import type { Col, RecordContext, SortState } from "@/features/records/cells";
 // `sort`/`onSort`: when a column carries a sortKey and onSort is set, its header becomes a
 // tri-state sort button with aria-sort — the page owns what the sort MEANS (client comparator or
 // server param). Everything else is unchanged.
-export function RecordTable<T>({ cols, rows, context = {}, label = "records", sort, onSort }: {
-  cols: Col<T>[]; rows: T[]; context?: RecordContext; label?: string;
-  sort?: SortState; onSort?: (key: string) => void;
+export function RecordTable<T>({
+  cols,
+  rows,
+  context = {},
+  label = "records",
+  sort,
+  onSort,
+}: {
+  cols: Col<T>[];
+  rows: T[];
+  context?: RecordContext;
+  label?: string;
+  sort?: SortState;
+  onSort?: (key: string) => void;
 }) {
   // suffix with row index: the same tx_hash can legitimately appear in two rows (order matches, a
   // dispense where the address is both source and destination) — index guarantees uniqueness.
@@ -28,14 +39,24 @@ export function RecordTable<T>({ cols, rows, context = {}, label = "records", so
     return stage === 0 ? base : stage === 1 ? (c.w760 ?? base) : (c.w420 ?? c.w760 ?? base);
   };
   const template = (maxPriority: number, stage: 0 | 1 | 2) =>
-    visible.filter((c) => prio(c) <= maxPriority).map((c) => track(c, stage)).join(" ");
+    visible
+      .filter((c) => prio(c) <= maxPriority)
+      .map((c) => track(c, stage))
+      .join(" ");
   const style = {
-    "--rtc": template(9, 0), "--rtc-3": template(2, 1), "--rtc-1": template(1, 2),
+    "--rtc": template(9, 0),
+    "--rtc-3": template(2, 1),
+    "--rtc-1": template(1, 2),
   } as CSSProperties;
   const dropClass = (c: Col<T>) => (prio(c) >= 3 ? "p3" : prio(c) === 2 ? "p2" : "");
   const cellClass = (c: Col<T>, head = false) =>
-    [dropClass(c), head ? (c.numeric ? "r" : "") : (c.cellClass ?? (c.numeric ? "num" : "")), !head && c.weight === "muted" ? "dim" : ""]
-      .filter(Boolean).join(" ") || undefined;
+    [
+      dropClass(c),
+      head ? (c.numeric ? "r" : "") : (c.cellClass ?? (c.numeric ? "num" : "")),
+      !head && c.weight === "muted" ? "dim" : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   const header = (c: Col<T>) => {
     const inner = c.srOnly ? <span className="sr-only">{c.label}</span> : c.label;
@@ -45,7 +66,9 @@ export function RecordTable<T>({ cols, rows, context = {}, label = "records", so
       return (
         <button type="button" className="th-sort" aria-sort={ariaSort} onClick={() => onSort(c.sortKey!)}>
           {inner}
-          <span aria-hidden className={`th-arrow${active ? " on" : ""}`}>{active ? (sort!.dir === "asc" ? "↑" : "↓") : "↕"}</span>
+          <span aria-hidden className={`th-arrow${active ? " on" : ""}`}>
+            {active ? (sort!.dir === "asc" ? "↑" : "↓") : "↕"}
+          </span>
         </button>
       );
     }
@@ -56,14 +79,18 @@ export function RecordTable<T>({ cols, rows, context = {}, label = "records", so
     <div className="rt" style={style} role="table" aria-label={label}>
       <div className="tr th" role="row">
         {visible.map((c) => (
-          <span key={c.label} role="columnheader" className={cellClass(c, true)}>{header(c)}</span>
+          <span key={c.label} role="columnheader" className={cellClass(c, true)}>
+            {header(c)}
+          </span>
         ))}
       </div>
       {rows.length === 0 && <div className="rt-empty">No {label} yet</div>}
       {rows.map((r, i) => (
         <div key={key(r, i)} className="tr" role="row">
           {visible.map((c, ci) => (
-            <span key={ci} role="cell" className={cellClass(c)}>{c.cell(r, context, i)}</span>
+            <span key={ci} role="cell" className={cellClass(c)}>
+              {c.cell(r, context, i)}
+            </span>
           ))}
         </div>
       ))}

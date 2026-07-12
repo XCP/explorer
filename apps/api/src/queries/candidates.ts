@@ -16,7 +16,12 @@ export type CandidateRow = Omit<CollectionCandidate, "samples"> & { samples: str
 const UNCOLLECTED = `a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND source IN ('collection','tokenscan','digirare','discovered'))
    AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag IN ('stamp','src20','src721'))`;
 
-export function collectionCandidates(db: D1Database, minAssets = 6, minHolders = 4, limit = 60): Promise<CandidateRow[]> {
+export function collectionCandidates(
+  db: D1Database,
+  minAssets = 6,
+  minHolders = 4,
+  limit = 60,
+): Promise<CandidateRow[]> {
   return q<CandidateRow>(
     db,
     `WITH cand AS (
@@ -33,6 +38,6 @@ export function collectionCandidates(db: D1Database, minAssets = 6, minHolders =
        FROM cand
       GROUP BY issuer
      HAVING COUNT(*) >= ${minAssets} AND AVG(h) >= ${minHolders}
-      ORDER BY score DESC LIMIT ${limit}`
+      ORDER BY score DESC LIMIT ${limit}`,
   );
 }

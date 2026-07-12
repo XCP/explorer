@@ -37,7 +37,11 @@ interface NftSale {
 function priceOf(s: NftSale): { raw: string; token: string } {
   let amt = 0n;
   for (const f of [s?.sellerFee, s?.protocolFee, s?.royaltyFee]) {
-    try { if (f?.amount) amt += BigInt(f.amount); } catch { /* skip */ }
+    try {
+      if (f?.amount) amt += BigInt(f.amount);
+    } catch {
+      /* skip */
+    }
   }
   const token = (s?.sellerFee?.tokenAddress || s?.protocolFee?.tokenAddress || "ETH").toLowerCase();
   return { raw: amt.toString(), token };
@@ -58,27 +62,52 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
   let cursor = (await getState(env.DB, `emblem_sales_cur_${contract}`)) || "";
 
   const out: {
-    contract: string; inserted: number; pages: number;
-    err?: string; sample?: NftSale; contract_done?: boolean;
+    contract: string;
+    inserted: number;
+    pages: number;
+    err?: string;
+    sample?: NftSale;
+    contract_done?: boolean;
   } = { contract, inserted: 0, pages: 0 };
   for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
     let url = `${ALCHEMY_SALES(key)}?contractAddress=${contract}&order=asc&limit=${PAGE}`;
     if (cursor) url += `&pageKey=${encodeURIComponent(cursor)}`;
     let d: { nftSales?: NftSale[]; pageKey?: string };
-    try { d = (await (await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })).json()) as { nftSales?: NftSale[]; pageKey?: string }; }
-    catch (e) { out.err = String(e).slice(0, 80); break; }
+    try {
+      d = (await (
+        await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })
+      ).json()) as { nftSales?: NftSale[]; pageKey?: string };
+    } catch (e) {
+      out.err = String(e).slice(0, 80);
+      break;
+    }
     const sales: NftSale[] = d?.nftSales || [];
     if (!out.sample && sales[0]) out.sample = sales[0]; // surface the raw shape on the first run
     // Alchemy's asc pagination CAN return an empty page mid-stream with a valid pageKey — do NOT
     // treat empty as end-of-contract (that bug capped the main contract at 30k of its 45k sales).
     // Only a MISSING pageKey means we've reached the end.
-    if (!sales.length) { cursor = d?.pageKey || ""; if (!cursor) break; continue; }
+    if (!sales.length) {
+      cursor = d?.pageKey || "";
+      if (!cursor) break;
+      continue;
+    }
     const stmts = sales.map((s) => {
       const p = priceOf(s);
       return env.DB.prepare(
         `INSERT OR IGNORE INTO emblem_sales (tx_hash,log_index,contract,token_id,price_raw,token_addr,marketplace,buyer,seller,block_number)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`
-      ).bind(s.transactionHash, s.logIndex ?? 0, contract, String(s.tokenId), p.raw, p.token, s.marketplace ?? null, s.buyerAddress ?? null, s.sellerAddress ?? null, s.blockNumber ?? null);
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        s.transactionHash,
+        s.logIndex ?? 0,
+        contract,
+        String(s.tokenId),
+        p.raw,
+        p.token,
+        s.marketplace ?? null,
+        s.buyerAddress ?? null,
+        s.sellerAddress ?? null,
+        s.blockNumber ?? null,
+      );
     });
     for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
     out.inserted += sales.length;
@@ -86,6 +115,9 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
     if (!cursor) break;
   }
   await setState(env.DB, `emblem_sales_cur_${contract}`, cursor);
-  if (!cursor) { await setState(env.DB, "emblem_sales_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
+  if (!cursor) {
+    await setState(env.DB, "emblem_sales_idx", String((ci + 1) % contracts.length));
+    out.contract_done = true;
+  }
   return out;
 }

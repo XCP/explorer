@@ -22,9 +22,22 @@ import { bets } from "./bet";
 import { rps } from "./rps";
 
 const HANDLERS: Record<string, Handler> = {
-  ...block, ...transaction, ...balance, ...sends, ...issuances, ...destroy_, ...burns,
-  ...dispensers, ...orders, ...pools, ...sweeps, ...dividends, ...broadcasts, ...fairminters,
-  ...bets, ...rps,
+  ...block,
+  ...transaction,
+  ...balance,
+  ...sends,
+  ...issuances,
+  ...destroy_,
+  ...burns,
+  ...dispensers,
+  ...orders,
+  ...pools,
+  ...sweeps,
+  ...dividends,
+  ...broadcasts,
+  ...fairminters,
+  ...bets,
+  ...rps,
 };
 
 export function dispatch(ev: Ev, ctx: Ctx): void {

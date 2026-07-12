@@ -40,7 +40,9 @@ async function counterpartyJson<T = unknown>(base: string, path: string): Promis
   try {
     const r = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(20000) });
     return r.ok ? (parseCounterpartyJson(await r.text()) as T) : null; // preserve >2^53 integers (supply parity)
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // /admin/diag — localize row drops: sample N blocks in [from,to], compare our per-block row counts
@@ -48,7 +50,8 @@ async function counterpartyJson<T = unknown>(base: string, path: string): Promis
 // NEW_FAIRMINT->fairmints). Returns blocks where ours < Counterparty so we can scope the rescue.
 verify.get("/admin/diag", async (c) => {
   const base = c.env.COUNTERPARTY_API_BASE;
-  const explicit = (c.req.query("blocks") || "").split(",")
+  const explicit = (c.req.query("blocks") || "")
+    .split(",")
     .map((value) => optionalBoundedInteger(value, { min: 0 }))
     .filter((value): value is number => value !== undefined);
   const from = boundedInteger(c.req.query("from"), { defaultValue: 280000, min: 0 });
@@ -60,18 +63,27 @@ verify.get("/admin/diag", async (c) => {
 
   const out: Array<{ block: number; tx: number[]; iss: number[]; fm: number[]; short: boolean }> = [];
   for (const b of blocks) {
-    const cnt = await counterpartyJson<{ result?: Array<{ event: string; event_count: number }> }>(base, `blocks/${b}/events/counts`);
+    const cnt = await counterpartyJson<{ result?: Array<{ event: string; event_count: number }> }>(
+      base,
+      `blocks/${b}/events/counts`,
+    );
     const m: Record<string, number> = {};
     (cnt?.result || []).forEach((e) => (m[e.event] = e.event_count));
     const our = (await c.env.DB.prepare(
       `SELECT (SELECT COUNT(*) FROM transactions WHERE block_index=?) tx,
               (SELECT COUNT(*) FROM issuances WHERE block_index=?) iss,
-              (SELECT COUNT(*) FROM fairmints WHERE block_index=?) fm`
-    ).bind(b, b, b).first<{ tx: number; iss: number; fm: number }>())!;
-    const cpTx = m.NEW_TRANSACTION || 0, cpIss = m.ASSET_ISSUANCE || 0, cpFm = m.NEW_FAIRMINT || 0;
+              (SELECT COUNT(*) FROM fairmints WHERE block_index=?) fm`,
+    )
+      .bind(b, b, b)
+      .first<{ tx: number; iss: number; fm: number }>())!;
+    const cpTx = m.NEW_TRANSACTION || 0,
+      cpIss = m.ASSET_ISSUANCE || 0,
+      cpFm = m.NEW_FAIRMINT || 0;
     out.push({
       block: b,
-      tx: [our.tx, cpTx], iss: [our.iss, cpIss], fm: [our.fm, cpFm],
+      tx: [our.tx, cpTx],
+      iss: [our.iss, cpIss],
+      fm: [our.fm, cpFm],
       short: our.tx < cpTx || our.iss < cpIss || our.fm < cpFm,
     });
   }
@@ -87,7 +99,7 @@ verify.get("/admin/shortblocks", async (c) => {
        SELECT b.transaction_count - COUNT(t.tx_index) d
        FROM blocks b LEFT JOIN transactions t ON t.block_index = b.block_index
        WHERE b.transaction_count > 0
-       GROUP BY b.block_index HAVING d > 0)`
+       GROUP BY b.block_index HAVING d > 0)`,
   ).first<{ deficit: number; blocks: number }>())!;
   const top = await c.env.DB.prepare(
     `SELECT b.block_index, b.transaction_count reported, COUNT(t.tx_index) actual,
@@ -95,7 +107,7 @@ verify.get("/admin/shortblocks", async (c) => {
      FROM blocks b LEFT JOIN transactions t ON t.block_index = b.block_index
      WHERE b.transaction_count > 0
      GROUP BY b.block_index HAVING missing > 0
-     ORDER BY missing DESC LIMIT 40`
+     ORDER BY missing DESC LIMIT 40`,
   ).all();
   return c.json({ tx_deficit_total: totals.deficit, short_block_count: totals.blocks, top: top.results });
 });
@@ -109,7 +121,7 @@ verify.get("/admin/verify", async (c) => {
   const inv = (await c.env.DB.prepare(
     `SELECT (SELECT MAX(block_index) FROM blocks) tip,
             (SELECT COUNT(*) FROM blocks WHERE block_hash IS NULL) null_block_hash,
-            (SELECT COUNT(*) FROM balances WHERE CAST(quantity AS INTEGER) < 0) negative_balances`
+            (SELECT COUNT(*) FROM balances WHERE CAST(quantity AS INTEGER) < 0) negative_balances`,
   ).first<{ tip: number | null; null_block_hash: number; negative_balances: number }>())!;
 
   // 2) Counterparty counts (parallel) + Counterparty tip
@@ -118,23 +130,37 @@ verify.get("/admin/verify", async (c) => {
     MODELS.map(async (m) => {
       const j = await counterpartyJson<{ result_count?: number }>(base, `${m.cp}?limit=1`);
       cpCounts[m.table] = j?.result_count ?? null;
-    })
+    }),
   );
-  const cpTip = (await counterpartyJson<{ result?: Array<{ block_index?: number }> }>(base, `blocks?limit=1`))?.result?.[0]?.block_index ?? null;
+  const cpTip =
+    (await counterpartyJson<{ result?: Array<{ block_index?: number }> }>(base, `blocks?limit=1`))?.result?.[0]
+      ?.block_index ?? null;
 
   // 3) diffs (ours - cp). Small +/- near tip is fine (Counterparty may be a few blocks ahead until caught up).
   const counts = MODELS.map((m) => {
-    const o = Number(ours[m.table] ?? 0), cp = cpCounts[m.table];
-    return { model: m.table, ours: o, cp, diff: cp == null ? null : o - cp, pct: cp ? +(o / cp * 100).toFixed(2) : null };
+    const o = Number(ours[m.table] ?? 0),
+      cp = cpCounts[m.table];
+    return {
+      model: m.table,
+      ours: o,
+      cp,
+      diff: cp == null ? null : o - cp,
+      pct: cp ? +((o / cp) * 100).toFixed(2) : null,
+    };
   });
 
   // 4) sample-asset supply parity (cheap: our assets row vs Counterparty asset detail)
   const supply = await Promise.all(
     SUPPLY_ASSETS.map(async (a) => {
-      const our = await c.env.DB.prepare(`SELECT supply_normalized FROM assets WHERE asset=?`).bind(a).first<{ supply_normalized: string | null }>();
-      const cp = await counterpartyJson<{ result?: { supply_normalized?: string | null } }>(base, `assets/${a}?verbose=true`);
+      const our = await c.env.DB.prepare(`SELECT supply_normalized FROM assets WHERE asset=?`)
+        .bind(a)
+        .first<{ supply_normalized: string | null }>();
+      const cp = await counterpartyJson<{ result?: { supply_normalized?: string | null } }>(
+        base,
+        `assets/${a}?verbose=true`,
+      );
       return { asset: a, ours: our?.supply_normalized ?? null, cp: cp?.result?.supply_normalized ?? null };
-    })
+    }),
   );
 
   const behind = cpTip != null && inv.tip != null ? cpTip - inv.tip : null;

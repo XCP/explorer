@@ -17,7 +17,12 @@ export async function runScheduledJob<T>(job: string, run: () => Promise<T>): Pr
   const startedAt = Date.now();
   try {
     const result = await run();
-    console.log({ event: "scheduled_job", job, outcome: "success", duration_ms: Date.now() - startedAt } satisfies ScheduledJobEvent);
+    console.log({
+      event: "scheduled_job",
+      job,
+      outcome: "success",
+      duration_ms: Date.now() - startedAt,
+    } satisfies ScheduledJobEvent);
     return result;
   } catch (error) {
     console.error({

@@ -1,12 +1,33 @@
 // Base/quote pairing — ported from xcpdex so orders/trades read as a market (price in the quote
 // asset, amount in the base). The quote is the more "currency-like" side (XCP, BTC, *CASH/*COIN…).
 export const QUOTE_ASSETS = [
-  "BTC", "XCP", "XBTC", "FLDC", "SJCX", "BITCRYSTALS", "LTBCOIN", "SCOTCOIN",
-  "PEPECASH", "BITCORN", "CORNFUTURES", "NEWBITCORN", "DATABITS", "MAFIACASH",
-  "PENISIUM", "RUSTBITS", "WILLCOIN", "XFCCOIN", "SOVEREIGNC", "OLINCOIN", "BITROCK",
+  "BTC",
+  "XCP",
+  "XBTC",
+  "FLDC",
+  "SJCX",
+  "BITCRYSTALS",
+  "LTBCOIN",
+  "SCOTCOIN",
+  "PEPECASH",
+  "BITCORN",
+  "CORNFUTURES",
+  "NEWBITCORN",
+  "DATABITS",
+  "MAFIACASH",
+  "PENISIUM",
+  "RUSTBITS",
+  "WILLCOIN",
+  "XFCCOIN",
+  "SOVEREIGNC",
+  "OLINCOIN",
+  "BITROCK",
 ];
 const QUOTE_KEYWORDS = ["CASH", "COIN", "MONEY", "BTC"];
-const rank = (s: string) => { const i = QUOTE_ASSETS.indexOf(s); return i < 0 ? QUOTE_ASSETS.length : i; };
+const rank = (s: string) => {
+  const i = QUOTE_ASSETS.indexOf(s);
+  return i < 0 ? QUOTE_ASSETS.length : i;
+};
 const isQuote = (s: string) => QUOTE_ASSETS.includes(s);
 const isKw = (s: string) => QUOTE_KEYWORDS.some((k) => s.toUpperCase().includes(k));
 
@@ -39,13 +60,17 @@ interface OrderLike {
 }
 
 export function orderView(o: OrderLike): MarketView {
-  const give = o.give_asset ?? "?", get = o.get_asset ?? "?";
+  const give = o.give_asset ?? "?",
+    get = o.get_asset ?? "?";
   const [base, quote] = pair(give, get);
   const giveIsBase = give === base;
   const baseQty = Number(giveIsBase ? o.give_quantity_normalized : o.get_quantity_normalized) || 0;
   const quoteQty = Number(giveIsBase ? o.get_quantity_normalized : o.give_quantity_normalized) || 0;
   return {
-    base, quote, baseQty, quoteQty,
+    base,
+    quote,
+    baseQty,
+    quoteQty,
     price: baseQty ? quoteQty / baseQty : 0,
     direction: give === quote ? ("buy" as const) : ("sell" as const), // giving the quote => buying the base
   };

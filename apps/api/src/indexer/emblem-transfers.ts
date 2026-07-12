@@ -11,11 +11,18 @@ import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { decodeOrderFulfilled, ORDER_FULFILLED_TOPIC } from "./seaport";
 
-const PAGE = 25;              // transfers per step ⇒ ≤25 receipt fetches/run (bounded subrequests)
-const FLOOR = 19_600_000;    // ~just before the getNFTSales cutoff (Apr 2024); INSERT OR IGNORE dedupes overlap
+const PAGE = 25; // transfers per step ⇒ ≤25 receipt fetches/run (bounded subrequests)
+const FLOOR = 19_600_000; // ~just before the getNFTSales cutoff (Apr 2024); INSERT OR IGNORE dedupes overlap
 
-interface Transfer { hash: string; blockNum: string; tokenId?: string; erc1155Metadata?: { tokenId: string }[] }
-interface Receipt { logs?: { topics: string[]; data: string; logIndex: string }[] }
+interface Transfer {
+  hash: string;
+  blockNum: string;
+  tokenId?: string;
+  erc1155Metadata?: { tokenId: string }[];
+}
+interface Receipt {
+  logs?: { topics: string[]; data: string; logIndex: string }[];
+}
 
 /** One bounded, resumable step: recover Seaport sales for the active contract from getAssetTransfers. */
 export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unknown>> {
@@ -23,7 +30,12 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   if (!key) return { skipped: "no ALCHEMY_KEY" };
   const rpc = `https://eth-mainnet.g.alchemy.com/v2/${key}`;
   const call = async (method: string, params: unknown[]) => {
-    const r = await fetch(rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }), signal: AbortSignal.timeout(25000) });
+    const r = await fetch(rpc, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
+      signal: AbortSignal.timeout(25000),
+    });
     return ((await r.json()) as { result?: unknown }).result;
   };
 
@@ -32,15 +44,27 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   let ci = parseInt((await getState(env.DB, "emblem_tx_idx")) || "0", 10);
   if (ci >= contracts.length) ci = 0;
   const contract = contracts[ci];
-  const curKey = `emblem_tx_cur_${contract}`, pkKey = `emblem_tx_pk_${contract}`;
+  const curKey = `emblem_tx_cur_${contract}`,
+    pkKey = `emblem_tx_pk_${contract}`;
   const cursor = parseInt((await getState(env.DB, curKey)) || String(FLOOR), 10); // scan START (held constant while paginating)
   const pageKey = (await getState(env.DB, pkKey)) || undefined;
 
-  const params: Record<string, unknown> = { fromBlock: "0x" + cursor.toString(16), toBlock: "latest", contractAddresses: [contract], category: ["erc721", "erc1155"], order: "asc", maxCount: "0x" + PAGE.toString(16), withMetadata: false };
+  const params: Record<string, unknown> = {
+    fromBlock: "0x" + cursor.toString(16),
+    toBlock: "latest",
+    contractAddresses: [contract],
+    category: ["erc721", "erc1155"],
+    order: "asc",
+    maxCount: "0x" + PAGE.toString(16),
+    withMetadata: false,
+  };
   if (pageKey) params.pageKey = pageKey;
   let tr: { transfers?: Transfer[]; pageKey?: string };
-  try { tr = (await call("alchemy_getAssetTransfers", [params])) as { transfers?: Transfer[]; pageKey?: string }; }
-  catch (e) { return { contract, err: String(e).slice(0, 80) }; }
+  try {
+    tr = (await call("alchemy_getAssetTransfers", [params])) as { transfers?: Transfer[]; pageKey?: string };
+  } catch (e) {
+    return { contract, err: String(e).slice(0, 80) };
+  }
   const transfers = tr?.transfers || [];
 
   const out: Record<string, unknown> = { contract, ci, transfers: transfers.length, sales: 0 };
@@ -50,9 +74,15 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   for (const t of transfers) {
     const tokHex = t.tokenId || t.erc1155Metadata?.[0]?.tokenId;
     if (!tokHex) continue;
-    let tid: string; try { tid = BigInt(tokHex).toString(); } catch { continue; }
+    let tid: string;
+    try {
+      tid = BigInt(tokHex).toString();
+    } catch {
+      continue;
+    }
     const e = byTx.get(t.hash) ?? { tokenIds: [], block: parseInt(t.blockNum, 16) };
-    e.tokenIds.push(tid); byTx.set(t.hash, e);
+    e.tokenIds.push(tid);
+    byTx.set(t.hash, e);
   }
 
   let maxBlock = cursor;
@@ -60,16 +90,33 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
   for (const [hash, { tokenIds, block }] of byTx) {
     maxBlock = Math.max(maxBlock, block);
     let rc: Receipt | null;
-    try { rc = (await call("eth_getTransactionReceipt", [hash])) as Receipt | null; } catch { continue; }
+    try {
+      rc = (await call("eth_getTransactionReceipt", [hash])) as Receipt | null;
+    } catch {
+      continue;
+    }
     for (const lg of rc?.logs || []) {
       if (lg.topics?.[0]?.toLowerCase() !== ORDER_FULFILLED_TOPIC) continue;
       for (const tid of tokenIds) {
         const sale = decodeOrderFulfilled(lg.topics, lg.data, contract, tid);
         if (sale && BigInt(sale.priceRaw) > 0n) {
-          inserts.push(env.DB.prepare(
-            `INSERT OR IGNORE INTO emblem_sales (tx_hash,log_index,contract,token_id,price_raw,token_addr,marketplace,buyer,seller,block_number)
-             VALUES (?,?,?,?,?,?,?,?,?,?)`
-          ).bind(hash, parseInt(lg.logIndex, 16), contract, tid, sale.priceRaw, sale.token, "seaport", sale.buyer, sale.seller, block));
+          inserts.push(
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO emblem_sales (tx_hash,log_index,contract,token_id,price_raw,token_addr,marketplace,buyer,seller,block_number)
+             VALUES (?,?,?,?,?,?,?,?,?,?)`,
+            ).bind(
+              hash,
+              parseInt(lg.logIndex, 16),
+              contract,
+              tid,
+              sale.priceRaw,
+              sale.token,
+              "seaport",
+              sale.buyer,
+              sale.seller,
+              block,
+            ),
+          );
         }
       }
     }
@@ -79,7 +126,14 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
 
   // Advance: while a pageKey remains, keep the SAME fromBlock (cursor) and just save the pageKey. When the
   // page runs dry the contract is caught up to tip → bump its cursor past the last block and rotate contracts.
-  if (tr?.pageKey) { await setState(env.DB, pkKey, tr.pageKey); out.more = true; }
-  else { await setState(env.DB, pkKey, ""); await setState(env.DB, curKey, String(maxBlock + 1)); await setState(env.DB, "emblem_tx_idx", String((ci + 1) % contracts.length)); out.contract_done = true; }
+  if (tr?.pageKey) {
+    await setState(env.DB, pkKey, tr.pageKey);
+    out.more = true;
+  } else {
+    await setState(env.DB, pkKey, "");
+    await setState(env.DB, curKey, String(maxBlock + 1));
+    await setState(env.DB, "emblem_tx_idx", String((ci + 1) % contracts.length));
+    out.contract_done = true;
+  }
   return out;
 }

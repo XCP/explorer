@@ -28,7 +28,19 @@ export interface Ctx {
   ledgerStmts: Stmt[];
   ledgerAddresses: Set<string>;
   ledgerAssets: Set<string>;
-  balDelta: Map<string, { holder: string; asset: string; htype: string; delta: bigint; divisible: boolean; block: number; evIdx: number; utxoAddr: string | null }>;
+  balDelta: Map<
+    string,
+    {
+      holder: string;
+      asset: string;
+      htype: string;
+      delta: bigint;
+      divisible: boolean;
+      block: number;
+      evIdx: number;
+      utxoAddr: string | null;
+    }
+  >;
   maxBlock: number;
   supplyDirty: Set<string>;
 }
@@ -38,10 +50,10 @@ export interface Msg {
   ev: Ev;
   // ev.params — same intrinsically-dynamic Counterparty payload as Ev.params (see above); the handler seam.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  p: any;            // ev.params
-  b: number;         // block_index
+  p: any; // ev.params
+  b: number; // block_index
   bt: number | null; // block_time
-  div: boolean;      // asset_info.divisible (for normalizing this event's quantities)
+  div: boolean; // asset_info.divisible (for normalizing this event's quantities)
 }
 
 export type Handler = (m: Msg, ctx: Ctx) => void;
@@ -53,10 +65,16 @@ export const sql = (strings: TemplateStringsArray, ...values: unknown[]): string
 
 /* ---------- value helpers ---------- */
 
-export function str(v: unknown): string | null { return v == null ? null : String(v); }
+export function str(v: unknown): string | null {
+  return v == null ? null : String(v);
+}
 
 export function bi(v: unknown): bigint {
-  try { return BigInt(typeof v === "string" ? v.split(".")[0] : Math.trunc(Number(v || 0))); } catch { return 0n; }
+  try {
+    return BigInt(typeof v === "string" ? v.split(".")[0] : Math.trunc(Number(v || 0)));
+  } catch {
+    return 0n;
+  }
 }
 
 // Cap free-text fields to avoid D1 SQLITE_TOOBIG (asset descriptions can embed base64 image data — MBs).
@@ -68,9 +86,23 @@ export function cap(v: unknown, max = 16384): string | null {
 }
 
 // Accumulate a (holder,asset) balance delta for the chunk. Netted so a credit+debit in one chunk collapses.
-export function addDelta(ctx: Ctx, holder: string, asset: string, htype: string, delta: bigint, divisible: boolean, block: number, evIdx: number, utxoAddr: string | null = null) {
+export function addDelta(
+  ctx: Ctx,
+  holder: string,
+  asset: string,
+  htype: string,
+  delta: bigint,
+  divisible: boolean,
+  block: number,
+  evIdx: number,
+  utxoAddr: string | null = null,
+) {
   const key = `${holder} ${asset}`;
   const e = ctx.balDelta.get(key);
-  if (e) { e.delta += delta; if (block > e.block) e.block = block; if (evIdx > e.evIdx) e.evIdx = evIdx; if (utxoAddr) e.utxoAddr = utxoAddr; }
-  else ctx.balDelta.set(key, { holder, asset, htype, delta, divisible, block, evIdx, utxoAddr });
+  if (e) {
+    e.delta += delta;
+    if (block > e.block) e.block = block;
+    if (evIdx > e.evIdx) e.evIdx = evIdx;
+    if (utxoAddr) e.utxoAddr = utxoAddr;
+  } else ctx.balDelta.set(key, { holder, asset, htype, delta, divisible, block, evIdx, utxoAddr });
 }

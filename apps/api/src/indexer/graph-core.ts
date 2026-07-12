@@ -6,9 +6,9 @@
  */
 
 // ---- tuning constants ----
-export const ALPHA = 0.85;      // PPR damping (the doc's value; convergence depends on this, not graph size)
-export const PASSES = 20;       // power-iteration passes per slot (stable ordering by ~20 per the doc)
-export const K = 3;             // trust seed subsets (Min-k). slots 0..K-1 = trust, slot K = distrust
+export const ALPHA = 0.85; // PPR damping (the doc's value; convergence depends on this, not graph size)
+export const PASSES = 20; // power-iteration passes per slot (stable ordering by ~20 per the doc)
+export const K = 3; // trust seed subsets (Min-k). slots 0..K-1 = trust, slot K = distrust
 export const DISTRUST_SLOT = K; // slot 3
 export const ASSET_PREFIX = "asset:"; // asset node id namespace so an asset never collides with a bitcoin address
 export const BIP_W = "0.6931471805599453"; // ln(2): the constant bipartite edge weight (count is always 1 per pair)
@@ -47,7 +47,10 @@ export type GraphTier = "trusted" | "distrusted" | "unscored";
 // The first prod run showed why they're needed: 12 years of organic mixing gives ~60% of addresses SOME
 // nonzero trust — "trusted" must mean meaningfully-trusted, so weak-positive collapses to unscored.
 // Defaults of 0 preserve the pure zero/nonzero semantics (the harness gauntlet exercises that path).
-export interface GraphCuts { trust: number; distrust: number }
+export interface GraphCuts {
+  trust: number;
+  distrust: number;
+}
 export function graphTier(trust: number, distrust: number, cuts: GraphCuts = { trust: 0, distrust: 0 }): GraphTier {
   const t = trust > 0 ? trust : 0;
   const d = distrust > 0 ? distrust : 0;
@@ -71,8 +74,9 @@ export function passStatements(slot: number, reverse: boolean, alpha = ALPHA): s
   // inflow into graph_inflow (ON CONFLICT ADD), then one small apply-join updates graph_rank. The
   // chunk grid is fixed (empty windows no-op) so the statement list is deterministic across calls
   // and identical between D1 and the node:sqlite harness.
-  const inflowChunks = rowidWindows.map(([lo, hi]) => reverse
-    ? `INSERT INTO graph_inflow (node, v)
+  const inflowChunks = rowidWindows.map(([lo, hi]) =>
+    reverse
+      ? `INSERT INTO graph_inflow (node, v)
        SELECT e.src, SUM(e.w / n.insum * rr.r)
        FROM graph_edges e
        JOIN graph_node n ON n.id = e.dst
@@ -80,14 +84,15 @@ export function passStatements(slot: number, reverse: boolean, alpha = ALPHA): s
        WHERE e.rowid > ${lo} AND e.rowid <= ${hi} AND n.insum > 0 AND rr.r <> 0
        GROUP BY e.src
        ON CONFLICT(node) DO UPDATE SET v = graph_inflow.v + excluded.v`
-    : `INSERT INTO graph_inflow (node, v)
+      : `INSERT INTO graph_inflow (node, v)
        SELECT e.dst, SUM(e.w / n.outsum * rr.r)
        FROM graph_edges e
        JOIN graph_node n ON n.id = e.src
        JOIN graph_rank rr ON rr.node = e.src AND rr.slot = ${slot}
        WHERE e.rowid > ${lo} AND e.rowid <= ${hi} AND n.outsum > 0 AND rr.r <> 0
        GROUP BY e.dst
-       ON CONFLICT(node) DO UPDATE SET v = graph_inflow.v + excluded.v`);
+       ON CONFLICT(node) DO UPDATE SET v = graph_inflow.v + excluded.v`,
+  );
   const apply = `UPDATE graph_rank AS g SET rn = g.rn + ${alpha} * f.v
        FROM graph_inflow AS f WHERE g.slot = ${slot} AND g.node = f.node`;
   const commit = `UPDATE graph_rank SET r = rn WHERE slot = ${slot}`;
@@ -138,15 +143,17 @@ export function finalizeStatements(): string[] {
     // 'distrusted' means CONFIDENTLY bad (~a few hundred, recall of the curated bad set is unaffected — they're
     // the strongest distrust). Self-adjusting percentile > an absolute floor (the value rescales per rebuild).
     ...[
-      ["graph_cut_addr_trust", "address_signals", "graph_trust", 0.90],
+      ["graph_cut_addr_trust", "address_signals", "graph_trust", 0.9],
       ["graph_cut_addr_distrust", "address_signals", "graph_distrust", 0.98],
-      ["graph_cut_asset_trust", "asset_signals", "graph_trust", 0.90],
+      ["graph_cut_asset_trust", "asset_signals", "graph_trust", 0.9],
       ["graph_cut_asset_distrust", "asset_signals", "graph_distrust", 0.98],
-    ].map(([key, table, col, pct]) =>
-      `INSERT INTO indexer_state (key, value)
+    ].map(
+      ([key, table, col, pct]) =>
+        `INSERT INTO indexer_state (key, value)
        VALUES ('${key}', COALESCE((SELECT CAST(${col} AS TEXT) FROM ${table} WHERE ${col} > 0
                 ORDER BY ${col} LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * ${pct} AS INT) FROM ${table} WHERE ${col} > 0)), '0'))
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ),
   ];
 }
 
@@ -176,51 +183,60 @@ for (let lo = 0; lo < ROWID_MAX; lo += ROWID_CHUNK) rowidWindows.push([lo, lo + 
 // window. The SELECT cores all end in WHERE/GROUP BY, so the upsert clause is unambiguous without the
 // `WHERE true` trick. edge_block keeps the MAX across accumulated windows (the freshest vouch wins).
 const countEdges = (selectCore: (lo: number, hi: number) => string) =>
-  blockWindows.map(([lo, hi]) =>
-    `INSERT INTO graph_edges (src, dst, w, edge_block) ${selectCore(lo, hi)}
-     ON CONFLICT(src, dst) DO UPDATE SET w = graph_edges.w + excluded.w, edge_block = MAX(graph_edges.edge_block, excluded.edge_block)`);
+  blockWindows.map(
+    ([lo, hi]) =>
+      `INSERT INTO graph_edges (src, dst, w, edge_block) ${selectCore(lo, hi)}
+     ON CONFLICT(src, dst) DO UPDATE SET w = graph_edges.w + excluded.w, edge_block = MAX(graph_edges.edge_block, excluded.edge_block)`,
+  );
 
 export const EDGE_INSERTS: string[] = [
   // sends: the source endorses the destination (a payment is a weak vouch). Plain sends are already keyed
   // to the human operator (source) — the origin remap only matters on the dispenser rail below. A creator
   // funding their OWN empty-address dispenser is machine maintenance, not a vouch — dropped (else every
   // trusted creator sprinkles trust over dozens of dead vending-machine addresses).
-  ...countEdges((lo, hi) =>
-    `SELECT source, destination, COUNT(*), MAX(block_index) FROM sends s
+  ...countEdges(
+    (lo, hi) =>
+      `SELECT source, destination, COUNT(*), MAX(block_index) FROM sends s
      WHERE block_index > ${lo} AND block_index <= ${hi}
        AND source IS NOT NULL AND destination IS NOT NULL AND source <> destination
        AND source NOT IN ${EXCLUDE_SRC}
        AND NOT EXISTS (SELECT 1 FROM dispensers dp WHERE dp.source = s.destination AND dp.origin = s.source)
-     GROUP BY source, destination`),
+     GROUP BY source, destination`,
+  ),
   // order_matches: a trade is a mutual interaction -> an edge each way.
-  ...countEdges((lo, hi) =>
-    `SELECT tx0_address, tx1_address, COUNT(*), MAX(block_index) FROM order_matches
+  ...countEdges(
+    (lo, hi) =>
+      `SELECT tx0_address, tx1_address, COUNT(*), MAX(block_index) FROM order_matches
      WHERE block_index > ${lo} AND block_index <= ${hi}
        AND tx0_address IS NOT NULL AND tx1_address IS NOT NULL AND tx0_address <> tx1_address
        AND tx0_address NOT IN ${EXCLUDE_SRC}
-     GROUP BY tx0_address, tx1_address`),
-  ...countEdges((lo, hi) =>
-    `SELECT tx1_address, tx0_address, COUNT(*), MAX(block_index) FROM order_matches
+     GROUP BY tx0_address, tx1_address`,
+  ),
+  ...countEdges(
+    (lo, hi) =>
+      `SELECT tx1_address, tx0_address, COUNT(*), MAX(block_index) FROM order_matches
      WHERE block_index > ${lo} AND block_index <= ${hi}
        AND tx0_address IS NOT NULL AND tx1_address IS NOT NULL AND tx0_address <> tx1_address
        AND tx1_address NOT IN ${EXCLUDE_SRC}
-     GROUP BY tx1_address, tx0_address`),
+     GROUP BY tx1_address, tx0_address`,
+  ),
   // dispenses: the BUYER (destination) endorses the CREATOR, origin-aware (COALESCE(dispensers.origin,
   // dispenses.source)) so a creator dispensing from a throwaway empty address is credited to the operator.
-  ...countEdges((lo, hi) =>
-    `SELECT d.destination, COALESCE(dp.origin, d.source), COUNT(*), MAX(d.block_index)
+  ...countEdges(
+    (lo, hi) =>
+      `SELECT d.destination, COALESCE(dp.origin, d.source), COUNT(*), MAX(d.block_index)
      FROM dispenses d LEFT JOIN dispensers dp ON dp.tx_hash = d.dispenser_tx_hash
      WHERE d.block_index > ${lo} AND d.block_index <= ${hi}
        AND d.destination IS NOT NULL AND COALESCE(dp.origin, d.source) IS NOT NULL
        AND d.destination <> COALESCE(dp.origin, d.source)
        AND d.destination NOT IN ${EXCLUDE_SRC}
-     GROUP BY d.destination, COALESCE(dp.origin, d.source)`),
+     GROUP BY d.destination, COALESCE(dp.origin, d.source)`,
+  ),
   // normalize accumulated counts -> ln(1+count), rowid-chunked. (Recency-DECAY of edge weight was tried and
   // REJECTED via the scorecard — Phase D Option 1: degree-normalized PPR is scale-invariant to uniform edge
   // decay, so it moved nothing. edge_block is still captured above in case the epoch-layered Option 3 is ever
   // built; it just isn't consumed here.)
-  ...rowidWindows.map(([lo, hi]) =>
-    `UPDATE graph_edges SET w = LN(1 + w) WHERE rowid > ${lo} AND rowid <= ${hi}`),
+  ...rowidWindows.map(([lo, hi]) => `UPDATE graph_edges SET w = LN(1 + w) WHERE rowid > ${lo} AND rowid <= ${hi}`),
   // bipartite asset -> issuer (a grail flows to whoever issued it). Constant weight; post-normalize.
   `INSERT INTO graph_edges (src, dst, w)
    SELECT '${ASSET_PREFIX}' || asset, issuer, ${BIP_W} FROM assets WHERE issuer IS NOT NULL
@@ -242,20 +258,24 @@ const balWindows: Array<[number, number]> = [];
 for (let lo = 0; lo < BAL_MAX; lo += BAL_CHUNK) balWindows.push([lo, lo + BAL_CHUNK]);
 export const BIPARTITE_EDGE_INSERTS: string[] = [
   // holder -> asset (a trusted holder's demand reaches the asset).
-  ...balWindows.map(([lo, hi]) =>
-    `INSERT INTO graph_edges (src, dst, w)
+  ...balWindows.map(
+    ([lo, hi]) =>
+      `INSERT INTO graph_edges (src, dst, w)
      SELECT b.holder, '${ASSET_PREFIX}' || b.asset, ${BIP_W} FROM balances b
      WHERE b.rowid > ${lo} AND b.rowid <= ${hi}
        AND b.holder_type = 'address' AND CAST(b.quantity AS INTEGER) > 0 AND b.holder IS NOT NULL
        AND b.holder NOT IN ${EXCLUDE_SRC}
-     ON CONFLICT(src, dst) DO NOTHING`),
+     ON CONFLICT(src, dst) DO NOTHING`,
+  ),
   // asset -> holder (a grail seed flows to its holders -> what those holders hold).
-  ...balWindows.map(([lo, hi]) =>
-    `INSERT INTO graph_edges (src, dst, w)
+  ...balWindows.map(
+    ([lo, hi]) =>
+      `INSERT INTO graph_edges (src, dst, w)
      SELECT '${ASSET_PREFIX}' || b.asset, b.holder, ${BIP_W} FROM balances b
      WHERE b.rowid > ${lo} AND b.rowid <= ${hi}
        AND b.holder_type = 'address' AND CAST(b.quantity AS INTEGER) > 0 AND b.holder IS NOT NULL
-     ON CONFLICT(src, dst) DO NOTHING`),
+     ON CONFLICT(src, dst) DO NOTHING`,
+  ),
 ];
 
 // NB: the `WHERE true` before ON CONFLICT disambiguates the upsert clause from a join constraint — required by
@@ -269,9 +289,12 @@ export const NODE_INSERTS: string[] = [
 
 // one rank row per (node, slot) for every node with an edge; seeds get their teleport set later. Isolated
 // nodes (no edges) get NO row -> they read back as trust=0/distrust=0 = unscored (the newcomer default).
-export const RANK_INIT: string[] = Array.from({ length: K + 1 }, (_, slot) =>
-  `INSERT INTO graph_rank (node, slot, s, r, rn) SELECT id, ${slot}, 0, 0, 0 FROM graph_node
-     WHERE true ON CONFLICT(node, slot) DO NOTHING`);
+export const RANK_INIT: string[] = Array.from(
+  { length: K + 1 },
+  (_, slot) =>
+    `INSERT INTO graph_rank (node, slot, s, r, rn) SELECT id, ${slot}, 0, 0, 0 FROM graph_node
+     WHERE true ON CONFLICT(node, slot) DO NOTHING`,
+);
 
 // join the computed teleport vectors into graph_rank and START the iteration from the teleport (r = s).
 export const SEED_APPLY = `UPDATE graph_rank AS g SET s = sd.s, r = sd.s

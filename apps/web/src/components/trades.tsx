@@ -40,16 +40,45 @@ const money = (n: number | null, currency: string | null) => {
 export const TRADE_COLS: Col<TradeRow>[] = [
   { label: "Time", numeric: true, priority: 1, w: "76px", cell: (r) => timeCell(r.block_time ?? undefined) },
   { label: "Venue", priority: 2, w: "96px", cell: (r) => venueChip(r.venue) },
-  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.2fr)", omitOn: "asset", cell: (r) => assetCell(r.asset ?? undefined) },
+  {
+    label: "Asset",
+    weight: "primary",
+    priority: 1,
+    w: "minmax(0,1.2fr)",
+    omitOn: "asset",
+    cell: (r) => assetCell(r.asset ?? undefined),
+  },
   { label: "Price", numeric: true, priority: 3, cell: (r) => money(r.price, r.currency) },
   { label: "Qty", numeric: true, priority: 2, w: "90px", cell: (r) => (r.quantity != null ? commas(r.quantity) : "—") },
-  { label: "Total", numeric: true, priority: 1, w: "150px", cell: (r) => (
-    <>{money(r.total, r.currency)}{r.usd_value != null && <small>${commas(r.usd_value.toFixed(2))}</small>}</>
-  ) },
+  {
+    label: "Total",
+    numeric: true,
+    priority: 1,
+    w: "150px",
+    cell: (r) => (
+      <>
+        {money(r.total, r.currency)}
+        {r.usd_value != null && <small>${commas(r.usd_value.toFixed(2))}</small>}
+      </>
+    ),
+  },
   { label: "Buyer", priority: 3, cell: (r) => addrCell(r.buyer ?? undefined) },
   { label: "Seller", priority: 4, cell: (r) => addrCell(r.seller ?? undefined) },
-  { label: "Block", numeric: true, priority: 4, w: "90px", omitOn: "block", cell: (r) => (r.venue === "emblem" ? compact(r.block_index ?? 0) : blockCell(r.block_index as number)) },
-  { label: "View", srOnly: true, priority: 2, w: "44px", cell: (r) => (r.venue === "emblem" ? "—" : viewCell(r.tx_hash ?? undefined)) },
+  {
+    label: "Block",
+    numeric: true,
+    priority: 4,
+    w: "90px",
+    omitOn: "block",
+    cell: (r) => (r.venue === "emblem" ? compact(r.block_index ?? 0) : blockCell(r.block_index as number)),
+  },
+  {
+    label: "View",
+    srOnly: true,
+    priority: 2,
+    w: "44px",
+    cell: (r) => (r.venue === "emblem" ? "—" : viewCell(r.tx_hash ?? undefined)),
+  },
 ];
 
 export function Trades() {
@@ -63,7 +92,12 @@ export function Trades() {
       {venues.length > 0 && (
         <div className="grid grid-cols-3 gap-3 mb-4">
           {venues.map((v) => (
-            <Stat key={v.venue} label={`${v.venue} trades`} value={compact(v.trades)} sub={v.usd_known != null ? `$${compact(v.usd_known)} known vol` : `${compact(v.assets)} assets`} />
+            <Stat
+              key={v.venue}
+              label={`${v.venue} trades`}
+              value={compact(v.trades)}
+              sub={v.usd_known != null ? `$${compact(v.usd_known)} known vol` : `${compact(v.assets)} assets`}
+            />
           ))}
         </div>
       )}
@@ -72,9 +106,14 @@ export function Trades() {
           {VENUES.map((v) => (
             <button
               key={v.label}
-              onClick={() => { setVenue(v.key); setOffset(0); }}
+              onClick={() => {
+                setVenue(v.key);
+                setOffset(0);
+              }}
               className={`rounded px-2.5 py-1 text-xs ring-1 ring-inset transition ${
-                venue === v.key ? "bg-zinc-800 text-zinc-100 ring-zinc-600" : "text-zinc-400 ring-zinc-800 hover:text-zinc-200"
+                venue === v.key
+                  ? "bg-zinc-800 text-zinc-100 ring-zinc-600"
+                  : "text-zinc-400 ring-zinc-800 hover:text-zinc-200"
               }`}
             >
               {v.label}
@@ -84,8 +123,12 @@ export function Trades() {
         <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="trades">
           <RecordTable cols={TRADE_COLS} rows={rows} />
           <div className="flex gap-2 mt-3">
-            <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
-            <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
+            <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
+              Prev
+            </SecondaryButton>
+            <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
+              Next
+            </SecondaryButton>
           </div>
         </AsyncContent>
       </div>

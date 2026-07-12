@@ -19,7 +19,8 @@ export const graph = router();
 
 // Bounded, renderable sub-graphs for the viz experiment. limit clamps the node budget so a hub can't return
 // its whole neighbourhood. GET /v2/graph/address/:a (ego-network) · /v2/graph/asset/:a (holder star).
-const clampLimit = (v: string | undefined, def: number, max: number) => Math.min(Math.max(parseInt(v || "", 10) || def, 1), max);
+const clampLimit = (v: string | undefined, def: number, max: number) =>
+  Math.min(Math.max(parseInt(v || "", 10) || def, 1), max);
 
 graph.get("/v2/graph/address/:address", async (c) => {
   const address = c.req.param("address");
@@ -34,14 +35,16 @@ graph.get("/v2/graph/asset/:asset", async (c) => {
 });
 
 graph.get("/v2/reputation/graph", (c) =>
-  cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.DB) })));
+  cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.DB) })),
+);
 
 graph.get("/v2/addresses/:address/graph", async (c) => {
   const [s, cuts] = await Promise.all([
     graphScore(c.env.DB, "address_signals", "address", c.req.param("address")),
     graphCuts(c.env.DB),
   ]);
-  const trust = s?.trust ?? 0, distrust = s?.distrust ?? 0;
+  const trust = s?.trust ?? 0,
+    distrust = s?.distrust ?? 0;
   return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust, cuts.address) } }, 60);
 });
 
@@ -50,6 +53,7 @@ graph.get("/v2/assets/:asset/graph", async (c) => {
     graphScore(c.env.DB, "asset_signals", "asset", c.req.param("asset")),
     graphCuts(c.env.DB),
   ]);
-  const trust = s?.trust ?? 0, distrust = s?.distrust ?? 0;
+  const trust = s?.trust ?? 0,
+    distrust = s?.distrust ?? 0;
   return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust, cuts.asset) } }, 60);
 });

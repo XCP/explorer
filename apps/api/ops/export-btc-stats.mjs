@@ -36,7 +36,10 @@ async function getJson(url, headers = {}) {
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
-      if (res.status === 429 || res.status >= 500) { await sleep(2000 * (attempt + 1)); continue; }
+      if (res.status === 429 || res.status >= 500) {
+        await sleep(2000 * (attempt + 1));
+        continue;
+      }
       if (!res.ok) throw new Error(`${res.status} ${url}`);
       return await res.json();
     } catch (e) {
@@ -73,7 +76,7 @@ async function esploraSummary(addr) {
 async function push(rows) {
   const res = await fetch(`${API}/admin/btc-stats`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify(rows),
     signal: AbortSignal.timeout(30_000),
   });
@@ -83,16 +86,23 @@ async function push(rows) {
 let done = 0;
 const failures = [];
 while (done < MAX) {
-  const page = await getJson(`${API}/admin/btc-stats/addresses?limit=${Math.min(200, MAX - done)}&offset=${offset}`,
-    { "Authorization": `Bearer ${TOKEN}` });
+  const page = await getJson(`${API}/admin/btc-stats/addresses?limit=${Math.min(200, MAX - done)}&offset=${offset}`, {
+    Authorization: `Bearer ${TOKEN}`,
+  });
   const addrs = page.result ?? [];
   if (addrs.length === 0) break;
   const rows = [];
   for (const addr of addrs) {
-    try { rows.push(await esploraSummary(addr)); }
-    catch (e) { failures.push(addr); if (failures.length > 25) throw new Error(`too many source failures (last: ${e.message})`); }
+    try {
+      rows.push(await esploraSummary(addr));
+    } catch (e) {
+      failures.push(addr);
+      if (failures.length > 25) throw new Error(`too many source failures (last: ${e.message})`);
+    }
     await sleep(1000 / RPS);
-    if (rows.length === 100) { await push(rows.splice(0)); }
+    if (rows.length === 100) {
+      await push(rows.splice(0));
+    }
   }
   if (rows.length) await push(rows);
   offset = page.next_offset ?? offset + addrs.length;

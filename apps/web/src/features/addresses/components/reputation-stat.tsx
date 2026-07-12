@@ -7,7 +7,9 @@ import { apiUrl } from "@/lib/api/url";
 /** The address band's Reputation stat value — a tiny client island so the server-rendered stat strip
  *  can lead with the composed score. Null score (new/quiet/infra address) reads as a dash. */
 export function ReputationStat({ address }: { address: string }) {
-  const { data } = useSWR<Envelope<AddressReputation>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`));
+  const { data } = useSWR<Envelope<AddressReputation>>(
+    apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`),
+  );
   const r = data?.result;
   return (
     <>

@@ -54,7 +54,11 @@ function StatusHero({ v }: { v: TxView }) {
       <div className="flex items-center gap-x-3 rounded-lg border border-red-500/25 bg-red-500/[0.05] px-4 py-3">
         <XCircle className="size-4 shrink-0 text-(--color-down)" />
         <span className="shrink-0 font-semibold text-red-300">Invalid</span>
-        {v.protocol.status && <span className="min-w-0 flex-1 truncate text-sm text-zinc-300" title={v.protocol.status}>{v.protocol.status.replace(/^invalid:\s*/i, "")}</span>}
+        {v.protocol.status && (
+          <span className="min-w-0 flex-1 truncate text-sm text-zinc-300" title={v.protocol.status}>
+            {v.protocol.status.replace(/^invalid:\s*/i, "")}
+          </span>
+        )}
         <span className="ml-auto shrink-0 text-xs text-zinc-400">confirmed on Bitcoin</span>
       </div>
     );
@@ -70,7 +74,9 @@ function StatusHero({ v }: { v: TxView }) {
         <span className="font-semibold text-amber-300">Unconfirmed</span>
         <span className="text-sm text-zinc-300">in mempool, waiting for the next block</span>
         {seen != null && <span className="text-xs text-zinc-400">· first seen {timeAgo(seen)}</span>}
-        <span className="ml-auto flex items-center gap-2 text-xs text-zinc-400"><ConfTicks n={0} /> 0/{SETTLED}</span>
+        <span className="ml-auto flex items-center gap-2 text-xs text-zinc-400">
+          <ConfTicks n={0} /> 0/{SETTLED}
+        </span>
       </div>
     );
   }
@@ -79,7 +85,9 @@ function StatusHero({ v }: { v: TxView }) {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.05] px-4 py-3">
       <CheckCircle2 className="size-4 shrink-0 text-(--color-up)" />
       <span className="font-semibold text-emerald-300">Confirmed</span>
-      <span className="text-sm text-zinc-300">{commas(n)} confirmation{n === 1 ? "" : "s"}</span>
+      <span className="text-sm text-zinc-300">
+        {commas(n)} confirmation{n === 1 ? "" : "s"}
+      </span>
       {n < SETTLED && <span className="text-xs text-zinc-400">· settles at {SETTLED}</span>}
       <span className="ml-auto flex items-center gap-2 text-xs text-zinc-400">
         <ConfTicks n={Math.min(n, SETTLED)} /> {Math.min(n, SETTLED)}/{SETTLED}
@@ -91,10 +99,22 @@ function StatusHero({ v }: { v: TxView }) {
 /** Localized timestamp: the viewer's own timezone, named — with the UTC instant in `title` and shown
  *  muted alongside. Renders UTC until mounted (SSR and first paint match; locale applies on hydrate). */
 function LocalTime({ t }: { t: number | null | undefined }) {
-  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   if (t == null) return <>—</>;
   const local = mounted
-    ? new Date(t * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
+    ? new Date(t * 1000).toLocaleString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short",
+      })
     : null;
   return (
     <span title={`${ts(t)} UTC`}>
@@ -107,7 +127,14 @@ function LocalTime({ t }: { t: number | null | undefined }) {
 const PENDING_COLS: Col<MempoolActionRow>[] = [
   { label: "Event", w: "110px", priority: 1, cell: (r) => eventChip(r.event) },
   { label: "Asset", w: "minmax(130px,1fr)", priority: 1, cell: (r) => assetCell(r.asset, r.asset_longname) },
-  { label: "Quantity", numeric: true, w: "100px", priority: 2, cellClass: "qty", cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
+  {
+    label: "Quantity",
+    numeric: true,
+    w: "100px",
+    priority: 2,
+    cellClass: "qty",
+    cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—"),
+  },
   { label: "From", w: "minmax(120px,1fr)", priority: 3, cell: (r) => addrCell(r.source) },
   { label: "To", w: "minmax(120px,1fr)", priority: 2, cell: (r) => addrCell(r.destination) },
 ];
@@ -125,7 +152,7 @@ export function TxLive({ hash, initial }: { hash: string; initial: TxView }) {
   const { btc: btcUsd } = usePrices();
   const { feeRate, btcTx } = useBitcoinTx(hash); // shared fetch with the Bitcoin tab (SWR dedupes)
   const [tab, setTab] = useState<Tab>("overview");
-  const kindTab = v.action ? KIND_TAB[v.action.kind] ?? "Overview" : "Overview";
+  const kindTab = v.action ? (KIND_TAB[v.action.kind] ?? "Overview") : "Overview";
   const feeUsd = satsUsd(v.fee, btcUsd);
 
   return (
@@ -136,31 +163,137 @@ export function TxLive({ hash, initial }: { hash: string; initial: TxView }) {
           "Transaction"; the Counterparty meaning lives in the kind-named first tab. COMPLETE:
           glanceable order (what/when/who/cost), the exhaustive tail (index, payload) below. */}
       <Card title="Transaction">
-        <KV k="Hash" v={<span className="inline-flex items-center gap-2 font-mono break-all">{v.tx_hash}<CopyButton value={v.tx_hash} /></span>} />
-        <KV k="Block" v={pending
-          ? <span className="text-zinc-400">— not yet mined</span>
-          : <span className="font-mono"><Link href={`/block/${v.block_index}`}>{commas(v.block_index)}</Link>{v.tip != null && <span className="text-zinc-500"> / tip {commas(v.tip)}</span>}</span>} />
+        <KV
+          k="Hash"
+          v={
+            <span className="inline-flex items-center gap-2 font-mono break-all">
+              {v.tx_hash}
+              <CopyButton value={v.tx_hash} />
+            </span>
+          }
+        />
+        <KV
+          k="Block"
+          v={
+            pending ? (
+              <span className="text-zinc-400">— not yet mined</span>
+            ) : (
+              <span className="font-mono">
+                <Link href={`/block/${v.block_index}`}>{commas(v.block_index)}</Link>
+                {v.tip != null && <span className="text-zinc-500"> / tip {commas(v.tip)}</span>}
+              </span>
+            )
+          }
+        />
         <KV k="Time" v={pending ? <span className="text-zinc-400">pending</span> : <LocalTime t={v.block_time} />} />
-        <KV k="From" v={v.source ? <Link href={`/address/${v.source}`} className="font-mono break-all">{v.source}</Link> : "—"} />
-        {v.destination && <KV k="To" v={<Link href={`/address/${v.destination}`} className="font-mono break-all">{v.destination}</Link>} />}
-        {v.btc_amount != null && Number(v.btc_amount) > 0 && <KV k="BTC moved" v={<span className="font-mono">{btcAmt(v.btc_amount)}</span>} />}
-        {!pending && v.fee != null && Number(v.fee) > 0 && (
-          <KV k="TX fee" v={<span className="font-mono">
-            {commas(v.fee)} sats <span className="text-zinc-500">({btcAmt(v.fee)}{feeUsd ? ` · ${feeUsd}` : ""})</span>
-            {feeRate != null && <span className="text-zinc-400"> · {feeRate >= 10 ? Math.round(feeRate) : feeRate.toFixed(1)} sat/vB</span>}
-          </span>} />
+        <KV
+          k="From"
+          v={
+            v.source ? (
+              <Link href={`/address/${v.source}`} className="font-mono break-all">
+                {v.source}
+              </Link>
+            ) : (
+              "—"
+            )
+          }
+        />
+        {v.destination && (
+          <KV
+            k="To"
+            v={
+              <Link href={`/address/${v.destination}`} className="font-mono break-all">
+                {v.destination}
+              </Link>
+            }
+          />
         )}
-        {btcTx?.vsize != null && <KV k="Size" v={<span className="font-mono">{commas(btcTx.vsize)} vB{btcTx.size != null && <span className="text-zinc-500"> ({commas(btcTx.size)} raw bytes{btcTx.weight != null && <> · {commas(btcTx.weight)} WU</>})</span>}</span>} />}
+        {v.btc_amount != null && Number(v.btc_amount) > 0 && (
+          <KV k="BTC moved" v={<span className="font-mono">{btcAmt(v.btc_amount)}</span>} />
+        )}
+        {!pending && v.fee != null && Number(v.fee) > 0 && (
+          <KV
+            k="TX fee"
+            v={
+              <span className="font-mono">
+                {commas(v.fee)} sats{" "}
+                <span className="text-zinc-500">
+                  ({btcAmt(v.fee)}
+                  {feeUsd ? ` · ${feeUsd}` : ""})
+                </span>
+                {feeRate != null && (
+                  <span className="text-zinc-400">
+                    {" "}
+                    · {feeRate >= 10 ? Math.round(feeRate) : feeRate.toFixed(1)} sat/vB
+                  </span>
+                )}
+              </span>
+            }
+          />
+        )}
+        {btcTx?.vsize != null && (
+          <KV
+            k="Size"
+            v={
+              <span className="font-mono">
+                {commas(btcTx.vsize)} vB
+                {btcTx.size != null && (
+                  <span className="text-zinc-500">
+                    {" "}
+                    ({commas(btcTx.size)} raw bytes{btcTx.weight != null && <> · {commas(btcTx.weight)} WU</>})
+                  </span>
+                )}
+              </span>
+            }
+          />
+        )}
         {v.tx_index != null && <KV k="Ledger index" v={<span className="font-mono">{commas(v.tx_index)}</span>} />}
-        {v.supported === 0 && <KV k="Supported" v={<span className="text-amber-400">no — the node recognized but does not process this message</span>} />}
-        {v.data && <KV k="Payload" v={<span className="font-mono break-all text-[11px] leading-relaxed text-zinc-500" title="the raw Counterparty message data carried by this tx">{v.data}</span>} />}
+        {v.supported === 0 && (
+          <KV
+            k="Supported"
+            v={<span className="text-amber-400">no — the node recognized but does not process this message</span>}
+          />
+        )}
+        {v.data && (
+          <KV
+            k="Payload"
+            v={
+              <span
+                className="font-mono break-all text-[11px] leading-relaxed text-zinc-500"
+                title="the raw Counterparty message data carried by this tx"
+              >
+                {v.data}
+              </span>
+            }
+          />
+        )}
       </Card>
 
       {/* the asset-page tab grammar: Overview (what it means) · Bitcoin (inputs/outputs) · Events (raw) */}
-      <nav className="tabs" style={{ borderBottom: "1px solid var(--border)", marginTop: 0 }} aria-label="Transaction views">
-        {([["overview", kindTab], ["bitcoin", "Bitcoin"], ["events", "Events"]] as [Tab, string][]).map(([key, label]) => (
-          <a key={key} href="#" className={tab === key ? "active" : ""} aria-current={tab === key ? "page" : undefined}
-            onClick={(e) => { e.preventDefault(); setTab(key); }}>{label}</a>
+      <nav
+        className="tabs"
+        style={{ borderBottom: "1px solid var(--border)", marginTop: 0 }}
+        aria-label="Transaction views"
+      >
+        {(
+          [
+            ["overview", kindTab],
+            ["bitcoin", "Bitcoin"],
+            ["events", "Events"],
+          ] as [Tab, string][]
+        ).map(([key, label]) => (
+          <a
+            key={key}
+            href="#"
+            className={tab === key ? "active" : ""}
+            aria-current={tab === key ? "page" : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              setTab(key);
+            }}
+          >
+            {label}
+          </a>
         ))}
       </nav>
 
@@ -170,12 +303,17 @@ export function TxLive({ hash, initial }: { hash: string; initial: TxView }) {
           {pending && v.pending.length > 0 && (
             <Card title="Pending actions" icon={<Clock className="size-3.5" />}>
               <RecordTable cols={PENDING_COLS} rows={v.pending} label="pending actions" />
-              <p className="mt-3 text-xs text-zinc-500">Parsed from the node&apos;s mempool — final once mined into a block.</p>
+              <p className="mt-3 text-xs text-zinc-500">
+                Parsed from the node&apos;s mempool — final once mined into a block.
+              </p>
             </Card>
           )}
           {!v.action && !pending && (
             <Card title="What happened">
-              <p className="text-sm text-zinc-400">This transaction&apos;s message type isn&apos;t classified in the mirror (an OPEN_POOL or dispenser-close message). The Bitcoin and Events tabs carry its full detail.</p>
+              <p className="text-sm text-zinc-400">
+                This transaction&apos;s message type isn&apos;t classified in the mirror (an OPEN_POOL or
+                dispenser-close message). The Bitcoin and Events tabs carry its full detail.
+              </p>
             </Card>
           )}
         </>

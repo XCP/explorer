@@ -46,43 +46,92 @@ export type SortState = { key: string; dir: "asc" | "desc" };
 // nullable row field can pass the value straight through.
 export const mono = (n: ReactNode) => <span className="font-mono">{n}</span>;
 /** Block link — leading pair, mono muted (.blk). */
-export const blockCell = (n?: number | null) => (n != null ? <Link className="blk" href={`/block/${n}`}>{commas(n)}</Link> : <span className="blk">—</span>);
+export const blockCell = (n?: number | null) =>
+  n != null ? (
+    <Link className="blk" href={`/block/${n}`}>
+      {commas(n)}
+    </Link>
+  ) : (
+    <span className="blk">—</span>
+  );
 export const txCell = (h?: string | null) => (h ? <Link href={`/tx/${h}`}>{mono(short(h))}</Link> : "—");
 /** Address — single-line ellipsis over the FULL string, complete address in title. Never 4+4 (R5). */
-export const addrCell = (a?: string | null) => (a ? <Link className="address" href={`/address/${a}`} title={a}>{a}</Link> : "—");
+export const addrCell = (a?: string | null) =>
+  a ? (
+    <Link className="address" href={`/address/${a}`} title={a}>
+      {a}
+    </Link>
+  ) : (
+    "—"
+  );
 /** Bookended address (prefix…suffix, full in title) — the owner-sanctioned exception for the matches
  *  table, where two address columns share a row and the front-ellipsis form was unreadable. */
 export const addrEndsCell = (a?: string | null) =>
-  a ? <Link className="font-mono text-[12px] text-(--t3)" style={{ color: "var(--t3)" }} href={`/address/${a}`} title={a}>{short(a, 8, 6)}</Link> : "—";
+  a ? (
+    <Link className="font-mono text-[12px] text-(--t3)" style={{ color: "var(--t3)" }} href={`/address/${a}`} title={a}>
+      {short(a, 8, 6)}
+    </Link>
+  ) : (
+    "—"
+  );
 /** Row anchor: icon + linked mono name, one line (v20 .asset anatomy). `display` overrides (longnames). */
 export const assetCell = (a?: string | null, display?: string | null) =>
-  a ? <span className="asset"><AssetIcon asset={a} size={22} className="aicon" /><Link className="aname" href={`/asset/${a}`}>{display || a}</Link></span> : "—";
+  a ? (
+    <span className="asset">
+      <AssetIcon asset={a} size={22} className="aicon" />
+      <Link className="aname" href={`/asset/${a}`}>
+        {display || a}
+      </Link>
+    </span>
+  ) : (
+    "—"
+  );
 /** Secondary asset reference (16px icon) — e.g. the dividend currency next to the anchor asset, or an
  *  asset named inside prose (the tx-page story sentences). `display` overrides for longnames. */
 export const assetChip = (a?: string | null, display?: string | null) =>
-  a ? <Link href={`/asset/${a}`} className="inline-flex items-center gap-1.5 align-middle"><AssetIcon asset={a} size={16} />{display || a}</Link> : "—";
+  a ? (
+    <Link href={`/asset/${a}`} className="inline-flex items-center gap-1.5 align-middle">
+      <AssetIcon asset={a} size={16} />
+      {display || a}
+    </Link>
+  ) : (
+    "—"
+  );
 /** Relative time with the absolute UTC in `title` (R9) — the leading cell (.time). */
 export const timeCell = (t?: number | null) =>
-  t ? <span className="time" title={ts(t)}>{timeAgo(t)}</span> : <span className="time">—</span>;
+  t ? (
+    <span className="time" title={ts(t)}>
+      {timeAgo(t)}
+    </span>
+  ) : (
+    <span className="time">—</span>
+  );
 /** The row's trailing action — the quiet View link, sr-only header. */
-export const viewCell = (h?: string | null) => (h ? <Link className="view" href={`/tx/${h}`}>View</Link> : <span className="view">—</span>);
+export const viewCell = (h?: string | null) =>
+  h ? (
+    <Link className="view" href={`/tx/${h}`}>
+      View
+    </Link>
+  ) : (
+    <span className="view">—</span>
+  );
 
 /** Quantity from the page subject's perspective (R4/R7): "-" red when the subject sent it,
  *  "+" green when it received — the sign is the non-color channel (R8). */
 export const signedQty = (v: string | number | null | undefined, ctx: RecordContext, sourceIsSubject: boolean) => {
   if (v == null || v === "") return "—";
   if (!ctx.address) return commas(v);
-  return sourceIsSubject
-    ? <span className="text-(--color-down)">-{commas(v)}</span>
-    : <span className="text-(--color-up)">+{commas(v)}</span>;
+  return sourceIsSubject ? (
+    <span className="text-(--color-down)">-{commas(v)}</span>
+  ) : (
+    <span className="text-(--color-up)">+{commas(v)}</span>
+  );
 };
 
 /* ---- status pills (v20 .pill) — earned, never decorative; the label is the redundant channel.
    Variants open/filled/expired/cancelled are verbatim v20; pending is an app extension. ---- */
 type PillVariant = "open" | "filled" | "expired" | "cancelled" | "pending";
-export const pill = (label: string, variant: PillVariant) => (
-  <span className={`pill ${variant}`}>{label}</span>
-);
+export const pill = (label: string, variant: PillVariant) => <span className={`pill ${variant}`}>{label}</span>;
 const statusVariant = (s: string): PillVariant => {
   if (s === "open" || s.startsWith("valid")) return "open";
   if (s === "filled" || s === "completed") return "filled";
@@ -115,7 +164,17 @@ export const sendTypeChip = (t?: string | null) => {
 
 /** Tiny padlock (closed/open) — the non-color channel of lock polarity. */
 const Padlock = ({ open = false }: { open?: boolean }) => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <rect x="4" y="11" width="16" height="10" rx="2" />
     {open ? <path d="M8 11V7a4 4 0 0 1 7.7-1.5" /> : <path d="M8 11V7a4 4 0 0 1 8 0v4" />}
   </svg>
@@ -135,7 +194,10 @@ const ACTION_LABEL: Record<string, string> = {
 };
 export const actionBadge = (events?: string | null) => {
   if (!events) return "—";
-  const parts = events.split(/[\s,]+/).filter(Boolean).slice(0, 2);
+  const parts = events
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .slice(0, 2);
   if (parts.length === 0) return "—";
   return (
     <span className="inline-flex gap-1">
@@ -168,7 +230,8 @@ export const lockStateCell = (locked?: boolean | number | null) => {
  *  sweeps (the exceptions) earn a chip. Bitmask 1=balances, 2=ownership. */
 export const sweepFlagsBadge = (flags?: number | null) => {
   if (flags == null) return null;
-  const balances = !!(flags & 1), ownership = !!(flags & 2);
+  const balances = !!(flags & 1),
+    ownership = !!(flags & 2);
   if (balances && ownership) return null;
   if (balances) return tchip("balances only");
   if (ownership) return tchip("ownership only");

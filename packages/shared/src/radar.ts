@@ -7,12 +7,12 @@
 export interface RadarAsset {
   asset: string;
   asset_longname: string | null;
-  conviction: number;   // Conviction score 0-100
-  market_usd: number;    // largest realized sale in USD (the market's verdict — low is the point)
+  conviction: number; // Conviction score 0-100
+  market_usd: number; // largest realized sale in USD (the market's verdict — low is the point)
   holders: number;
-  supply: number;        // circulating supply (normalized)
-  holder_dex: number;    // avg DEX-trade count across holders (holder sophistication)
-  creator_pct: number;   // % of holders who are proven asset creators (peer validation)
+  supply: number; // circulating supply (normalized)
+  holder_dex: number; // avg DEX-trade count across holders (holder sophistication)
+  creator_pct: number; // % of holders who are proven asset creators (peer validation)
 }
 
 /** A radar asset you can buy right now, showing the CHEAPEST path across venues (in USD). Two venues today:
@@ -21,13 +21,13 @@ export interface RadarAsset {
  *  the card). `ask_usd` is always the comparable figure; `ask_btc` is set only for the dispenser venue. */
 export interface BuyableAsset extends RadarAsset {
   venue: "dispenser" | "emblem";
-  ask_usd: number;             // cheapest ask across venues, in USD (the sort/compare figure)
-  ask_btc: number | null;      // BTC price when venue = dispenser; null for emblem
-  marketplace: string | null;  // aggregated source when venue = emblem (opensea | blur | …); null for dispenser
-  listing_url: string | null;  // deep link to the live Ethereum listing (emblem); null for dispenser (act on the asset page)
+  ask_usd: number; // cheapest ask across venues, in USD (the sort/compare figure)
+  ask_btc: number | null; // BTC price when venue = dispenser; null for emblem
+  marketplace: string | null; // aggregated source when venue = emblem (opensea | blur | …); null for dispenser
+  listing_url: string | null; // deep link to the live Ethereum listing (emblem); null for dispenser (act on the asset page)
 }
 
 export interface RadarPayload {
   undervalued: RadarAsset[]; // high Conviction, low realized price — the discovery watchlist
-  buyable: BuyableAsset[];   // high Conviction + an open dispenser right now — the actionable cut
+  buyable: BuyableAsset[]; // high Conviction + an open dispenser right now — the actionable cut
 }

@@ -3,12 +3,25 @@
 import type { ReactNode } from "react";
 
 // Dashboard stat card (xcpdex-style grid).
-export const Stat = ({ label, value, icon, sub }: { label: string; value: ReactNode; icon?: ReactNode; sub?: ReactNode }) => (
+export const Stat = ({
+  label,
+  value,
+  icon,
+  sub,
+}: {
+  label: string;
+  value: ReactNode;
+  icon?: ReactNode;
+  sub?: ReactNode;
+}) => (
   <div className="rounded-lg border border-[#1a1d24] bg-[#101216] px-4 py-3.5">
     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#a3adbc]">
-      {icon && <span className="text-(--color-accent) opacity-80">{icon}</span>}{label}
+      {icon && <span className="text-(--color-accent) opacity-80">{icon}</span>}
+      {label}
     </div>
-    <div className="text-2xl font-semibold text-zinc-100 font-mono tabular-nums mt-1.5 leading-none">{value ?? "—"}</div>
+    <div className="text-2xl font-semibold text-zinc-100 font-mono tabular-nums mt-1.5 leading-none">
+      {value ?? "—"}
+    </div>
     {sub && <div className="text-xs text-zinc-400 mt-1.5">{sub}</div>}
   </div>
 );
@@ -19,7 +32,8 @@ export const Card = ({ title, icon, children }: { title?: string; icon?: ReactNo
   <section className="relative rounded-lg border border-[#1a1d24] bg-[#101216]">
     {title && (
       <h2 className="flex items-center gap-1.5 border-b border-[#1a1d24] px-4 py-3 font-mono text-[11px] font-semibold uppercase tracking-[0.09em] text-[#a3adbc]">
-        {icon && <span className="text-zinc-400">{icon}</span>}{title}
+        {icon && <span className="text-zinc-400">{icon}</span>}
+        {title}
       </h2>
     )}
     <div className="p-4">{children}</div>

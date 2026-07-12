@@ -14,8 +14,19 @@ import { RecordTable } from "@/features/records/components/record-table";
 const COLS: Col<MempoolActionRow>[] = [
   { label: "Time", numeric: true, priority: 1, w: "76px", cell: (r) => timeCell(r.timestamp) },
   { label: "Event", priority: 1, w: "130px", cell: (r) => eventChip(r.event) },
-  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.2fr)", cell: (r) => assetCell(r.asset ?? undefined) },
-  { label: "Quantity", numeric: true, priority: 2, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
+  {
+    label: "Asset",
+    weight: "primary",
+    priority: 1,
+    w: "minmax(0,1.2fr)",
+    cell: (r) => assetCell(r.asset ?? undefined),
+  },
+  {
+    label: "Quantity",
+    numeric: true,
+    priority: 2,
+    cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—"),
+  },
   { label: "From", priority: 3, cell: (r) => addrCell(r.source ?? undefined) },
   { label: "To", priority: 4, cell: (r) => addrCell(r.destination ?? undefined) },
   { label: "View", srOnly: true, priority: 2, w: "44px", cell: (r) => viewCell(r.tx_hash ?? undefined) },
@@ -43,7 +54,9 @@ export function MempoolFeed() {
             key={k.label}
             onClick={() => setKind(k.key)}
             className={`rounded px-2.5 py-1 text-xs ring-1 ring-inset transition ${
-              kind === k.key ? "bg-zinc-800 text-zinc-100 ring-zinc-600" : "text-zinc-400 ring-zinc-800 hover:text-zinc-200"
+              kind === k.key
+                ? "bg-zinc-800 text-zinc-100 ring-zinc-600"
+                : "text-zinc-400 ring-zinc-800 hover:text-zinc-200"
             }`}
           >
             {k.label}

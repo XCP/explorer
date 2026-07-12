@@ -22,4 +22,5 @@ radar.get("/v2/radar", (c) =>
     const undervalued = under.map((r) => ({ ...r, conviction: convictionScore(r.conviction) }));
     const buyable = buy.map((r) => ({ ...r, conviction: convictionScore(r.conviction) }));
     return { result: { undervalued, buyable } };
-  }));
+  }),
+);

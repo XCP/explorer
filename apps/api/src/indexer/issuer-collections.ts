@@ -8,10 +8,20 @@
  */
 import type { Env } from "../env";
 
-interface IssuerCollection { issuer: string; tag: string; name: string; site?: string }
+interface IssuerCollection {
+  issuer: string;
+  tag: string;
+  name: string;
+  site?: string;
+}
 
 const ISSUER_COLLECTIONS: IssuerCollection[] = [
-  { issuer: "1DPPDehtoLLjhXKHibfC3iJVSqwCooivUX", tag: "new-liberty-standard", name: "New Liberty Standard", site: "https://newlibertystandard.io/" },
+  {
+    issuer: "1DPPDehtoLLjhXKHibfC3iJVSqwCooivUX",
+    tag: "new-liberty-standard",
+    name: "New Liberty Standard",
+    site: "https://newlibertystandard.io/",
+  },
 ];
 
 export async function buildIssuerCollections(env: Env): Promise<Record<string, unknown>> {
@@ -22,13 +32,17 @@ export async function buildIssuerCollections(env: Env): Promise<Record<string, u
     const meta = JSON.stringify({ collection: c.name, ...(c.site ? { site: c.site } : {}) });
     const res = await env.DB.prepare(
       `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta)
-       SELECT 'asset', asset, ?, 'issuer', ? FROM assets WHERE issuer=?`
-    ).bind(c.tag, meta, c.issuer).run();
+       SELECT 'asset', asset, ?, 'issuer', ? FROM assets WHERE issuer=?`,
+    )
+      .bind(c.tag, meta, c.issuer)
+      .run();
     tagged += res?.meta?.rows_written ?? 0;
     // reconcile removals (e.g. an asset transferred away) — scoped to this issuer's assets, so never a full wipe.
     await env.DB.prepare(
-      `DELETE FROM tags WHERE source='issuer' AND tag=? AND entity_id NOT IN (SELECT asset FROM assets WHERE issuer=?)`
-    ).bind(c.tag, c.issuer).run();
+      `DELETE FROM tags WHERE source='issuer' AND tag=? AND entity_id NOT IN (SELECT asset FROM assets WHERE issuer=?)`,
+    )
+      .bind(c.tag, c.issuer)
+      .run();
   }
   return { collections: ISSUER_COLLECTIONS.length, tagged };
 }

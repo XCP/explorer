@@ -21,26 +21,35 @@ export function HolderMakeup({ asset }: { asset: string }) {
   const [view, setView] = useState<"supply" | "holders">("supply");
   const d = data?.result;
   if (!d || !d.holders) return null;
-  const rows = view === "holders"
-    ? (d.tiers ?? []).filter((t) => t.holders > 0).sort((a, b) => b.holders - a.holders)
-    : (d.tiers ?? []).filter((t) => t.pct_supply > 0); // API already sorts by supply share, high→low
+  const rows =
+    view === "holders"
+      ? (d.tiers ?? []).filter((t) => t.holders > 0).sort((a, b) => b.holders - a.holders)
+      : (d.tiers ?? []).filter((t) => t.pct_supply > 0); // API already sorts by supply share, high→low
   if (rows.length === 0) return null;
   return (
     <div className="card">
       <h2 className="mkhead">
         <span>Holder view</span>
         <span className="mktoggle">
-          <button className={view === "supply" ? "on" : ""} onClick={() => setView("supply")}>Supply</button>
-          <button className={view === "holders" ? "on" : ""} onClick={() => setView("holders")}>Holders</button>
+          <button className={view === "supply" ? "on" : ""} onClick={() => setView("supply")}>
+            Supply
+          </button>
+          <button className={view === "holders" ? "on" : ""} onClick={() => setView("holders")}>
+            Holders
+          </button>
         </span>
       </h2>
       <div className="body">
         {rows.map((t) => (
           <div key={t.tier} className="row">
             <span className="n">
-              {REPUTATION_TIERS.has(t.tier)
-                ? <Link href={`/reputation/${t.tier.toLowerCase()}`} className="text-inherit hover:text-(--color-accent)">{t.tier}</Link>
-                : t.tier}
+              {REPUTATION_TIERS.has(t.tier) ? (
+                <Link href={`/reputation/${t.tier.toLowerCase()}`} className="text-inherit hover:text-(--color-accent)">
+                  {t.tier}
+                </Link>
+              ) : (
+                t.tier
+              )}
             </span>
             <span className="amt mono">{view === "holders" ? commas(t.holders) : `${t.pct_supply}%`}</span>
           </div>

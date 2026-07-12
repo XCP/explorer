@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
-  ASSET_FEED_COUNT_SOURCES, FEED_COUNT_COLUMNS, feedCountResetSql, feedCountWriteSql,
+  ASSET_FEED_COUNT_SOURCES,
+  FEED_COUNT_COLUMNS,
+  feedCountResetSql,
+  feedCountWriteSql,
 } from "../src/indexer/asset-feed-counts";
 
 function fixture(): DatabaseSync {

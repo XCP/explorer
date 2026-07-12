@@ -19,14 +19,25 @@ export interface TradeFilter {
 export function listTrades(db: D1Database, f: TradeFilter): Promise<TradeRow[]> {
   const where: string[] = [];
   const binds: unknown[] = [];
-  if (f.venue) { where.push("venue = ?"); binds.push(f.venue); }
-  if (f.asset) { where.push("asset = ?"); binds.push(f.asset.toUpperCase()); }
-  if (f.currency) { where.push("currency = ?"); binds.push(f.currency.toUpperCase()); }
+  if (f.venue) {
+    where.push("venue = ?");
+    binds.push(f.venue);
+  }
+  if (f.asset) {
+    where.push("asset = ?");
+    binds.push(f.asset.toUpperCase());
+  }
+  if (f.currency) {
+    where.push("currency = ?");
+    binds.push(f.currency.toUpperCase());
+  }
   const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
   return q<TradeRow>(
     db,
     `SELECT ${COLS} FROM trades ${w} ORDER BY block_time DESC LIMIT ? OFFSET ?`,
-    ...binds, f.limit, f.offset
+    ...binds,
+    f.limit,
+    f.offset,
   );
 }
 
@@ -36,6 +47,6 @@ export function tradeVenueStats(db: D1Database): Promise<TradeVenueStats[]> {
     db,
     `SELECT venue, COUNT(*) trades, COUNT(DISTINCT asset) assets, MAX(block_time) last_time,
             SUM(usd_value) usd_known
-     FROM trades GROUP BY venue`
+     FROM trades GROUP BY venue`,
   );
 }

@@ -7,7 +7,15 @@ import { ASSET_LIST_COLS, DISPENSER_COLS, REGISTRY } from "@/features/records/re
 // column `cell` renderers are functions (can't cross the server→client boundary). Feed tabs reuse
 // the registry's column layouts; the address context suppresses the Source/Issuer columns the page
 // already answers and signs quantities from the address's perspective (R4).
-export function AddressTabs({ address, inBand = false, overview }: { address: string; inBand?: boolean; overview?: ReactNode }) {
+export function AddressTabs({
+  address,
+  inBand = false,
+  overview,
+}: {
+  address: string;
+  inBand?: boolean;
+  overview?: ReactNode;
+}) {
   const base = `/v2/addresses/${encodeURIComponent(address)}`;
   const tabs: TabDef[] = [
     { label: "Sends", path: `${base}/sends`, cols: REGISTRY.sends!.cols },

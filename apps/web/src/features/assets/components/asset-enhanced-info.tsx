@@ -17,7 +17,8 @@ const minify = (s: string) => s.replace(/\s+/g, " ").trim();
 function sanitize(html: string): { clean: string; stripped: boolean } {
   if (typeof window === "undefined") return { clean: html, stripped: false };
   const clean = DOMPurify.sanitize(html);
-  const o = minify(html).length, c = minify(clean).length;
+  const o = minify(html).length,
+    c = minify(clean).length;
   return { clean, stripped: o > 0 && Math.abs(o - c) / o > 0.08 };
 }
 
@@ -48,9 +49,14 @@ function DescriptionHtml({ html }: { html: string }) {
 function Images({ images }: { images: unknown }) {
   const items: { url: string; cap: string }[] = [];
   if (Array.isArray(images)) {
-    for (const im of images as Json[]) if (typeof im?.data === "string") items.push({ url: httpUrl(im.data), cap: [im.type, im.size].filter(Boolean).join(" · ") });
+    for (const im of images as Json[])
+      if (typeof im?.data === "string")
+        items.push({ url: httpUrl(im.data), cap: [im.type, im.size].filter(Boolean).join(" · ") });
   } else if (images && typeof images === "object") {
-    for (const k of ["image", "image_large", "image_large_hd"]) { const v = (images as Json)[k]; if (typeof v === "string") items.push({ url: httpUrl(v), cap: label(k) }); }
+    for (const k of ["image", "image_large", "image_large_hd"]) {
+      const v = (images as Json)[k];
+      if (typeof v === "string") items.push({ url: httpUrl(v), cap: label(k) });
+    }
   }
   if (!items.length) return null;
   return (
@@ -66,51 +72,131 @@ function Images({ images }: { images: unknown }) {
 }
 
 function Media({ kind, value }: { kind: "video" | "audio"; value: unknown }) {
-  const url = typeof value === "string" ? value : typeof (value as Json)?.url === "string" ? (value as Json).url as string : null;
+  const url =
+    typeof value === "string"
+      ? value
+      : typeof (value as Json)?.url === "string"
+        ? ((value as Json).url as string)
+        : null;
   if (!url) return null;
-  return kind === "video"
-    ? <video controls playsInline preload="metadata" className="max-w-full rounded-md"><source src={httpUrl(url)} /></video>
-    : <audio controls preload="metadata" className="w-full"><source src={httpUrl(url)} /></audio>;
+  return kind === "video" ? (
+    <video controls playsInline preload="metadata" className="max-w-full rounded-md">
+      <source src={httpUrl(url)} />
+    </video>
+  ) : (
+    <audio controls preload="metadata" className="w-full">
+      <source src={httpUrl(url)} />
+    </audio>
+  );
 }
 
 const Val = ({ k, v }: { k: string; v: unknown }) => {
   if (v == null || v === "") return null;
   if (k === "description" && typeof v === "string" && !isUrl(v)) return <DescriptionHtml html={v} />;
-  if (isUrl(v)) return <a href={httpUrl(v)} target="_blank" rel="noopener noreferrer" className="break-all text-sky-400 hover:text-sky-300">{v}</a>;
+  if (isUrl(v))
+    return (
+      <a
+        href={httpUrl(v)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="break-all text-sky-400 hover:text-sky-300"
+      >
+        {v}
+      </a>
+    );
   if (typeof v === "boolean") return <>{v ? "Yes" : "No"}</>;
-  if (typeof v === "object") return <span className="break-all font-mono text-xs text-zinc-400">{JSON.stringify(v)}</span>;
+  if (typeof v === "object")
+    return <span className="break-all font-mono text-xs text-zinc-400">{JSON.stringify(v)}</span>;
   return <span className="text-zinc-300">{String(v)}</span>;
 };
 
 // which keys we render as first-class sections vs. fold into "More"
-const HANDLED = new Set(["success", "asset", "image", "image_large", "image_large_hd", "images", "video", "audio", "name", "image_title", "description", "attributes"]);
+const HANDLED = new Set([
+  "success",
+  "asset",
+  "image",
+  "image_large",
+  "image_large_hd",
+  "images",
+  "video",
+  "audio",
+  "name",
+  "image_title",
+  "description",
+  "attributes",
+]);
 
-export function AssetEnhancedInfo({ data, verified, onClose }: { data: Json; verified?: boolean; onClose?: () => void }) {
-  const attributes = Array.isArray(data.attributes) && (data.attributes as Json[]).every((a) => a?.trait_type && "value" in a) ? (data.attributes as Json[]) : null;
+export function AssetEnhancedInfo({
+  data,
+  verified,
+  onClose,
+}: {
+  data: Json;
+  verified?: boolean;
+  onClose?: () => void;
+}) {
+  const attributes =
+    Array.isArray(data.attributes) && (data.attributes as Json[]).every((a) => a?.trait_type && "value" in a)
+      ? (data.attributes as Json[])
+      : null;
   const rows = Object.entries(data).filter(([k, v]) => !HANDLED.has(k) && v != null && v !== "");
   return (
     <div className="mt-3 rounded-lg border border-[var(--border2)] bg-[var(--panel2)] p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-400">Enhanced info</span>
-          {verified && <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-inset ring-emerald-500/20">✓ hash verified</span>}
+          {verified && (
+            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
+              ✓ hash verified
+            </span>
+          )}
         </div>
         {onClose && (
-          <button onClick={onClose} aria-label="Close enhanced info" className="cursor-pointer -m-1 rounded p-1 text-zinc-500 hover:text-zinc-200">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
+          <button
+            onClick={onClose}
+            aria-label="Close enhanced info"
+            className="cursor-pointer -m-1 rounded p-1 text-zinc-500 hover:text-zinc-200"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            >
+              <path d="M3 3l8 8M11 3l-8 8" />
+            </svg>
           </button>
         )}
       </div>
 
-      {(data.images || data.image || data.image_large_hd) ? <Images images={data.images ?? data} /> : null}
+      {data.images || data.image || data.image_large_hd ? <Images images={data.images ?? data} /> : null}
       {data.video ? <Media kind="video" value={data.video} /> : null}
       {data.audio ? <Media kind="audio" value={data.audio} /> : null}
 
       <dl className="divide-y divide-[var(--border-soft,#191e26)]">
-        {typeof data.name === "string" && data.name ? <Row t="Name"><span className="text-zinc-200">{data.name}</span></Row> : null}
-        {typeof data.image_title === "string" && data.image_title ? <Row t="Title"><span className="text-zinc-200">{data.image_title}</span></Row> : null}
-        {data.description != null && data.description !== "" ? <Row t="Description"><Val k="description" v={data.description} /></Row> : null}
-        {rows.map(([k, v]) => <Row key={k} t={label(k)}><Val k={k} v={v} /></Row>)}
+        {typeof data.name === "string" && data.name ? (
+          <Row t="Name">
+            <span className="text-zinc-200">{data.name}</span>
+          </Row>
+        ) : null}
+        {typeof data.image_title === "string" && data.image_title ? (
+          <Row t="Title">
+            <span className="text-zinc-200">{data.image_title}</span>
+          </Row>
+        ) : null}
+        {data.description != null && data.description !== "" ? (
+          <Row t="Description">
+            <Val k="description" v={data.description} />
+          </Row>
+        ) : null}
+        {rows.map(([k, v]) => (
+          <Row key={k} t={label(k)}>
+            <Val k={k} v={v} />
+          </Row>
+        ))}
       </dl>
 
       {attributes && (

@@ -73,7 +73,11 @@ export type TagMemberQueryRow = Omit<TagMemberRow, "score" | "tier"> & { trades:
 
 /** A page of a tag's asset members, best composed-quality first. `expr` = config-driven raw-quality SQL. */
 export function listTagAssetMembers(
-  db: D1Database, expr: string, tag: string, limit: number, offset: number
+  db: D1Database,
+  expr: string,
+  tag: string,
+  limit: number,
+  offset: number,
 ): Promise<TagMemberQueryRow[]> {
   return q<TagMemberQueryRow>(
     db,
@@ -83,6 +87,8 @@ export function listTagAssetMembers(
             s.trades, s.dispenses, COALESCE(s.low_quality,0) low_quality
      FROM tags t JOIN asset_signals s ON t.entity_type='asset' AND s.asset=t.entity_id
      WHERE t.tag=? ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
-    tag, limit, offset
+    tag,
+    limit,
+    offset,
   );
 }

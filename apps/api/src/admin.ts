@@ -36,8 +36,13 @@ admin.use("/admin/*", requireAdmin);
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).
 // Body: JSON array of rows (max 100/call); upserted atomically via batch.
 interface BtcStatsRow {
-  address: string; btc_received?: number; btc_sent?: number; btc_balance?: number;
-  btc_txs?: number; btc_first_block?: number | null; btc_last_block?: number | null;
+  address: string;
+  btc_received?: number;
+  btc_sent?: number;
+  btc_balance?: number;
+  btc_txs?: number;
+  btc_first_block?: number | null;
+  btc_last_block?: number | null;
 }
 admin.post("/admin/btc-stats", async (c) => {
   const rows = await c.req.json<BtcStatsRow[]>().catch(() => null);
@@ -49,10 +54,24 @@ admin.post("/admin/btc-stats", async (c) => {
      VALUES (?,?,?,?,?,?,?,?)
      ON CONFLICT(address) DO UPDATE SET btc_received=excluded.btc_received, btc_sent=excluded.btc_sent,
        btc_balance=excluded.btc_balance, btc_txs=excluded.btc_txs, btc_first_block=excluded.btc_first_block,
-       btc_last_block=excluded.btc_last_block, updated_at=excluded.updated_at`);
-  await c.env.DB.batch(rows.filter((r) => typeof r.address === "string" && r.address.length > 0).map((r) =>
-    stmt.bind(r.address, r.btc_received ?? 0, r.btc_sent ?? 0, r.btc_balance ?? 0, r.btc_txs ?? 0,
-      r.btc_first_block ?? null, r.btc_last_block ?? null, now)));
+       btc_last_block=excluded.btc_last_block, updated_at=excluded.updated_at`,
+  );
+  await c.env.DB.batch(
+    rows
+      .filter((r) => typeof r.address === "string" && r.address.length > 0)
+      .map((r) =>
+        stmt.bind(
+          r.address,
+          r.btc_received ?? 0,
+          r.btc_sent ?? 0,
+          r.btc_balance ?? 0,
+          r.btc_txs ?? 0,
+          r.btc_first_block ?? null,
+          r.btc_last_block ?? null,
+          now,
+        ),
+      ),
+  );
   return c.json({ ok: true, upserted: rows.length });
 });
 
@@ -60,9 +79,13 @@ admin.post("/admin/btc-stats", async (c) => {
 admin.get("/admin/btc-stats/addresses", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 5000, min: 1, max: 10_000 });
   const offset = boundedInteger(c.req.query("offset"), { defaultValue: 0, min: 0 });
-  const r = await c.env.DB.prepare(
-    `SELECT address FROM address_signals ORDER BY address LIMIT ? OFFSET ?`).bind(limit, offset).all<{ address: string }>();
-  return c.json({ result: r.results.map((x) => x.address), next_offset: r.results.length === limit ? offset + limit : null });
+  const r = await c.env.DB.prepare(`SELECT address FROM address_signals ORDER BY address LIMIT ? OFFSET ?`)
+    .bind(limit, offset)
+    .all<{ address: string }>();
+  return c.json({
+    result: r.results.map((x) => x.address),
+    next_offset: r.results.length === limit ? offset + limit : null,
+  });
 });
 
 // Drive the full Counterparty mirror (chronological event replay). Repeat until caught_up.
@@ -85,8 +108,12 @@ admin.post("/admin/backfill-ledger", async (c) => {
 // per-balance high-water makes a plain replay a no-op on existing balances, so they must be wiped first. Heavy.
 admin.post("/admin/reindex", async (c) => {
   await c.env.DB.batch([
-    c.env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('last_event_index','-1') ON CONFLICT(key) DO UPDATE SET value='-1'`),
-    c.env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('last_block_index','0') ON CONFLICT(key) DO UPDATE SET value='0'`),
+    c.env.DB.prepare(
+      `INSERT INTO indexer_state (key,value) VALUES ('last_event_index','-1') ON CONFLICT(key) DO UPDATE SET value='-1'`,
+    ),
+    c.env.DB.prepare(
+      `INSERT INTO indexer_state (key,value) VALUES ('last_block_index','0') ON CONFLICT(key) DO UPDATE SET value='0'`,
+    ),
     c.env.DB.prepare(`DELETE FROM indexer_state WHERE key='last_block_hash'`),
   ]);
   return c.json({ ok: true, note: "cursor reset to -1; next sync wipes balances+snapshots and replays from event 0" });
@@ -135,19 +162,33 @@ admin.post("/admin/crawl-tokenscan", async (c) => c.json(await crawlTokenscanCol
 // assets with {slug, name, site?} as source='discovered'. Body: { issuer, slug, name?, site? }. The
 // candidate discovery board (/v2/collections/candidates) is where issuers are eyeballed before promotion.
 admin.post("/admin/promote-collection", async (c) => {
-  const { issuer, slug, name, site } = await c.req.json<{ issuer?: string; slug?: string; name?: string; site?: string }>();
+  const { issuer, slug, name, site } = await c.req.json<{
+    issuer?: string;
+    slug?: string;
+    name?: string;
+    site?: string;
+  }>();
   if (!issuer || !slug) return c.json({ error: "issuer and slug are required" }, 400);
   const meta = JSON.stringify({ collection: name || slug, ...(site ? { site } : {}) });
   const rows = await c.env.DB.prepare(
     `SELECT a.asset FROM assets a
       WHERE a.issuer=? AND a.mime_type IS NOT NULL
         AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND source IN ('collection','tokenscan','digirare','discovered'))
-        AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag IN ('stamp','src20','src721'))`
-  ).bind(issuer).all<{ asset: string }>();
+        AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag IN ('stamp','src20','src721'))`,
+  )
+    .bind(issuer)
+    .all<{ asset: string }>();
   const assets = (rows.results ?? []).map((r) => r.asset);
   for (let i = 0; i < assets.length; i += 100) {
-    await c.env.DB.batch(assets.slice(i, i + 100).map((a) =>
-      c.env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'discovered',?)`).bind(a, slug, meta)));
+    await c.env.DB.batch(
+      assets
+        .slice(i, i + 100)
+        .map((a) =>
+          c.env.DB.prepare(
+            `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'discovered',?)`,
+          ).bind(a, slug, meta),
+        ),
+    );
   }
   await c.env.DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
   return c.json({ issuer, slug, name: name || slug, tagged: assets.length });
@@ -281,14 +322,17 @@ admin.get("/admin/curated", async (c) => {
 });
 
 admin.post("/admin/curated", async (c) => {
-  const body = await c.req.json<{ kind?: string; key?: string; value?: string | null; note?: string | null }>().catch(() => null);
+  const body = await c.req
+    .json<{ kind?: string; key?: string; value?: string | null; note?: string | null }>()
+    .catch(() => null);
   if (!body?.kind || !body?.key) return c.json({ error: "need {kind,key}" }, 400);
   await curatedUpsert(c.env.DB, { kind: body.kind, key: body.key, value: body.value, note: body.note });
   return c.json({ ok: true, kind: body.kind, key: body.key });
 });
 
 admin.delete("/admin/curated", async (c) => {
-  const kind = c.req.query("kind"), key = c.req.query("key");
+  const kind = c.req.query("kind"),
+    key = c.req.query("key");
   if (!kind || !key) return c.json({ error: "need ?kind= and ?key=" }, 400);
   const r = await curatedDelete(c.env.DB, kind, key);
   return c.json({ ok: true, kind, key, deleted: r.meta?.changes ?? 0 });

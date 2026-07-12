@@ -18,8 +18,18 @@
 export const ORDER_FULFILLED_TOPIC = "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31";
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-interface Item { itemType: number; token: string; identifier: bigint; amount: bigint }
-export interface SeaportSale { seller: string; buyer: string; priceRaw: string; token: string }
+interface Item {
+  itemType: number;
+  token: string;
+  identifier: bigint;
+  amount: bigint;
+}
+export interface SeaportSale {
+  seller: string;
+  buyer: string;
+  priceRaw: string;
+  token: string;
+}
 
 const word = (d: string, i: number) => d.slice(i * 64, i * 64 + 64);
 const addrOf = (w: string) => "0x" + w.slice(24).toLowerCase();
@@ -31,14 +41,24 @@ function readItems(d: string, startWord: number, stride: number): Item[] {
   const out: Item[] = [];
   for (let k = 0; k < len && k < 64; k++) {
     const b = startWord + 1 + k * stride;
-    out.push({ itemType: Number(uintOf(word(d, b))), token: addrOf(word(d, b + 1)), identifier: uintOf(word(d, b + 2)), amount: uintOf(word(d, b + 3)) });
+    out.push({
+      itemType: Number(uintOf(word(d, b))),
+      token: addrOf(word(d, b + 1)),
+      identifier: uintOf(word(d, b + 2)),
+      amount: uintOf(word(d, b + 3)),
+    });
   }
   return out;
 }
 
 /** Decode one OrderFulfilled log for a sale of (contract, tokenId). Returns null if this log's offer AND
  *  consideration don't contain that NFT (i.e. a different item in a multi-fulfillment tx). */
-export function decodeOrderFulfilled(topics: string[], dataHex: string, contract: string, tokenId: string): SeaportSale | null {
+export function decodeOrderFulfilled(
+  topics: string[],
+  dataHex: string,
+  contract: string,
+  tokenId: string,
+): SeaportSale | null {
   try {
     const d = (dataHex || "").replace(/^0x/, "");
     if (!topics?.[1] || d.length < 256) return null;
@@ -47,12 +67,21 @@ export function decodeOrderFulfilled(topics: string[], dataHex: string, contract
     const offer = readItems(d, Number(uintOf(word(d, 2))) / 32, 4);
     const consid = readItems(d, Number(uintOf(word(d, 3))) / 32, 5);
     const c = contract.toLowerCase();
-    const isNft = (it: Item) => (it.itemType === 2 || it.itemType === 3) && it.token === c && it.identifier.toString() === tokenId;
+    const isNft = (it: Item) =>
+      (it.itemType === 2 || it.itemType === 3) && it.token === c && it.identifier.toString() === tokenId;
     const pay = (arr: Item[]) => arr.filter((it) => it.itemType === 0 || it.itemType === 1);
     const sum = (arr: Item[]) => arr.reduce((a, it) => a + it.amount, 0n);
-    const tokenOf = (p: Item[]) => (p[0]?.itemType === 0 ? ZERO : p[0]?.token ?? ZERO);
-    if (offer.some(isNft)) { const p = pay(consid); return { seller: offerer, buyer: recipient, priceRaw: sum(p).toString(), token: tokenOf(p) }; }
-    if (consid.some(isNft)) { const p = pay(offer); return { buyer: offerer, seller: recipient, priceRaw: sum(p).toString(), token: tokenOf(p) }; }
+    const tokenOf = (p: Item[]) => (p[0]?.itemType === 0 ? ZERO : (p[0]?.token ?? ZERO));
+    if (offer.some(isNft)) {
+      const p = pay(consid);
+      return { seller: offerer, buyer: recipient, priceRaw: sum(p).toString(), token: tokenOf(p) };
+    }
+    if (consid.some(isNft)) {
+      const p = pay(offer);
+      return { buyer: offerer, seller: recipient, priceRaw: sum(p).toString(), token: tokenOf(p) };
+    }
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }

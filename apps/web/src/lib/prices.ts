@@ -14,7 +14,7 @@ export function usePrices() {
       if (!r.ok) throw new Error(`Price API ${r.status}`);
       return r.json() as Promise<PriceResponse>;
     },
-    { refreshInterval: 60_000, revalidateOnFocus: false, dedupingInterval: 60_000 }
+    { refreshInterval: 60_000, revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
   return {
     btc: data?.bitcoin?.usd ?? null,

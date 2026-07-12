@@ -23,8 +23,18 @@ import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { q } from "../db";
 import {
-  K, DISTRUST_SLOT, PASSES, ASSET_PREFIX,
-  seedSubset, passStatements, finalizeStatements, EDGE_INSERTS, BIPARTITE_EDGE_INSERTS, NODE_INSERTS, RANK_INIT, SEED_APPLY,
+  K,
+  DISTRUST_SLOT,
+  PASSES,
+  ASSET_PREFIX,
+  seedSubset,
+  passStatements,
+  finalizeStatements,
+  EDGE_INSERTS,
+  BIPARTITE_EDGE_INSERTS,
+  NODE_INSERTS,
+  RANK_INIT,
+  SEED_APPLY,
 } from "./graph-core";
 import { rawSqlExpr } from "../reputation/score";
 import { ASSET_FACTORS, ASSET_TIERS } from "../reputation/config";
@@ -32,13 +42,20 @@ import { ASSET_FACTORS, ASSET_TIERS } from "../reputation/config";
 const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per admin call
 
 // indexer_state cursor keys
-const K_PHASE = "graph_phase";     // "build" | "iterate" | "finalize" | "done"
-const K_BUILD = "graph_build_i";   // cursor into the build-op list
-const K_PASS = "graph_pass_i";     // cursor 0..(K+1)*PASSES over the interleaved slot-passes
+const K_PHASE = "graph_phase"; // "build" | "iterate" | "finalize" | "done"
+const K_BUILD = "graph_build_i"; // cursor into the build-op list
+const K_PASS = "graph_pass_i"; // cursor 0..(K+1)*PASSES over the interleaved slot-passes
 
 // ---- small state + chunk helpers (same shape as signals.ts) ----
-const chunk = <T>(a: T[], n: number): T[][] => { const o: T[][] = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
-const int = (v: string | null, d: number): number => { const n = parseInt(v ?? "", 10); return Number.isFinite(n) ? n : d; };
+const chunk = <T>(a: T[], n: number): T[][] => {
+  const o: T[][] = [];
+  for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
+  return o;
+};
+const int = (v: string | null, d: number): number => {
+  const n = parseInt(v ?? "", 10);
+  return Number.isFinite(n) ? n : d;
+};
 
 // ---------------------------------------------------------------------------------------------------
 // SEEDS. Compute the trust/distrust node sets from curated + the mirror, split trust k ways, stage them in
@@ -49,7 +66,11 @@ async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
   for (const part of chunk(assets, 90)) {
     if (!part.length) continue;
     const ph = part.map(() => "?").join(",");
-    const r = await q<{ issuer: string }>(env.DB, `SELECT DISTINCT issuer FROM assets WHERE issuer IS NOT NULL AND asset IN (${ph})`, ...part);
+    const r = await q<{ issuer: string }>(
+      env.DB,
+      `SELECT DISTINCT issuer FROM assets WHERE issuer IS NOT NULL AND asset IN (${ph})`,
+      ...part,
+    );
     for (const x of r) if (x.issuer) out.add(x.issuer);
   }
   return [...out];
@@ -60,7 +81,17 @@ async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
 // are our persisted trust label for PEOPLE — collector (held ≥100), creator (survived ≥20), etc. Graph trust
 // feeds NEITHER the asset-quality nor the address-reputation score (H4), so seeding the graph from those is a
 // high-precision starting point, not circular.
-const COLLECTION_TAGS = ["rare-pepe", "fake-rare", "dank-rare", "spells-of-genesis", "bitcorn", "rare-coco", "notable-pepe", "the-wojak-way", "kaleidoscope"];
+const COLLECTION_TAGS = [
+  "rare-pepe",
+  "fake-rare",
+  "dank-rare",
+  "spells-of-genesis",
+  "bitcorn",
+  "rare-coco",
+  "notable-pepe",
+  "the-wojak-way",
+  "kaleidoscope",
+];
 const TRUST_ARCHETYPES = ["collector", "creator", "prolific_creator", "dividend_payer"];
 // A scammer never seeds trust even if they also collect/create — bad wins here. (Infra already can't carry
 // these tags, but we guard anyway.)
@@ -78,25 +109,42 @@ const NOT_INFRA_OR_SCAM = `sig.is_exchange=0 AND sig.is_burn=0 AND sig.is_deposi
 async function applySeeds(env: Env): Promise<void> {
   const tagPh = COLLECTION_TAGS.map(() => "?").join(",");
   const archPh = TRUST_ARCHETYPES.map(() => "?").join(",");
-  const excluded = new Set((await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind IN ('exchange','burn')`)).map((r) => r.key));
+  const excluded = new Set(
+    (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind IN ('exchange','burn')`)).map((r) => r.key),
+  );
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
 
   // ---- TRUST ASSETS: grails + curated collections + Established+ by our QUALITY score ----
   const grails = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='grail'`)).map((r) => r.key);
-  const collAssets = (await q<{ a: string }>(env.DB, `SELECT DISTINCT entity_id a FROM tags WHERE entity_type='asset' AND tag IN (${tagPh})`, ...COLLECTION_TAGS)).map((r) => r.a);
+  const collAssets = (
+    await q<{ a: string }>(
+      env.DB,
+      `SELECT DISTINCT entity_id a FROM tags WHERE entity_type='asset' AND tag IN (${tagPh})`,
+      ...COLLECTION_TAGS,
+    )
+  ).map((r) => r.a);
   const estCut = ASSET_TIERS.find((t) => t.tier === "Established")?.minRaw ?? 45.86;
   const qualExpr = rawSqlExpr(ASSET_FACTORS, tip); // the asset quality raw, in SQL (same expr as /reputation/review)
   // low_quality=0: the −6 penalty doesn't fully demote a curated-junk asset on the Phase-B scale (a wash/bridge
   // token can ride real flow to Established), so a flagged asset must NEVER become a trust seed via quality.
-  const quality = (await q<{ a: string }>(env.DB,
-    `SELECT asset a FROM asset_signals WHERE low_quality=0 AND (trades>0 OR dispenses>0) AND (${qualExpr}) >= ${estCut}`)).map((r) => r.a);
+  const quality = (
+    await q<{ a: string }>(
+      env.DB,
+      `SELECT asset a FROM asset_signals WHERE low_quality=0 AND (trades>0 OR dispenses>0) AND (${qualExpr}) >= ${estCut}`,
+    )
+  ).map((r) => r.a);
   const trust = new Set<string>();
   for (const a of [...grails, ...collAssets, ...quality]) trust.add(ASSET_PREFIX + a);
 
   // ---- TRUST ADDRESSES: proven-ecosystem archetype tags, never infra/scam (+ grail issuers as axioms) ----
-  const trustAddrs = (await q<{ address: string }>(env.DB,
-    `SELECT DISTINCT t.entity_id address FROM tags t JOIN address_signals sig ON sig.address=t.entity_id
-      WHERE t.entity_type='address' AND t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`, ...TRUST_ARCHETYPES)).map((r) => r.address);
+  const trustAddrs = (
+    await q<{ address: string }>(
+      env.DB,
+      `SELECT DISTINCT t.entity_id address FROM tags t JOIN address_signals sig ON sig.address=t.entity_id
+      WHERE t.entity_type='address' AND t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`,
+      ...TRUST_ARCHETYPES,
+    )
+  ).map((r) => r.address);
   const grailIssuers = await distinctIssuers(env, grails); // a grail's creator is an axiom, even if under the creator threshold
   for (const address of [...trustAddrs, ...grailIssuers]) if (!excluded.has(address)) trust.add(address);
 
@@ -105,7 +153,12 @@ async function applySeeds(env: Env): Promise<void> {
   const distrust = new Set<string>();
   for (const l of lowqs) distrust.add(ASSET_PREFIX + l);
   for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
-  const scamActors = (await q<{ address: string }>(env.DB, `SELECT address FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0 OR dump_scams > 0`)).map((r) => r.address);
+  const scamActors = (
+    await q<{ address: string }>(
+      env.DB,
+      `SELECT address FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0 OR dump_scams > 0`,
+    )
+  ).map((r) => r.address);
   for (const a of scamActors) if (!excluded.has(a)) distrust.add(a);
   for (const n of trust) distrust.delete(n); // trust wins the (rare) collision to keep Σs=1 exact
 
@@ -113,14 +166,22 @@ async function applySeeds(env: Env): Promise<void> {
   const subsets: string[][] = Array.from({ length: K }, () => []);
   for (const key of trust) subsets[seedSubset(key)].push(key);
   const rows: [string, number, number][] = [];
-  subsets.forEach((sub, slot) => { const s = sub.length ? 1 / sub.length : 0; for (const node of sub) rows.push([node, slot, s]); });
+  subsets.forEach((sub, slot) => {
+    const s = sub.length ? 1 / sub.length : 0;
+    for (const node of sub) rows.push([node, slot, s]);
+  });
   const dArr = [...distrust];
   const ds = dArr.length ? 1 / dArr.length : 0;
   for (const node of dArr) rows.push([node, DISTRUST_SLOT, ds]);
 
   await env.DB.prepare(`DELETE FROM graph_seed`).run();
-  const stmts = chunk(rows, 30).filter((p) => p.length).map((part) =>
-    env.DB.prepare(`INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES ${part.map(() => "(?,?,?)").join(",")}`).bind(...part.flat()));
+  const stmts = chunk(rows, 30)
+    .filter((p) => p.length)
+    .map((part) =>
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES ${part.map(() => "(?,?,?)").join(",")}`,
+      ).bind(...part.flat()),
+    );
   for (const b of chunk(stmts, 20)) await env.DB.batch(b);
   await env.DB.prepare(SEED_APPLY).run();
 }
@@ -128,14 +189,19 @@ async function applySeeds(env: Env): Promise<void> {
 // the ordered build operations (each a bounded unit of work advanced by the cursor). The bipartite flag
 // is captured in indexer_state at reset so every resumed call constructs the SAME deterministic op list.
 function buildOps(bipartite: boolean): { name: string; exec: (env: Env) => Promise<void> }[] {
-  const runSql = (sql: string) => async (env: Env) => { await env.DB.prepare(sql).run(); };
+  const runSql = (sql: string) => async (env: Env) => {
+    await env.DB.prepare(sql).run();
+  };
   const ops: { name: string; exec: (env: Env) => Promise<void> }[] = [
-    { name: "reset", exec: async (env) => {
-      await env.DB.prepare(`DELETE FROM graph_edges`).run();
-      await env.DB.prepare(`DELETE FROM graph_node`).run();
-      await env.DB.prepare(`DELETE FROM graph_rank`).run();
-      await env.DB.prepare(`DELETE FROM graph_seed`).run();
-    } },
+    {
+      name: "reset",
+      exec: async (env) => {
+        await env.DB.prepare(`DELETE FROM graph_edges`).run();
+        await env.DB.prepare(`DELETE FROM graph_node`).run();
+        await env.DB.prepare(`DELETE FROM graph_rank`).run();
+        await env.DB.prepare(`DELETE FROM graph_seed`).run();
+      },
+    },
   ];
   EDGE_INSERTS.forEach((sql, i) => ops.push({ name: `edges_${i}`, exec: runSql(sql) }));
   if (bipartite) BIPARTITE_EDGE_INSERTS.forEach((sql, i) => ops.push({ name: `bip_${i}`, exec: runSql(sql) }));
@@ -158,7 +224,10 @@ export interface GraphBuildProgress {
   note?: string;
 }
 
-export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: boolean; bipartite?: boolean } = {}): Promise<GraphBuildProgress> {
+export async function buildGraphTrust(
+  env: Env,
+  opts: { work?: number; reset?: boolean; bipartite?: boolean } = {},
+): Promise<GraphBuildProgress> {
   const work = Math.max(1, Math.min(40, opts.work ?? DEFAULT_WORK));
   if (opts.reset) {
     await setState(env.DB, K_PHASE, "build");
@@ -176,9 +245,15 @@ export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: b
     let i = int(await getState(env.DB, K_BUILD), 0);
     if (i < 0 || i > ops.length) i = 0;
     const ran: string[] = [];
-    for (let n = 0; n < work && i < ops.length; n++, i++) { await ops[i].exec(env); ran.push(ops[i].name); }
+    for (let n = 0; n < work && i < ops.length; n++, i++) {
+      await ops[i].exec(env);
+      ran.push(ops[i].name);
+    }
     await setState(env.DB, K_BUILD, String(i));
-    if (i >= ops.length) { await setState(env.DB, K_PHASE, "iterate"); return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> iterate" }; }
+    if (i >= ops.length) {
+      await setState(env.DB, K_PHASE, "iterate");
+      return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> iterate" };
+    }
     return { phase: "build", done: false, build: { at: i, of: ops.length, ran } };
   }
 
@@ -193,7 +268,15 @@ export async function buildGraphTrust(env: Env, opts: { work?: number; reset?: b
       ran.push(`slot${slot}#${Math.floor(step / (K + 1))}`);
     }
     await setState(env.DB, K_PASS, String(step));
-    if (step >= total) { await setState(env.DB, K_PHASE, "finalize"); return { phase: "iterate", done: false, iterate: { step, of: total, ran }, note: "iteration complete -> finalize" }; }
+    if (step >= total) {
+      await setState(env.DB, K_PHASE, "finalize");
+      return {
+        phase: "iterate",
+        done: false,
+        iterate: { step, of: total, ran },
+        note: "iteration complete -> finalize",
+      };
+    }
     return { phase: "iterate", done: false, iterate: { step, of: total, ran } };
   }
 
@@ -223,7 +306,10 @@ export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { 
   if (phase === "done") {
     const tip = await graphTip(env);
     const last = int(await getState(env.DB, "graph_rebuilt_block"), 0);
-    if (last === 0) { await setState(env.DB, "graph_rebuilt_block", String(tip)); return { skipped: "clock started" }; }
+    if (last === 0) {
+      await setState(env.DB, "graph_rebuilt_block", String(tip));
+      return { skipped: "clock started" };
+    }
     if (tip - last >= WEEK_BLOCKS) return await buildGraphTrust(env, { reset: true });
     return { skipped: `fresh (${tip - last}/${WEEK_BLOCKS} blocks to next rebuild)` };
   }

@@ -24,7 +24,9 @@ function projectMeta(t: TagStatsRow): { name: string; site: string | null } {
   try {
     const m = t.meta ? (JSON.parse(t.meta) as { collection?: string; site?: string }) : null;
     return { name: m?.collection || collectionLabel(t.tag), site: m?.site || null };
-  } catch { return { name: collectionLabel(t.tag), site: null }; }
+  } catch {
+    return { name: collectionLabel(t.tag), site: null };
+  }
 }
 
 // A compact 0-100 bar — the collection's community/scarcity Conviction, the headline relative-strength axis.
@@ -41,22 +43,55 @@ function StrengthBar({ score }: { score: number | null }) {
 }
 
 const COLS: Col<TagStatsRow>[] = [
-  { label: "Collection", weight: "primary", priority: 1, cell: (r) => {
-    const m = projectMeta(r);
-    return (
-      <span className="flex items-center gap-2 min-w-0">
-        <Link href={`/tag/${encodeURIComponent(r.tag)}`} className="font-medium truncate">{m.name}</Link>
-        {m.site && (
-          <a href={m.site} target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-zinc-300 shrink-0"
-             aria-label={`${m.name} project site`}>↗</a>
-        )}
-      </span>
-    );
-  } },
-  { label: "Strength", priority: 1, w: "130px", sortKey: "strength", cell: (r) => <StrengthBar score={r.conviction_score} /> },
+  {
+    label: "Collection",
+    weight: "primary",
+    priority: 1,
+    cell: (r) => {
+      const m = projectMeta(r);
+      return (
+        <span className="flex items-center gap-2 min-w-0">
+          <Link href={`/tag/${encodeURIComponent(r.tag)}`} className="font-medium truncate">
+            {m.name}
+          </Link>
+          {m.site && (
+            <a
+              href={m.site}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+              aria-label={`${m.name} project site`}
+            >
+              ↗
+            </a>
+          )}
+        </span>
+      );
+    },
+  },
+  {
+    label: "Strength",
+    priority: 1,
+    w: "130px",
+    sortKey: "strength",
+    cell: (r) => <StrengthBar score={r.conviction_score} />,
+  },
   { label: "Members", numeric: true, priority: 3, w: "80px", sortKey: "members", cell: (r) => commas(r.n_assets) },
-  { label: "Quality", priority: 2, w: "120px", sortKey: "score", cell: (r) => (r.median_tier ? <ScoreBadge tier={r.median_tier} score={r.median_score} /> : "—") },
-  { label: "Creators", numeric: true, priority: 4, w: "90px", sortKey: "creators", cell: (r) => (r.avg_creator_pct != null ? `${r.avg_creator_pct}%` : "—") },
+  {
+    label: "Quality",
+    priority: 2,
+    w: "120px",
+    sortKey: "score",
+    cell: (r) => (r.median_tier ? <ScoreBadge tier={r.median_tier} score={r.median_score} /> : "—"),
+  },
+  {
+    label: "Creators",
+    numeric: true,
+    priority: 4,
+    w: "90px",
+    sortKey: "creators",
+    cell: (r) => (r.avg_creator_pct != null ? `${r.avg_creator_pct}%` : "—"),
+  },
   { label: "Realized USD", numeric: true, priority: 2, sortKey: "realized", cell: (r) => usd(r.total_realized_usd) },
   { label: "Holders", numeric: true, priority: 4, sortKey: "holders", cell: (r) => commas(r.total_holders) },
 ];
@@ -79,7 +114,11 @@ export function Collections() {
   // A project can appear under both sources (pepe.wtf 'bitcorn' + tokenscan 'bitcorns'). Prefer the curated
   // pepe.wtf 'collection' row and drop the tokenscan duplicate, matched on a normalized slug (strip
   // non-alphanumerics + a trailing plural 's'). Tokenscan projects pepe.wtf doesn't cover pass through.
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/s$/, "");
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .replace(/s$/, "");
   const board = rows.filter(isCollection);
   const curatedKeys = new Set(board.filter((t) => t.source === "collection").map((t) => norm(t.tag)));
   const deduped = board.filter((t) => t.source === "collection" || !curatedKeys.has(norm(t.tag)));
@@ -98,10 +137,10 @@ export function Collections() {
       <div className="pagehead">
         <h1>Collections</h1>
         <p>
-          Counterparty art &amp; collectible projects, scored as <b>communities</b>. <b>Strength</b> rolls up
-          who holds the cards — sophisticated collectors, proven creators, genuine scarcity, standing in the
-          trusted network — into one 0&ndash;100 signal, independent of price. <b>Quality</b> is the typical
-          member&rsquo;s composed tier. Ranked by community strength; click a column to re-sort.{" "}
+          Counterparty art &amp; collectible projects, scored as <b>communities</b>. <b>Strength</b> rolls up who holds
+          the cards — sophisticated collectors, proven creators, genuine scarcity, standing in the trusted network —
+          into one 0&ndash;100 signal, independent of price. <b>Quality</b> is the typical member&rsquo;s composed tier.
+          Ranked by community strength; click a column to re-sort.{" "}
           <Link href="/collections/candidates">Discover untagged candidates →</Link>
         </p>
       </div>

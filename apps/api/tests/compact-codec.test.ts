@@ -10,6 +10,10 @@ test("hashToBytes stores a hex transaction hash as its 32 raw bytes", () => {
 
 test("hashToBytes rejects malformed hashes instead of storing ambiguous data", () => {
   let message = "";
-  try { hashToBytes("1234"); } catch (error) { message = (error as Error).message; }
+  try {
+    hashToBytes("1234");
+  } catch (error) {
+    message = (error as Error).message;
+  }
   assert.equal(message, "invalid transaction hash");
 });

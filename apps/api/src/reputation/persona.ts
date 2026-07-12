@@ -41,10 +41,20 @@ export interface PersonaSignals {
 }
 
 const LABEL: Record<Persona, string> = {
-  creator: "Creator", collector: "Collector", merchant: "Merchant", trader: "Trader", service: "Service", dormant: "Dormant",
+  creator: "Creator",
+  collector: "Collector",
+  merchant: "Merchant",
+  trader: "Trader",
+  service: "Service",
+  dormant: "Dormant",
 };
 const VERB: Record<Persona, string> = {
-  creator: "creates", collector: "collects", merchant: "deals", trader: "trades", service: "", dormant: "",
+  creator: "creates",
+  collector: "collects",
+  merchant: "deals",
+  trader: "trades",
+  service: "",
+  dormant: "",
 };
 const BLURB: Record<Persona, string> = {
   creator: "issues assets — an artist / creator",

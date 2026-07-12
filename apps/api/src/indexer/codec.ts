@@ -21,7 +21,8 @@ export function normalize(raw: string | number | bigint | null | undefined, divi
   if (raw == null) return null;
   let s = typeof raw === "string" ? raw : String(raw);
   if (!divisible) return s;
-  const neg = s.startsWith("-"); if (neg) s = s.slice(1);
+  const neg = s.startsWith("-");
+  if (neg) s = s.slice(1);
   s = s.replace(/\D/g, "") || "0";
   const padded = s.padStart(9, "0");
   const out = padded.slice(0, -8) + "." + padded.slice(-8);

@@ -48,16 +48,35 @@ interface MempoolEvent {
 // so allow-listing keeps one tx to just its real action(s) and never leaks bookkeeping rows. Names cover
 // the v2 node vocabulary and the older ledger names where they differ (ASSET_ISSUANCE vs NEW_ISSUANCE).
 const ACTION_EVENTS = new Set<string>([
-  "ENHANCED_SEND", "MPMA_SEND", "SEND",
-  "ASSET_ISSUANCE", "NEW_ISSUANCE", "RESET_ISSUANCE",
-  "NEW_FAIRMINTER", "NEW_FAIRMINT",
-  "ASSET_DESTRUCTION", "DESTRUCTION",
-  "ASSET_DIVIDEND", "DIVIDEND",
-  "OPEN_ORDER", "ORDER_MATCH", "CANCEL_ORDER", "BTC_PAY",
-  "OPEN_DISPENSER", "REFILL_DISPENSER", "DISPENSE",
-  "SWEEP", "BROADCAST", "BURN",
-  "OPEN_BET", "BET_MATCH",
-  "ATTACH_TO_UTXO", "DETACH_FROM_UTXO", "UTXO_MOVE", "ATTACH", "DETACH",
+  "ENHANCED_SEND",
+  "MPMA_SEND",
+  "SEND",
+  "ASSET_ISSUANCE",
+  "NEW_ISSUANCE",
+  "RESET_ISSUANCE",
+  "NEW_FAIRMINTER",
+  "NEW_FAIRMINT",
+  "ASSET_DESTRUCTION",
+  "DESTRUCTION",
+  "ASSET_DIVIDEND",
+  "DIVIDEND",
+  "OPEN_ORDER",
+  "ORDER_MATCH",
+  "CANCEL_ORDER",
+  "BTC_PAY",
+  "OPEN_DISPENSER",
+  "REFILL_DISPENSER",
+  "DISPENSE",
+  "SWEEP",
+  "BROADCAST",
+  "BURN",
+  "OPEN_BET",
+  "BET_MATCH",
+  "ATTACH_TO_UTXO",
+  "DETACH_FROM_UTXO",
+  "UTXO_MOVE",
+  "ATTACH",
+  "DETACH",
 ]);
 
 function normalizeRow(e: MempoolEvent): MempoolActionRow {
@@ -113,7 +132,9 @@ mempool.get("/v2/addresses/:address/mempool", async (c) => {
 mempool.get("/v2/assets/:asset/mempool", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
   const rows = await fetchActions(c, `/mempool/events?verbose=true&limit=500`);
-  const hit = rows.filter((r) => (r.asset ?? "").toUpperCase() === asset || (r.asset_longname ?? "").toUpperCase() === asset);
+  const hit = rows.filter(
+    (r) => (r.asset ?? "").toUpperCase() === asset || (r.asset_longname ?? "").toUpperCase() === asset,
+  );
   return J(c, envelope(hit), 10);
 });
 

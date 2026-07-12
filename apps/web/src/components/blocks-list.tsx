@@ -28,8 +28,12 @@ export function BlocksList() {
       <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="blocks">
         <RecordTable cols={BLOCK_COLS} rows={rows} />
         <div className="flex gap-2 mt-4">
-          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
-          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
+          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
+            Prev
+          </SecondaryButton>
+          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
+            Next
+          </SecondaryButton>
         </div>
       </AsyncContent>
     </Card>

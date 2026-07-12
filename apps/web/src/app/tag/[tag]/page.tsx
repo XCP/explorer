@@ -41,19 +41,27 @@ export default async function TagPage({ params }: { params: Promise<{ tag: strin
       <div>
         <h1 className="text-xl font-semibold text-zinc-100 break-all">{d.tag}</h1>
         <p className="text-sm text-zinc-400 mt-1">
-          A <span className="text-zinc-300">{d.source}</span> {d.entity_type} tag, scored as a group. The median is
-          the composed-quality tier of a typical member — real demand, realized value, durability — not price.
+          A <span className="text-zinc-300">{d.source}</span> {d.entity_type} tag, scored as a group. The median is the
+          composed-quality tier of a typical member — real demand, realized value, durability — not price.
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Stat label="Members" value={commas(isAsset ? d.n_assets : d.n_addresses)} />
-        <Stat label="Median tier" value={d.median_tier ? <ScoreBadge tier={d.median_tier} score={d.median_score} /> : "—"} />
+        <Stat
+          label="Median tier"
+          value={d.median_tier ? <ScoreBadge tier={d.median_tier} score={d.median_score} /> : "—"}
+        />
         <Stat label="Low-quality" value={d.pct_low_quality != null ? `${d.pct_low_quality}%` : "—"} />
         <Stat label="Realized USD" value={usd(d.total_realized_usd)} />
         <Stat label="Holders" value={commas(d.total_holders)} />
       </div>
-      {isAsset ? <TagMembers tag={d.tag} /> : (
-        <p className="text-sm text-zinc-400">This is an address tag — {commas(d.n_addresses)} addresses carry it. Address-member listings live on the reputation surfaces.</p>
+      {isAsset ? (
+        <TagMembers tag={d.tag} />
+      ) : (
+        <p className="text-sm text-zinc-400">
+          This is an address tag — {commas(d.n_addresses)} addresses carry it. Address-member listings live on the
+          reputation surfaces.
+        </p>
       )}
     </>
   );

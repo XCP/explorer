@@ -4,7 +4,10 @@
 // Area chart with a date axis — for daily time-series.
 export function AreaChart({ data, height = 200 }: { data: { t: number; v: number }[]; height?: number }) {
   if (data.length < 2) return <div style={{ height }} className="animate-pulse bg-zinc-900 rounded" />;
-  const W = 800, H = height, pad = 4, n = data.length;
+  const W = 800,
+    H = height,
+    pad = 4,
+    n = data.length;
   const max = Math.max(...data.map((d) => d.v), 1);
   const X = (i: number) => (i / (n - 1)) * W;
   const Y = (v: number) => H - pad - (v / max) * (H - 2 * pad);
@@ -24,7 +27,9 @@ export function AreaChart({ data, height = 200 }: { data: { t: number; v: number
         <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
       </svg>
       <div className="flex justify-between text-[10px] text-zinc-500 mt-1 font-mono">
-        <span>{day(data[0].t)}</span><span className="text-zinc-400">peak {max.toLocaleString()}</span><span>{day(data[n - 1].t)}</span>
+        <span>{day(data[0].t)}</span>
+        <span className="text-zinc-400">peak {max.toLocaleString()}</span>
+        <span>{day(data[n - 1].t)}</span>
       </div>
     </div>
   );

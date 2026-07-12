@@ -12,8 +12,19 @@ import { RecordTable } from "@/features/records/components/record-table";
 // The amber frame marks the rows as unconfirmed / in-mempool. Polls every 10s via the entity hook.
 const COLS: Col<MempoolActionRow>[] = [
   { label: "Event", priority: 1, w: "130px", cell: (r) => eventChip(r.event) },
-  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.2fr)", cell: (r) => assetCell(r.asset ?? undefined) },
-  { label: "Quantity", numeric: true, priority: 1, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
+  {
+    label: "Asset",
+    weight: "primary",
+    priority: 1,
+    w: "minmax(0,1.2fr)",
+    cell: (r) => assetCell(r.asset ?? undefined),
+  },
+  {
+    label: "Quantity",
+    numeric: true,
+    priority: 1,
+    cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—"),
+  },
   { label: "From", priority: 3, cell: (r) => addrCell(r.source ?? undefined) },
   { label: "To", priority: 3, cell: (r) => addrCell(r.destination ?? undefined) },
   { label: "View", srOnly: true, priority: 1, w: "44px", cell: (r) => viewCell(r.tx_hash ?? undefined) },

@@ -14,26 +14,42 @@
 const RAMP: Record<string, string> = {
   Bluechip: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
   OG: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
-  Premium: "text-zinc-200 ring-zinc-500/50 bg-zinc-800",     // asset rating (≈ address Established)
+  Premium: "text-zinc-200 ring-zinc-500/50 bg-zinc-800", // asset rating (≈ address Established)
   Established: "text-zinc-200 ring-zinc-500/50 bg-zinc-800",
-  Notable: "text-zinc-300 ring-zinc-600/60 bg-zinc-800/60",  // asset rating (≈ address Active)
+  Notable: "text-zinc-300 ring-zinc-600/60 bg-zinc-800/60", // asset rating (≈ address Active)
   Active: "text-zinc-300 ring-zinc-600/60 bg-zinc-800/60",
   Speculative: "text-zinc-400 ring-zinc-700 bg-zinc-900/60",
   Casual: "text-zinc-400 ring-zinc-700 bg-zinc-900/60",
 };
 const QUIET = "text-zinc-500 ring-zinc-800 bg-zinc-900/40";
 
-export function ScoreBadge(
-  { tier, score, flagged = false, className = "" }:
-  { tier: string; score?: number | null; flagged?: boolean; className?: string }
-) {
+export function ScoreBadge({
+  tier,
+  score,
+  flagged = false,
+  className = "",
+}: {
+  tier: string;
+  score?: number | null;
+  flagged?: boolean;
+  className?: string;
+}) {
   const ramp = RAMP[tier] ?? QUIET;
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${ramp} ${className}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${ramp} ${className}`}
+    >
       <span>{tier}</span>
-      {flagged
-        ? <span className="text-[10px] uppercase tracking-wide text-zinc-500" title="Flagged low-quality — capped to Speculative; score suppressed">flagged</span>
-        : score != null && <span className="font-mono tabular-nums opacity-80">{score}</span>}
+      {flagged ? (
+        <span
+          className="text-[10px] uppercase tracking-wide text-zinc-500"
+          title="Flagged low-quality — capped to Speculative; score suppressed"
+        >
+          flagged
+        </span>
+      ) : (
+        score != null && <span className="font-mono tabular-nums opacity-80">{score}</span>
+      )}
     </span>
   );
 }

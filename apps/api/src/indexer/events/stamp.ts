@@ -11,9 +11,9 @@
 const SRC_PROTOCOLS = new Set(["SRC-20", "SRC-721", "SRC-101"]);
 
 export interface StampInfo {
-  protocol: string;        // STAMP | SRC-20 | SRC-721 | SRC-101
-  tick: string | null;     // SRC token ticker
-  op: string | null;       // SRC op: deploy | mint | transfer
+  protocol: string; // STAMP | SRC-20 | SRC-721 | SRC-101
+  tick: string | null; // SRC token ticker
+  op: string | null; // SRC op: deploy | mint | transfer
 }
 
 // base64 -> UTF-8 string (Workers have atob). Returns null on invalid base64 / non-UTF-8.
@@ -23,7 +23,9 @@ function b64utf8(b64: string): string | null {
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return new TextDecoder().decode(bytes);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -59,9 +61,15 @@ export function classifyStamp(description: string | null | undefined): StampInfo
         const p = j && j.p != null ? String(j.p).toUpperCase() : null;
         if (p && SRC_PROTOCOLS.has(p)) {
           // tick is case-insensitive in SRC-20 (KEVIN == Kevin == kevin) — normalize to lowercase.
-          return { protocol: p, tick: j.tick != null ? String(j.tick).toLowerCase() : null, op: j.op != null ? String(j.op).toLowerCase() : null };
+          return {
+            protocol: p,
+            tick: j.tick != null ? String(j.tick).toLowerCase() : null,
+            op: j.op != null ? String(j.op).toLowerCase() : null,
+          };
         }
-      } catch { /* malformed JSON — fall through to classic */ }
+      } catch {
+        /* malformed JSON — fall through to classic */
+      }
     }
   }
   // valid `stamp:` prefix but not a recognized SRC JSON => classic image stamp

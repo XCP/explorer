@@ -143,7 +143,8 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
 
   // New Emblem sales are folded by rowid cursor. Vault classification can change after a sale, so a daily
   // full reconciliation remains as the self-healing backstop instead of rewriting ~231k rows every 2 minutes.
-  const emblemTip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM emblem_sales`).first<{ m: number }>())?.m) || 0;
+  const emblemTip =
+    Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM emblem_sales`).first<{ m: number }>())?.m) || 0;
   const emblemCur = await getState(env.DB, "trades_cur_emblem");
   const fullGen = Math.floor(tip / 144);
   if (emblemCur < emblemTip) {
@@ -153,13 +154,14 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
     // A genesis fold already used the current classification for every sale; do not immediately repeat it.
     if (emblemCur === 0) await setState(env.DB, "trades_emblem_full_gen", fullGen);
   }
-  if (await getState(env.DB, "trades_emblem_full_gen") < fullGen) {
+  if ((await getState(env.DB, "trades_emblem_full_gen")) < fullGen) {
     const result = await env.DB.prepare(emblemSql()).run();
     writes.emblem_reconcile = result.meta.rows_written ?? 0;
     await setState(env.DB, "trades_emblem_full_gen", fullGen);
   }
   // Scarce.city sales are immutable. Fold only staging rows beyond the saved rowid.
-  const scarceTip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM scarce_city_sales`).first<{ m: number }>())?.m) || 0;
+  const scarceTip =
+    Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM scarce_city_sales`).first<{ m: number }>())?.m) || 0;
   const scarceCur = await getState(env.DB, "trades_cur_scarce");
   if (scarceCur < scarceTip) {
     const result = await env.DB.prepare(scarceSql(`AND s.rowid>${scarceCur} AND s.rowid<=${scarceTip}`)).run();

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+import "@/app/globals.css";
 import { SWRProvider } from "@/lib/swr-provider";
 import { TopBar } from "@/components/chrome/top-bar";
 import { Footer } from "@/components/chrome/footer";
@@ -26,13 +26,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             SWR reads). React hoists these to <head>. crossOrigin on the API since its fetches are CORS. */}
         <link rel="preconnect" href="https://cdn.xcp.io" />
         <link rel="preconnect" href="https://xcp-api.me-bbe.workers.dev" crossOrigin="anonymous" />
-        <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:rounded focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-sm focus:text-zinc-100">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:rounded focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-sm focus:text-zinc-100"
+        >
           Skip to content
         </a>
         <SWRProvider>
           <div className="min-h-screen flex flex-col">
             <TopBar />
-            <main id="main" className="flex-1 max-w-[1200px] w-full mx-auto p-4 space-y-6">{children}</main>
+            <main id="main" className="flex-1 max-w-[1200px] w-full mx-auto p-4 space-y-6">
+              {children}
+            </main>
             <Footer />
           </div>
         </SWRProvider>

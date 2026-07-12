@@ -4,15 +4,55 @@
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
 import type { AssetDetail, AssetActivityMonth } from "@xcp/shared/assets";
 import { router, J, lim, off, round, cached } from "./respond";
-import { scoreAsset, assetScore, assetTier, scoreConviction, convictionScore, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
+import {
+  scoreAsset,
+  assetScore,
+  assetTier,
+  scoreConviction,
+  convictionScore,
+  type MarketState,
+  rawSqlExpr,
+  ASSET_FACTORS,
+  ADDRESS_FACTORS,
+} from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "../reputation/config";
 import {
-  listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply,
-  assetSignalsRow, assetTags, assetSales, assetCollection, assetArtist, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
-  assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
-  listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
-  listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetCollectionCohort, assetQualitySignals, latestUsdRate,
-  assetActivityVenues, assetActivityFlows, assetActiveUsers,
+  listAssets,
+  featuredAssets,
+  getAsset,
+  holderCount,
+  xcpNativeSupply,
+  assetSignalsRow,
+  assetTags,
+  assetSales,
+  assetCollection,
+  assetArtist,
+  chainTip,
+  holderTiers,
+  holderArchetypes,
+  assetTop1Pct,
+  assetReviewDistribution,
+  assetReviewTop,
+  assetValidation,
+  listAssetBalances,
+  listAssetIssuances,
+  listAssetSends,
+  listAssetDispensers,
+  listAssetDispenses,
+  listAssetOrders,
+  listAssetFairmints,
+  listAssetDividends,
+  listAssetDestructions,
+  listAssetPools,
+  listAssetPoolMatches,
+  listSubassets,
+  assetCohort,
+  assetCollectionCohort,
+  assetQualitySignals,
+  latestUsdRate,
+  assetActivityVenues,
+  assetActivityFlows,
+  assetActiveUsers,
 } from "../queries/assets";
 import { assetAccounting } from "../queries/asset-accounting";
 import { readAssetFeedCounts } from "../queries/asset-feed-counts";
@@ -20,7 +60,13 @@ import { readAssetFeedCounts } from "../queries/asset-feed-counts";
 export const assets = router();
 
 assets.get("/v2/assets", async (c) => {
-  const rows = await listAssets(c.env.DB, { query: c.req.query("query"), limit: lim(c), offset: off(c), sort: c.req.query("sort"), dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined });
+  const rows = await listAssets(c.env.DB, {
+    query: c.req.query("query"),
+    limit: lim(c),
+    offset: off(c),
+    sort: c.req.query("sort"),
+    dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined,
+  });
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
@@ -47,13 +93,19 @@ assets.get("/v2/assets/:asset", async (c) => {
         holderCount(c.env.DB, A),
         readAssetFeedCounts(c.env.DB, A, null).catch(() => null),
       ]);
-      const supply_normalized = A === "XCP"
-        ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8)
-        : null;
+      const supply_normalized = A === "XCP" ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8) : null;
       const body: AssetDetail = {
-        asset: A, asset_longname: null, type: "native", divisible: 1, locked: 1,
+        asset: A,
+        asset_longname: null,
+        type: "native",
+        divisible: 1,
+        locked: 1,
         description: A === "XCP" ? "Counterparty native currency" : "Bitcoin",
-        issuer: null, owner: null, supply_normalized, holder_count, feed_counts,
+        issuer: null,
+        owner: null,
+        supply_normalized,
+        holder_count,
+        feed_counts,
       };
       return J(c, { result: body }, 300); // native token — near-static
     }
@@ -86,15 +138,20 @@ assets.get("/v2/assets/:asset", async (c) => {
   // exact BigInt -> normalized decimal string (pure string math; no float, preserves >2^53 precision).
   const norm = (x: bigint) => {
     if (!r.divisible) return x.toString();
-    const neg = x < 0n, s = (neg ? -x : x).toString().padStart(9, "0");
+    const neg = x < 0n,
+      s = (neg ? -x : x).toString().padStart(9, "0");
     return (neg ? "-" : "") + s.slice(0, -8) + "." + s.slice(-8);
   };
   // composed asset quality score (config-driven, src/reputation) from the precomputed asset_signals row
   const sig = sigRes;
   const scored = sig ? scoreAsset(sig) : null;
   // market state: ranked into a tier only if it ever traded/dispensed; else Untraded (held) / Dormant (no holders).
-  const state: MarketState = sig && ((sig.trades ?? 0) > 0 || (sig.dispenses ?? 0) > 0) ? "market"
-    : sig && (sig.holders ?? 0) > 0 ? "held" : "none";
+  const state: MarketState =
+    sig && ((sig.trades ?? 0) > 0 || (sig.dispenses ?? 0) > 0)
+      ? "market"
+      : sig && (sig.holders ?? 0) > 0
+        ? "held"
+        : "none";
   const score = scored && state === "market" ? assetScore(scored.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
   const tags = tagsRes;
@@ -102,17 +159,34 @@ assets.get("/v2/assets/:asset", async (c) => {
   // only for the grail-shaped population Radar ranks (real, network-trusted, ≥15 holders, named) so the number
   // means the same thing in both places. undervalued mirrors Radar's dislocation cut (raw ≥ calibrated p90,
   // realized still under the same $500 marketMax radarUndervalued() uses).
-  const convictionEligible = sig && sig.low_quality !== 1 && (sig.holders ?? 0) >= 15
-    && Number(sig.graph_trust ?? 0) > Number(sig.graph_distrust ?? 0) && !tags.includes("numeric");
+  const convictionEligible =
+    sig &&
+    sig.low_quality !== 1 &&
+    (sig.holders ?? 0) >= 15 &&
+    Number(sig.graph_trust ?? 0) > Number(sig.graph_distrust ?? 0) &&
+    !tags.includes("numeric");
   const convictionRaw = convictionEligible ? scoreConviction(sig).raw : null;
   const body: AssetDetail = {
-    ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count,
-    burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),
-    escrow: escrowRaw.toString(), escrow_normalized: norm(escrowRaw),
-    circulating: circRaw.toString(), circulating_normalized: norm(circRaw),
-    quality: scored && sig
-      ? { tier: assetTier(scored.raw, state, sig.low_quality === 1), score, raw: round(scored.raw, 2), breakdown: scored.breakdown, low_quality: sig.low_quality === 1 }
-      : { tier: "Dormant", score: null },
+    ...r,
+    supply: raw.toString(),
+    supply_normalized: norm(raw),
+    holder_count,
+    burned: burnedRaw.toString(),
+    burned_normalized: norm(burnedRaw),
+    escrow: escrowRaw.toString(),
+    escrow_normalized: norm(escrowRaw),
+    circulating: circRaw.toString(),
+    circulating_normalized: norm(circRaw),
+    quality:
+      scored && sig
+        ? {
+            tier: assetTier(scored.raw, state, sig.low_quality === 1),
+            score,
+            raw: round(scored.raw, 2),
+            breakdown: scored.breakdown,
+            low_quality: sig.low_quality === 1,
+          }
+        : { tier: "Dormant", score: null },
     tags,
     sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
     collection: collectionRes?.tag ?? null,
@@ -126,14 +200,22 @@ assets.get("/v2/assets/:asset", async (c) => {
     // harmless airdrop cohort ($0 volume), so `insular` flags only the market-integrity case: insular AND real
     // realized volume (≥$1k) ⇒ the wash / inflated-volume suspect. Score/edges/strong are stored for all so a
     // future diagnostic view can rank the broader insular set.
-    cohesion: sig && sig.holder_cohesion != null
-      ? { score: sig.holder_cohesion, edges: sig.cohesion_edges ?? 0, strong: sig.cohesion_strong ?? 0,
-          insular: sig.holder_cohesion >= 9 && (sig.max_realized_usd ?? 0) >= 1000 }
-      : null,
-    conviction: convictionRaw != null && sig
-      ? { score: convictionScore(convictionRaw),
-          undervalued: convictionRaw >= CONVICTION_PCT.p90 && (sig.max_realized_usd ?? 0) < 500 }
-      : null,
+    cohesion:
+      sig && sig.holder_cohesion != null
+        ? {
+            score: sig.holder_cohesion,
+            edges: sig.cohesion_edges ?? 0,
+            strong: sig.cohesion_strong ?? 0,
+            insular: sig.holder_cohesion >= 9 && (sig.max_realized_usd ?? 0) >= 1000,
+          }
+        : null,
+    conviction:
+      convictionRaw != null && sig
+        ? {
+            score: convictionScore(convictionRaw),
+            undervalued: convictionRaw >= CONVICTION_PCT.p90 && (sig.max_realized_usd ?? 0) < 500,
+          }
+        : null,
   };
   // 120s: the asset's headline data (supply, holders, score, tags) drifts slowly; a 2-min cache window cuts
   // cold-miss recomputes 4× vs the 30s default while staying fresh enough for an explorer.
@@ -153,7 +235,19 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const arche = await holderArchetypes(c.env.DB, a).catch(() => null);
   const top1 = await assetTop1Pct(c.env.DB, a).catch(() => null);
   const tiers = rows.sort((x, y) => y.pct_supply - x.pct_supply);
-  return J(c, { result: { asset: a, holders: arche?.holders ?? 0, tiers, archetypes: { creators: arche?.creators ?? 0, collectors: arche?.collectors ?? 0, whales: arche?.whales ?? 0 }, top_holder_pct: top1?.t ?? null } }, 300);
+  return J(
+    c,
+    {
+      result: {
+        asset: a,
+        holders: arche?.holders ?? 0,
+        tiers,
+        archetypes: { creators: arche?.creators ?? 0, collectors: arche?.collectors ?? 0, whales: arche?.whales ?? 0 },
+        top_holder_pct: top1?.t ?? null,
+      },
+    },
+    300,
+  );
 });
 
 // Asset-quality calibration view (parallel to /v2/reputation/review for addresses): the population quality
@@ -174,7 +268,8 @@ assets.get("/v2/reputation/asset-validation", async (c) => {
     const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
     const rows = await assetValidation(c.env.DB, expr).catch(() => []);
     const grp = (v: 0 | 1) => rows.find((r) => r.v === v) ?? { v, n: 0, mean: 0, median: 0 };
-    const vaulted = grp(1), non_vaulted = grp(0);
+    const vaulted = grp(1),
+      non_vaulted = grp(0);
     const lift = non_vaulted.mean ? round(vaulted.mean / non_vaulted.mean, 2) : null;
     return {
       result: {
@@ -308,7 +403,11 @@ async function fetchFirstOk(urls: string[]): Promise<{ res: Response | null; las
   for (const u of urls) {
     const tries = /arweave\.net\/|\.ar\.io\//i.test(u) ? 3 : 1;
     for (let i = 0; i < tries; i++) {
-      const r = await fetch(u, { redirect: "follow", signal: AbortSignal.timeout(8000), headers: { "user-agent": "xcp.io/1.0", accept: "application/json,*/*" } }).catch(() => null);
+      const r = await fetch(u, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(8000),
+        headers: { "user-agent": "xcp.io/1.0", accept: "application/json,*/*" },
+      }).catch(() => null);
       if (r && r.ok) return { res: r, lastStatus };
       if (r) lastStatus = r.status;
     }
@@ -321,7 +420,9 @@ async function fetchFirstOk(urls: string[]): Promise<{ res: Response | null; las
 // ending in an image extension — website/external_url links are left alone.
 function fixArweaveImageUrls<T>(v: T): T {
   if (typeof v === "string") {
-    const m = v.match(/^(https?:\/\/(?:[a-z0-9-]+\.)?arweave\.net\/[A-Za-z0-9_-]{20,})\/[^/]+\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i);
+    const m = v.match(
+      /^(https?:\/\/(?:[a-z0-9-]+\.)?arweave\.net\/[A-Za-z0-9_-]{20,})\/[^/]+\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i,
+    );
     return (m ? m[1] : v) as T;
   }
   if (Array.isArray(v)) return v.map(fixArweaveImageUrls) as T;
@@ -347,7 +448,11 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
       // Distinguish a permanently-dead metadata host (DNS gone / Cloudflare 52x origin errors) from a transient
       // blip, and say so plainly — the asset's art is served separately and is unaffected. Cache dead hosts longer.
       let host = "the metadata source";
-      try { host = new URL(ptr.url).host; } catch { /* keep default */ }
+      try {
+        host = new URL(ptr.url).host;
+      } catch {
+        /* keep default */
+      }
       const offline = !lastStatus || (lastStatus >= 520 && lastStatus <= 530);
       const error = offline ? `The metadata host (${host}) is offline.` : `source returned ${lastStatus}`;
       return J(c, { result: { url: ptr.url, error } }, offline ? 3600 : 60);
@@ -356,7 +461,8 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
     if (ptr.hash) {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
       const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-      if (hex !== ptr.hash) return J(c, { result: { url: ptr.url, error: "content hash does not match the on-chain hash" } }, 300);
+      if (hex !== ptr.hash)
+        return J(c, { result: { url: ptr.url, error: "content hash does not match the on-chain hash" } }, 300);
     }
     const json = fixArweaveImageUrls(JSON.parse(text));
     return J(c, { result: { json, url: ptr.url, verified: !!ptr.hash } }, 300);
@@ -371,20 +477,42 @@ assets.get("/v2/assets/:asset/market", async (c) => {
   try {
     const res = await c.env.XCPDEX.fetch(`https://xcpdex-api/pair/${encodeURIComponent(a)}_XCP`);
     if (!res.ok) return J(c, { result: null }, 120);
-    const p = await res.json<{ last_price?: number | null; volume_7d?: number | null; trade_count_7d?: number | null; price_change_7d?: number | null; best_ask?: number | null }>();
+    const p = await res.json<{
+      last_price?: number | null;
+      volume_7d?: number | null;
+      trade_count_7d?: number | null;
+      price_change_7d?: number | null;
+      best_ask?: number | null;
+    }>();
     // Floor price = the lowest open DEX ask (best_ask, in XCP) converted to USD via the current XCP rate.
     // Only when there's actually an ask standing; source labels where it came from (an order, for now).
-    let floor_usd: number | null = null, floor_source: string | null = null;
+    let floor_usd: number | null = null,
+      floor_source: string | null = null;
     if (p.best_ask != null) {
       const rate = await latestUsdRate(c.env.DB, "XCP").catch(() => null);
-      if (rate?.usd) { floor_usd = p.best_ask * rate.usd; floor_source = "Order"; }
+      if (rate?.usd) {
+        floor_usd = p.best_ask * rate.usd;
+        floor_source = "Order";
+      }
     }
-    return J(c, { result: {
-      pair: `${a}/XCP`, last_price: p.last_price ?? null, volume_7d: p.volume_7d ?? null,
-      trades_7d: p.trade_count_7d ?? null, price_change_7d: p.price_change_7d ?? null,
-      floor_usd, floor_source,
-    } }, 120);
-  } catch { return J(c, { result: null }, 60); }
+    return J(
+      c,
+      {
+        result: {
+          pair: `${a}/XCP`,
+          last_price: p.last_price ?? null,
+          volume_7d: p.volume_7d ?? null,
+          trades_7d: p.trade_count_7d ?? null,
+          price_change_7d: p.price_change_7d ?? null,
+          floor_usd,
+          floor_source,
+        },
+      },
+      120,
+    );
+  } catch {
+    return J(c, { result: null }, 60);
+  }
 });
 
 assets.get("/v2/assets/:asset/subassets", async (c) => {
@@ -421,15 +549,21 @@ assets.get("/v2/assets/:asset/related", async (c) => {
 assets.get("/v2/assets/:asset/quality", async (c) => {
   const r = await assetQualitySignals(c.env.DB, c.req.param("asset").toUpperCase());
   if (!r) return J(c, { result: { holders: 0, trades: 0, low_quality: 0 } }, 300);
-  return J(c, { result: {
-    holders: r.holders ?? 0,
-    top1_pct: round(r.top1_pct),
-    trades: r.trades ?? 0,
-    self_trade_pct: round(r.self_trade_pct),
-    holder_breadth: round(r.holder_breadth, 0),
-    pct_creator_holders: round(r.pct_creator_holders),
-    burned_pct: round(r.burned_pct),
-    low_quality: r.low_quality ?? 0,
-    wash_suspect: (r.low_quality ?? 0) === 1,
-  } }, 300);
+  return J(
+    c,
+    {
+      result: {
+        holders: r.holders ?? 0,
+        top1_pct: round(r.top1_pct),
+        trades: r.trades ?? 0,
+        self_trade_pct: round(r.self_trade_pct),
+        holder_breadth: round(r.holder_breadth, 0),
+        pct_creator_holders: round(r.pct_creator_holders),
+        burned_pct: round(r.burned_pct),
+        low_quality: r.low_quality ?? 0,
+        wash_suspect: (r.low_quality ?? 0) === 1,
+      },
+    },
+    300,
+  );
 });

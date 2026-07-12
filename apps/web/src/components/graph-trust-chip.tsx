@@ -15,8 +15,12 @@ export function GraphTrustChip({ kind, id }: { kind: "addresses" | "assets"; id:
   const tier = data?.result?.tier;
   if (tier !== "trusted" && tier !== "distrusted") return null;
   return tier === "trusted" ? (
-    <span title="Money-flow graph trust" className="chip trusted">TRUSTED</span>
+    <span title="Money-flow graph trust" className="chip trusted">
+      TRUSTED
+    </span>
   ) : (
-    <span title="Money-flow graph distrust" className="chip distrusted">DISTRUSTED</span>
+    <span title="Money-flow graph distrust" className="chip distrusted">
+      DISTRUSTED
+    </span>
   );
 }

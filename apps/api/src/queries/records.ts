@@ -45,27 +45,57 @@ interface RecordFeed {
 
 /** Every record feed's SELECT, keyed by kind (the Record<RecordKind,…> keeps this exhaustive). */
 const FEEDS: Record<RecordKind, RecordFeed> = {
-  transactions: { select: `SELECT tx_hash,tx_index,block_index,block_time,source,destination,btc_amount,fee,supported FROM transactions` },
-  sends: { select: `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status,memo FROM sends` },
-  issuances: { select: `SELECT tx_hash,block_index,block_time,asset,asset_longname,source,issuer,quantity_normalized,transfer,divisible,locked,description,asset_events,status FROM issuances` },
-  dispensers: { select: `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status,escrow_quantity,closed_block_index FROM dispensers` },
+  transactions: {
+    select: `SELECT tx_hash,tx_index,block_index,block_time,source,destination,btc_amount,fee,supported FROM transactions`,
+  },
+  sends: {
+    select: `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status,memo FROM sends`,
+  },
+  issuances: {
+    select: `SELECT tx_hash,block_index,block_time,asset,asset_longname,source,issuer,quantity_normalized,transfer,divisible,locked,description,asset_events,status FROM issuances`,
+  },
+  dispensers: {
+    select: `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status,escrow_quantity,closed_block_index FROM dispensers`,
+  },
   dispenses: { select: DISPENSE_SELECT, orderCol: "d.block_index" },
   orders: { select: ORDER_SELECT, orderCol: "o.block_index" },
   order_matches: { select: ORDER_MATCH_SELECT, orderCol: "om.block_index" },
   sweeps: { select: `SELECT tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status FROM sweeps` },
-  fairminters: { select: `SELECT tx_hash,block_index,block_time,source,asset,asset_longname,price,quantity_by_price,hard_cap,soft_cap,divisible,earned_quantity,paid_quantity,status FROM fairminters` },
+  fairminters: {
+    select: `SELECT tx_hash,block_index,block_time,source,asset,asset_longname,price,quantity_by_price,hard_cap,soft_cap,divisible,earned_quantity,paid_quantity,status FROM fairminters`,
+  },
   fairmints: { select: FAIRMINT_SELECT, orderCol: "f.block_index" },
-  destructions: { select: `SELECT tx_hash,block_index,block_time,source,asset,quantity_normalized,tag,status FROM destructions` },
-  burns: { select: `SELECT tx_hash,block_index,block_time,source,burned_normalized,earned_normalized,status FROM burns` },
-  dividends: { select: `SELECT tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit_normalized,status FROM dividends` },
-  broadcasts: { select: `SELECT tx_hash,block_index,block_time,source,timestamp,value,text,locked,mime_type,status FROM broadcasts` },
-  btcpays: { select: `SELECT tx_hash,block_index,block_time,source,destination,order_match_id,btc_amount_normalized,status FROM btcpays` },
-  bets: { select: `SELECT tx_hash,block_index,block_time,source,feed_address,bet_type,deadline,wager_quantity,counterwager_quantity,target_value,leverage,status FROM bets` },
-  bet_matches: { select: `SELECT id,block_index,block_time,tx0_address,tx1_address,feed_address,forward_quantity,backward_quantity,status FROM bet_matches` },
+  destructions: {
+    select: `SELECT tx_hash,block_index,block_time,source,asset,quantity_normalized,tag,status FROM destructions`,
+  },
+  burns: {
+    select: `SELECT tx_hash,block_index,block_time,source,burned_normalized,earned_normalized,status FROM burns`,
+  },
+  dividends: {
+    select: `SELECT tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit_normalized,status FROM dividends`,
+  },
+  broadcasts: {
+    select: `SELECT tx_hash,block_index,block_time,source,timestamp,value,text,locked,mime_type,status FROM broadcasts`,
+  },
+  btcpays: {
+    select: `SELECT tx_hash,block_index,block_time,source,destination,order_match_id,btc_amount_normalized,status FROM btcpays`,
+  },
+  bets: {
+    select: `SELECT tx_hash,block_index,block_time,source,feed_address,bet_type,deadline,wager_quantity,counterwager_quantity,target_value,leverage,status FROM bets`,
+  },
+  bet_matches: {
+    select: `SELECT id,block_index,block_time,tx0_address,tx1_address,feed_address,forward_quantity,backward_quantity,status FROM bet_matches`,
+  },
   rps: { select: `SELECT tx_hash,block_index,block_time,source,possible_moves,wager,expiration,status FROM rps` },
-  rps_matches: { select: `SELECT id,block_index,block_time,tx0_address,tx1_address,possible_moves,wager,status FROM rps_matches` },
-  pools: { select: `SELECT lp_asset,pair,asset_a,asset_b,reserve_a,reserve_b,lp_supply,price,status,block_index FROM pools` },
-  pool_matches: { select: `SELECT tx_hash,block_index,block_time,source,lp_asset,pair,forward_asset,forward_quantity,backward_asset,backward_quantity,fee_quantity,fee_bps FROM pool_matches` },
+  rps_matches: {
+    select: `SELECT id,block_index,block_time,tx0_address,tx1_address,possible_moves,wager,status FROM rps_matches`,
+  },
+  pools: {
+    select: `SELECT lp_asset,pair,asset_a,asset_b,reserve_a,reserve_b,lp_supply,price,status,block_index FROM pools`,
+  },
+  pool_matches: {
+    select: `SELECT tx_hash,block_index,block_time,source,lp_asset,pair,forward_asset,forward_quantity,backward_asset,backward_quantity,fee_quantity,fee_bps FROM pool_matches`,
+  },
 };
 
 /**
@@ -76,14 +106,14 @@ export function listRecords<K extends RecordKind>(
   db: D1Database,
   kind: K,
   limit: number,
-  offset: number
+  offset: number,
 ): Promise<RecordRowMap[K][]> {
   const feed = FEEDS[kind];
   return q<RecordRowMap[K]>(
     db,
     `${feed.select} ORDER BY ${feed.orderCol ?? "block_index"} DESC LIMIT ? OFFSET ?`,
     limit,
-    offset
+    offset,
   );
 }
 
@@ -94,10 +124,28 @@ export function listRecords<K extends RecordKind>(
  *  Match/derived tables (order_matches, bet_matches, pools…) are not probed — a match is not a
  *  transaction, and the pools mirror is keyed by lp_asset (an OPEN_POOL tx is a known classification gap). */
 export type TxRecordKind =
-  | Extract<RecordKind, "sends" | "dispenses" | "dispensers" | "orders" | "issuances" | "fairminters"
-      | "fairmints" | "sweeps" | "broadcasts" | "dividends" | "btcpays" | "burns" | "destructions"
-      | "bets" | "rps" | "pool_matches">
-  | "cancels" | "dispenser_refills" | "pool_liquidity";
+  | Extract<
+      RecordKind,
+      | "sends"
+      | "dispenses"
+      | "dispensers"
+      | "orders"
+      | "issuances"
+      | "fairminters"
+      | "fairmints"
+      | "sweeps"
+      | "broadcasts"
+      | "dividends"
+      | "btcpays"
+      | "burns"
+      | "destructions"
+      | "bets"
+      | "rps"
+      | "pool_matches"
+    >
+  | "cancels"
+  | "dispenser_refills"
+  | "pool_liquidity";
 
 // Classification-priority order: SPECIFIC before GENERIC, because one tx legitimately writes several
 // rows — a NEW_FAIRMINTER / NEW_FAIRMINT / pool deposit also emits an issuances row (the asset/LP-token
@@ -106,9 +154,25 @@ export type TxRecordKind =
 // (dispenses, fairmints, destructions, btcpays, pool_liquidity) have no tx_hash index, so every probe is
 // ALSO scoped to the tx's known block_index and rides that index instead.
 const TX_KIND_ORDER: TxRecordKind[] = [
-  "dispenses", "sends", "dispensers", "dispenser_refills", "cancels", "btcpays",
-  "fairminters", "fairmints", "pool_liquidity", "pool_matches", "orders", "issuances",
-  "sweeps", "broadcasts", "dividends", "burns", "destructions", "bets", "rps",
+  "dispenses",
+  "sends",
+  "dispensers",
+  "dispenser_refills",
+  "cancels",
+  "btcpays",
+  "fairminters",
+  "fairmints",
+  "pool_liquidity",
+  "pool_matches",
+  "orders",
+  "issuances",
+  "sweeps",
+  "broadcasts",
+  "dividends",
+  "burns",
+  "destructions",
+  "bets",
+  "rps",
 ];
 // column-qualifying alias per aliased feed (mirrors the aliases the SELECTs use)
 const TX_ALIAS: Partial<Record<TxRecordKind, string>> = { dispenses: "d.", orders: "o.", fairmints: "f." };
@@ -125,8 +189,8 @@ const TX_ONLY_SELECTS: Record<"cancels" | "dispenser_refills" | "pool_liquidity"
 export async function classifyTx(db: D1Database, hash: string, blockIndex: number): Promise<TxRecordKind | null> {
   const results = await db.batch<{ k: TxRecordKind }>(
     TX_KIND_ORDER.map((k) =>
-      db.prepare(`SELECT '${k}' k FROM ${k} WHERE tx_hash=?1 AND block_index=?2 LIMIT 1`).bind(hash, blockIndex)
-    )
+      db.prepare(`SELECT '${k}' k FROM ${k} WHERE tx_hash=?1 AND block_index=?2 LIMIT 1`).bind(hash, blockIndex),
+    ),
   );
   const found = new Set(results.flatMap((r) => (r.results ?? []).map((row) => row.k)));
   return TX_KIND_ORDER.find((k) => found.has(k)) ?? null;
@@ -134,20 +198,31 @@ export async function classifyTx(db: D1Database, hash: string, blockIndex: numbe
 
 /** A dispenser's sales — recent dispenses of one machine (rides idx_dispe_disp). The tx-page
  *  storefront's history table + social proof. */
-export function dispensesOfDispenser(db: D1Database, dispenserTx: string, limit = 8): Promise<RecordRowMap["dispenses"][]> {
+export function dispensesOfDispenser(
+  db: D1Database,
+  dispenserTx: string,
+  limit = 8,
+): Promise<RecordRowMap["dispenses"][]> {
   return q<RecordRowMap["dispenses"]>(
-    db, `${DISPENSE_SELECT} WHERE d.dispenser_tx_hash=? ORDER BY d.block_index DESC LIMIT ?`, dispenserTx, limit);
+    db,
+    `${DISPENSE_SELECT} WHERE d.dispenser_tx_hash=? ORDER BY d.block_index DESC LIMIT ?`,
+    dispenserTx,
+    limit,
+  );
 }
 
 /** A dispenser's lifetime totals — sales count, BTC taken (sats), units vended. One sale can vend
  *  many multiples of give_quantity, so the storefront's stock math needs UNITS, not event counts. */
-export function dispenserTotals(db: D1Database, dispenserTx: string): Promise<{ n: number; sats: number; units: number } | null> {
+export function dispenserTotals(
+  db: D1Database,
+  dispenserTx: string,
+): Promise<{ n: number; sats: number; units: number } | null> {
   return one<{ n: number; sats: number; units: number }>(
     db,
     `SELECT COUNT(*) n, COALESCE(SUM(CAST(btc_amount AS REAL)),0) sats,
             COALESCE(SUM(CAST(dispense_quantity_normalized AS REAL)),0) units
        FROM dispenses WHERE dispenser_tx_hash=?`,
-    dispenserTx
+    dispenserTx,
   );
 }
 
@@ -155,7 +230,11 @@ export function dispenserTotals(db: D1Database, dispenserTx: string): Promise<{ 
  *  its two maker orders by tx0/tx1; the order can be either side (rides idx_om_tx0/idx_om_tx1). */
 export function matchesOfOrder(db: D1Database, orderTx: string, limit = 10): Promise<RecordRowMap["order_matches"][]> {
   return q<RecordRowMap["order_matches"]>(
-    db, `${ORDER_MATCH_SELECT} WHERE om.tx0_hash=?1 OR om.tx1_hash=?1 ORDER BY om.block_index DESC LIMIT ?2`, orderTx, limit);
+    db,
+    `${ORDER_MATCH_SELECT} WHERE om.tx0_hash=?1 OR om.tx1_hash=?1 ORDER BY om.block_index DESC LIMIT ?2`,
+    orderTx,
+    limit,
+  );
 }
 
 /** TxRecordKind → row shape (the feed kinds' wire rows + the three tx-only rows). */
@@ -173,9 +252,10 @@ export function recordsByTxHash<K extends TxRecordKind>(
   db: D1Database,
   kind: K,
   hash: string,
-  blockIndex?: number
+  blockIndex?: number,
 ): Promise<TxRecordRowMap[K][]> {
-  const select = kind in TX_ONLY_SELECTS ? TX_ONLY_SELECTS[kind as keyof typeof TX_ONLY_SELECTS] : FEEDS[kind as RecordKind].select;
+  const select =
+    kind in TX_ONLY_SELECTS ? TX_ONLY_SELECTS[kind as keyof typeof TX_ONLY_SELECTS] : FEEDS[kind as RecordKind].select;
   const a = TX_ALIAS[kind] ?? "";
   const scope = blockIndex != null ? ` AND ${a}block_index=?2` : "";
   const args: (string | number)[] = blockIndex != null ? [hash, blockIndex] : [hash];

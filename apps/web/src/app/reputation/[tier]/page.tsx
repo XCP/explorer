@@ -13,7 +13,9 @@ export async function generateMetadata({ params }: { params: Promise<{ tier: str
   const { tier } = await params;
   const slug = tier.toLowerCase();
   if (!VALID.has(slug)) return { title: "Reputation tier" };
-  const env = await getJson<Envelope<ReputationTiersOverview>>("/v2/reputation/tiers", { revalidate: 300 }).catch(() => null);
+  const env = await getJson<Envelope<ReputationTiersOverview>>("/v2/reputation/tiers", { revalidate: 300 }).catch(
+    () => null,
+  );
   const t = env?.result?.tiers.find((x) => x.slug === slug);
   return { title: `${t?.tier ?? slug} reputation`, description: t?.meaning };
 }
@@ -35,7 +37,9 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
   if (!VALID.has(slug)) notFound();
   const [overviewEnv, membersEnv] = await Promise.all([
     getJson<Envelope<ReputationTiersOverview>>("/v2/reputation/tiers", { revalidate: 300 }).catch(() => null),
-    getJson<Envelope<ReputationTierMembers>>(`/v2/reputation/tiers/${slug}?limit=50`, { revalidate: 300 }).catch(() => null),
+    getJson<Envelope<ReputationTierMembers>>(`/v2/reputation/tiers/${slug}?limit=50`, { revalidate: 300 }).catch(
+      () => null,
+    ),
   ]);
   const tiersList = overviewEnv?.result?.tiers ?? [];
   const idx = tiersList.findIndex((t) => t.slug === slug);
@@ -46,13 +50,20 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
   const share = total ? ((100 * summary.count) / total).toFixed(1) : "0";
   // cumulative percentile band — the newcomer-legible framing (not the raw cutoff)
   const cum = tiersList.slice(0, idx + 1).reduce((sum, t) => sum + t.count, 0);
-  const band = idx === tiersList.length - 1 ? "Everyone else" : `Top ${total && (100 * cum) / total < 1.5 ? 1 : Math.round((100 * cum) / total)}%`;
+  const band =
+    idx === tiersList.length - 1
+      ? "Everyone else"
+      : `Top ${total && (100 * cum) / total < 1.5 ? 1 : Math.round((100 * cum) / total)}%`;
 
   return (
     <>
       <SectionHeader>
         <SectionIdentity
-          name={<>{summary.tier} <span className="text-zinc-500">reputation</span></>}
+          name={
+            <>
+              {summary.tier} <span className="text-zinc-500">reputation</span>
+            </>
+          }
           chips={<span className="chip og">{band}</span>}
         />
         <SectionStats
@@ -67,7 +78,10 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
         {summary.meaning}. A wallet reaches <span className="text-zinc-200">{summary.tier}</span> when its reputation
         score — earned across its whole Counterparty history, not its holdings of any one asset — puts it in the{" "}
         {band === "Everyone else" ? "remaining half" : band.toLowerCase()} of real users. Exchanges, custody, burn and
-        empty wallets aren&apos;t scored. <Link href="/reputation" className="hover:text-(--color-accent)">← all tiers</Link>
+        empty wallets aren&apos;t scored.{" "}
+        <Link href="/reputation" className="hover:text-(--color-accent)">
+          ← all tiers
+        </Link>
       </p>
 
       <div className="card overflow-hidden">
@@ -84,7 +98,9 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
                 <th className="px-3 py-2 text-left font-medium">Address</th>
                 <th className="px-3 py-2 text-right font-medium">Score</th>
                 {COLS.map((c) => (
-                  <th key={c.label} className="px-3 py-2 text-right font-medium">{c.label}</th>
+                  <th key={c.label} className="px-3 py-2 text-right font-medium">
+                    {c.label}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -102,7 +118,11 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
                 </tr>
               ))}
               {members.length === 0 && (
-                <tr><td colSpan={3 + COLS.length} className="px-3 py-6 text-center text-zinc-500">No wallets in this tier.</td></tr>
+                <tr>
+                  <td colSpan={3 + COLS.length} className="px-3 py-6 text-center text-zinc-500">
+                    No wallets in this tier.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

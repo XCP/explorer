@@ -23,29 +23,48 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
   const setOpen = (value: boolean) => setOpenForPath(value ? pathname : null);
   const active = groups.some((g) => g.links.some(([, href]) => pathname.startsWith(href)));
 
-  const cancelClose = () => { if (closeTimer.current != null) { clearTimeout(closeTimer.current); closeTimer.current = null; } };
-  const scheduleClose = () => { cancelClose(); closeTimer.current = window.setTimeout(() => setOpen(false), 150); };
+  const cancelClose = () => {
+    if (closeTimer.current != null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 150);
+  };
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setOpenForPath(null); rootRef.current?.querySelector("button")?.focus(); }
+      if (e.key === "Escape") {
+        setOpenForPath(null);
+        rootRef.current?.querySelector("button")?.focus();
+      }
     };
     const onPointerDown = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenForPath(null);
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointerDown);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("pointerdown", onPointerDown); };
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [open]);
 
   return (
     <div
       ref={rootRef}
       className="relative"
-      onMouseEnter={() => { cancelClose(); setOpen(true); }}
+      onMouseEnter={() => {
+        cancelClose();
+        setOpen(true);
+      }}
       onMouseLeave={scheduleClose}
-      onBlur={(e) => { if (!rootRef.current?.contains(e.relatedTarget as Node)) setOpen(false); }}
+      onBlur={(e) => {
+        if (!rootRef.current?.contains(e.relatedTarget as Node)) setOpen(false);
+      }}
     >
       <button
         type="button"
@@ -54,7 +73,10 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
         aria-controls={id}
         className={`rounded-md px-[11px] py-1.5 transition-colors ${active || open ? "text-zinc-100 bg-zinc-900" : "text-zinc-400 hover:text-zinc-100"}`}
       >
-        {label} <span aria-hidden="true" className="text-[9px]">▾</span>
+        {label}{" "}
+        <span aria-hidden="true" className="text-[9px]">
+          ▾
+        </span>
       </button>
       {open && (
         // top-full + pt-2: the visual gap is PADDING inside the hover area — no dead zone.

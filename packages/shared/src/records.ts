@@ -243,8 +243,8 @@ export interface FairminterRow {
   source: string | null;
   asset: string | null;
   asset_longname: string | null;
-  price: string | null;                // XCP paid per quantity_by_price units (a batch, not necessarily one unit)
-  quantity_by_price: string | null;    // asset units minted per `price` paid — divide to get the per-unit price
+  price: string | null; // XCP paid per quantity_by_price units (a batch, not necessarily one unit)
+  quantity_by_price: string | null; // asset units minted per `price` paid — divide to get the per-unit price
   hard_cap: string | null;
   soft_cap: string | null;
   divisible: 0 | 1;

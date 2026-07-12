@@ -12,8 +12,7 @@ import { useStats } from "@/lib/hooks";
 /** A tab is either a record feed (path + columns + optional mono count) or a self-contained panel
  *  (e.g. the asset Related tab) that mounts only while selected. */
 export type TabDef =
-  | { label: string; path: string; cols: Col[]; count?: number | null }
-  | { label: string; panel: ReactNode };
+  { label: string; path: string; cols: Col[]; count?: number | null } | { label: string; panel: ReactNode };
 
 // SSR renders client components too; useLayoutEffect on the server is a dev warning, so fall back.
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -31,19 +30,27 @@ function useTabOverflow(tabCount: number) {
   const [overflowStart, setOverflowStart] = useState(-1); // -1 = everything fits (no More)
   const [measureTick, setMeasureTick] = useState(0);
   // reset to the all-in-bar state, then re-measure (pre-paint, so no visible flash)
-  const requestLayout = useCallback(() => { setOverflowStart(-1); setMeasureTick((t) => t + 1); }, []);
+  const requestLayout = useCallback(() => {
+    setOverflowStart(-1);
+    setMeasureTick((t) => t + 1);
+  }, []);
 
   useIsomorphicLayoutEffect(() => {
     if (overflowStart !== -1) return; // only the all-in-bar state measures
-    const bar = barRef.current, more = moreRef.current;
+    const bar = barRef.current,
+      more = moreRef.current;
     if (!bar || !more) return;
     more.style.display = "none";
     const avail = bar.clientWidth;
     const widths = itemRefs.current.slice(0, tabCount).map((el) => (el ? el.offsetWidth : 0));
-    let used = 0, start = -1;
+    let used = 0,
+      start = -1;
     for (let i = 0; i < widths.length; i++) {
       used += widths[i] + 2;
-      if (used > avail) { start = i; break; }
+      if (used > avail) {
+        start = i;
+        break;
+      }
     }
     if (start === -1) return; // everything fits, no More
     // re-measure with More visible: it takes room too
@@ -52,7 +59,10 @@ function useTabOverflow(tabCount: number) {
     used = 0;
     for (let j = 0; j < widths.length; j++) {
       used += widths[j] + 2;
-      if (used > avail - moreW) { start = j; break; }
+      if (used > avail - moreW) {
+        start = j;
+        break;
+      }
     }
     setOverflowStart(start);
   }, [overflowStart, measureTick, tabCount]);
@@ -63,7 +73,10 @@ function useTabOverflow(tabCount: number) {
     const safety = setTimeout(requestLayout, 300);
     const ro = new ResizeObserver(requestLayout);
     if (barRef.current) ro.observe(barRef.current);
-    return () => { clearTimeout(safety); ro.disconnect(); };
+    return () => {
+      clearTimeout(safety);
+      ro.disconnect();
+    };
   }, [requestLayout]);
 
   return { barRef, itemRefs, moreRef, overflowStart, requestLayout };
@@ -80,8 +93,20 @@ function useTabOverflow(tabCount: number) {
 // contextual band slot; it shows ONLY while the Overview tab is active (current === null).
 // `context` is the page subject (asset/address) — RecordTable suppresses the columns the page
 // already answers and signs quantities from the subject's perspective (R4).
-export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, banner, context }: {
-  tabs: TabDef[]; pageSize?: number; inBand?: boolean; overview?: ReactNode; banner?: ReactNode; context?: RecordContext;
+export function DetailTabs({
+  tabs,
+  pageSize = 50,
+  inBand = false,
+  overview,
+  banner,
+  context,
+}: {
+  tabs: TabDef[];
+  pageSize?: number;
+  inBand?: boolean;
+  overview?: ReactNode;
+  banner?: ReactNode;
+  context?: RecordContext;
 }) {
   const hasOverview = overview != null;
   const [active, setActive] = useState(0);
@@ -94,7 +119,10 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
   const tip = useStats().item?.tip;
   const rows = data?.result ?? [];
   const nextOffset = data?.next_offset;
-  const select = (i: number) => { setActive(i); setOffset(0); };
+  const select = (i: number) => {
+    setActive(i);
+    setOffset(0);
+  };
 
   const { barRef, itemRefs, moreRef, overflowStart, requestLayout } = useTabOverflow(entries.length);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -103,7 +131,9 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
     const onPointerDown = (e: PointerEvent) => {
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
     return () => {
@@ -120,16 +150,34 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
     const label = entry === null ? "Overview" : entry.label;
     const count = entry && "path" in entry && entry.count != null ? entry.count : null;
     return (
-      <a key={label} href="#"
-        ref={inMenu ? undefined : (el) => { itemRefs.current[i] = el; }}
+      <a
+        key={label}
+        href="#"
+        ref={
+          inMenu
+            ? undefined
+            : (el) => {
+                itemRefs.current[i] = el;
+              }
+        }
         className={i === active ? "active" : undefined}
         aria-current={i === active ? "page" : undefined}
         onClick={(e) => {
           e.preventDefault();
           select(i);
-          if (inMenu) { setMenuOpen(false); requestLayout(); }
-        }}>
-        {label}{count != null && <> <span className="count">{count.toLocaleString()}</span></>}
+          if (inMenu) {
+            setMenuOpen(false);
+            requestLayout();
+          }
+        }}
+      >
+        {label}
+        {count != null && (
+          <>
+            {" "}
+            <span className="count">{count.toLocaleString()}</span>
+          </>
+        )}
       </a>
     );
   };
@@ -137,11 +185,21 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
   const bar = (
     <nav className="tabs" aria-label="Section" ref={barRef}>
       {entries.map((_, i) => (i < visibleCount ? tabLink(i, false) : null))}
-      <div className={`more${menuOpen ? " open" : ""}`} ref={moreRef}
-        style={overflowStart === -1 ? { display: "none" } : undefined}>
-        <a href="#" aria-haspopup="true" aria-expanded={menuOpen}
+      <div
+        className={`more${menuOpen ? " open" : ""}`}
+        ref={moreRef}
+        style={overflowStart === -1 ? { display: "none" } : undefined}
+      >
+        <a
+          href="#"
+          aria-haspopup="true"
+          aria-expanded={menuOpen}
           className={activeInMenu ? "active" : undefined}
-          onClick={(e) => { e.preventDefault(); setMenuOpen((o) => !o); }}>
+          onClick={(e) => {
+            e.preventDefault();
+            setMenuOpen((o) => !o);
+          }}
+        >
           More <span className="chev">▾</span>
         </a>
         <div className="more-menu" role="menu">
@@ -155,11 +213,20 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
   // context travels with the current offset so rank columns can count from it; the chain tip feeds
   // lifetime cells (order Expires) — same SWR key as the footer heartbeat, so it's deduped.
   const feedPanel = feed && (
-    <AsyncContent isLoading={isLoading} empty={rows.length === 0} emptyWhat={feed.label.toLowerCase()} loading={<Skeleton />}>
+    <AsyncContent
+      isLoading={isLoading}
+      empty={rows.length === 0}
+      emptyWhat={feed.label.toLowerCase()}
+      loading={<Skeleton />}
+    >
       <RecordTable cols={feed.cols} rows={rows} context={{ ...context, tip: tip ?? undefined, offset }} />
       <div className="flex gap-2">
-        <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Prev</SecondaryButton>
-        <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
+        <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>
+          Prev
+        </SecondaryButton>
+        <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
+          Next
+        </SecondaryButton>
       </div>
     </AsyncContent>
   );
@@ -172,7 +239,9 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
     return (
       <>
         <div className="section-head flow-root w-screen ml-[calc(50%-50vw)] !mt-0">
-          <div className="sh-in" style={{ paddingTop: 0, paddingBottom: 0 }}>{bar}</div>
+          <div className="sh-in" style={{ paddingTop: 0, paddingBottom: 0 }}>
+            {bar}
+          </div>
         </div>
         {current === null && banner}
         <div className="panel">{panelBody}</div>
@@ -183,7 +252,9 @@ export function DetailTabs({ tabs, pageSize = 50, inBand = false, overview, bann
   return (
     <div className="card">
       {bar}
-      <div className="panel" style={{ padding: 14 }}>{panelBody}</div>
+      <div className="panel" style={{ padding: 14 }}>
+        {panelBody}
+      </div>
     </div>
   );
 }

@@ -9,13 +9,29 @@
  * active-balance predicate is written inline where it's needed.
  */
 import type {
-  AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
-  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales,
+  AssetIndexRow,
+  FeaturedAsset,
+  AssetCohortRow,
+  BalanceRow,
+  AssetListRow,
+  HolderTierRow,
+  HolderArchetypes,
+  AssetReviewDistribution,
+  AssetReviewTopRow,
+  AssetSales,
   AssetActiveUser,
 } from "@xcp/shared/assets";
 import type {
-  SendRow, IssuanceRow, DispenserRow, DispenseRow, OrderRow, FairmintRow, DividendRow, DestructionRow,
-  PoolRow, PoolMatchRow,
+  SendRow,
+  IssuanceRow,
+  DispenserRow,
+  DispenseRow,
+  OrderRow,
+  FairmintRow,
+  DividendRow,
+  DestructionRow,
+  PoolRow,
+  PoolMatchRow,
 } from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "../schema";
 import { q, one } from "../db";
@@ -58,19 +74,26 @@ export function listAssets(db: D1Database, f: AssetListFilter): Promise<AssetInd
   if (!query) {
     const col = ASSET_SORTS[f.sort ?? ""] ?? "a.last_issuance_block_index";
     const dir = f.dir === "asc" ? "ASC" : "DESC";
-    return q<AssetIndexRow>(
-      db, `${ASSET_LIST_SELECT} ORDER BY ${col} ${dir} LIMIT ? OFFSET ?`, f.limit, f.offset);
+    return q<AssetIndexRow>(db, `${ASSET_LIST_SELECT} ORDER BY ${col} ${dir} LIMIT ? OFFSET ?`, f.limit, f.offset);
   }
   // Three indexed range probes UNIONed: asset (stored uppercase), longname as-typed, longname
   // lowercased — preserving the old LIKE's case-insensitivity for the common all-lower longnames.
-  const up = query.toUpperCase(), low = query.toLowerCase();
+  const up = query.toUpperCase(),
+    low = query.toLowerCase();
   return q<AssetIndexRow>(
     db,
     `${ASSET_LIST_SELECT} WHERE a.asset >= ?1 AND a.asset < ?2
      UNION ${ASSET_LIST_SELECT} WHERE a.asset_longname >= ?3 AND a.asset_longname < ?4
      UNION ${ASSET_LIST_SELECT} WHERE a.asset_longname >= ?5 AND a.asset_longname < ?6
      ORDER BY last_issuance_block_index DESC LIMIT ?7 OFFSET ?8`,
-    up, nextPrefix(up), query, nextPrefix(query), low, nextPrefix(low), f.limit, f.offset
+    up,
+    nextPrefix(up),
+    query,
+    nextPrefix(query),
+    low,
+    nextPrefix(low),
+    f.limit,
+    f.offset,
   );
 }
 
@@ -82,7 +105,7 @@ export function featuredAssets(db: D1Database, expr: string, limit: number): Pro
      FROM asset_signals s JOIN tags t ON t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='has_media'
      WHERE (s.trades>0 OR s.dispenses>0) AND COALESCE(s.low_quality,0)=0
      ORDER BY (${expr}) DESC LIMIT ?`,
-    limit
+    limit,
   );
 }
 
@@ -95,21 +118,30 @@ export function getAsset(db: D1Database, asset: string): Promise<AssetRow | null
 
 /** Distinct address holders with a positive balance of an asset. */
 export async function holderCount(db: D1Database, asset: string): Promise<number> {
-  const r = await one<{ c: number }>(db, `SELECT COUNT(*) c FROM balances WHERE asset=? AND CAST(quantity AS INTEGER)>0`, asset);
+  const r = await one<{ c: number }>(
+    db,
+    `SELECT COUNT(*) c FROM balances WHERE asset=? AND CAST(quantity AS INTEGER)>0`,
+    asset,
+  );
   return r?.c ?? 0;
 }
 
 /** Native XCP supply = proof-of-burn minus everything destroyed (destructions + issuance/sweep/dividend fees).
  *  Returned as an exact int64 from SQLite; the handler normalizes. */
 export function xcpNativeSupply(db: D1Database): Promise<{ supply: string } | null> {
-  return one<{ supply: string }>(db,
-    `SELECT xcp_supply supply FROM network_stats_snapshot WHERE singleton=1`);
+  return one<{ supply: string }>(db, `SELECT xcp_supply supply FROM network_stats_snapshot WHERE singleton=1`);
 }
 
 /** The one-line issuance brief an offer storefront shows about its asset: total supply + locked. */
-export function assetBrief(db: D1Database, asset: string): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
+export function assetBrief(
+  db: D1Database,
+  asset: string,
+): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
   return one<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null }>(
-    db, `SELECT supply_normalized, divisible, locked FROM assets WHERE asset=?`, asset);
+    db,
+    `SELECT supply_normalized, divisible, locked FROM assets WHERE asset=?`,
+    asset,
+  );
 }
 
 /** Precomputed asset-quality signal row (feeds the composed score). */
@@ -128,7 +160,7 @@ export function assetSales(db: D1Database, asset: string): Promise<AssetSales | 
      SELECT (SELECT SUM(usd_value) FROM trades WHERE asset=?1) realized_usd,
             (SELECT CASE WHEN quantity > 0 THEN usd_value / quantity END FROM last) last_price_usd,
             (SELECT block_time FROM last) last_sale_time`,
-    asset
+    asset,
   );
 }
 
@@ -149,7 +181,12 @@ export async function chainTip(db: D1Database): Promise<number> {
 /** Holder base bucketed by reputation tier. `expr` is the config-driven raw-score SQL over address_signals;
  *  `og`/`est`/`act` are the tier raw cutoffs — all interpolated (config-sourced, not user input). */
 export function holderTiers(
-  db: D1Database, asset: string, expr: string, og: number, est: number, act: number
+  db: D1Database,
+  asset: string,
+  expr: string,
+  og: number,
+  est: number,
+  act: number,
 ): Promise<HolderTierRow[]> {
   return q<HolderTierRow>(
     db,
@@ -165,7 +202,7 @@ export function holderTiers(
                  WHEN raw>=${act} THEN 'Active' ELSE 'Casual' END tier,
        COUNT(*) holders, ROUND(100.0*SUM(q)/(SELECT s FROM tot),1) pct_supply
      FROM h GROUP BY tier`,
-    asset
+    asset,
   );
 }
 
@@ -179,7 +216,7 @@ export function holderArchetypes(db: D1Database, asset: string): Promise<HolderA
             COUNT(*) holders
      FROM balances b JOIN address_signals sg ON sg.address=b.holder
      WHERE b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`,
-    asset
+    asset,
   );
 }
 
@@ -196,7 +233,7 @@ export function assetReviewDistribution(db: D1Database, expr: string): Promise<A
     db,
     `WITH r AS (SELECT (${expr}) raw FROM asset_signals)
      SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max, ROUND(MIN(raw),2) min,
-       SUM(CASE WHEN raw>=16 THEN 1 ELSE 0 END) top1pct, SUM(CASE WHEN raw>=9 THEN 1 ELSE 0 END) top10pct FROM r`
+       SUM(CASE WHEN raw>=16 THEN 1 ELSE 0 END) top1pct, SUM(CASE WHEN raw>=9 THEN 1 ELSE 0 END) top10pct FROM r`,
   );
 }
 
@@ -204,12 +241,17 @@ export function assetReviewDistribution(db: D1Database, expr: string): Promise<A
 export function assetReviewTop(db: D1Database, expr: string): Promise<AssetReviewTopRow[]> {
   return q<AssetReviewTopRow>(
     db,
-    `SELECT asset, asset_longname, holders, trades, ROUND((${expr}),2) raw FROM asset_signals ORDER BY (${expr}) DESC LIMIT 20`
+    `SELECT asset, asset_longname, holders, trades, ROUND((${expr}),2) raw FROM asset_signals ORDER BY (${expr}) DESC LIMIT 20`,
   );
 }
 
 /** One convergent-validity group (v=1 vaulted-tagged, v=0 not) — count/mean/median of the raw quality expr. */
-export interface AssetValidationGroup { v: 0 | 1; n: number; mean: number; median: number; }
+export interface AssetValidationGroup {
+  v: 0 | 1;
+  n: number;
+  mean: number;
+  median: number;
+}
 
 /**
  * Live convergent-validity check: over MARKET assets (ever traded or dispensed), compare the raw quality-score
@@ -229,7 +271,7 @@ export function assetValidation(db: D1Database, expr: string): Promise<AssetVali
      )
      SELECT v, MAX(cnt) n, ROUND(AVG(raw),3) mean,
        ROUND(AVG(CASE WHEN rn IN ((cnt+1)/2, (cnt/2)+1) THEN raw END),3) median
-     FROM r GROUP BY v`
+     FROM r GROUP BY v`,
   );
 }
 
@@ -247,17 +289,26 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
                  END role
      FROM balances b LEFT JOIN address_signals s ON s.address=b.holder
      WHERE b.asset=? AND CAST(b.quantity AS INTEGER)>0 ORDER BY CAST(b.quantity AS INTEGER) DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** An asset's issuance history (subset of IssuanceRow columns). */
-export function listAssetIssuances(db: D1Database, asset: string, limit: number, offset: number): Promise<IssuanceRow[]> {
+export function listAssetIssuances(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<IssuanceRow[]> {
   return q<IssuanceRow>(
     db,
     `SELECT tx_hash, block_index, block_time, source, issuer, transfer, quantity_normalized, description, asset_events, status
      FROM issuances WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
@@ -266,28 +317,44 @@ export function listAssetSends(db: D1Database, asset: string, limit: number, off
   return q<SendRow>(
     db,
     `SELECT tx_hash,block_index,block_time,source,destination,asset,quantity_normalized,send_type,status FROM sends WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** An asset's dispensers, with the source operator's precomputed track-record score for comparability. */
-export function listAssetDispensers(db: D1Database, asset: string, limit: number, offset: number): Promise<DispenserRow[]> {
+export function listAssetDispensers(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DispenserRow[]> {
   return q<DispenserRow>(
     db,
     `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.asset,d.give_quantity_normalized,d.give_remaining_normalized,
             d.satoshirate,d.satoshirate_normalized,d.dispense_count,d.status, ROUND(COALESCE(sg.disp_trust,0),1) operator_trust
      FROM dispensers d LEFT JOIN address_signals sg ON sg.address=d.source
      WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** An asset's dispenses. */
-export function listAssetDispenses(db: D1Database, asset: string, limit: number, offset: number): Promise<DispenseRow[]> {
+export function listAssetDispenses(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DispenseRow[]> {
   return q<DispenseRow>(
     db,
     `${DISPENSE_SELECT} WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
@@ -296,36 +363,61 @@ export function listAssetOrders(db: D1Database, asset: string, limit: number, of
   return q<OrderRow>(
     db,
     `${ORDER_SELECT} WHERE o.give_asset=? OR o.get_asset=? ORDER BY o.block_index DESC LIMIT ? OFFSET ?`,
-    asset, asset, limit, offset
+    asset,
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** An asset's fairmints (the global /v2/fairmints feed projection, filtered to one asset). */
-export function listAssetFairmints(db: D1Database, asset: string, limit: number, offset: number): Promise<FairmintRow[]> {
+export function listAssetFairmints(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<FairmintRow[]> {
   return q<FairmintRow>(
     db,
     `${FAIRMINT_SELECT} WHERE f.asset=? ORDER BY f.block_index DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** Dividends touching an asset on either side — paid ON it (asset) or paid IN it (dividend_asset). */
-export function listAssetDividends(db: D1Database, asset: string, limit: number, offset: number): Promise<DividendRow[]> {
+export function listAssetDividends(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DividendRow[]> {
   return q<DividendRow>(
     db,
     `SELECT tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit_normalized,status
      FROM dividends WHERE asset=? OR dividend_asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    asset, asset, limit, offset
+    asset,
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** An asset's destructions (the global /v2/destructions feed projection, filtered to one asset). */
-export function listAssetDestructions(db: D1Database, asset: string, limit: number, offset: number): Promise<DestructionRow[]> {
+export function listAssetDestructions(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DestructionRow[]> {
   return q<DestructionRow>(
     db,
     `SELECT tx_hash,block_index,block_time,source,asset,quantity_normalized,tag,status
      FROM destructions WHERE asset=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
@@ -335,17 +427,26 @@ export function listAssetPools(db: D1Database, asset: string, limit: number, off
     db,
     `SELECT lp_asset,pair,asset_a,asset_b,reserve_a,reserve_b,lp_supply,price,status,block_index
      FROM pools WHERE asset_a=?1 OR asset_b=?1 OR lp_asset=?1 ORDER BY block_index DESC LIMIT ?2 OFFSET ?3`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
 /** AMM swaps touching the asset on either leg (POOL_MATCH events carry no lp_asset, so match on the legs). */
-export function listAssetPoolMatches(db: D1Database, asset: string, limit: number, offset: number): Promise<PoolMatchRow[]> {
+export function listAssetPoolMatches(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<PoolMatchRow[]> {
   return q<PoolMatchRow>(
     db,
     `SELECT tx_hash,block_index,block_time,source,lp_asset,pair,forward_asset,forward_quantity,backward_asset,backward_quantity
      FROM pool_matches WHERE forward_asset=?1 OR backward_asset=?1 ORDER BY block_index DESC LIMIT ?2 OFFSET ?3`,
-    asset, limit, offset
+    asset,
+    limit,
+    offset,
   );
 }
 
@@ -355,7 +456,9 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
     db,
     `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
      WHERE asset_longname LIKE ? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`,
-    asset + ".%", limit, offset
+    asset + ".%",
+    limit,
+    offset,
   );
 }
 
@@ -363,44 +466,66 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
  *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
  *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green
  *  "Part of …" band, so tokenscan-only projects (Rare Pigeons, Age of Chains, …) now show it too. */
-export async function assetCollection(db: D1Database, asset: string): Promise<{ tag: string; site: string | null; series: number | null; card: number | null } | null> {
+export async function assetCollection(
+  db: D1Database,
+  asset: string,
+): Promise<{ tag: string; site: string | null; series: number | null; card: number | null } | null> {
   const r = await one<{ tag: string; meta: string | null }>(
     db,
     `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source IN ('manual','collection','tokenscan','digirare','issuer','discovered')
      ORDER BY CASE source WHEN 'manual' THEN 0 WHEN 'collection' THEN 1 WHEN 'tokenscan' THEN 2 WHEN 'digirare' THEN 3 WHEN 'issuer' THEN 4 ELSE 5 END LIMIT 1`,
-    asset
+    asset,
   );
   if (!r) return null;
   // pepe.wtf collection meta = {serie,card}; tokenscan meta = {site}. Parse whichever this row carries.
-  let site: string | null = null, series: number | null = null, card: number | null = null;
+  let site: string | null = null,
+    series: number | null = null,
+    card: number | null = null;
   try {
     const m = r.meta ? (JSON.parse(r.meta) as { site?: string; series?: number; card?: number }) : null;
-    if (m) { site = m.site ?? null; series = m.series ?? null; card = m.card ?? null; }
-  } catch { /* non-JSON meta */ }
+    if (m) {
+      site = m.site ?? null;
+      series = m.series ?? null;
+      card = m.card ?? null;
+    }
+  } catch {
+    /* non-JSON meta */
+  }
   return { tag: r.tag, site, series, card };
 }
 
 /** The card's artist, from the pepe.wtf-sourced source='artist' tag (its slug powers /tags/<artist-slug>). */
-export async function assetArtist(db: D1Database, asset: string): Promise<{ tag: string; name: string; slug: string } | null> {
+export async function assetArtist(
+  db: D1Database,
+  asset: string,
+): Promise<{ tag: string; name: string; slug: string } | null> {
   const r = await one<{ tag: string; meta: string | null }>(
     db,
     `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source='artist' LIMIT 1`,
-    asset
+    asset,
   );
   if (!r?.meta) return null;
   try {
     const m = JSON.parse(r.meta) as { name?: string; slug?: string };
     return m.name ? { tag: r.tag, name: m.name, slug: m.slug || r.tag.replace(/^artist-/, "") } : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** Collector cohort: assets most co-held with this one. Excludes XCP (currency everyone holds); the b1
  *  side is filtered to real, non-dust address holders. `pct` = shared holders as a share of the subject's
  *  own holders (the Related tab's "why it's related" line). `excludeCollection` drops same-collection
  *  siblings so the cohort strip complements (never repeats) the collection strip. */
-export function assetCohort(db: D1Database, asset: string, limit: number, excludeCollection: string | null = null): Promise<AssetCohortRow[]> {
+export function assetCohort(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  excludeCollection: string | null = null,
+): Promise<AssetCohortRow[]> {
   const excl = excludeCollection
-    ? `AND b2.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag=?3)` : "";
+    ? `AND b2.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag=?3)`
+    : "";
   const binds = excludeCollection ? [asset, asset, excludeCollection, limit] : [asset, asset, limit];
   return q<AssetCohortRow>(
     db,
@@ -412,14 +537,19 @@ export function assetCohort(db: D1Database, asset: string, limit: number, exclud
      WHERE b1.asset=?1 AND b1.holder_type='address' AND CAST(b1.quantity AS INTEGER)>0
        AND b2.asset<>?2 AND b2.asset<>'XCP' AND CAST(b2.quantity AS INTEGER)>0 ${excl}
      GROUP BY b2.asset ORDER BY shared DESC LIMIT ?${excludeCollection ? "4" : "3"}`,
-    ...binds
+    ...binds,
   );
 }
 
 /** Same-collection siblings ranked by how strongly they overlap the subject's holders — the "Same
  *  collection" strip on the Related tab. Same co-hold math as assetCohort, but b2 is constrained to the
  *  collection's members (a small tagged set), so this surfaces the *most related* siblings first. */
-export function assetCollectionCohort(db: D1Database, asset: string, collection: string, limit: number): Promise<AssetCohortRow[]> {
+export function assetCollectionCohort(
+  db: D1Database,
+  asset: string,
+  collection: string,
+  limit: number,
+): Promise<AssetCohortRow[]> {
   return q<AssetCohortRow>(
     db,
     `WITH hc AS (SELECT COUNT(*) n FROM balances WHERE asset=?1 AND holder_type='address' AND CAST(quantity AS INTEGER)>0)
@@ -431,14 +561,20 @@ export function assetCollectionCohort(db: D1Database, asset: string, collection:
      WHERE b1.asset=?1 AND b1.holder_type='address' AND CAST(b1.quantity AS INTEGER)>0
        AND b2.asset<>?2 AND CAST(b2.quantity AS INTEGER)>0
      GROUP BY b2.asset ORDER BY shared DESC LIMIT ?4`,
-    asset, asset, collection, limit
+    asset,
+    asset,
+    collection,
+    limit,
   );
 }
 
 /** Monthly activity, DEX + BTC venues (order matches + orders opened / dispenses + dispensers opened). One of
  *  the two comprehensive-activity reads — split so each stays under D1's compound-SELECT term cap; the handler
  *  merges the pair by month. */
-export function assetActivityVenues(db: D1Database, asset: string): Promise<{ month: string; orders: number; dispensers: number }[]> {
+export function assetActivityVenues(
+  db: D1Database,
+  asset: string,
+): Promise<{ month: string; orders: number; dispensers: number }[]> {
   return q<{ month: string; orders: number; dispensers: number }>(
     db,
     `SELECT month, SUM(CASE WHEN k IN ('om','ord') THEN n ELSE 0 END) orders, SUM(CASE WHEN k IN ('dsp','dspr') THEN n ELSE 0 END) dispensers FROM (
@@ -447,13 +583,16 @@ export function assetActivityVenues(db: D1Database, asset: string): Promise<{ mo
        UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'dsp', COUNT(*) FROM dispenses WHERE asset=?1 GROUP BY 1
        UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'dspr', COUNT(*) FROM dispensers WHERE asset=?1 GROUP BY 1
      ) GROUP BY month`,
-    asset
+    asset,
   );
 }
 
 /** Monthly activity, transfers + supply events (sends / issuances + fairmints + destructions + dividends).
  *  The companion to assetActivityVenues — merged by month in the read handler. */
-export function assetActivityFlows(db: D1Database, asset: string): Promise<{ month: string; sends: number; supply: number }[]> {
+export function assetActivityFlows(
+  db: D1Database,
+  asset: string,
+): Promise<{ month: string; sends: number; supply: number }[]> {
   return q<{ month: string; sends: number; supply: number }>(
     db,
     `SELECT month, SUM(CASE WHEN k='snd' THEN n ELSE 0 END) sends, SUM(CASE WHEN k IN ('iss','fm','dst','div') THEN n ELSE 0 END) supply FROM (
@@ -463,7 +602,7 @@ export function assetActivityFlows(db: D1Database, asset: string): Promise<{ mon
        UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'dst', COUNT(*) FROM destructions WHERE asset=?1 GROUP BY 1
        UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'div', COUNT(*) FROM dividends WHERE asset=?1 GROUP BY 1
      ) GROUP BY month`,
-    asset
+    asset,
   );
 }
 
@@ -476,7 +615,8 @@ export function assetActiveUsers(db: D1Database, asset: string, limit: number): 
        SELECT address, COUNT(*) cr, 0 db FROM credits WHERE asset=?1 AND address IS NOT NULL GROUP BY address
        UNION ALL SELECT address, 0, COUNT(*) FROM debits WHERE asset=?1 AND address IS NOT NULL GROUP BY address
      ) GROUP BY address ORDER BY activity DESC LIMIT ?2`,
-    asset, limit
+    asset,
+    limit,
   );
 }
 
@@ -486,13 +626,22 @@ export function latestUsdRate(db: D1Database, currency: string): Promise<{ usd: 
 }
 
 /** The "is this cap table real?" signal subset. */
-export type AssetQualitySignals = Pick<AssetSignalsRow,
-  "holders" | "top1_pct" | "trades" | "self_trade_pct" | "low_quality" | "holder_breadth" | "pct_creator_holders" | "burned_pct">;
+export type AssetQualitySignals = Pick<
+  AssetSignalsRow,
+  | "holders"
+  | "top1_pct"
+  | "trades"
+  | "self_trade_pct"
+  | "low_quality"
+  | "holder_breadth"
+  | "pct_creator_holders"
+  | "burned_pct"
+>;
 
 export function assetQualitySignals(db: D1Database, asset: string): Promise<AssetQualitySignals | null> {
   return one<AssetQualitySignals>(
     db,
     `SELECT holders, top1_pct, trades, self_trade_pct, low_quality, holder_breadth, pct_creator_holders, burned_pct FROM asset_signals WHERE asset=?`,
-    asset
+    asset,
   );
 }

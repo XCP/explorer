@@ -32,7 +32,7 @@ export function radarUndervalued(db: D1Database, marketMax = 500, limit = 40): P
             c.holders, CAST(ROUND(c.supply) AS INTEGER) supply,
             ROUND(c.avg_holder_dex,1) holder_dex, ROUND(c.pct_creator_holders) creator_pct
        FROM conv c LEFT JOIN assets a ON a.asset=c.asset
-      ORDER BY c.conviction DESC LIMIT ${limit}`
+      ORDER BY c.conviction DESC LIMIT ${limit}`,
   );
 }
 
@@ -85,6 +85,6 @@ export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]
        LEFT JOIN emb  ON emb.asset=c.asset
        LEFT JOIN assets a ON a.asset=c.asset
       WHERE disp.asset IS NOT NULL OR emb.asset IS NOT NULL
-      ORDER BY c.conviction DESC LIMIT ${limit}`
+      ORDER BY c.conviction DESC LIMIT ${limit}`,
   );
 }

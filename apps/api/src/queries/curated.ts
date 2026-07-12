@@ -5,13 +5,18 @@
  */
 import { q } from "../db";
 
-export interface CuratedRow { kind: string; key: string; value: string | null; note: string | null }
+export interface CuratedRow {
+  kind: string;
+  key: string;
+  value: string | null;
+  note: string | null;
+}
 
 /** Operator-name map for the exchange wallets: { address → label }. One query per /v2/exchanges request. */
 export async function exchangeNames(db: D1Database): Promise<Record<string, string>> {
   const rows = await q<{ key: string; value: string }>(
     db,
-    `SELECT key, value FROM curated WHERE kind='exchange_name' AND value IS NOT NULL`
+    `SELECT key, value FROM curated WHERE kind='exchange_name' AND value IS NOT NULL`,
   );
   const out: Record<string, string> = {};
   for (const r of rows) out[r.key] = r.value;
@@ -26,12 +31,12 @@ export function curatedList(db: D1Database, kind: string): Promise<CuratedRow[]>
 /** Upsert one curated row (admin). Overwrites value/note on conflict. */
 export function curatedUpsert(
   db: D1Database,
-  row: { kind: string; key: string; value?: string | null; note?: string | null }
+  row: { kind: string; key: string; value?: string | null; note?: string | null },
 ): Promise<D1Result> {
   return db
     .prepare(
       `INSERT INTO curated (kind, key, value, note) VALUES (?,?,?,?)
-       ON CONFLICT(kind, key) DO UPDATE SET value=excluded.value, note=excluded.note`
+       ON CONFLICT(kind, key) DO UPDATE SET value=excluded.value, note=excluded.note`,
     )
     .bind(row.kind, row.key, row.value ?? null, row.note ?? null)
     .run();

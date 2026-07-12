@@ -23,27 +23,36 @@ import { dispatch } from "./events/dispatch";
 import { counterpartyJson } from "./counterparty";
 import { hashToBytes } from "./compact-codec";
 
-const CHUNK = 1000;                 // events per API page
-const MAX_EVENTS_PER_RUN = 50_000;  // cap per invocation (backfill driven by repeated calls)
-const SNAPSHOT_WINDOW = 1000;       // blocks of balance snapshots to retain (reorg restore)
+const CHUNK = 1000; // events per API page
+const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
+const SNAPSHOT_WINDOW = 1000; // blocks of balance snapshots to retain (reorg restore)
 const LOCK_TTL = 120;
-const DB_BATCH = 90;                // D1 max ~100 stmts/batch
+const DB_BATCH = 90; // D1 max ~100 stmts/batch
 
 /* ---------- state + write helpers ---------- */
 
 async function getState(db: D1Database, k: string): Promise<string | null> {
-  return (await db.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value ?? null;
+  return (
+    (await db.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value ?? null
+  );
 }
 function setStateStmt(db: D1Database, k: string, v: string): D1PreparedStatement {
-  return db.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v);
+  return db
+    .prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+    .bind(k, v);
 }
 
 async function getLedgerState(db: D1Database, key: string): Promise<string | null> {
-  return (await db.prepare(`SELECT value FROM ledger_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null;
+  return (
+    (await db.prepare(`SELECT value FROM ledger_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null
+  );
 }
 
 async function setLedgerState(db: D1Database, key: string, value: string): Promise<void> {
-  await db.prepare(`INSERT INTO ledger_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(key, value).run();
+  await db
+    .prepare(`INSERT INTO ledger_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+    .bind(key, value)
+    .run();
 }
 
 // Flush statements in D1-sized batches. STRICT: a batch failure throws so the caller aborts the run
@@ -75,16 +84,26 @@ async function tipEventIndex(api: string): Promise<number> {
 }
 /** ascending chunk [from, from+CHUNK): request cursor=from+CHUNK-1 desc, reverse. */
 async function fetchAsc(api: string, from: number): Promise<Ev[]> {
-  const d = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`);
+  const d = await counterpartyJson<{ result?: Ev[] }>(
+    api,
+    `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`,
+  );
   const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from);
   rows.sort((a, b) => a.event_index - b.event_index);
   return rows;
 }
 async function blockHash(api: string, n: number): Promise<string | null> {
-  try { return (await counterpartyJson<{ result?: { block_hash?: string } }>(api, `/blocks/${n}`)).result?.block_hash ?? null; } catch { return null; }
+  try {
+    return (
+      (await counterpartyJson<{ result?: { block_hash?: string } }>(api, `/blocks/${n}`)).result?.block_hash ?? null
+    );
+  } catch {
+    return null;
+  }
 }
 async function currentBlock(api: string): Promise<number> {
-  const d = await counterpartyJson<{ result?: { block_index?: number } }>(api, `/blocks/last`); return d.result?.block_index ?? 0;
+  const d = await counterpartyJson<{ result?: { block_index?: number } }>(api, `/blocks/last`);
+  return d.result?.block_index ?? 0;
 }
 
 /* ---------- credit/debit ledger backfill (isolated, non-destructive) ---------- */
@@ -100,10 +119,14 @@ const LEDGER_KINDS = [
   { type: "DEBIT", table: "debits", cursorKey: "ledger_debit_cursor", doneKey: "ledger_debit_done" },
 ] as const;
 
-export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}): Promise<{ processed: number; written: number; credit_done: boolean; debit_done: boolean; caught_up: boolean }> {
+export async function backfillLedger(
+  env: Env,
+  opts: { maxEvents?: number } = {},
+): Promise<{ processed: number; written: number; credit_done: boolean; debit_done: boolean; caught_up: boolean }> {
   const api = env.COUNTERPARTY_API_BASE;
   const cap = Math.min(opts.maxEvents ?? 10000, MAX_EVENTS_PER_RUN);
-  let processed = 0, written = 0;
+  let processed = 0,
+    written = 0;
   const done: Record<string, boolean> = {};
   for (const k of LEDGER_KINDS) {
     done[k.type] = (await getLedgerState(env.LEDGER_DB, k.doneKey)) === "1";
@@ -113,7 +136,9 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
       // Per-page durability: a 429/throw here ends the call, but every prior page is already committed and its
       // cursor persisted, so the next call resumes cleanly with no lost work. This is what makes it 429-resilient.
       const d = await counterpartyJson<{ result?: Ev[]; next_cursor?: number | null }>(
-        api, `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`);
+        api,
+        `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`,
+      );
       const rows = d.result || [];
       const records: unknown[][] = [];
       const addresses = new Set<string>();
@@ -127,8 +152,15 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
           assets.add(p.asset);
           if (utxoAddress) addresses.add(utxoAddress);
           records.push([
-            ev.event_index, k.type === "CREDIT" ? 1 : 0, ev.block_index, hashToBytes(ev.tx_hash),
-            holder, p.asset, str(p.quantity) ?? "0", str(p.calling_function ?? null), utxoAddress,
+            ev.event_index,
+            k.type === "CREDIT" ? 1 : 0,
+            ev.block_index,
+            hashToBytes(ev.tx_hash),
+            holder,
+            p.asset,
+            str(p.quantity) ?? "0",
+            str(p.calling_function ?? null),
+            utxoAddress,
           ]);
           written++;
         }
@@ -136,34 +168,60 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
       }
       if (records.length) {
         const dictionary: Stmt[] = [
-          ...[...addresses].map((address): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address)),
-          ...[...assets].map((asset): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset)),
+          ...[...addresses].map(
+            (address): Stmt =>
+              (db) =>
+                db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address),
+          ),
+          ...[...assets].map(
+            (asset): Stmt =>
+              (db) =>
+                db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset),
+          ),
         ];
         const page: Stmt[] = [];
         // Ten rows per statement stays below D1's bind-variable ceiling and cuts event-write
         // statements by 90% compared with one INSERT per row.
         for (let i = 0; i < records.length; i += 10) {
           const group = records.slice(i, i + 10);
-          const values = group.map(() =>
-            `(?,?,?,?,(SELECT address_id FROM address_dictionary WHERE address=?),` +
-            `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,` +
-            `(SELECT address_id FROM address_dictionary WHERE address=?))`).join(",");
+          const values = group
+            .map(
+              () =>
+                `(?,?,?,?,(SELECT address_id FROM address_dictionary WHERE address=?),` +
+                `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,` +
+                `(SELECT address_id FROM address_dictionary WHERE address=?))`,
+            )
+            .join(",");
           const binds = group.flat();
-          page.push((db) => db.prepare(
-            `INSERT OR IGNORE INTO ledger_events
+          page.push((db) =>
+            db
+              .prepare(
+                `INSERT OR IGNORE INTO ledger_events
                (event_index,direction,block_index,tx_hash,address_id,asset_id,quantity,calling_function,utxo_address_id)
              VALUES ${values}`,
-          ).bind(...binds));
+              )
+              .bind(...binds),
+          );
         }
         await batchAll(env.LEDGER_DB, [...dictionary, ...page]);
       }
       const nc = d.next_cursor;
-      if (nc == null || rows.length === 0) { await setLedgerState(env.LEDGER_DB, k.doneKey, "1"); done[k.type] = true; break; }
+      if (nc == null || rows.length === 0) {
+        await setLedgerState(env.LEDGER_DB, k.doneKey, "1");
+        done[k.type] = true;
+        break;
+      }
       cursor = String(nc);
       await setLedgerState(env.LEDGER_DB, k.cursorKey, cursor);
     }
   }
-  return { processed, written, credit_done: !!done["CREDIT"], debit_done: !!done["DEBIT"], caught_up: !!done["CREDIT"] && !!done["DEBIT"] };
+  return {
+    processed,
+    written,
+    credit_done: !!done["CREDIT"],
+    debit_done: !!done["DEBIT"],
+    caught_up: !!done["CREDIT"] && !!done["DEBIT"],
+  };
 }
 
 /** Exact row-count gate before reads switch databases. Dual-write keeps both sides current. */
@@ -172,7 +230,8 @@ export async function verifyLedgerParity(env: Env): Promise<{ ok: boolean; legac
     `SELECT (SELECT COUNT(*) FROM credits)+(SELECT COUNT(*) FROM debits) n`,
   ).first<{ n: number }>();
   const compactRow = await env.LEDGER_DB.prepare(`SELECT COUNT(*) n FROM ledger_events`).first<{ n: number }>();
-  const legacy = Number(legacyRow?.n ?? -1), compact = Number(compactRow?.n ?? -2);
+  const legacy = Number(legacyRow?.n ?? -1),
+    compact = Number(compactRow?.n ?? -2);
   return { ok: legacy >= 0 && legacy === compact, legacy, compact };
 }
 
@@ -188,8 +247,11 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
     const ors = slice.map(() => `(holder=? AND asset=?)`).join(" OR ");
     const binds: unknown[] = [];
     for (const k of slice) binds.push(k.holder, k.asset);
-    const rows = await env.DB.prepare(`SELECT holder,asset,quantity,updated_event_index FROM balances WHERE ${ors}`).bind(...binds).all<{ holder: string; asset: string; quantity: string; updated_event_index: number | null }>();
-    for (const r of rows.results) current.set(`${r.holder} ${r.asset}`, { qty: bi(r.quantity), uei: r.updated_event_index ?? 0 });
+    const rows = await env.DB.prepare(`SELECT holder,asset,quantity,updated_event_index FROM balances WHERE ${ors}`)
+      .bind(...binds)
+      .all<{ holder: string; asset: string; quantity: string; updated_event_index: number | null }>();
+    for (const r of rows.results)
+      current.set(`${r.holder} ${r.asset}`, { qty: bi(r.quantity), uei: r.updated_event_index ?? 0 });
   }
   const stmts: Stmt[] = [];
   for (const k of keys) {
@@ -199,14 +261,22 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
     const next = (cur?.qty ?? 0n) + k.delta;
     const raw = next.toString();
     const norm = normalize(raw, k.divisible);
-    stmts.push((db) => db.prepare(
-      `INSERT INTO balances (holder,asset,holder_type,quantity,quantity_normalized,updated_block_index,updated_event_index,utxo_address) VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT(holder,asset) DO UPDATE SET quantity=excluded.quantity, quantity_normalized=excluded.quantity_normalized, updated_block_index=excluded.updated_block_index, updated_event_index=excluded.updated_event_index, utxo_address=COALESCE(excluded.utxo_address,balances.utxo_address)`
-    ).bind(k.holder, k.asset, k.htype, raw, norm, k.block, k.evIdx, k.utxoAddr ?? null));
+    stmts.push((db) =>
+      db
+        .prepare(
+          `INSERT INTO balances (holder,asset,holder_type,quantity,quantity_normalized,updated_block_index,updated_event_index,utxo_address) VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(holder,asset) DO UPDATE SET quantity=excluded.quantity, quantity_normalized=excluded.quantity_normalized, updated_block_index=excluded.updated_block_index, updated_event_index=excluded.updated_event_index, utxo_address=COALESCE(excluded.utxo_address,balances.utxo_address)`,
+        )
+        .bind(k.holder, k.asset, k.htype, raw, norm, k.block, k.evIdx, k.utxoAddr ?? null),
+    );
     if (snapshot) {
-      stmts.push((db) => db.prepare(
-        `INSERT OR REPLACE INTO balance_snapshots (holder,asset,block_index,quantity,updated_event_index) VALUES (?,?,?,?,?)`
-      ).bind(k.holder, k.asset, k.block, raw, k.evIdx));
+      stmts.push((db) =>
+        db
+          .prepare(
+            `INSERT OR REPLACE INTO balance_snapshots (holder,asset,block_index,quantity,updated_event_index) VALUES (?,?,?,?,?)`,
+          )
+          .bind(k.holder, k.asset, k.block, raw, k.evIdx),
+      );
     }
   }
   await batchAll(env.DB, stmts);
@@ -220,8 +290,10 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
 
   // advisory lock
   const lock = await env.DB.prepare(
-    `INSERT INTO indexer_state (key,value) VALUES ('sync_lock',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE CAST(value AS INTEGER) < ?`
-  ).bind(String(now), now - LOCK_TTL).run();
+    `INSERT INTO indexer_state (key,value) VALUES ('sync_lock',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE CAST(value AS INTEGER) < ?`,
+  )
+    .bind(String(now), now - LOCK_TTL)
+    .run();
   if (lock.meta.changes === 0) return { skipped: "locked" };
 
   try {
@@ -242,7 +314,9 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       //    be stale. Wipe the tables + reset both signal cursors so the full rebuild reproduces them pristine.
       //    (Guarded: created lazily by the signal passes, so they may not exist on a brand-new DB.)
       for (const t of ["asset_signals", "address_signals"])
-        await env.DB.prepare(`DELETE FROM ${t}`).run().catch(() => {});
+        await env.DB.prepare(`DELETE FROM ${t}`)
+          .run()
+          .catch(() => {});
       for (const k of ["signals_step", "signals_cascade_block"])
         await env.DB.prepare(`DELETE FROM indexer_state WHERE key=?`).bind(k).run();
     }
@@ -264,21 +338,35 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
     }
 
     const cap = opts.maxEvents ?? MAX_EVENTS_PER_RUN;
-    let applied = 0, lastBlock = parseInt((await getState(env.DB, "last_block_index")) || "0", 10);
+    let applied = 0,
+      lastBlock = parseInt((await getState(env.DB, "last_block_index")) || "0", 10);
     const followingWindow = tip - lastIdx < 5 * CHUNK; // near tip -> snapshot balances
 
     while (lastIdx < tip && applied < cap) {
       const evs = await fetchAsc(api, lastIdx + 1);
       if (!evs.length) break;
       const ctx: Ctx = {
-        stmts: [], ledgerStmts: [], ledgerAddresses: new Set(), ledgerAssets: new Set(),
-        balDelta: new Map(), maxBlock: lastBlock, supplyDirty: new Set(),
+        stmts: [],
+        ledgerStmts: [],
+        ledgerAddresses: new Set(),
+        ledgerAssets: new Set(),
+        balDelta: new Map(),
+        maxBlock: lastBlock,
+        supplyDirty: new Set(),
       };
       for (const ev of evs) dispatch(ev, ctx);
       await batchAll(env.DB, ctx.stmts);
       const ledgerDictionary: Stmt[] = [
-        ...[...ctx.ledgerAddresses].map((address): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address)),
-        ...[...ctx.ledgerAssets].map((asset): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset)),
+        ...[...ctx.ledgerAddresses].map(
+          (address): Stmt =>
+            (db) =>
+              db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address),
+        ),
+        ...[...ctx.ledgerAssets].map(
+          (asset): Stmt =>
+            (db) =>
+              db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset),
+        ),
       ];
       await batchAll(env.LEDGER_DB, [...ledgerDictionary, ...ctx.ledgerStmts]);
       await applyBalances(env, ctx, followingWindow);
@@ -317,34 +405,79 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
 async function deleteAbove(db: D1Database, table: string, block: number): Promise<void> {
   const BATCH = 5000;
   for (;;) {
-    const r = await db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE block_index > ? LIMIT ${BATCH})`).bind(block).run();
+    const r = await db
+      .prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE block_index > ? LIMIT ${BATCH})`)
+      .bind(block)
+      .run();
     if ((r.meta.changes ?? 0) < BATCH) break;
   }
 }
 
 /** cascade delete > rollbackTo across all tables; restore balances from snapshots <= rollbackTo. */
 async function rollback(env: Env, rollbackTo: number, api: string): Promise<void> {
-  const tables = ["transactions", "sends", "issuances", "destructions", "dispensers", "dispenses",
-    "dispenser_refills", "cancels", "orders", "order_matches", "btcpays", "sweeps", "burns", "dividends", "broadcasts",
-    "fairminters", "fairmints", "pools", "pool_matches", "pool_liquidity",
-    "bets", "bet_matches", "bet_match_resolutions", "rps", "rps_matches", "credits", "debits", "blocks"];
+  const tables = [
+    "transactions",
+    "sends",
+    "issuances",
+    "destructions",
+    "dispensers",
+    "dispenses",
+    "dispenser_refills",
+    "cancels",
+    "orders",
+    "order_matches",
+    "btcpays",
+    "sweeps",
+    "burns",
+    "dividends",
+    "broadcasts",
+    "fairminters",
+    "fairmints",
+    "pools",
+    "pool_matches",
+    "pool_liquidity",
+    "bets",
+    "bet_matches",
+    "bet_match_resolutions",
+    "rps",
+    "rps_matches",
+    "credits",
+    "debits",
+    "blocks",
+  ];
   for (const t of tables) await deleteAbove(env.DB, t, rollbackTo);
   // The compact provenance ledger is a second physical database, so it cannot participate in
   // the main D1 transaction/cascade. Delete its orphaned branch explicitly before replay; otherwise
   // INSERT OR IGNORE on a reused event_index would preserve stale pre-reorg data forever.
   await deleteAbove(env.LEDGER_DB, "ledger_events", rollbackTo);
   // reopen orders/dispensers closed after rollback
-  await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();
-  await env.DB.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index > ?`).bind(rollbackTo).run();
+  await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`)
+    .bind(rollbackTo)
+    .run();
+  await env.DB.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index > ?`)
+    .bind(rollbackTo)
+    .run();
   // restore balances: for any (holder,asset) snapshotted after rollback, set to nearest snapshot <= rollbackTo (else delete)
-  const changed = await env.DB.prepare(`SELECT DISTINCT holder,asset FROM balance_snapshots WHERE block_index > ?`).bind(rollbackTo).all<{ holder: string; asset: string }>();
+  const changed = await env.DB.prepare(`SELECT DISTINCT holder,asset FROM balance_snapshots WHERE block_index > ?`)
+    .bind(rollbackTo)
+    .all<{ holder: string; asset: string }>();
   const stmts: Stmt[] = [];
   for (const c of changed.results) {
-    const snap = await env.DB.prepare(`SELECT quantity, updated_event_index FROM balance_snapshots WHERE holder=? AND asset=? AND block_index <= ? ORDER BY block_index DESC LIMIT 1`)
-      .bind(c.holder, c.asset, rollbackTo).first<{ quantity: string; updated_event_index: number }>();
+    const snap = await env.DB.prepare(
+      `SELECT quantity, updated_event_index FROM balance_snapshots WHERE holder=? AND asset=? AND block_index <= ? ORDER BY block_index DESC LIMIT 1`,
+    )
+      .bind(c.holder, c.asset, rollbackTo)
+      .first<{ quantity: string; updated_event_index: number }>();
     // restore quantity AND the event-index high-water from the snapshot, so the post-reorg replay re-applies
     // events after this point instead of being skipped by the idempotency guard (the negative-balance bug).
-    if (snap) stmts.push((db) => db.prepare(`UPDATE balances SET quantity=?, updated_block_index=?, updated_event_index=? WHERE holder=? AND asset=?`).bind(snap.quantity, rollbackTo, snap.updated_event_index ?? 0, c.holder, c.asset));
+    if (snap)
+      stmts.push((db) =>
+        db
+          .prepare(
+            `UPDATE balances SET quantity=?, updated_block_index=?, updated_event_index=? WHERE holder=? AND asset=?`,
+          )
+          .bind(snap.quantity, rollbackTo, snap.updated_event_index ?? 0, c.holder, c.asset),
+      );
     else stmts.push((db) => db.prepare(`DELETE FROM balances WHERE holder=? AND asset=?`).bind(c.holder, c.asset));
   }
   stmts.push((db) => db.prepare(`DELETE FROM balance_snapshots WHERE block_index > ?`).bind(rollbackTo));
@@ -357,7 +490,10 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
     const d = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${probe}&limit=${CHUNK}&verbose=true`);
     const rows: Ev[] = d.result || [];
     const firstAfter = [...rows].reverse().find((e) => e.block_index > rollbackTo);
-    if (firstAfter) { await env.DB.batch([setStateStmt(env.DB, "last_event_index", String(firstAfter.event_index - 1))]); return; }
+    if (firstAfter) {
+      await env.DB.batch([setStateStmt(env.DB, "last_event_index", String(firstAfter.event_index - 1))]);
+      return;
+    }
     if (!rows.length) break;
     probe = rows[rows.length - 1].event_index - 1;
   }
@@ -368,6 +504,8 @@ async function pruneSnapshots(env: Env, cutoff: number): Promise<void> {
   await env.DB.prepare(
     `DELETE FROM balance_snapshots WHERE block_index < ? AND block_index NOT IN (
        SELECT MAX(block_index) FROM balance_snapshots bs2 WHERE bs2.holder=balance_snapshots.holder AND bs2.asset=balance_snapshots.asset AND bs2.block_index < ?
-     )`
-  ).bind(cutoff, cutoff).run();
+     )`,
+  )
+    .bind(cutoff, cutoff)
+    .run();
 }

@@ -11,7 +11,15 @@ import { collectionCandidates } from "../queries/candidates";
 export const candidates = router();
 
 candidates.get("/v2/collections/candidates", (c) =>
-  cached(c, "collection-candidates", { ttl: 1800, edge: 300 }, async (): Promise<Envelope<CollectionCandidatesPayload>> => {
-    const rows = await collectionCandidates(c.env.DB).catch(() => []);
-    return { result: { candidates: rows.map((r) => ({ ...r, samples: r.samples ? r.samples.split(",").slice(0, 6) : [] })) } };
-  }));
+  cached(
+    c,
+    "collection-candidates",
+    { ttl: 1800, edge: 300 },
+    async (): Promise<Envelope<CollectionCandidatesPayload>> => {
+      const rows = await collectionCandidates(c.env.DB).catch(() => []);
+      return {
+        result: { candidates: rows.map((r) => ({ ...r, samples: r.samples ? r.samples.split(",").slice(0, 6) : [] })) },
+      };
+    },
+  ),
+);

@@ -10,15 +10,15 @@
 export type Transform = "log" | "age" | "span" | "linear";
 
 export interface Factor {
-  key: string;        // signals-row column (or a __special handled by the scorer)
-  weight: number;     // tune me
+  key: string; // signals-row column (or a __special handled by the scorer)
+  weight: number; // tune me
   transform: Transform;
-  label: string;      // short key in the score breakdown / evidence
-  why: string;        // rationale (mirrored in docs/reputation.md)
+  label: string; // short key in the score breakdown / evidence
+  why: string; // rationale (mirrored in docs/reputation.md)
 }
 
 export const SCALARS = {
-  blockScale: 100000,        // block deltas divided by this in age/span terms
+  blockScale: 100000, // block deltas divided by this in age/span terms
   modernActiveBlock: 900000, // active at/after this block earns the flat modern bonus
   modernActiveBonus: 1.5,
   // ADDRESS AGE CAP (2026-07-06): winsorize the (decayed) age TRANSFORM at 4.0 (≈ blocks for ~7.6yr). Rationale:
@@ -31,9 +31,11 @@ export const SCALARS = {
   // floored — so an aged-but-inactive entity decays toward dormant instead of coasting. Gentle ("starts to
   // decay"): ~half credit after the half-life, never below the floor. Assets decay on time-since-last-trade
   // (recency_blocks); addresses on time-since-last-activity (tip-last_block).
-  assetDecayHalflife: 420480, assetDecayFloor: 0.6,  // ~8 years, gentle — assets are durable stores; a quiet
+  assetDecayHalflife: 420480,
+  assetDecayFloor: 0.6, // ~8 years, gentle — assets are durable stores; a quiet
   //                                                     year shouldn't knock a real grail (RAREPEPE) off Bluechip
-  addrDecayHalflife: 157680,  addrDecayFloor: 0.2,   // ~3 years — people go inactive; idle OGs should decay more
+  addrDecayHalflife: 157680,
+  addrDecayFloor: 0.2, // ~3 years — people go inactive; idle OGs should decay more
   // CIRCULATING-SCARCITY (2026-06-28): __circulating_scarcity = offset − log10(circulating supply), where
   // circulating = supply × (100 − burned_pct)/100. Rewards genuine scarcity, penalizes printed supply. Uses
   // CIRCULATING not issued — NINJASUIT issued 21M but burned ~100% → circ ~198 (correctly scarce); validated
@@ -44,18 +46,30 @@ export const SCALARS = {
 /* ---------- ADDRESS reputation ---------- */
 // raw = Σ weight·transform(signal) (+ modern bonus). __age/__span use first_block/last_block.
 export const ADDRESS_FACTORS: Factor[] = [
-  { key: "__age",           weight: 2.0, transform: "age",    label: "age",       why: "longevity on-chain — transform CAPPED at SCALARS.addrAgeCap ('was early' ≠ 'is reputable'; H2 lab 2026-06-27)" },
-  { key: "__span",          weight: 1.0, transform: "span",   label: "span",      why: "active lifespan, not just early arrival" },
-  { key: "survived_assets", weight: 2.0, transform: "log",    label: "creator",   why: "assets that found an audience (>=10 holders)" },
-  { key: "dividends",       weight: 1.0, transform: "log",    label: "dividends", why: "pro-holder payouts" },
-  { key: "locked_assets",   weight: 1.0, transform: "log",    label: "locked",    why: "locked supply (cannot rug)" },
-  { key: "btc_fees",        weight: 1.2, transform: "log",    label: "btc_fees",  why: "miner fees paid — skin in the game" },
-  { key: "btc_spent",       weight: 1.0, transform: "log",    label: "btc_spent", why: "BTC spent collecting" },
-  { key: "dispense_btc",    weight: 0.8, transform: "log",    label: "merchant",  why: "BTC earned dispensing" },
-  { key: "assets_held",     weight: 0.8, transform: "log",    label: "held",      why: "holdings breadth" },
-  { key: "xcp",             weight: 1.0, transform: "log",    label: "xcp",       why: "XCP protocol stake" },
-  { key: "dex_trades",      weight: 1.0, transform: "log",    label: "dex",       why: "DEX order-match participation" },
-  { key: "stamps_created",  weight: 0.8, transform: "log",    label: "stamps",    why: "Bitcoin Stamp creation" },
+  {
+    key: "__age",
+    weight: 2.0,
+    transform: "age",
+    label: "age",
+    why: "longevity on-chain — transform CAPPED at SCALARS.addrAgeCap ('was early' ≠ 'is reputable'; H2 lab 2026-06-27)",
+  },
+  { key: "__span", weight: 1.0, transform: "span", label: "span", why: "active lifespan, not just early arrival" },
+  {
+    key: "survived_assets",
+    weight: 2.0,
+    transform: "log",
+    label: "creator",
+    why: "assets that found an audience (>=10 holders)",
+  },
+  { key: "dividends", weight: 1.0, transform: "log", label: "dividends", why: "pro-holder payouts" },
+  { key: "locked_assets", weight: 1.0, transform: "log", label: "locked", why: "locked supply (cannot rug)" },
+  { key: "btc_fees", weight: 1.2, transform: "log", label: "btc_fees", why: "miner fees paid — skin in the game" },
+  { key: "btc_spent", weight: 1.0, transform: "log", label: "btc_spent", why: "BTC spent collecting" },
+  { key: "dispense_btc", weight: 0.8, transform: "log", label: "merchant", why: "BTC earned dispensing" },
+  { key: "assets_held", weight: 0.8, transform: "log", label: "held", why: "holdings breadth" },
+  { key: "xcp", weight: 1.0, transform: "log", label: "xcp", why: "XCP protocol stake" },
+  { key: "dex_trades", weight: 1.0, transform: "log", label: "dex", why: "DEX order-match participation" },
+  { key: "stamps_created", weight: 0.8, transform: "log", label: "stamps", why: "Bitcoin Stamp creation" },
   // PENALTY (2026-07-07): Emblem vault SCAMS. This BTC address cracked a vault (sent the wrapped card back
   // out) and an Emblem sale then happened AFTER the crack — a buyer paid for an empty shell (signals.ts
   // addr_vault_scams; counts DISTINCT such vaults). Cracking to redeem your OWN card is fine (the signal
@@ -64,7 +78,13 @@ export const ADDRESS_FACTORS: Factor[] = [
   // p90 score). RECALIBRATE once the vault_scams distribution is read over the population (few hundred crackers,
   // so ADDRESS_PCT anchors are unaffected). CAVEAT: a knowingly-disclosed "spent vault" collectible sale looks
   // identical on-chain — kept moderate for that reason. Never-funded scams have NO BTC actor, so aren't here.
-  { key: "vault_scams",     weight: -2.0, transform: "log",   label: "vault_scam", why: "penalty: cracked a vault then an Emblem sale followed = sold an empty shell (bad actor)" },
+  {
+    key: "vault_scams",
+    weight: -2.0,
+    transform: "log",
+    label: "vault_scam",
+    why: "penalty: cracked a vault then an Emblem sale followed = sold an empty shell (bad actor)",
+  },
   // PENALTY (2026-07-08): Emblem empty-SHELL scams attributed to this BTC identity via the creator bridge
   // (signals/emblem-scam.ts): they minted vaults NAMING a real Counterparty card that hold nothing, and are
   // the consistent BTC funder of their own real vaults. COUNT-scaled (log), not share-gated: a dedicated
@@ -72,13 +92,25 @@ export const ADDRESS_FACTORS: Factor[] = [
   // nudge their real-vault/creator positives outweigh — so nobody is excluded by fiat, magnitude discriminates.
   // Collision-filtered (is_scam_shell requires the claimed card be wrapped by a real vault) so Ordinals/name
   // collisions (BITCOIN/TWELVEFOLD/…) don't count. RECALIBRATE weight once the population effect is read.
-  { key: "shell_scams",     weight: -1.5, transform: "log",   label: "shell_scam", why: "penalty: minted empty Emblem shells claiming a real card = scammed buyers (bridged to this BTC identity)" },
+  {
+    key: "shell_scams",
+    weight: -1.5,
+    transform: "log",
+    label: "shell_scam",
+    why: "penalty: minted empty Emblem shells claiming a real card = scammed buyers (bridged to this BTC identity)",
+  },
   // PENALTY (2026-07-08): Emblem high-supply single-unit DUMPS. This BTC address funded single-unit vaults of
   // VERY-high-supply cards (supply ≥1M — PEPECASH's unit is worth $0.008, GUARDSPEPE's $0.0004) that then
   // sold on Emblem for ~$40 as "collectibles" — a thousands-to-∞× markup on a fungible fraction. Predatory.
   // Count-scaled: the repeat factories (300 dumps) are crushed (ln(301)·−1.5 ≈ −8.6); a one-off memento sale
   // is ln(2)·−1.5 ≈ −1.0. Direct attribution (the funder deposited the unit to dump it). signals/emblem-scam.ts.
-  { key: "dump_scams",      weight: -1.5, transform: "log",   label: "dump_scam",  why: "penalty: dumped single fungible units of very-high-supply cards as $40 Emblem NFTs (thousands-x markup)" },
+  {
+    key: "dump_scams",
+    weight: -1.5,
+    transform: "log",
+    label: "dump_scam",
+    why: "penalty: dumped single fungible units of very-high-supply cards as $40 Emblem NFTs (thousands-x markup)",
+  },
   // NOTE: the never-computed rep_score/pagerank factor was removed 2026-07-06 (weight 0.0 since inception, so it
   // never contributed). The address_signals.rep_score column is kept (harmless) in case personalized PageRank returns.
 ];
@@ -104,30 +136,138 @@ export const ASSET_FACTORS: Factor[] = [
   // single-rail maxima each saw only their own currency). The old max_dispense_btc (4.0) was also GAMEABLE —
   // a whale self-dispensing at a high ask inflated it with no real buyer (reputation.md Watch). It's replaced by
   // the self-dispense-guarded max_dispense_btc_clean and demoted to a corroborating signal.
-  { key: "__realized_usd",      weight: 4.5, transform: "log",    label: "value_usd",   why: "largest single sale's USD value across ALL venues (dex|dispense|emblem), GATED by distinct buyers B/(B+3) where B = distinct_traders + distinct_dispense_buyers — the DOMINANT realized-value signal (Phase B). The gate mirrors __durability's trader gate: one huge sale to 1-2 buyers (PEPEMILLION: $896k, 2 buyers) is heavily damped; broad demand passes at full strength. Can't be faked without real money changing hands across many real counterparties." },
-  { key: "max_dispense_btc_clean", weight: 0.5, transform: "log", label: "value_btc",   why: "largest BTC realized in a NON-self dispense (source<>destination) — the self-dispense-GUARDED replacement for max_dispense_btc (closes the whale-self-dispense hole). DEMOTED 4.0→0.5: max_realized_usd now leads." },
-  { key: "max_trade_xcp",       weight: 0.5, transform: "log",    label: "value_xcp",   why: "largest XCP realized in a DEX trade — DEMOTED 1.8→0.5 to a corroborating rail now that USD realized value leads." },
-  { key: "dispense_btc",        weight: 0.5, transform: "log",    label: "commerce",    why: "total real BTC commerce — DEMOTED 1.0→0.5: sustained money in, but secondary to realized peak value." },
-  { key: "distinct_dispensers", weight: 1.0, transform: "log",    label: "dispensers",  why: "distinct dispenser operators — breadth of who sold it for BTC (3.98x)" },
-  { key: "distinct_dispense_buyers", weight: 0.8, transform: "log", label: "buyers",    why: "distinct NON-self dispense buyers (source<>destination) — real demand breadth, self-dispense-guarded (Phase B)." },
-  { key: "emblem_trades",       weight: 0.4, transform: "log",    label: "emblem",      why: "count of Emblem-vault (ETH-side) sales attributed to the asset — cross-chain demand invisible to the Counterparty rails (Phase B)." },
+  {
+    key: "__realized_usd",
+    weight: 4.5,
+    transform: "log",
+    label: "value_usd",
+    why: "largest single sale's USD value across ALL venues (dex|dispense|emblem), GATED by distinct buyers B/(B+3) where B = distinct_traders + distinct_dispense_buyers — the DOMINANT realized-value signal (Phase B). The gate mirrors __durability's trader gate: one huge sale to 1-2 buyers (PEPEMILLION: $896k, 2 buyers) is heavily damped; broad demand passes at full strength. Can't be faked without real money changing hands across many real counterparties.",
+  },
+  {
+    key: "max_dispense_btc_clean",
+    weight: 0.5,
+    transform: "log",
+    label: "value_btc",
+    why: "largest BTC realized in a NON-self dispense (source<>destination) — the self-dispense-GUARDED replacement for max_dispense_btc (closes the whale-self-dispense hole). DEMOTED 4.0→0.5: max_realized_usd now leads.",
+  },
+  {
+    key: "max_trade_xcp",
+    weight: 0.5,
+    transform: "log",
+    label: "value_xcp",
+    why: "largest XCP realized in a DEX trade — DEMOTED 1.8→0.5 to a corroborating rail now that USD realized value leads.",
+  },
+  {
+    key: "dispense_btc",
+    weight: 0.5,
+    transform: "log",
+    label: "commerce",
+    why: "total real BTC commerce — DEMOTED 1.0→0.5: sustained money in, but secondary to realized peak value.",
+  },
+  {
+    key: "distinct_dispensers",
+    weight: 1.0,
+    transform: "log",
+    label: "dispensers",
+    why: "distinct dispenser operators — breadth of who sold it for BTC (3.98x)",
+  },
+  {
+    key: "distinct_dispense_buyers",
+    weight: 0.8,
+    transform: "log",
+    label: "buyers",
+    why: "distinct NON-self dispense buyers (source<>destination) — real demand breadth, self-dispense-guarded (Phase B).",
+  },
+  {
+    key: "emblem_trades",
+    weight: 0.4,
+    transform: "log",
+    label: "emblem",
+    why: "count of Emblem-vault (ETH-side) sales attributed to the asset — cross-chain demand invisible to the Counterparty rails (Phase B).",
+  },
   // -- demand depth (hard to fake; core quality, but pumpable so trimmed from v1) --
-  { key: "__trades_per_holder", weight: 1.5, transform: "log",    label: "demand_depth", why: "trades ÷ holders — demand depth airdrops can't fake (3.8x)" },
-  { key: "__durability",        weight: 1.0, transform: "span",   label: "durability",  why: "traded over a long span (20.9x lift) — TRIMMED from 2.0: sustained pumping games a long active span, which is what floated the scam pepes" },
-  { key: "distinct_traders",    weight: 0.9, transform: "log",    label: "traders",     why: "distinct market participants (10.3x) — TRIMMED from 1.5: scam pepes had many DEX speculators with no realized value" },
+  {
+    key: "__trades_per_holder",
+    weight: 1.5,
+    transform: "log",
+    label: "demand_depth",
+    why: "trades ÷ holders — demand depth airdrops can't fake (3.8x)",
+  },
+  {
+    key: "__durability",
+    weight: 1.0,
+    transform: "span",
+    label: "durability",
+    why: "traded over a long span (20.9x lift) — TRIMMED from 2.0: sustained pumping games a long active span, which is what floated the scam pepes",
+  },
+  {
+    key: "distinct_traders",
+    weight: 0.9,
+    transform: "log",
+    label: "traders",
+    why: "distinct market participants (10.3x) — TRIMMED from 1.5: scam pepes had many DEX speculators with no realized value",
+  },
   // -- scarcity --
-  { key: "burned_pct",          weight: 0.8, transform: "log",    label: "scarcity",    why: "% of supply burned — deflation, independent of popularity (6.68x)" },
-  { key: "__circulating_scarcity", weight: 1.0, transform: "linear", label: "scarce_supply", why: "offset−log10(circulating supply) — rewards genuine scarcity, penalizes printed supply. CIRCULATING (burn-adjusted): NINJASUIT 21M issued/~100% burned→circ 198 stays scarce; demotes million-supply pumped pepes. Validated 2026-06-28." },
+  {
+    key: "burned_pct",
+    weight: 0.8,
+    transform: "log",
+    label: "scarcity",
+    why: "% of supply burned — deflation, independent of popularity (6.68x)",
+  },
+  {
+    key: "__circulating_scarcity",
+    weight: 1.0,
+    transform: "linear",
+    label: "scarce_supply",
+    why: "offset−log10(circulating supply) — rewards genuine scarcity, penalizes printed supply. CIRCULATING (burn-adjusted): NINJASUIT 21M issued/~100% burned→circ 198 stays scarce; demotes million-supply pumped pepes. Validated 2026-06-28.",
+  },
   // -- survivorship + recency (trimmed: 'still being pumped now' isn't quality) --
-  { key: "__asset_age",         weight: 0.7, transform: "span",   label: "age",         why: "older = survived (1.48x); precomputed tip−first issuance. DECAYS if the asset has gone quiet." },
-  { key: "recent_events",       weight: 0.3, transform: "log",    label: "current",     why: "trailing-12mo trades+dispenses — TRIMMED from 1.2: high 'current' was the scam pepes being actively pumped, not durable quality" },
+  {
+    key: "__asset_age",
+    weight: 0.7,
+    transform: "span",
+    label: "age",
+    why: "older = survived (1.48x); precomputed tip−first issuance. DECAYS if the asset has gone quiet.",
+  },
+  {
+    key: "recent_events",
+    weight: 0.3,
+    transform: "log",
+    label: "current",
+    why: "trailing-12mo trades+dispenses — TRIMMED from 1.2: high 'current' was the scam pepes being actively pumped, not durable quality",
+  },
   // -- popularity family (cheap to inflate → light) --
-  { key: "holders",             weight: 0.4, transform: "log",    label: "holders",     why: "distribution breadth — TRIMMED: cheapest to inflate (dispense to sybils), and the pumps spread supply wide" },
-  { key: "trades",              weight: 0.2, transform: "log",    label: "trades",      why: "raw volume (demoted — distinct_traders is the wash-resistant version)" },
+  {
+    key: "holders",
+    weight: 0.4,
+    transform: "log",
+    label: "holders",
+    why: "distribution breadth — TRIMMED: cheapest to inflate (dispense to sybils), and the pumps spread supply wide",
+  },
+  {
+    key: "trades",
+    weight: 0.2,
+    transform: "log",
+    label: "trades",
+    why: "raw volume (demoted — distinct_traders is the wash-resistant version)",
+  },
   // -- community axis (kept on theory) --
-  { key: "holder_breadth",      weight: 0.6, transform: "log",    label: "breadth",     why: "depth of its holders (community axis) — trimmed with the popularity family" },
-  { key: "avg_holder_dex",      weight: 0.8, transform: "log",    label: "holder_qual", why: "held by active DEX traders — holder sophistication (2.23x)" },
-  { key: "pct_creator_holders", weight: 0.5, transform: "linear", label: "creators",    why: "held by proven creators" },
+  {
+    key: "holder_breadth",
+    weight: 0.6,
+    transform: "log",
+    label: "breadth",
+    why: "depth of its holders (community axis) — trimmed with the popularity family",
+  },
+  {
+    key: "avg_holder_dex",
+    weight: 0.8,
+    transform: "log",
+    label: "holder_qual",
+    why: "held by active DEX traders — holder sophistication (2.23x)",
+  },
+  { key: "pct_creator_holders", weight: 0.5, transform: "linear", label: "creators", why: "held by proven creators" },
 ];
 export const ASSET_PENALTY = { lowQuality: -6.0 }; // wash/bridge/curated junk
 
@@ -139,13 +279,55 @@ export const ASSET_PENALTY = { lowQuality: -6.0 }; // wash/bridge/curated junk
 // isolated from the market family. NOT gameable the way volume is: you can't fake being held by proven creators
 // and active traders across a scarce supply. Radar surface ranks by Conviction with realized value held low. */
 export const CONVICTION_FACTORS: Factor[] = [
-  { key: "avg_holder_dex",        weight: 2.0, transform: "log",    label: "sophistication", why: "held by active DEX traders — a sophisticated holder base, not passive airdrop wallets" },
-  { key: "pct_creator_holders",   weight: 1.5, transform: "linear", label: "creator_held",   why: "held by proven creators — peer validation from people who make things" },
-  { key: "__circulating_scarcity", weight: 1.5, transform: "linear", label: "scarcity",      why: "genuinely scarce circulating supply (burn-adjusted) — a small real float" },
-  { key: "holder_breadth",        weight: 1.0, transform: "log",    label: "holder_depth",   why: "held by DEEP collectors (avg holdings-breadth of its holders) — serious collections, not one-offs" },
-  { key: "__graph_trust",         weight: 1.0, transform: "log",    label: "network",        why: "sits in the trusted collector/creator network (graph trust) — provenance, not stats" },
-  { key: "holders",               weight: 0.5, transform: "log",    label: "distribution",   why: "distributed to real holders (breadth), not a single wallet" },
-  { key: "top1_pct",              weight: -0.6, transform: "linear", label: "concentration",  why: "PENALTY: dominated by one whale = not broad conviction, one holder can dump it" },
+  {
+    key: "avg_holder_dex",
+    weight: 2.0,
+    transform: "log",
+    label: "sophistication",
+    why: "held by active DEX traders — a sophisticated holder base, not passive airdrop wallets",
+  },
+  {
+    key: "pct_creator_holders",
+    weight: 1.5,
+    transform: "linear",
+    label: "creator_held",
+    why: "held by proven creators — peer validation from people who make things",
+  },
+  {
+    key: "__circulating_scarcity",
+    weight: 1.5,
+    transform: "linear",
+    label: "scarcity",
+    why: "genuinely scarce circulating supply (burn-adjusted) — a small real float",
+  },
+  {
+    key: "holder_breadth",
+    weight: 1.0,
+    transform: "log",
+    label: "holder_depth",
+    why: "held by DEEP collectors (avg holdings-breadth of its holders) — serious collections, not one-offs",
+  },
+  {
+    key: "__graph_trust",
+    weight: 1.0,
+    transform: "log",
+    label: "network",
+    why: "sits in the trusted collector/creator network (graph trust) — provenance, not stats",
+  },
+  {
+    key: "holders",
+    weight: 0.5,
+    transform: "log",
+    label: "distribution",
+    why: "distributed to real holders (breadth), not a single wallet",
+  },
+  {
+    key: "top1_pct",
+    weight: -0.6,
+    transform: "linear",
+    label: "concentration",
+    why: "PENALTY: dominated by one whale = not broad conviction, one holder can dump it",
+  },
 ];
 // raw→0-100 anchors. Calibrated over 155k scored assets (low_quality=0, holders≥1): median 5.0, p90 17.6,
 // p99 25.6, max 31.2. A big cluster sits at ~5 (scarcity-only baseline for held-but-quiet cards) — floor 2.
@@ -172,7 +354,7 @@ export const ADDRESS_PCT = { floor: 0.5, p50: 2.88, p90: 5.22, p99: 16.33, max: 
 // market assets at tip 956,949: p50=20.19, p90=45.86, p99=68.73, max=105.48, min=-10.34. The gate pulls the
 // mid-distribution DOWN vs the ungated read (thin-buyer assets lose most of the USD term) while the broad-demand
 // top is barely touched. floor 5 (a low, positive score-0 anchor; secondary to the tier).
-export const ASSET_PCT   = { floor: 5, p50: 20.19, p90: 45.86, p99: 68.73, max: 105.48 };
+export const ASSET_PCT = { floor: 5, p50: 20.19, p90: 45.86, p99: 68.73, max: 105.48 };
 
 // Asset quality TIERS — the primary display (the 0-100 score is a heuristic, so we lead with a coarse, honest
 // tier and keep the number as detail). Tiers cut on RAW (= exact percentiles of the market population). Each
@@ -191,10 +373,18 @@ export const ASSET_PCT   = { floor: 5, p50: 20.19, p90: 45.86, p99: 68.73, max: 
 // tiers (OG/Established/Active/Casual) so a tier word never means two things: Bluechip · Premium · Notable ·
 // Speculative. (Was Established/Active — renamed to Premium/Notable to end the collision with addresses.)
 export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "Bluechip",    minRaw: 92,     meaning: "top ~0.03% of assets with a market — elite: broad real demand + realized value + durability" },
-  { tier: "Premium",     minRaw: 45.86,  meaning: "top ~10% — sustained real trading and distribution" },
-  { tier: "Notable",     minRaw: 20.19,  meaning: "upper half of assets that have a real market" },
-  { tier: "Speculative", minRaw: -1e9,   meaning: "has a market but thin / early — or flagged low-quality (hard-capped here)" },
+  {
+    tier: "Bluechip",
+    minRaw: 92,
+    meaning: "top ~0.03% of assets with a market — elite: broad real demand + realized value + durability",
+  },
+  { tier: "Premium", minRaw: 45.86, meaning: "top ~10% — sustained real trading and distribution" },
+  { tier: "Notable", minRaw: 20.19, meaning: "upper half of assets that have a real market" },
+  {
+    tier: "Speculative",
+    minRaw: -1e9,
+    meaning: "has a market but thin / early — or flagged low-quality (hard-capped here)",
+  },
 ];
 
 // Address reputation TIERS — primary display, parallel to the asset tiers. Cut on RAW (= exact percentiles of
@@ -204,15 +394,17 @@ export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = 
 // to ~0 — every known address is now scored). The pool grew at the low end, so the top-1/10/50% lines
 // dropped: histogram percentiles over the live distribution put them at ~15 / ~5 / ~2.5.
 export const ADDRESS_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
-  { tier: "OG",          minRaw: 15.0, meaning: "top ~1% of real users — deep, long, STILL-active history" },
-  { tier: "Established", minRaw: 5.0,  meaning: "top ~10% — a credible, sustained Counterparty history" },
-  { tier: "Active",      minRaw: 2.5,  meaning: "upper half of real users — an ongoing presence" },
-  { tier: "Casual",      minRaw: -1e9, meaning: "a real user with a light footprint" },
+  { tier: "OG", minRaw: 15.0, meaning: "top ~1% of real users — deep, long, STILL-active history" },
+  { tier: "Established", minRaw: 5.0, meaning: "top ~10% — a credible, sustained Counterparty history" },
+  { tier: "Active", minRaw: 2.5, meaning: "upper half of real users — an ongoing presence" },
+  { tier: "Casual", minRaw: -1e9, meaning: "a real user with a light footprint" },
 ];
 // Plain-language meaning for every tier + non-ranked state, surfaced in the API so no label is unexplained.
 export const ADDRESS_TIER_MEANING: Record<string, string> = {
-  OG: ADDRESS_TIERS[0].meaning, Established: ADDRESS_TIERS[1].meaning,
-  Active: ADDRESS_TIERS[2].meaning, Casual: ADDRESS_TIERS[3].meaning,
+  OG: ADDRESS_TIERS[0].meaning,
+  Established: ADDRESS_TIERS[1].meaning,
+  Active: ADDRESS_TIERS[2].meaning,
+  Casual: ADDRESS_TIERS[3].meaning,
   Exchange: "exchange / service infrastructure — not a user score",
   "Exchange deposit": "an exchange deposit / forwarding address — not a user",
   Vault: "an Emblem Vault custody address — a container, not a person",
@@ -223,8 +415,14 @@ export const ADDRESS_TIER_MEANING: Record<string, string> = {
 };
 export const OG = { minAgeBlocks: 43800, modernBlock: 850000 };
 export const TAG = {
-  creatorSurvived: 20, collectorHeld: 100, merchantDispenses: 5, whaleXcp: 50000, whaleHeld: 500,
-  burnerAssets: 3, stampCreator: 5, stampCollector: 20,
+  creatorSurvived: 20,
+  collectorHeld: 100,
+  merchantDispenses: 5,
+  whaleXcp: 50000,
+  whaleHeld: 500,
+  burnerAssets: 3,
+  stampCreator: 5,
+  stampCollector: 20,
 };
 
 /* ---------- ADDRESS PERSONA (2026-07-10) — the tuning surface for reputation/persona.ts ----------
@@ -235,10 +433,13 @@ export const TAG = {
 // trader>collector (creating is the most role-defining act). Floors are aligned with the archetype tags so the
 // headline persona never contradicts the tag chips. V1 starting values — face-check on prod and retune. */
 export const PERSONA = {
-  creatorFloor: 1,    // issued/created ≥1 thing at all (creation is rare → a low bar still means "a creator")
-  merchantFloor: 5,   // = TAG.merchantDispenses — runs at least a few dispenses
-  traderFloor: 10,    // ≥10 DEX trades — an actual trader, not one incidental swap
+  creatorFloor: 1, // issued/created ≥1 thing at all (creation is rare → a low bar still means "a creator")
+  merchantFloor: 5, // = TAG.merchantDispenses — runs at least a few dispenses
+  traderFloor: 10, // ≥10 DEX trades — an actual trader, not one incidental swap
   collectorFloor: 10, // ≥10 distinct assets held — a real collection, not a stray airdrop
-  creatorCap: 20, merchantCap: 50, traderCap: 100, collectorCap: 150, // intensity saturates here
+  creatorCap: 20,
+  merchantCap: 50,
+  traderCap: 100,
+  collectorCap: 150, // intensity saturates here
   secondaryRatio: 0.6, // a runner-up role must be ≥60% as intense as the primary to show as a secondary
 };

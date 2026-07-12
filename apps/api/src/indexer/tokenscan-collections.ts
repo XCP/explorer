@@ -13,16 +13,25 @@ import { canonicalCollection, EXCLUDED_COLLECTIONS } from "./collections";
 
 const NFTS_URL = "https://tokenscan.io/js/nfts.js";
 
-interface TsCollection { name?: string; site?: string; cards?: string[] }
+interface TsCollection {
+  name?: string;
+  site?: string;
+  cards?: string[];
+}
 
-const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const slugify = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 const assetOf = (card: string) => card.replace(/\.[^.]+$/, "").trim(); // "RAREPIGEON.png" -> "RAREPIGEON"
 
 async function fetchNftData(): Promise<TsCollection[]> {
   const r = await fetch(NFTS_URL, { headers: { "user-agent": "xcp.io-indexer" }, signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error(`tokenscan nfts.js ${r.status}`);
   const t = await r.text();
-  const a = t.indexOf("["), b = t.lastIndexOf("]"); // the file is `NFT_DATA = [ … ]`; slice the array literal out
+  const a = t.indexOf("["),
+    b = t.lastIndexOf("]"); // the file is `NFT_DATA = [ … ]`; slice the array literal out
   if (a < 0 || b < 0 || b < a) throw new Error("NFT_DATA array not found");
   return JSON.parse(t.slice(a, b + 1)) as TsCollection[];
 }
@@ -30,11 +39,16 @@ async function fetchNftData(): Promise<TsCollection[]> {
 /** Refresh the tokenscan collection tags (asset → project, with {collection, site} meta). */
 export async function crawlTokenscanCollections(env: Env): Promise<Record<string, unknown>> {
   let data: TsCollection[];
-  try { data = await fetchNftData(); } catch (e) { return { skipped: `fetch:${String(e).slice(0, 60)}` }; }
+  try {
+    data = await fetchNftData();
+  } catch (e) {
+    return { skipped: `fetch:${String(e).slice(0, 60)}` };
+  }
   if (!data.length) return { skipped: "empty(kept prior)" }; // transient-safe: never wipe on a blip
 
   await env.DB.prepare(`DELETE FROM tags WHERE source='tokenscan'`).run();
-  let collections = 0, tagged = 0;
+  let collections = 0,
+    tagged = 0;
   for (const c of data) {
     if (!c.name || !c.cards?.length) continue;
     const tag = canonicalCollection(slugify(c.name)); // collapse known dupes onto the pepe.wtf/canonical slug
@@ -43,10 +57,18 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
     const assets = [...new Set(c.cards.map(assetOf).filter(Boolean))];
     for (let i = 0; i < assets.length; i += 100) {
       // OR IGNORE so a pre-existing collection tag from another source (same asset+slug) is left as-is.
-      await env.DB.batch(assets.slice(i, i + 100).map((n) =>
-        env.DB.prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'tokenscan',?)`).bind(n, tag, meta)));
+      await env.DB.batch(
+        assets
+          .slice(i, i + 100)
+          .map((n) =>
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'tokenscan',?)`,
+            ).bind(n, tag, meta),
+          ),
+      );
     }
-    collections++; tagged += assets.length;
+    collections++;
+    tagged += assets.length;
   }
   return { collections, tagged };
 }

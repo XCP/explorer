@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { AddressSummary } from "@xcp/shared/addresses";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
-import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
+import {
+  SectionHeader,
+  SectionIdentity,
+  SectionStats,
+  SectionChip,
+  type SectionStat,
+} from "@/components/section-header";
 import { CopyButton } from "@/components/copy-button";
 import { GraphTrustChip } from "@/components/graph-trust-chip";
 import { AddressTabs } from "@/features/addresses/components/address-tabs";
@@ -26,7 +32,9 @@ function AddressGradient({ address }: { address: string }) {
     <div
       aria-hidden
       className="size-[52px] shrink-0 rounded-lg border border-zinc-800"
-      style={{ background: `linear-gradient(135deg, hsl(${hues[0]} 55% 38%) 0%, hsl(${hues[1]} 50% 30%) 60%, hsl(${hues[2]} 45% 24%) 100%)` }}
+      style={{
+        background: `linear-gradient(135deg, hsl(${hues[0]} 55% 38%) 0%, hsl(${hues[1]} 50% 30%) 60%, hsl(${hues[2]} 45% 24%) 100%)`,
+      }}
     />
   );
 }
@@ -35,7 +43,9 @@ function AddressGradient({ address }: { address: string }) {
 // so we tolerate a null result and only translate a real 404 into notFound().
 async function loadSummary(address: string): Promise<AddressSummary | null> {
   try {
-    const env = await getJson<Envelope<AddressSummary | null>>(`/v2/addresses/${encodeURIComponent(address)}/summary`, { revalidate: 30 });
+    const env = await getJson<Envelope<AddressSummary | null>>(`/v2/addresses/${encodeURIComponent(address)}/summary`, {
+      revalidate: 30,
+    });
     return env.result;
   } catch (e) {
     if (e instanceof NotFoundError) return null;
@@ -71,15 +81,19 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
         compact
         visual={<AddressGradient address={address} />}
         name={address}
-        chips={<>
-          <GraphTrustChip kind="addresses" id={address} />
-          {address === BURN_ADDRESS && <Chip>Burn address</Chip>}
-          {(s?.issued ?? 0) > 0 && <Chip>Issuer · {commas(s?.issued)} assets</Chip>}
-          {(s?.dispensers ?? 0) > 0 && <Chip>Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>}
-          {(s?.open_orders ?? 0) > 0 && <Chip>Active trader · {s?.open_orders} open</Chip>}
-          {xcp >= 50000 && <Chip>XCP whale</Chip>}
-          {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip>Holder</Chip>}
-        </>}
+        chips={
+          <>
+            <GraphTrustChip kind="addresses" id={address} />
+            {address === BURN_ADDRESS && <Chip>Burn address</Chip>}
+            {(s?.issued ?? 0) > 0 && <Chip>Issuer · {commas(s?.issued)} assets</Chip>}
+            {(s?.dispensers ?? 0) > 0 && (
+              <Chip>Dispenser operator{(s?.open_dispensers ?? 0) > 0 ? ` · ${s?.open_dispensers} open` : ""}</Chip>
+            )}
+            {(s?.open_orders ?? 0) > 0 && <Chip>Active trader · {s?.open_orders} open</Chip>}
+            {xcp >= 50000 && <Chip>XCP whale</Chip>}
+            {!s?.issued && !s?.dispensers && (s?.assets ?? 0) > 0 && <Chip>Holder</Chip>}
+          </>
+        }
         actions={<CopyButton value={address} />}
       />
       <SectionStats stats={stats} />

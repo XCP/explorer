@@ -30,7 +30,13 @@ test("network stats snapshot matches exact source counts and totals", () => {
   `);
   db.exec(NETWORK_STATS_REBUILD_SQL);
   const row = db.prepare("SELECT * FROM network_stats_snapshot WHERE singleton=1").get() as Record<string, number>;
-  assert.equal(row.assets, 2); assert.equal(row.transactions, 3); assert.equal(row.balances, 4);
-  assert.equal(row.holders, 2); assert.equal(row.sends, 3); assert.equal(row.btc_fees, 1.5);
-  assert.equal(row.xcp_destroyed, 1); assert.equal(row.xcp_supply, "400000000"); assert.ok(row.updated_at > 0);
+  assert.equal(row.assets, 2);
+  assert.equal(row.transactions, 3);
+  assert.equal(row.balances, 4);
+  assert.equal(row.holders, 2);
+  assert.equal(row.sends, 3);
+  assert.equal(row.btc_fees, 1.5);
+  assert.equal(row.xcp_destroyed, 1);
+  assert.equal(row.xcp_supply, "400000000");
+  assert.ok(row.updated_at > 0);
 });

@@ -19,8 +19,9 @@ exchanges.get("/v2/exchanges", (c) =>
       exchangeWallets(db).catch(() => []),
       exchangeTopAssets(db).catch(() => []),
       exchangeSummary(db).catch(() => null),
-      exchangeNames(db).catch(() => ({} as Record<string, string>)),
+      exchangeNames(db).catch(() => ({}) as Record<string, string>),
     ]);
     const exchangesOut: ExchangeRow[] = list.map((r) => ({ ...r, name: names[r.address] ?? "Exchange" }));
     return { result: { summary, exchanges: exchangesOut, top_assets } };
-  }));
+  }),
+);

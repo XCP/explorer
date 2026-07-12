@@ -5,13 +5,13 @@ import type { MetricPoint } from "./stats";
  *  (Counterparty vaults vs. foreign ones whose value is on another chain) and adds the ETH-side sales market. */
 export interface VaultsPayload {
   summary: {
-    total_vaults: number;        // all Emblem vault records we've enumerated (all chains)
+    total_vaults: number; // all Emblem vault records we've enumerated (all chains)
     counterparty_vaults: number; // vaults that wrap a Counterparty asset (single + multi/bundle)
-    foreign_vaults: number;      // vaults whose contents are on another chain (Namecoin/Ordinals/BTC) — NOT ours
-    funded_vaults: number;       // Counterparty vaults currently holding a live balance
-    scam_shells: number;         // vaults that NAME a real Counterparty card but hold nothing (empty-shell scams)
-    sales: number;               // total Emblem NFT sales we've attributed
-    realized_usd: number;        // realized USD of REAL Counterparty-card sales (real + bundle)
+    foreign_vaults: number; // vaults whose contents are on another chain (Namecoin/Ordinals/BTC) — NOT ours
+    funded_vaults: number; // Counterparty vaults currently holding a live balance
+    scam_shells: number; // vaults that NAME a real Counterparty card but hold nothing (empty-shell scams)
+    sales: number; // total Emblem NFT sales we've attributed
+    realized_usd: number; // realized USD of REAL Counterparty-card sales (real + bundle)
   } | null;
   sales_by_class: Array<{ sale_class: string; sales: number; usd: number }>;
   top_sold_assets: Array<{ asset: string; asset_longname: string | null; usd: number; sales: number }>;

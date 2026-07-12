@@ -11,7 +11,9 @@ import { artUrl } from "@/lib/art";
 function GalleryCard({ asset, name, why }: { asset: string; name: string; why: ReactNode }) {
   return (
     <Link className="g-card" href={`/asset/${encodeURIComponent(asset)}`}>
-      <div className="g-art"><img src={artUrl(asset, 400, "full")} loading="lazy" alt="" /></div>
+      <div className="g-art">
+        <img src={artUrl(asset, 400, "full")} loading="lazy" alt="" />
+      </div>
       <div className="g-meta">
         <div className="g-name">{name}</div>
         <div className="g-why">{why}</div>
@@ -24,9 +26,15 @@ function GalleryCard({ asset, name, why }: { asset: string; name: string; why: R
 // The co-hold overlap IS the relationship — that's why it's on the tab. Falls back to the raw count if the
 // percentage can't be computed (subject has no counted holders).
 function coHold(r: AssetCohortRow): ReactNode {
-  return r.pct != null
-    ? <><b>{r.pct}%</b> of holders co-hold</>
-    : <><b>{commas(r.shared)}</b> co-holders</>;
+  return r.pct != null ? (
+    <>
+      <b>{r.pct}%</b> of holders co-hold
+    </>
+  ) : (
+    <>
+      <b>{commas(r.shared)}</b> co-holders
+    </>
+  );
 }
 
 /**

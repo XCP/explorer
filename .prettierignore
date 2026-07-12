@@ -1,0 +1,5 @@
+.test-dist
+.next
+.open-next
+.wrangler
+node_modules

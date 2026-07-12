@@ -13,11 +13,22 @@ import { eventChip } from "@/lib/mempool";
  * researcher, not the newcomer.
  */
 export function EventsTab({ hash }: { hash: string }) {
-  const { data, isLoading } = useSWR<Envelope<TxEvent[]>>(apiUrl(`/v2/transactions/${encodeURIComponent(hash)}/events`));
+  const { data, isLoading } = useSWR<Envelope<TxEvent[]>>(
+    apiUrl(`/v2/transactions/${encodeURIComponent(hash)}/events`),
+  );
   const events = data?.result ?? [];
-  if (isLoading) return <Card title="Events"><Skeleton rows={6} /></Card>;
+  if (isLoading)
+    return (
+      <Card title="Events">
+        <Skeleton rows={6} />
+      </Card>
+    );
   if (!events.length) {
-    return <Card title="Events"><p className="text-sm text-zinc-400">No events available from the node for this transaction.</p></Card>;
+    return (
+      <Card title="Events">
+        <p className="text-sm text-zinc-400">No events available from the node for this transaction.</p>
+      </Card>
+    );
   }
   return (
     <Card title={`Counterparty events · ${events.length}`}>
@@ -28,11 +39,15 @@ export function EventsTab({ hash }: { hash: string }) {
               {eventChip(e.event)}
               {e.event_index != null && <span className="font-mono text-[11px] text-zinc-500">#{e.event_index}</span>}
             </div>
-            <pre className="overflow-x-auto px-3 py-2 font-mono text-[12px] leading-relaxed text-zinc-300">{JSON.stringify(e.params ?? {}, null, 2)}</pre>
+            <pre className="overflow-x-auto px-3 py-2 font-mono text-[12px] leading-relaxed text-zinc-300">
+              {JSON.stringify(e.params ?? {}, null, 2)}
+            </pre>
           </div>
         ))}
       </div>
-      <p className="mt-3 text-xs text-zinc-500">Raw protocol events from the Counterparty node — the ground truth the Overview interprets.</p>
+      <p className="mt-3 text-xs text-zinc-500">
+        Raw protocol events from the Counterparty node — the ground truth the Overview interprets.
+      </p>
     </Card>
   );
 }

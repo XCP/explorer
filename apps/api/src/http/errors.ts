@@ -9,9 +9,10 @@ export interface HttpErrorDescription {
 
 export function describeHttpError(error: unknown): HttpErrorDescription {
   const expected = error instanceof HTTPException;
-  const internal = error instanceof Error
-    ? { name: error.name, message: error.message, stack: error.stack }
-    : { name: "UnknownError", message: String(error) };
+  const internal =
+    error instanceof Error
+      ? { name: error.name, message: error.message, stack: error.stack }
+      : { name: "UnknownError", message: String(error) };
 
   return {
     status: expected ? error.status : 500,

@@ -6,7 +6,10 @@
 import type { EmblemStats, EmblemAssetRow, EmblemVaultRow } from "@xcp/shared/emblem";
 import { q, one } from "../db";
 
-export interface Page { limit: number; offset: number; }
+export interface Page {
+  limit: number;
+  offset: number;
+}
 
 /** The stats row without the derived `empty` count (the handler computes empty = vaults − funded). */
 export type EmblemStatsRow = Omit<EmblemStats, "empty">;
@@ -24,7 +27,7 @@ export function emblemStats(db: D1Database): Promise<EmblemStatsRow | null> {
           WHERE EXISTS (SELECT 1 FROM emblem_vaults v WHERE v.btc_address=s.destination)) revaulted,
        (SELECT COUNT(DISTINCT s.source) FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination) depositors,
        (SELECT COUNT(*) FROM address_signals WHERE assets_held>0) all_holders,
-       (SELECT COUNT(*) FROM address_signals WHERE assets_held>0 AND is_emblem_vault=0 AND is_exchange=0 AND is_burn=0 AND is_deposit=0 AND likely_service=0) real_users`
+       (SELECT COUNT(*) FROM address_signals WHERE assets_held>0 AND is_emblem_vault=0 AND is_exchange=0 AND is_burn=0 AND is_deposit=0 AND likely_service=0) real_users`,
   );
 }
 
@@ -34,7 +37,8 @@ export function emblemAssets(db: D1Database, p: Page): Promise<EmblemAssetRow[]>
     db,
     `SELECT b.asset, COUNT(*) vaults FROM balances b JOIN emblem_vaults e ON e.btc_address=b.holder
      WHERE CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset ORDER BY vaults DESC LIMIT ? OFFSET ?`,
-    p.limit, p.offset
+    p.limit,
+    p.offset,
   );
 }
 
@@ -45,6 +49,7 @@ export function emblemVaults(db: D1Database, p: Page): Promise<EmblemVaultRow[]>
     `SELECT e.token_id, e.contract, e.btc_address,
             (SELECT COUNT(*) FROM balances b WHERE b.holder=e.btc_address AND CAST(b.quantity AS INTEGER)>0) held_assets
      FROM emblem_vaults e WHERE e.btc_address IS NOT NULL ORDER BY e.first_seen DESC LIMIT ? OFFSET ?`,
-    p.limit, p.offset
+    p.limit,
+    p.offset,
   );
 }

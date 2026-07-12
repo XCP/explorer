@@ -1,6 +1,6 @@
 // Structure gate — mechanical enforcement of CLAUDE.md rules that neither tsc nor eslint express.
 // Fails loudly; run via `npm run check`, the edit hook, and CI.
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOTS = ["apps/api/src", "apps/web/src", "packages/shared/src"];
@@ -11,7 +11,12 @@ function walk(dir) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
       walk(p);
-    } else if (/^index\.(ts|tsx)$/.test(name)) {
+    } else if (/\.(ts|tsx)$/.test(name)) {
+      const source = readFileSync(p, "utf8");
+      if (/^export\s+\*\s+from\s+/m.test(source)) {
+        failures.push(`export-all barrel: ${p} — export and import concrete modules directly`);
+      }
+      if (!/^index\.(ts|tsx)$/.test(name)) continue;
       // CLAUDE.md rule 1: no barrel files. apps/api/src/index.ts is the Worker entrypoint
       // (wrangler main), not a barrel — the one allowed exception.
       if (p.replaceAll("\\", "/") !== "apps/api/src/index.ts") {

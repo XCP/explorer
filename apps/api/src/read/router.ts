@@ -41,7 +41,11 @@ read.use("*", async (c, next) => {
   const res = c.res;
   const cc = res?.headers.get("cache-control") || "";
   if (res && res.status === 200 && cc.includes("max-age") && !cc.includes("max-age=0")) {
-    try { c.executionCtx.waitUntil(cache.put(key, res.clone())); } catch { /* no executionCtx (dev) */ }
+    try {
+      c.executionCtx.waitUntil(cache.put(key, res.clone()));
+    } catch {
+      /* no executionCtx (dev) */
+    }
     // Hono uses c.res (not a middleware's post-next() return value), so replace it to stamp the header.
     const out = new Response(res.body, res);
     out.headers.set("x-cache", "MISS");

@@ -16,8 +16,19 @@ const PAGE = 50;
 const usd = (v: number) => (v > 0 ? `$${compact(v)}` : "—");
 
 const COLS: Col<TagMemberRow>[] = [
-  { label: "Asset", weight: "primary", priority: 1, w: "minmax(0,1.4fr)", cell: (r) => assetCell(r.asset, r.asset_longname) },
-  { label: "Score", priority: 1, w: "130px", cell: (r) => <ScoreBadge tier={r.tier} score={r.score} flagged={r.low_quality === 1} /> },
+  {
+    label: "Asset",
+    weight: "primary",
+    priority: 1,
+    w: "minmax(0,1.4fr)",
+    cell: (r) => assetCell(r.asset, r.asset_longname),
+  },
+  {
+    label: "Score",
+    priority: 1,
+    w: "130px",
+    cell: (r) => <ScoreBadge tier={r.tier} score={r.score} flagged={r.low_quality === 1} />,
+  },
   { label: "Holders", numeric: true, priority: 2, cell: (r) => commas(r.holders) },
   { label: "Buyers", numeric: true, priority: 3, cell: (r) => commas(r.buyers) },
   { label: "Realized USD", numeric: true, priority: 1, cell: (r) => usd(r.max_realized_usd) },
@@ -32,8 +43,12 @@ export function TagMembers({ tag }: { tag: string }) {
       <AsyncContent isLoading={isLoading} error={error} empty={rows.length === 0} emptyWhat="asset members">
         <RecordTable cols={COLS} rows={rows} />
         <div className="flex gap-2 mt-4">
-          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Prev</SecondaryButton>
-          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>Next</SecondaryButton>
+          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
+            Prev
+          </SecondaryButton>
+          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
+            Next
+          </SecondaryButton>
         </div>
       </AsyncContent>
     </Card>

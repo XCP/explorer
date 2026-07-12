@@ -1,6 +1,6 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { API_BASE } from "./url";
+import { API_BASE } from "@/lib/api/url";
 
 /** Thrown on a canonical 404 so route pages can translate it to Next's notFound(). */
 export class NotFoundError extends Error {

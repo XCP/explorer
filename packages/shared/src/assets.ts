@@ -1,8 +1,12 @@
 /** Asset surfaces — detail, quality, holders (GET /v2/assets/:asset and its sub-reads). */
 
 export type AssetQualityTier =
-  | "Bluechip" | "Premium" | "Notable" | "Speculative" // ranked (has a market) — the asset RATING ladder
-  | "Untraded" | "Dormant"; // non-ranked states
+  | "Bluechip"
+  | "Premium"
+  | "Notable"
+  | "Speculative" // ranked (has a market) — the asset RATING ladder
+  | "Untraded"
+  | "Dormant"; // non-ranked states
 
 /** Composed quality object on AssetDetail. Non-ranked assets get just { tier, score: null }. */
 export interface AssetQuality {
@@ -74,7 +78,7 @@ export interface AssetDetail {
   collection?: string | null; // collection tag (pepe.wtf source='collection' or tokenscan), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
   collection_site?: string | null; // project site when the collection came from the tokenscan directory (its meta.site)
   collection_series?: number | null; // pepe.wtf series number within the collection (e.g. Rare Pepe Series 1–36)
-  collection_card?: number | null;  // pepe.wtf card number within the series (the canonical ordinal position)
+  collection_card?: number | null; // pepe.wtf card number within the series (the canonical ordinal position)
   artist?: { tag: string; name: string; slug: string } | null; // pepe.wtf artist; `tag` is the /tags/<artist-slug> route
   feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
   cohesion?: AssetCohesion | null; // holder-cohesion coordination signal; null until the batch has scored this asset
@@ -130,11 +134,11 @@ export interface FeaturedAsset {
  *  Every event kind is counted and rolled into the four mediums people think in. Monthly (not daily) keeps
  *  the payload tiny — the chart buckets monthly anyway. Powers the Activity tab time-series. */
 export interface AssetActivityMonth {
-  month: string;      // YYYY-MM
-  orders: number;     // DEX: order matches + orders opened
+  month: string; // YYYY-MM
+  orders: number; // DEX: order matches + orders opened
   dispensers: number; // BTC: dispenses + dispensers opened
-  sends: number;      // plain transfers
-  supply: number;     // issuances + fairmints + destructions + dividends
+  sends: number; // plain transfers
+  supply: number; // issuances + fairmints + destructions + dividends
 }
 
 /** GET /v2/assets/:asset/enhanced — CIP-25 enhanced asset info. When the on-chain description points to a
@@ -151,8 +155,8 @@ export interface AssetEnhanced {
  *  USED it the most (moved it in/out), independent of current balance. Backed by the credits/debits ledger. */
 export interface AssetActiveUser {
   address: string;
-  credits: number;  // times the asset was credited to this address
-  debits: number;   // times it was debited from this address
+  credits: number; // times the asset was credited to this address
+  debits: number; // times it was debited from this address
   activity: number; // credits + debits
 }
 
@@ -160,8 +164,8 @@ export interface AssetActiveUser {
 export interface AssetCohortRow {
   asset: string;
   asset_longname: string | null;
-  shared: number;          // holders of the subject asset that also hold this one
-  pct?: number | null;     // `shared` as % of the subject asset's holders — the "why it's related" figure
+  shared: number; // holders of the subject asset that also hold this one
+  pct?: number | null; // `shared` as % of the subject asset's holders — the "why it's related" figure
 }
 
 /** GET /v2/assets/:asset/related — the Related tab's two strips, each row carrying its co-hold reason
@@ -234,12 +238,21 @@ export type HolderArchetypes = { creators: number; whales: number; collectors: n
 
 /** GET /v2/reputation/asset-review — population quality distribution over asset_signals. */
 export interface AssetReviewDistribution {
-  n: number; mean: number; max: number; min: number; top1pct: number; top10pct: number;
+  n: number;
+  mean: number;
+  max: number;
+  min: number;
+  top1pct: number;
+  top10pct: number;
 }
 
 /** GET /v2/reputation/asset-review — a top-20-by-raw-quality row (face-validity check). */
 export interface AssetReviewTopRow {
-  asset: string; asset_longname: string | null; holders: number; trades: number; raw: number;
+  asset: string;
+  asset_longname: string | null;
+  holders: number;
+  trades: number;
+  raw: number;
 }
 
 /** GET /v2/assets/:asset/market — cross-app market chip from xcpdex (null when it doesn't trade). */
@@ -249,6 +262,6 @@ export interface AssetMarket {
   volume_7d: number | null;
   trades_7d: number | null;
   price_change_7d: number | null;
-  floor_usd: number | null;    // lowest open ask converted to USD — the header "Floor price"
+  floor_usd: number | null; // lowest open ask converted to USD — the header "Floor price"
   floor_source: string | null; // where the floor came from ("Order")
 }

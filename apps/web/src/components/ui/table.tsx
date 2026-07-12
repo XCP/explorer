@@ -13,7 +13,14 @@ export function Table({ head, children }: { head: Head[]; children: ReactNode })
               const label = typeof h === "string" ? h : h.label;
               const numeric = typeof h === "object" && h.numeric;
               const hide = typeof h === "object" ? h.hide : undefined;
-              return <th key={label} className={`font-normal px-3 py-2 ${numeric ? "text-right" : "text-left"} ${hide ?? ""}`}>{label}</th>;
+              return (
+                <th
+                  key={label}
+                  className={`font-normal px-3 py-2 ${numeric ? "text-right" : "text-left"} ${hide ?? ""}`}
+                >
+                  {label}
+                </th>
+              );
             })}
           </tr>
         </thead>
@@ -26,12 +33,30 @@ export function Table({ head, children }: { head: Head[]; children: ReactNode })
 export const Row = ({ children }: { children: ReactNode }) => (
   <tr className="border-b border-zinc-900 hover:bg-zinc-900 transition-colors">{children}</tr>
 );
-export const Cell = ({ children, numeric, muted, primary, hide }: { children: ReactNode; numeric?: boolean; muted?: boolean; primary?: boolean; hide?: string }) => (
-  <td className={[
-    "px-3 py-2",
-    numeric ? "text-right font-mono tabular-nums" : "",
-    muted ? "text-zinc-400" : numeric ? "text-zinc-300" : "",
-    primary ? "text-zinc-100 font-medium" : "",
-    hide ?? "",
-  ].filter(Boolean).join(" ")}>{children}</td>
+export const Cell = ({
+  children,
+  numeric,
+  muted,
+  primary,
+  hide,
+}: {
+  children: ReactNode;
+  numeric?: boolean;
+  muted?: boolean;
+  primary?: boolean;
+  hide?: string;
+}) => (
+  <td
+    className={[
+      "px-3 py-2",
+      numeric ? "text-right font-mono tabular-nums" : "",
+      muted ? "text-zinc-400" : numeric ? "text-zinc-300" : "",
+      primary ? "text-zinc-100 font-medium" : "",
+      hide ?? "",
+    ]
+      .filter(Boolean)
+      .join(" ")}
+  >
+    {children}
+  </td>
 );

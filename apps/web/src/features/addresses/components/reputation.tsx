@@ -1,6 +1,24 @@
 "use client";
 import useSWR from "swr";
-import { ShieldCheck, Stamp, Wallet, Store, Building2, Coins, Crown, ArrowDownToLine, Flame, Sparkles, Hammer, ArrowLeftRight, HandCoins, Layers, Rocket, Tag, type LucideIcon } from "lucide-react";
+import {
+  ShieldCheck,
+  Stamp,
+  Wallet,
+  Store,
+  Building2,
+  Coins,
+  Crown,
+  ArrowDownToLine,
+  Flame,
+  Sparkles,
+  Hammer,
+  ArrowLeftRight,
+  HandCoins,
+  Layers,
+  Rocket,
+  Tag,
+  type LucideIcon,
+} from "lucide-react";
 import type { AddressReputation } from "@xcp/shared/addresses";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -20,10 +38,23 @@ const BAND: Record<string, { color: string; ring: string; bg: string }> = {
   "Exchange deposit": { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
 };
 const TAG_ICON: Record<string, LucideIcon> = {
-  OG: Crown, "Early Adopter": Sparkles, Creator: Stamp, "Prolific Creator": Hammer, Collector: Wallet,
-  Merchant: Store, Trader: ArrowLeftRight, "Active Trader": ArrowLeftRight, "Dividend Payer": HandCoins,
-  Exchange: Building2, Whale: Coins, "Exchange deposit": ArrowDownToLine, Burner: Flame,
-  "Stamp Creator": Stamp, "Stamp Collector": Layers, "SRC-20 Deployer": Rocket, "BTNS User": Tag,
+  OG: Crown,
+  "Early Adopter": Sparkles,
+  Creator: Stamp,
+  "Prolific Creator": Hammer,
+  Collector: Wallet,
+  Merchant: Store,
+  Trader: ArrowLeftRight,
+  "Active Trader": ArrowLeftRight,
+  "Dividend Payer": HandCoins,
+  Exchange: Building2,
+  Whale: Coins,
+  "Exchange deposit": ArrowDownToLine,
+  Burner: Flame,
+  "Stamp Creator": Stamp,
+  "Stamp Collector": Layers,
+  "SRC-20 Deployer": Rocket,
+  "BTNS User": Tag,
 };
 // Persona = the dominant ROLE (what it does). Its own icon + colour so it reads as a headline identity,
 // distinct from the reputation band (whether to trust it) below it.
@@ -37,15 +68,23 @@ const PERSONA_STYLE: Record<string, { icon: LucideIcon; color: string }> = {
 };
 
 export function ReputationHeader({ address }: { address: string }) {
-  const { data, isLoading } = useSWR<Envelope<AddressReputation>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`));
+  const { data, isLoading } = useSWR<Envelope<AddressReputation>>(
+    apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`),
+  );
   const r = data?.result;
-  if (isLoading) return <Card><Skeleton rows={2} /></Card>;
+  if (isLoading)
+    return (
+      <Card>
+        <Skeleton rows={2} />
+      </Card>
+    );
   if (!r) return null;
   const b = BAND[r.band] || BAND.New;
   const ev = r.evidence;
   const lines: [string, string][] = [];
   if (ev) {
-    if (ev.survived_assets) lines.push([`${commas(ev.survived_assets)} assets found an audience (10+ holders)`, "Creator"]);
+    if (ev.survived_assets)
+      lines.push([`${commas(ev.survived_assets)} assets found an audience (10+ holders)`, "Creator"]);
     if (ev.assets_hits) lines.push([`${commas(ev.assets_hits)} became hits (50+ holders)`, "Standout"]);
     if (ev.inbound_peers) lines.push([`Credited by ${commas(ev.inbound_peers)} addresses`, "Trust"]);
     if (ev.dispense_btc) lines.push([`${ev.dispense_btc} BTC dispensed`, "Commerce"]);
@@ -63,16 +102,18 @@ export function ReputationHeader({ address }: { address: string }) {
           <div className="text-[10px] uppercase tracking-wider text-zinc-400">reputation</div>
         </div>
         <div className="flex-1 min-w-0">
-          {r.persona && r.persona.primary !== "dormant" && (() => {
-            const p = PERSONA_STYLE[r.persona.primary] ?? PERSONA_STYLE.collector;
-            const PI = p.icon;
-            return (
-              <div className="flex items-center gap-2 mb-1" title={r.persona.blurb}>
-                <PI className={`size-4 ${p.color}`} />
-                <span className={`text-lg font-bold leading-none ${p.color}`}>{r.persona.label}</span>
-              </div>
-            );
-          })()}
+          {r.persona &&
+            r.persona.primary !== "dormant" &&
+            (() => {
+              const p = PERSONA_STYLE[r.persona.primary] ?? PERSONA_STYLE.collector;
+              const PI = p.icon;
+              return (
+                <div className="flex items-center gap-2 mb-1" title={r.persona.blurb}>
+                  <PI className={`size-4 ${p.color}`} />
+                  <span className={`text-lg font-bold leading-none ${p.color}`}>{r.persona.label}</span>
+                </div>
+              );
+            })()}
           <div className="flex items-center gap-2 flex-wrap">
             <ShieldCheck className={`size-4 ${b.color}`} />
             <span className={`font-semibold ${b.color}`}>{r.band}</span>
@@ -82,8 +123,12 @@ export function ReputationHeader({ address }: { address: string }) {
             {(r.tags || []).map((t: string) => {
               const I = TAG_ICON[t];
               return (
-                <span key={t} className="inline-flex items-center gap-1 rounded-md bg-zinc-800 text-zinc-200 px-2 py-1 text-xs font-medium ring-1 ring-inset ring-white/5">
-                  {I && <I className="size-3" />}{t}
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 rounded-md bg-zinc-800 text-zinc-200 px-2 py-1 text-xs font-medium ring-1 ring-inset ring-white/5"
+                >
+                  {I && <I className="size-3" />}
+                  {t}
                 </span>
               );
             })}

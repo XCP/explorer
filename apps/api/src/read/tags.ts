@@ -6,7 +6,15 @@
  */
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { router, J, lim, off, round, cached } from "./respond";
-import { rawSqlExpr, ASSET_FACTORS, CONVICTION_FACTORS, assetScore, assetTier, convictionScore, type MarketState } from "../reputation/score";
+import {
+  rawSqlExpr,
+  ASSET_FACTORS,
+  CONVICTION_FACTORS,
+  assetScore,
+  assetTier,
+  convictionScore,
+  type MarketState,
+} from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
 import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "../queries/tags";
 
@@ -37,7 +45,7 @@ function enrich(r: TagStatsBase): TagStatsRow {
 tags.get("/v2/tags", async (c) =>
   cached(c, "tags:all", { ttl: 86400, edge: 300, swr: 86400 }, async () => ({
     result: (await listTagStats(c.env.DB, ASSET_RAW, CONV_RAW)).map(enrich),
-  }))
+  })),
 );
 
 // GET /v2/tags/:tag — the aggregate header + a page of asset members (each with a server-computed tier +
@@ -46,14 +54,20 @@ tags.get("/v2/tags/:tag", async (c) => {
   const tag = c.req.param("tag");
   const stats = await getTagStats(c.env.DB, ASSET_RAW, CONV_RAW, tag);
   if (!stats) return c.json({ error: "Tag not found" }, 404);
-  const limit = lim(c), offset = off(c);
+  const limit = lim(c),
+    offset = off(c);
   const rows = await listTagAssetMembers(c.env.DB, ASSET_RAW, tag, limit, offset);
   const members = rows.map((r) => {
     // market state mirrors the asset-detail handler: ever traded/dispensed → ranked; held-only → Untraded; none → Dormant.
-    const state: MarketState = (r.trades ?? 0) > 0 || (r.dispenses ?? 0) > 0 ? "market" : (r.holders ?? 0) > 0 ? "held" : "none";
+    const state: MarketState =
+      (r.trades ?? 0) > 0 || (r.dispenses ?? 0) > 0 ? "market" : (r.holders ?? 0) > 0 ? "held" : "none";
     return {
-      asset: r.asset, asset_longname: r.asset_longname, holders: r.holders, buyers: r.buyers,
-      max_realized_usd: r.max_realized_usd, raw: round(r.raw, 2),
+      asset: r.asset,
+      asset_longname: r.asset_longname,
+      holders: r.holders,
+      buyers: r.buyers,
+      max_realized_usd: r.max_realized_usd,
+      raw: round(r.raw, 2),
       score: state === "market" ? assetScore(r.raw) : null,
       tier: assetTier(r.raw, state, r.low_quality === 1),
       low_quality: r.low_quality,

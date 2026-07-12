@@ -1,8 +1,25 @@
 /** Chain surfaces — blocks and transactions (GET /v2/blocks, /v2/transactions/:hash). */
 import type {
-  SendRow, DispenseRow, DispenserRow, OrderRow, IssuanceRow, FairminterRow, FairmintRow,
-  BroadcastRow, SweepRow, DividendRow, BtcpayRow, BurnRow, DestructionRow, BetRow,
-  RpsRow, PoolMatchRow, OrderMatchRow, CancelRow, DispenserRefillRow, PoolLiquidityRow,
+  SendRow,
+  DispenseRow,
+  DispenserRow,
+  OrderRow,
+  IssuanceRow,
+  FairminterRow,
+  FairmintRow,
+  BroadcastRow,
+  SweepRow,
+  DividendRow,
+  BtcpayRow,
+  BurnRow,
+  DestructionRow,
+  BetRow,
+  RpsRow,
+  PoolMatchRow,
+  OrderMatchRow,
+  CancelRow,
+  DispenserRefillRow,
+  PoolLiquidityRow,
 } from "./records";
 import type { MempoolActionRow } from "./mempool";
 
@@ -85,9 +102,30 @@ export interface DispenserTotals {
 export type TxAction =
   | { kind: "send"; sends: SendRow[] }
   | { kind: "dispense"; dispenses: DispenseRow[]; dispenser: DispenserRow | null }
-  | { kind: "dispenser"; dispenser: DispenserRow; sales: DispenseRow[]; totals: DispenserTotals | null; collection: TxAssetCollection | null; supply: TxAssetSupply | null }
-  | { kind: "refill"; refill: DispenserRefillRow; dispenser: DispenserRow | null; sales: DispenseRow[]; totals: DispenserTotals | null; collection: TxAssetCollection | null; supply: TxAssetSupply | null }
-  | { kind: "order"; order: OrderRow; matches: OrderMatchRow[]; collection: TxAssetCollection | null; supply: TxAssetSupply | null }
+  | {
+      kind: "dispenser";
+      dispenser: DispenserRow;
+      sales: DispenseRow[];
+      totals: DispenserTotals | null;
+      collection: TxAssetCollection | null;
+      supply: TxAssetSupply | null;
+    }
+  | {
+      kind: "refill";
+      refill: DispenserRefillRow;
+      dispenser: DispenserRow | null;
+      sales: DispenseRow[];
+      totals: DispenserTotals | null;
+      collection: TxAssetCollection | null;
+      supply: TxAssetSupply | null;
+    }
+  | {
+      kind: "order";
+      order: OrderRow;
+      matches: OrderMatchRow[];
+      collection: TxAssetCollection | null;
+      supply: TxAssetSupply | null;
+    }
   | { kind: "cancel"; cancel: CancelRow; order: OrderRow | null }
   | { kind: "btcpay"; btcpay: BtcpayRow }
   | { kind: "issuance"; issuance: IssuanceRow }

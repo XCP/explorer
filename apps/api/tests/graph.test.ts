@@ -15,8 +15,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
-  passStatements, finalizeStatements, seedSubset, graphTier,
-  NODE_INSERTS, RANK_INIT, SEED_APPLY, K, DISTRUST_SLOT, PASSES,
+  passStatements,
+  finalizeStatements,
+  seedSubset,
+  graphTier,
+  NODE_INSERTS,
+  RANK_INIT,
+  SEED_APPLY,
+  K,
+  DISTRUST_SLOT,
+  PASSES,
 } from "../src/indexer/graph-core";
 
 const CONTROL_SLOT = K + 1; // slot 4: the plain-PPR control (single vector over ALL trust seeds, no MIN).
@@ -38,24 +46,43 @@ function freshDb(): DatabaseSync {
 
 /** Pick a deterministic node name that the production k-split (seedSubset) routes to subset j. */
 function nameForSubset(j: number): string {
-  for (let i = 0; ; i++) { const n = `seed_${j}_${i}`; if (seedSubset(n) === j) return n; }
+  for (let i = 0; ; i++) {
+    const n = `seed_${j}_${i}`;
+    if (seedSubset(n) === j) return n;
+  }
 }
 
 // ---- synthetic graph builder ----
-interface Graph { trustSeeds: string[]; distrustSeed: string; heldOutTrusted: string; heldOutScam: string; attacker: string; petals: string[]; newcomer: string; }
+interface Graph {
+  trustSeeds: string[];
+  distrustSeed: string;
+  heldOutTrusted: string;
+  heldOutScam: string;
+  attacker: string;
+  petals: string[];
+  newcomer: string;
+}
 
 function buildSyntheticGraph(db: DatabaseSync): Graph {
   const edge = db.prepare(`INSERT INTO graph_edges (src,dst,w) VALUES (?,?,1.0)`);
   const dir = (a: string, b: string) => edge.run(a, b);
-  const bi = (a: string, b: string) => { edge.run(a, b); edge.run(b, a); };
+  const bi = (a: string, b: string) => {
+    edge.run(a, b);
+    edge.run(b, a);
+  };
 
   // one guaranteed trust seed per subset, so the trusted cluster is reachable from ALL k subsets (a MIN>0).
   const trustSeeds = [nameForSubset(0), nameForSubset(1), nameForSubset(2)];
 
   // trusted cluster T1..T5 (densely, bidirectionally connected); T5 is HELD OUT (not a seed).
   const T = ["T1", "T2", "T3", "T4", "T5"];
-  bi("T1", "T2"); bi("T2", "T3"); bi("T3", "T4"); bi("T4", "T5");
-  bi("T1", "T3"); bi("T3", "T5"); bi("T1", "T4");
+  bi("T1", "T2");
+  bi("T2", "T3");
+  bi("T3", "T4");
+  bi("T4", "T5");
+  bi("T1", "T3");
+  bi("T3", "T5");
+  bi("T1", "T4");
   for (const s of trustSeeds) dir(s, "T1"); // each seed vouches into the cluster
 
   // petal-sybil: attacker A0 with ONE attack edge from a seed, fed by many sybil leaves (petals). Classic
@@ -69,14 +96,21 @@ function buildSyntheticGraph(db: DatabaseSync): Graph {
   // scam cluster SC1..SC4 (bidirectional, disconnected from the trusted region); SC1 is the distrust seed,
   // SC4 is held out — Anti-TrustRank should still flag it.
   const distrustSeed = "SC1";
-  bi("SC1", "SC2"); bi("SC2", "SC3"); bi("SC3", "SC4"); bi("SC1", "SC3");
+  bi("SC1", "SC2");
+  bi("SC2", "SC3");
+  bi("SC3", "SC4");
+  bi("SC1", "SC3");
 
   // noise: 100 disconnected nodes with deterministic random edges among THEMSELVES (unreached by any seed) —
   // padding so "top decile" is a meaningful cut.
   let rng = 987654321;
   const rnd = () => (rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
   const Z = Array.from({ length: 100 }, (_, i) => `Z${i}`);
-  for (let i = 0; i < 200; i++) { const a = Z[Math.floor(rnd() * Z.length)], b = Z[Math.floor(rnd() * Z.length)]; if (a !== b) dir(a, b); }
+  for (let i = 0; i < 200; i++) {
+    const a = Z[Math.floor(rnd() * Z.length)],
+      b = Z[Math.floor(rnd() * Z.length)];
+    if (a !== b) dir(a, b);
+  }
 
   // isolated newcomer: NO edges at all -> never enters graph_node -> unscored.
   const newcomer = "N1";
@@ -96,7 +130,10 @@ function run(db: DatabaseSync, g: Graph): void {
   const subsets: string[][] = Array.from({ length: K }, () => []);
   for (const s of g.trustSeeds) subsets[seedSubset(s)].push(s);
   const seed = db.prepare(`INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES (?,?,?)`);
-  subsets.forEach((sub, slot) => { const s = sub.length ? 1 / sub.length : 0; for (const n of sub) seed.run(n, slot, s); });
+  subsets.forEach((sub, slot) => {
+    const s = sub.length ? 1 / sub.length : 0;
+    for (const n of sub) seed.run(n, slot, s);
+  });
   seed.run(g.distrustSeed, DISTRUST_SLOT, 1);
   const cs = 1 / g.trustSeeds.length;
   for (const s of g.trustSeeds) seed.run(s, CONTROL_SLOT, cs);
@@ -114,7 +151,9 @@ type Map0 = Map<string, number>;
 function vectors(db: DatabaseSync) {
   const trustSlots = Array.from({ length: K }, (_, i) => i).join(",");
   const trust: Map0 = new Map();
-  for (const r of db.prepare(`SELECT node, MIN(r) tr FROM graph_rank WHERE slot IN (${trustSlots}) GROUP BY node`).all())
+  for (const r of db
+    .prepare(`SELECT node, MIN(r) tr FROM graph_rank WHERE slot IN (${trustSlots}) GROUP BY node`)
+    .all())
     trust.set(r.node as string, r.tr as number);
   const distrust: Map0 = new Map();
   for (const r of db.prepare(`SELECT node, r dr FROM graph_rank WHERE slot=${DISTRUST_SLOT}`).all())
@@ -132,7 +171,11 @@ const rankOf = (m: Map0, node: string): number =>
 test("k-split is deterministic and covers all k subsets", () => {
   assert.equal(seedSubset("RAREPEPE"), seedSubset("RAREPEPE"), "same key -> same subset");
   const seeds = [nameForSubset(0), nameForSubset(1), nameForSubset(2)];
-  assert.deepEqual(seeds.map((s) => seedSubset(s)), [0, 1, 2], "one seed lands in each of the 3 subsets");
+  assert.deepEqual(
+    seeds.map((s) => seedSubset(s)),
+    [0, 1, 2],
+    "one seed lands in each of the 3 subsets",
+  );
 });
 
 test("gauntlet: held-out trusted node ranks in the top decile", () => {
@@ -162,8 +205,12 @@ test("gauntlet: petal-sybil gains ~nothing under Min-k, but plain-PPR inflates i
   const plainRank = rankOf(plain, g.attacker);
   const minkT5 = trust.get(g.heldOutTrusted)!;
 
-  t.diagnostic(`sybil A0  Min-k trust=${minkA0.toExponential(3)} (rank ${minkRank}/${N})  plain-PPR=${plainA0.toExponential(3)} (rank ${plainRank}/${N})`);
-  t.diagnostic(`held-out legit T5 Min-k trust=${minkT5.toExponential(3)};  contrast plainA0/minkA0 = ${minkA0 > 0 ? (plainA0 / minkA0).toFixed(1) : "∞"}`);
+  t.diagnostic(
+    `sybil A0  Min-k trust=${minkA0.toExponential(3)} (rank ${minkRank}/${N})  plain-PPR=${plainA0.toExponential(3)} (rank ${plainRank}/${N})`,
+  );
+  t.diagnostic(
+    `held-out legit T5 Min-k trust=${minkT5.toExponential(3)};  contrast plainA0/minkA0 = ${minkA0 > 0 ? (plainA0 / minkA0).toFixed(1) : "∞"}`,
+  );
 
   // (b1) Min-k neutralizes the sybil: it is reached by only ONE seed subset, so the component-wise MIN is 0.
   assert.equal(minkA0, 0, "sybil earns exactly 0 trust under Min-k (near only one seed subset)");
@@ -173,7 +220,10 @@ test("gauntlet: petal-sybil gains ~nothing under Min-k, but plain-PPR inflates i
   // (b3) under Min-k a legit held-out node beats the sybil (which plain PPR cannot guarantee).
   assert(minkT5 > minkA0, "held-out legit node outranks the sybil under Min-k");
   // every petal leaf is worthless in BOTH runs (they carry no seed mass).
-  for (const p of g.petals) { assert.equal(trust.get(p) ?? 0, 0, `petal ${p} has 0 Min-k trust`); assert.equal(plain.get(p) ?? 0, 0, `petal ${p} has 0 plain trust`); }
+  for (const p of g.petals) {
+    assert.equal(trust.get(p) ?? 0, 0, `petal ${p} has 0 Min-k trust`);
+    assert.equal(plain.get(p) ?? 0, 0, `petal ${p} has 0 plain trust`);
+  }
   db.close();
 });
 
@@ -185,7 +235,8 @@ test("gauntlet: isolated newcomer is unscored (zero, not negative)", () => {
   // never entered the graph at all -> no node row.
   const present = db.prepare(`SELECT COUNT(*) c FROM graph_node WHERE id=?`).get(g.newcomer)!.c as number;
   assert.equal(present, 0, "newcomer has no edges -> absent from graph_node");
-  const t = trust.get(g.newcomer) ?? 0, d = distrust.get(g.newcomer) ?? 0;
+  const t = trust.get(g.newcomer) ?? 0,
+    d = distrust.get(g.newcomer) ?? 0;
   assert.equal(t, 0, "newcomer trust is 0");
   assert.equal(d, 0, "newcomer distrust is 0");
   assert(t >= 0 && d >= 0, "scores are never negative");

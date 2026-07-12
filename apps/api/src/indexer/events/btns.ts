@@ -8,7 +8,7 @@
  */
 
 export interface BtnsInfo {
-  op: string | null;   // DEPLOY | MINT | TRANSFER | LIST | ... (uppercased)
+  op: string | null; // DEPLOY | MINT | TRANSFER | LIST | ... (uppercased)
   tick: string | null; // token ticker (field after op for DEPLOY/MINT/TRANSFER)
 }
 

@@ -22,7 +22,9 @@ export function readAssetFeedCountsLive(
        (SELECT COUNT(*) FROM dividends WHERE asset=?1 OR dividend_asset=?1) dividends,
        (SELECT COUNT(*) FROM destructions WHERE asset=?1) destructions,
        (SELECT COUNT(*) FROM pools WHERE asset_a=?1 OR asset_b=?1 OR lp_asset=?1) pools`,
-    asset, asset + ".%", issuer,
+    asset,
+    asset + ".%",
+    issuer,
   );
 }
 
@@ -40,7 +42,8 @@ export async function readAssetFeedCounts(
        FROM asset_feed_counts fc
       WHERE fc.asset=?1
         AND EXISTS (SELECT 1 FROM indexer_state WHERE key='asset_feed_counts_ready' AND value='1')`,
-    asset, issuer,
+    asset,
+    issuer,
   ).catch(() => null);
   return materialized ?? readAssetFeedCountsLive(db, asset, issuer);
 }

@@ -60,8 +60,8 @@ test("BTNS btns: prefix + case-insensitive", () => {
 });
 
 test("non-BTNS broadcast -> null", () => {
-  assert.equal(classifyBtns("1.000000"), null);            // oracle price feed
+  assert.equal(classifyBtns("1.000000"), null); // oracle price feed
   assert.equal(classifyBtns("some news headline"), null);
-  assert.equal(classifyBtns("bt:"), null);                 // prefix with no action
+  assert.equal(classifyBtns("bt:"), null); // prefix with no action
   assert.equal(classifyBtns(null), null);
 });

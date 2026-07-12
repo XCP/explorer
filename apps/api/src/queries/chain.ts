@@ -24,7 +24,7 @@ export function blockTransactions(db: D1Database, n: number): Promise<BlockTxSum
   return q<BlockTxSummary>(
     db,
     `SELECT tx_hash, tx_index, source, destination, fee FROM transactions WHERE block_index=? LIMIT 500`,
-    n
+    n,
   );
 }
 

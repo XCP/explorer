@@ -1,6 +1,11 @@
 import type { TxAction } from "@xcp/shared/chain";
 import { DispenserStorefront, FairminterCampaign, OrderOffer } from "@/features/transactions/components/tx-offer";
-import { DispenseReceipt, SendReceipt, FairmintReceipt, GenericReceipt } from "@/features/transactions/components/tx-receipt";
+import {
+  DispenseReceipt,
+  SendReceipt,
+  FairmintReceipt,
+  GenericReceipt,
+} from "@/features/transactions/components/tx-receipt";
 import { BroadcastDecl, IssuanceBirth, BetDecl, RpsDecl } from "@/features/transactions/components/tx-declaration";
 
 /**
@@ -19,15 +24,38 @@ export function TxActionPanel({ action, tip }: { action: TxAction; tip: number |
   switch (action.kind) {
     // ── ① offers ──
     case "dispenser":
-      return <DispenserStorefront dispenser={action.dispenser} sales={action.sales} totals={action.totals} collection={action.collection} supply={action.supply} />;
+      return (
+        <DispenserStorefront
+          dispenser={action.dispenser}
+          sales={action.sales}
+          totals={action.totals}
+          collection={action.collection}
+          supply={action.supply}
+        />
+      );
     case "refill":
-      return action.dispenser
-        ? <DispenserStorefront dispenser={action.dispenser} sales={action.sales} totals={action.totals} collection={action.collection} supply={action.supply} refillNote />
-        : null;
+      return action.dispenser ? (
+        <DispenserStorefront
+          dispenser={action.dispenser}
+          sales={action.sales}
+          totals={action.totals}
+          collection={action.collection}
+          supply={action.supply}
+          refillNote
+        />
+      ) : null;
     case "fairminter":
       return <FairminterCampaign fairminter={action.fairminter} />;
     case "order":
-      return <OrderOffer order={action.order} matches={action.matches} collection={action.collection} supply={action.supply} tip={tip} />;
+      return (
+        <OrderOffer
+          order={action.order}
+          matches={action.matches}
+          collection={action.collection}
+          supply={action.supply}
+          tip={tip}
+        />
+      );
 
     // ── ② receipts ──
     case "dispense":

@@ -4,9 +4,23 @@
 import { type Handler, str } from "./context";
 
 const sweep: Handler = ({ p, b, bt }, ctx) => {
-  ctx.stmts.push((db) => db.prepare(
-    `INSERT OR REPLACE INTO sweeps (tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?)`
-  ).bind(p.tx_hash, b, bt, p.source ?? null, p.destination ?? null, p.flags ?? null, p.memo ?? null, str(p.fee_paid), p.status ?? "valid"));
+  ctx.stmts.push((db) =>
+    db
+      .prepare(
+        `INSERT OR REPLACE INTO sweeps (tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        p.tx_hash,
+        b,
+        bt,
+        p.source ?? null,
+        p.destination ?? null,
+        p.flags ?? null,
+        p.memo ?? null,
+        str(p.fee_paid),
+        p.status ?? "valid",
+      ),
+  );
 };
 
 export const sweeps: Record<string, Handler> = { SWEEP: sweep, INVALID_SWEEP: sweep };

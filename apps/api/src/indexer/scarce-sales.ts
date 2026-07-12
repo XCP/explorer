@@ -10,26 +10,35 @@ import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const SALES_URL = (asset: string) => `https://scarce.city/api/marketplace/digital/${encodeURIComponent(asset)}/sales`;
-const ASSETS_PER_RUN = 90;   // bounded per cron tick (stays well under the Worker subrequest/CPU budget)
+const ASSETS_PER_RUN = 90; // bounded per cron tick (stays well under the Worker subrequest/CPU budget)
 const CONCURRENCY = 5;
 
 export const SCARCE_SALES_DDL = `CREATE TABLE IF NOT EXISTS scarce_city_sales (
   asset TEXT NOT NULL, sold_at INTEGER NOT NULL, price_btc REAL NOT NULL, PRIMARY KEY (asset, sold_at))`;
 export const SCARCE_SALES_IDX = `CREATE INDEX IF NOT EXISTS idx_scarce_asset ON scarce_city_sales(asset)`;
 
-interface ScarceSale { assetName?: string; priceInBtc?: string | number; timestamp?: string }
+interface ScarceSale {
+  assetName?: string;
+  priceInBtc?: string | number;
+  timestamp?: string;
+}
 
 /** One asset's sales, or [] on any miss (404 / HTML / network). Bounded timeout so one slow asset
  *  can't stall the whole run. */
 async function fetchSales(asset: string): Promise<ScarceSale[]> {
   try {
-    const r = await fetch(SALES_URL(asset), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12000) });
+    const r = await fetch(SALES_URL(asset), {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(12000),
+    });
     if (!r.ok) return [];
     const ct = r.headers.get("content-type") || "";
     if (!ct.includes("json")) return []; // the SPA returns HTML for unknown assets
     const d = await r.json();
     return Array.isArray(d) ? (d as ScarceSale[]) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 /** One bounded, resumable step: sweep the next ASSETS_PER_RUN assets by rowid, query scarce.city for
@@ -39,13 +48,21 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   await env.DB.prepare(SCARCE_SALES_IDX).run();
 
   const cursor = parseInt((await getState(env.DB, "scarce_cursor")) || "0", 10);
-  const rows = (await env.DB.prepare(
-    `SELECT rowid, asset FROM assets WHERE rowid > ? ORDER BY rowid LIMIT ?`
-  ).bind(cursor, ASSETS_PER_RUN).all<{ rowid: number; asset: string }>()).results || [];
+  const rows =
+    (
+      await env.DB.prepare(`SELECT rowid, asset FROM assets WHERE rowid > ? ORDER BY rowid LIMIT ?`)
+        .bind(cursor, ASSETS_PER_RUN)
+        .all<{ rowid: number; asset: string }>()
+    ).results || [];
 
-  const out: { from: number; to: number; assets: number; sales_found: number; wrapped?: boolean } =
-    { from: cursor, to: cursor, assets: rows.length, sales_found: 0 };
-  if (!rows.length) { // past the end — wrap to re-sweep for new sales next tick
+  const out: { from: number; to: number; assets: number; sales_found: number; wrapped?: boolean } = {
+    from: cursor,
+    to: cursor,
+    assets: rows.length,
+    sales_found: 0,
+  };
+  if (!rows.length) {
+    // past the end — wrap to re-sweep for new sales next tick
     await setState(env.DB, "scarce_cursor", "0");
     out.wrapped = true;
     return out;
@@ -68,7 +85,12 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
 
   if (upserts.length) {
     const stmts = upserts.map((u) =>
-      env.DB.prepare(`INSERT OR IGNORE INTO scarce_city_sales (asset,sold_at,price_btc) VALUES (?,?,?)`).bind(u.asset, u.sold_at, u.price));
+      env.DB.prepare(`INSERT OR IGNORE INTO scarce_city_sales (asset,sold_at,price_btc) VALUES (?,?,?)`).bind(
+        u.asset,
+        u.sold_at,
+        u.price,
+      ),
+    );
     for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
     out.sales_found = upserts.length;
   }

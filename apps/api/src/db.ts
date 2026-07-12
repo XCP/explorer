@@ -4,7 +4,14 @@
  * see an untyped `any` result again.
  */
 export const q = <T>(db: D1Database, sql: string, ...binds: unknown[]): Promise<T[]> =>
-  db.prepare(sql).bind(...binds).all<T>().then((r) => r.results);
+  db
+    .prepare(sql)
+    .bind(...binds)
+    .all<T>()
+    .then((r) => r.results);
 
 export const one = <T>(db: D1Database, sql: string, ...binds: unknown[]): Promise<T | null> =>
-  db.prepare(sql).bind(...binds).first<T>();
+  db
+    .prepare(sql)
+    .bind(...binds)
+    .first<T>();

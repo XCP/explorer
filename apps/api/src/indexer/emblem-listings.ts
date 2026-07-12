@@ -11,9 +11,9 @@ import { getIndexerState as getState, setIndexerState as setState } from "./stat
 
 const SEQ_BASE = "https://marketplace-api.sequence.app/mainnet/rpc/Marketplace/ListCollectiblesWithLowestListing";
 const PAGE_SIZE = 100;
-const MAX_PAGES_PER_CONTRACT = 5;   // includeEmpty=false returns only listed tokens, so this is plenty
-const CONTRACTS_PER_RUN = 6;        // rotate through all ~36 Emblem contracts over several hourly runs
-const MAP_CHUNK = 90;               // stay under D1's 100 bound-param cap on the token_id IN-list
+const MAX_PAGES_PER_CONTRACT = 5; // includeEmpty=false returns only listed tokens, so this is plenty
+const CONTRACTS_PER_RUN = 6; // rotate through all ~36 Emblem contracts over several hourly runs
+const MAP_CHUNK = 90; // stay under D1's 100 bound-param cap on the token_id IN-list
 const REQUEST_TIMEOUT_MS = 20_000;
 
 // The lowest-listing order fields we read (Sequence webrpc Order — services/marketplace/marketplace.gen.go).
@@ -26,14 +26,27 @@ interface SeqOrder {
   priceCurrencyAddress?: string;
   validUntil?: string; // ISO-8601
 }
-interface CollectibleOrder { metadata?: { tokenId?: string }; order?: SeqOrder | null; listing?: SeqOrder | null; }
-interface ListResp { collectibles?: CollectibleOrder[]; page?: { more?: boolean }; error?: string; msg?: string; }
+interface CollectibleOrder {
+  metadata?: { tokenId?: string };
+  order?: SeqOrder | null;
+  listing?: SeqOrder | null;
+}
+interface ListResp {
+  collectibles?: CollectibleOrder[];
+  page?: { more?: boolean };
+  error?: string;
+  msg?: string;
+}
 
 async function fetchPage(key: string, contract: string, page: number): Promise<ListResp> {
   const r = await fetch(SEQ_BASE, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Access-Key": key },
-    body: JSON.stringify({ contractAddress: contract, filter: { includeEmpty: false }, page: { page, pageSize: PAGE_SIZE } }),
+    body: JSON.stringify({
+      contractAddress: contract,
+      filter: { includeEmpty: false },
+      page: { page, pageSize: PAGE_SIZE },
+    }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!r.ok) throw new Error(`Sequence listings request failed: ${r.status}`);
@@ -41,7 +54,15 @@ async function fetchPage(key: string, contract: string, page: number): Promise<L
 }
 
 // A live ask flattened to what emblem_listings stores (asset resolved separately, in a batched lookup).
-interface Ask { tokenId: string; orderId: string | null; marketplace: string; priceUsd: number; priceAmount: string | null; currency: string; expiry: number; }
+interface Ask {
+  tokenId: string;
+  orderId: string | null;
+  marketplace: string;
+  priceUsd: number;
+  priceAmount: string | null;
+  currency: string;
+  expiry: number;
+}
 
 /** Sweep one contract's active listings across pages; returns the flattened live asks. */
 async function sweepContract(key: string, contract: string): Promise<Ask[]> {
@@ -55,8 +76,12 @@ async function sweepContract(key: string, contract: string): Promise<Ask[]> {
       if (!o || !tokenId || o.priceUSD == null) continue;
       const expiry = o.validUntil ? Math.floor(new Date(o.validUntil).getTime() / 1000) : 0;
       asks.push({
-        tokenId: String(tokenId), orderId: o.orderId ?? null, marketplace: String(o.marketplace ?? ""),
-        priceUsd: o.priceUSD, priceAmount: o.priceAmount ?? null, currency: (o.priceCurrencyAddress ?? "").toLowerCase(),
+        tokenId: String(tokenId),
+        orderId: o.orderId ?? null,
+        marketplace: String(o.marketplace ?? ""),
+        priceUsd: o.priceUSD,
+        priceAmount: o.priceAmount ?? null,
+        currency: (o.priceCurrencyAddress ?? "").toLowerCase(),
         expiry: Number.isFinite(expiry) ? expiry : 0,
       });
     }
@@ -71,8 +96,10 @@ async function mapAssets(env: Env, contract: string, tokenIds: string[]): Promis
   for (let i = 0; i < tokenIds.length; i += MAP_CHUNK) {
     const chunk = tokenIds.slice(i, i + MAP_CHUNK);
     const rows = await env.DB.prepare(
-      `SELECT token_id, contents_asset FROM emblem_vaults WHERE contract=? AND token_id IN (${chunk.map(() => "?").join(",")})`
-    ).bind(contract, ...chunk).all<{ token_id: string; contents_asset: string | null }>();
+      `SELECT token_id, contents_asset FROM emblem_vaults WHERE contract=? AND token_id IN (${chunk.map(() => "?").join(",")})`,
+    )
+      .bind(contract, ...chunk)
+      .all<{ token_id: string; contents_asset: string | null }>();
     for (const r of rows.results ?? []) map.set(String(r.token_id), r.contents_asset ?? null);
   }
   return map;
@@ -87,7 +114,9 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
 
   const now = Math.floor(Date.now() / 1000);
   const start = parseInt((await getState(env.DB, "emblem_listings_ci")) || "0", 10) % contracts.length;
-  let upserts = 0, live = 0, failed = 0;
+  let upserts = 0,
+    live = 0,
+    failed = 0;
   const processed: string[] = [];
 
   for (let n = 0; n < CONTRACTS_PER_RUN; n++) {
@@ -103,15 +132,32 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
     }
     live += asks.length;
     if (asks.length) {
-      const assetOf = await mapAssets(env, contract, asks.map((a) => a.tokenId));
-      const stmts = asks.map((a) => env.DB.prepare(
-        `INSERT INTO emblem_listings (token_id,contract,asset,order_id,marketplace,price_usd,price_amount,currency,url,expiry,updated_at)
+      const assetOf = await mapAssets(
+        env,
+        contract,
+        asks.map((a) => a.tokenId),
+      );
+      const stmts = asks.map((a) =>
+        env.DB.prepare(
+          `INSERT INTO emblem_listings (token_id,contract,asset,order_id,marketplace,price_usd,price_amount,currency,url,expiry,updated_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(contract,token_id) DO UPDATE SET asset=excluded.asset, order_id=excluded.order_id,
            marketplace=excluded.marketplace, price_usd=excluded.price_usd, price_amount=excluded.price_amount,
-           currency=excluded.currency, url=excluded.url, expiry=excluded.expiry, updated_at=excluded.updated_at`
-      ).bind(a.tokenId, contract, assetOf.get(a.tokenId) ?? null, a.orderId, a.marketplace, a.priceUsd,
-        a.priceAmount, a.currency, `https://opensea.io/assets/ethereum/${contract}/${a.tokenId}`, a.expiry, now));
+           currency=excluded.currency, url=excluded.url, expiry=excluded.expiry, updated_at=excluded.updated_at`,
+        ).bind(
+          a.tokenId,
+          contract,
+          assetOf.get(a.tokenId) ?? null,
+          a.orderId,
+          a.marketplace,
+          a.priceUsd,
+          a.priceAmount,
+          a.currency,
+          `https://opensea.io/assets/ethereum/${contract}/${a.tokenId}`,
+          a.expiry,
+          now,
+        ),
+      );
       await env.DB.batch(stmts);
       upserts += stmts.length;
     }

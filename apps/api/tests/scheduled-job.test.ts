@@ -5,7 +5,9 @@ import { runScheduledJob } from "../src/scheduler/job";
 test("scheduled jobs return successful results and emit a structured outcome", async () => {
   const events: unknown[] = [];
   const original = console.log;
-  console.log = (event: unknown) => { events.push(event); };
+  console.log = (event: unknown) => {
+    events.push(event);
+  };
   try {
     assert.equal(await runScheduledJob("example", async () => 42), 42);
   } finally {
@@ -19,9 +21,13 @@ test("scheduled jobs return successful results and emit a structured outcome", a
 test("scheduled jobs isolate failures and emit safe error details", async () => {
   const events: unknown[] = [];
   const original = console.error;
-  console.error = (event: unknown) => { events.push(event); };
+  console.error = (event: unknown) => {
+    events.push(event);
+  };
   try {
-    const result = await runScheduledJob("broken", async () => { throw new Error("provider unavailable"); });
+    const result = await runScheduledJob("broken", async () => {
+      throw new Error("provider unavailable");
+    });
     assert.equal(result, undefined);
   } finally {
     console.error = original;

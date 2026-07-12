@@ -8,25 +8,50 @@ export default tseslint.config(
   {
     ...reactHooks.configs.flat["recommended-latest"],
     files: ["apps/web/src/**/*.{ts,tsx}"],
+    rules: {
+      ...reactHooks.configs.flat["recommended-latest"].rules,
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["./*", "../*"],
+              message: "Use the @/ path alias so every web module has one searchable import identity.",
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     files: ["apps/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.ts"],
     languageOptions: { parser: tseslint.parser, parserOptions: { ecmaVersion: "latest" } },
     plugins: { "@typescript-eslint": tseslint.plugin },
     rules: {
-      // CLAUDE.md rule 2: no `any`. New code must be typed; legacy dirs below are the debt ledger.
+      // CLAUDE.md rule 2: no `any`. Unknown boundary data must be narrowed explicitly.
       "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        { prefer: "type-imports", fixStyle: "separate-type-imports" },
+      ],
+      "@typescript-eslint/naming-convention": ["error", { selector: "typeLike", format: ["PascalCase"] }],
       // CLAUDE.md rule 5: a file that keeps growing is several concepts in a trench coat.
-      "max-lines": ["warn", { max: 400, skipBlankLines: true, skipComments: true }],
+      "max-lines": ["error", { max: 400, skipBlankLines: true, skipComments: true }],
     },
   },
   {
-    // DEBT LEDGER — legacy code written before the `any` ban. Remove each glob as its domain is
-    // converted to the query-layer / typed-registry pattern (reference slice: trades). apps/api is fully
-    // converted (error-level again); only apps/web retains a few deliberate `any`s.
+    // FILE-SIZE DEBT LEDGER: new files fail at 400 lines. Remove these named exceptions as each
+    // module is split by capability; they are debt, not precedent.
     files: [
-      "apps/web/src/**",
+      "apps/api/src/indexer/signals.ts",
+      "apps/api/src/indexer/sync.ts",
+      "apps/api/src/queries/assets.ts",
+      "apps/api/src/read/assets.ts",
+      "apps/web/src/app/reputation/page.tsx",
+      "apps/web/src/features/records/registry.tsx",
+      "apps/web/src/features/transactions/components/tx-offer.tsx",
+      "apps/web/src/features/transactions/components/tx-receipt.tsx",
     ],
-    rules: { "@typescript-eslint/no-explicit-any": "warn" },
-  }
+    rules: { "max-lines": "warn" },
+  },
 );

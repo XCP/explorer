@@ -15,8 +15,22 @@ import { artUrl, rawArtUrl } from "@/lib/art";
  *     No per-asset metadata needed; each stage only triggers on the previous one's onError.
  */
 export function AssetArt({
-  asset, className = "", natural = false, stamp = false, priority = false, w = 640, video = false,
-}: { asset: string; className?: string; natural?: boolean; stamp?: boolean; priority?: boolean; w?: number; video?: boolean }) {
+  asset,
+  className = "",
+  natural = false,
+  stamp = false,
+  priority = false,
+  w = 640,
+  video = false,
+}: {
+  asset: string;
+  className?: string;
+  natural?: boolean;
+  stamp?: boolean;
+  priority?: boolean;
+  w?: number;
+  video?: boolean;
+}) {
   const [pixel, setPixel] = useState(stamp || asset[0] === "A"); // initial guess avoids a flash before load
   const [ratio, setRatio] = useState<string | undefined>();
   // `video` = the wire's one-bit hint (the ingest-stamped tag) — skip the error cascade entirely
@@ -28,7 +42,10 @@ export function AssetArt({
         src={rawArtUrl(asset)}
         className={`bg-zinc-900 object-contain ${className}`}
         style={ratio ? { aspectRatio: ratio } : undefined}
-        autoPlay muted loop playsInline
+        autoPlay
+        muted
+        loop
+        playsInline
         aria-label={asset}
       />
     );

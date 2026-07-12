@@ -3,13 +3,35 @@
  *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
  *  reputation logic, not SQL. */
 import { router, J, lim, off, round, cached } from "./respond";
-import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, ADDRESS_FACTORS } from "../reputation/score";
+import {
+  scoreAddress,
+  addressScore,
+  addressTier,
+  type AddrState,
+  rawSqlExpr,
+  ADDRESS_FACTORS,
+} from "../reputation/score";
 import { classifyPersona } from "../reputation/persona";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
 import {
-  listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued, listAddressLedger, listAddressLedgerPrimary,
-  addressSummary, addressReputationRow, addressConnections, addressLineage,
-  maxBlockIndex, reputationDistribution, reputationTop, reputationTierMembers, reputationFunnel, reputationHistogram,
+  listBalances,
+  listSends,
+  listIssuances,
+  listDispensers,
+  listDispenses,
+  listIssued,
+  listAddressLedger,
+  listAddressLedgerPrimary,
+  addressSummary,
+  addressReputationRow,
+  addressConnections,
+  addressLineage,
+  maxBlockIndex,
+  reputationDistribution,
+  reputationTop,
+  reputationTierMembers,
+  reputationFunnel,
+  reputationHistogram,
 } from "../queries/addresses";
 
 export const addresses = router();
@@ -37,10 +59,13 @@ addresses.get("/v2/addresses/:address/sends", async (c) => {
 // money-in/out history with each event's Counterparty reason. Empty until the ledger is backfilled by a reindex.
 addresses.get("/v2/addresses/:address/ledger", async (c) => {
   const page = { limit: lim(c), offset: off(c) };
-  const cutover = await c.env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='read_cutover'").first<{ value: string }>();
-  const result = cutover?.value === "1"
-    ? await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page)
-    : await listAddressLedgerPrimary(c.env.DB, c.req.param("address"), page);
+  const cutover = await c.env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='read_cutover'").first<{
+    value: string;
+  }>();
+  const result =
+    cutover?.value === "1"
+      ? await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page)
+      : await listAddressLedgerPrimary(c.env.DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
@@ -65,20 +90,56 @@ addresses.get("/v2/addresses/:address/dispenses", async (c) => {
 addresses.get("/v2/addresses/:address/reputation", async (c) => {
   const h = c.req.param("address");
   const r = await addressReputationRow(c.env.DB, h);
-  if (!r || !r.first_block) return J(c, { result: { score: null, tier: "No history", band: "No history", tier_meaning: ADDRESS_TIER_MEANING["No history"], tags: [], evidence: null, persona: null } }, 300);
+  if (!r || !r.first_block)
+    return J(
+      c,
+      {
+        result: {
+          score: null,
+          tier: "No history",
+          band: "No history",
+          tier_meaning: ADDRESS_TIER_MEANING["No history"],
+          tags: [],
+          evidence: null,
+          persona: null,
+        },
+      },
+      300,
+    );
   const n = (v: unknown) => Number(v) || 0;
   const T = TAG;
-  const xcp = n(r.xcp), first = n(r.first_block), last = n(r.last_block), tip = n(r.tip);
+  const xcp = n(r.xcp),
+    first = n(r.first_block),
+    last = n(r.last_block),
+    tip = n(r.tip);
   // all scoring math lives in src/reputation/* (config + generic engine) — tune weights there.
   const { raw, breakdown } = scoreAddress(r, tip);
   // Infrastructure + throwaway addresses are NON-RANKED (their own honest state); real users get a tier.
-  const isExch = n(r.is_exchange) === 1, isDep = n(r.is_deposit) === 1;
-  const og = (tip - first) > OG.minAgeBlocks && last >= OG.modernBlock; // OG = old AND active into the modern chain
+  const isExch = n(r.is_exchange) === 1,
+    isDep = n(r.is_deposit) === 1;
+  const og = tip - first > OG.minAgeBlocks && last >= OG.modernBlock; // OG = old AND active into the modern chain
   // "active" = any reputation-bearing footprint; a passive one-shot recipient is Dormant, not ranked.
-  const activeUser = n(r.assets_held) > 0 || n(r.survived_assets) > 0 || n(r.dex_trades) > 0 || n(r.dispenses) > 0
-    || n(r.btc_fees) > 0 || n(r.assets_issued) > 0 || n(r.dividends) > 0;
-  const state: AddrState = isExch ? "exchange" : isDep ? "deposit" : n(r.is_emblem_vault) === 1 ? "vault"
-    : n(r.is_burn) === 1 ? "burn" : n(r.likely_service) === 1 ? "service" : !activeUser ? "dormant" : "ranked";
+  const activeUser =
+    n(r.assets_held) > 0 ||
+    n(r.survived_assets) > 0 ||
+    n(r.dex_trades) > 0 ||
+    n(r.dispenses) > 0 ||
+    n(r.btc_fees) > 0 ||
+    n(r.assets_issued) > 0 ||
+    n(r.dividends) > 0;
+  const state: AddrState = isExch
+    ? "exchange"
+    : isDep
+      ? "deposit"
+      : n(r.is_emblem_vault) === 1
+        ? "vault"
+        : n(r.is_burn) === 1
+          ? "burn"
+          : n(r.likely_service) === 1
+            ? "service"
+            : !activeUser
+              ? "dormant"
+              : "ranked";
   const tier = addressTier(raw, state);
   const score = state === "ranked" ? addressScore(raw) : null; // only real users get a 0-100 percentile
   // PERSONA — the dominant ROLE (what it does), orthogonal to the reputation score (whether to trust it).
@@ -88,11 +149,13 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
   if (state !== "ranked") tags.push(tier); // infra/dormant get their state as the tag
   if (state === "ranked") {
     if (og) tags.push("Early Adopter"); // age signal (arrived early + still active); distinct from the OG tier
-    if (n(r.survived_assets) >= 20) tags.push("Prolific Creator"); // matches tags.ts prolific_creator
+    if (n(r.survived_assets) >= 20)
+      tags.push("Prolific Creator"); // matches tags.ts prolific_creator
     else if (n(r.survived_assets) >= T.creatorSurvived) tags.push("Creator");
     if (n(r.assets_held) >= T.collectorHeld) tags.push("Collector");
     if (n(r.dispenses) >= T.merchantDispenses) tags.push("Merchant");
-    if (n(r.dex_trades) >= 100) tags.push("Active Trader"); // matches tags.ts trader/active_trader
+    if (n(r.dex_trades) >= 100)
+      tags.push("Active Trader"); // matches tags.ts trader/active_trader
     else if (n(r.dex_trades) >= 10) tags.push("Trader");
     if (n(r.dividends) >= 1) tags.push("Dividend Payer");
     if (xcp >= T.whaleXcp || n(r.assets_held) >= T.whaleHeld) tags.push("Whale");
@@ -103,20 +166,42 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
     if (n(r.stamps_collected) >= T.stampCollector) tags.push("Stamp Collector");
     if (n(r.is_btns_user) === 1) tags.push("BTNS User");
   }
-  return J(c, { result: {
-    score, tier, band: tier, tier_meaning: ADDRESS_TIER_MEANING[tier] ?? null, tags, persona,
-    evidence: {
-      first_block: first, last_block: last, span_years: round((last - first) / 52560, 1),
-      survived_assets: n(r.survived_assets), assets_distributed: n(r.assets_distributed), assets_hits: n(r.assets_hits), dividends: n(r.dividends),
-      dispense_btc: round(n(r.dispense_btc), 2), btc_fees: round(n(r.btc_fees), 3),
-      btc_spent: round(n(r.btc_spent), 2), inbound_peers: n(r.in_peers),
-      assets_held: n(r.assets_held), xcp: Math.round(xcp),
-      assets_burned: n(r.assets_burned),
-      stamps_created: n(r.stamps_created), stamps_collected: n(r.stamps_collected),
-      src20_deploys: n(r.src20_deploys), btns_user: n(r.is_btns_user) === 1,
+  return J(
+    c,
+    {
+      result: {
+        score,
+        tier,
+        band: tier,
+        tier_meaning: ADDRESS_TIER_MEANING[tier] ?? null,
+        tags,
+        persona,
+        evidence: {
+          first_block: first,
+          last_block: last,
+          span_years: round((last - first) / 52560, 1),
+          survived_assets: n(r.survived_assets),
+          assets_distributed: n(r.assets_distributed),
+          assets_hits: n(r.assets_hits),
+          dividends: n(r.dividends),
+          dispense_btc: round(n(r.dispense_btc), 2),
+          btc_fees: round(n(r.btc_fees), 3),
+          btc_spent: round(n(r.btc_spent), 2),
+          inbound_peers: n(r.in_peers),
+          assets_held: n(r.assets_held),
+          xcp: Math.round(xcp),
+          assets_burned: n(r.assets_burned),
+          stamps_created: n(r.stamps_created),
+          stamps_collected: n(r.stamps_collected),
+          src20_deploys: n(r.src20_deploys),
+          btns_user: n(r.is_btns_user) === 1,
+        },
+        raw: round(raw, 2),
+        breakdown, // per-factor contribution — explains the score, powers weight tuning
+      },
     },
-    raw: round(raw, 2), breakdown, // per-factor contribution — explains the score, powers weight tuning
-  } }, 300);
+    300,
+  );
 });
 
 // Reputation tuning/calibration view: the population raw-score distribution across the band boundaries +
@@ -127,15 +212,26 @@ addresses.get("/v2/reputation/review", async (c) => {
   const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip); // built from the SAME factor config as the read scorer
   const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const distribution = await reputationDistribution(c.env.DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(() => null);
+  const distribution = await reputationDistribution(c.env.DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(
+    () => null,
+  );
   const top = await reputationTop(c.env.DB, expr, NOT_INFRA).catch(() => []);
-  return J(c, {
-    result: {
-      factors: ADDRESS_FACTORS.filter((f) => f.weight).map((f) => ({ key: f.key, weight: f.weight, transform: f.transform })),
-      anchors_in_use: { note: "set pct anchors in reputation/config.ts to match 'distribution' below" },
-      distribution, top,
+  return J(
+    c,
+    {
+      result: {
+        factors: ADDRESS_FACTORS.filter((f) => f.weight).map((f) => ({
+          key: f.key,
+          weight: f.weight,
+          transform: f.transform,
+        })),
+        anchors_in_use: { note: "set pct anchors in reputation/config.ts to match 'distribution' below" },
+        distribution,
+        top,
+      },
     },
-  }, 60);
+    60,
+  );
 });
 
 // Public reputation-tiers overview — the real-user population split across OG/Established/Active/Casual,
@@ -143,30 +239,50 @@ addresses.get("/v2/reputation/review", async (c) => {
 // page; each tier deep-links to its membership below.
 addresses.get("/v2/reputation/tiers", (c) =>
   cached(c, "reputation:tiers", { ttl: 3600, edge: 300, swr: 86400 }, async () => {
-  const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
-  const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
-  const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const [d, f, histogram] = await Promise.all([
-    reputationDistribution(c.env.DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(() => null),
-    reputationFunnel(c.env.DB).catch(() => null),
-    reputationHistogram(c.env.DB, expr, NOT_INFRA, 40).catch(() => []),
-  ]);
-  const counts: Record<string, number> = { OG: d?.og ?? 0, Established: d?.established ?? 0, Active: d?.active ?? 0, Casual: d?.casual ?? 0 };
-  const tiers = ADDRESS_TIERS.map((t) => ({ tier: t.tier, slug: t.tier.toLowerCase(), min_raw: t.minRaw, meaning: t.meaning, count: counts[t.tier] ?? 0 }));
-  const scored = d?.n ?? 0;
-  const infrastructure = f?.infra ?? 0;
-  // The census is every REAL address: infrastructure + scored users. "No history" is definitionally 0 —
-  // a historyless row is a contradiction (see NOT_INFRA). The mirror still carries a handful of
-  // footprint-less rows left by a since-removed graph experiment (a stale rep_score, zero on-chain
-  // history); they are not real addresses, so they're excluded from the total rather than shown as an
-  // orphan "no history" bucket.
-  const total_addresses = infrastructure + scored;
-  const funnel = {
-    total_addresses, infrastructure, scored, no_history: 0,
-    by_kind: { exchanges: f?.exchanges ?? 0, deposits: f?.deposits ?? 0, vaults: f?.vaults ?? 0, burns: f?.burns ?? 0, services: f?.services ?? 0 },
-  };
-  return { result: { total: scored, mean: d?.mean ?? 0, max: d?.max ?? 0, funnel, histogram, tiers } };
-  })
+    const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
+    const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
+    const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
+    const [d, f, histogram] = await Promise.all([
+      reputationDistribution(c.env.DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(() => null),
+      reputationFunnel(c.env.DB).catch(() => null),
+      reputationHistogram(c.env.DB, expr, NOT_INFRA, 40).catch(() => []),
+    ]);
+    const counts: Record<string, number> = {
+      OG: d?.og ?? 0,
+      Established: d?.established ?? 0,
+      Active: d?.active ?? 0,
+      Casual: d?.casual ?? 0,
+    };
+    const tiers = ADDRESS_TIERS.map((t) => ({
+      tier: t.tier,
+      slug: t.tier.toLowerCase(),
+      min_raw: t.minRaw,
+      meaning: t.meaning,
+      count: counts[t.tier] ?? 0,
+    }));
+    const scored = d?.n ?? 0;
+    const infrastructure = f?.infra ?? 0;
+    // The census is every REAL address: infrastructure + scored users. "No history" is definitionally 0 —
+    // a historyless row is a contradiction (see NOT_INFRA). The mirror still carries a handful of
+    // footprint-less rows left by a since-removed graph experiment (a stale rep_score, zero on-chain
+    // history); they are not real addresses, so they're excluded from the total rather than shown as an
+    // orphan "no history" bucket.
+    const total_addresses = infrastructure + scored;
+    const funnel = {
+      total_addresses,
+      infrastructure,
+      scored,
+      no_history: 0,
+      by_kind: {
+        exchanges: f?.exchanges ?? 0,
+        deposits: f?.deposits ?? 0,
+        vaults: f?.vaults ?? 0,
+        burns: f?.burns ?? 0,
+        services: f?.services ?? 0,
+      },
+    };
+    return { result: { total: scored, mean: d?.mean ?? 0, max: d?.max ?? 0, funnel, histogram, tiers } };
+  }),
 );
 
 // One reputation tier's definition + its ranked membership (paginated) — the deep-link target for the
@@ -179,9 +295,15 @@ addresses.get("/v2/reputation/tiers/:tier", async (c) => {
   const maxRaw = idx === 0 ? 1e9 : ADDRESS_TIERS[idx - 1].minRaw; // upper bound = the next-higher tier's cutoff
   const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
-  const members = await reputationTierMembers(c.env.DB, expr, NOT_INFRA, t.minRaw, maxRaw, lim(c), off(c)).catch(() => []);
+  const members = await reputationTierMembers(c.env.DB, expr, NOT_INFRA, t.minRaw, maxRaw, lim(c), off(c)).catch(
+    () => [],
+  );
   const summary = { tier: t.tier, slug, min_raw: t.minRaw, meaning: t.meaning, count: 0 };
-  return J(c, { result: { tier: summary, members }, next_offset: members.length === lim(c) ? off(c) + lim(c) : null }, 120);
+  return J(
+    c,
+    { result: { tier: summary, members }, next_offset: members.length === lim(c) ? off(c) + lim(c) : null },
+    120,
+  );
 });
 
 addresses.get("/v2/addresses/:address/summary", async (c) => {
