@@ -12,6 +12,7 @@
  * per-collection and transient-safe: a fetch that returns empty/errors leaves that collection untouched.
  */
 import type { Env } from "#api/env";
+import { fetchPepeWtfAssets } from "#api/integrations/pepe-wtf";
 
 // pepe.wtf collection slug -> our tag slug. `stamps` (26k) is intentionally excluded — we already carry a
 // protocol-derived `stamp` tag; folding all Bitcoin Stamps in here would swamp the collection layer.
@@ -60,18 +61,7 @@ interface Member {
 async function fetchMembers(slug: string): Promise<Member[]> {
   // NB: the endpoint requires a real user-agent — an unknown/absent one returns []. It's also loose about the
   // slug, so we keep only rows it actually attributes to THIS collection.
-  const r = await fetch(`https://api.pepe.wtf/api/asset?collection=${slug}`, {
-    headers: { "user-agent": "xcp.io-indexer" },
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!r.ok) throw new Error(`pepe.wtf ${slug} ${r.status}`);
-  const arr = (await r.json()) as Array<{
-    name?: string;
-    collection?: string;
-    serie?: number | null;
-    card?: number | null;
-    artist?: { name?: string; slug?: string } | null;
-  }>;
+  const arr = await fetchPepeWtfAssets(slug);
   const seen = new Set<string>();
   const out: Member[] = [];
   for (const a of arr) {

@@ -18,6 +18,10 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 const assetOf = (card: string) => card.replace(/\.[^.]+$/, "").trim(); // "RAREPIGEON.png" -> "RAREPIGEON"
+export const TOKENSCAN_TAG_UPSERT_SQL = `INSERT INTO tags (entity_type,entity_id,tag,source,meta)
+  VALUES ('asset',?,?,'tokenscan',?)
+  ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET
+    meta=CASE WHEN tags.source='tokenscan' THEN excluded.meta ELSE tags.meta END`;
 
 async function fetchNftData(): Promise<TokenscanCollection[]> {
   return fetchTokenscanDirectory();
@@ -33,7 +37,12 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
   }
   if (!data.length) return { skipped: "empty(kept prior)" }; // transient-safe: never wipe on a blip
 
-  await env.DB.prepare(`DELETE FROM tags WHERE source='tokenscan'`).run();
+  const prior = await env.DB.prepare(`SELECT entity_id,tag FROM tags WHERE source='tokenscan'`).all<{
+    entity_id: string;
+    tag: string;
+  }>();
+  const fresh = new Set<string>();
+  const upserts: D1PreparedStatement[] = [];
   let collections = 0,
     tagged = 0;
   for (const c of data) {
@@ -42,20 +51,29 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
     if (!tag || EXCLUDED_COLLECTIONS.has(tag)) continue; // owner-removed collections stay removed
     const meta = JSON.stringify({ collection: c.name, ...(c.site ? { site: c.site } : {}) });
     const assets = [...new Set(c.cards.map(assetOf).filter(Boolean))];
-    for (let i = 0; i < assets.length; i += 100) {
-      // OR IGNORE so a pre-existing collection tag from another source (same asset+slug) is left as-is.
-      await env.DB.batch(
-        assets
-          .slice(i, i + 100)
-          .map((n) =>
-            env.DB.prepare(
-              `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'tokenscan',?)`,
-            ).bind(n, tag, meta),
-          ),
-      );
+    for (const asset of assets) {
+      fresh.add(`${tag}\0${asset}`);
+      upserts.push(env.DB.prepare(TOKENSCAN_TAG_UPSERT_SQL).bind(asset, tag, meta));
     }
     collections++;
     tagged += assets.length;
   }
-  return { collections, tagged };
+  for (let i = 0; i < upserts.length; i += 100) await env.DB.batch(upserts.slice(i, i + 100));
+
+  // Reconcile only after every fresh membership is durable. A failed upsert leaves the complete prior
+  // generation visible; tags owned by another source are never overwritten or removed.
+  const stale = (prior.results ?? []).filter((row) => !fresh.has(`${row.tag}\0${row.entity_id}`));
+  for (let i = 0; i < stale.length; i += 100) {
+    await env.DB.batch(
+      stale
+        .slice(i, i + 100)
+        .map((row) =>
+          env.DB.prepare(`DELETE FROM tags WHERE source='tokenscan' AND tag=? AND entity_id=?`).bind(
+            row.tag,
+            row.entity_id,
+          ),
+        ),
+    );
+  }
+  return { collections, tagged, removed: stale.length };
 }
