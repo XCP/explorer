@@ -27,6 +27,7 @@ import { buildScamAttribution } from "./indexer/emblem-scam";
 import { maybeBuildGraph } from "./indexer/graph";
 import { buildTrades } from "./indexer/trades";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
+import { runScheduledJob } from "./scheduler/job";
 import { read } from "./read/router";
 import { verify } from "./verify";
 import { legacy } from "./legacy";
@@ -167,20 +168,21 @@ export default {
       // BOOTSTRAP PAUSE: while a full reindex/bootstrap is driven manually, set indexer_state 'cron_paused'='1'
       // so the cron stands down entirely. A cron sync running CONCURRENTLY with the bootstrap driver means two
       // large D1 write transactions at once → SQLITE_NOMEM (D1 out of memory). One driver at a time avoids it.
-      try {
+      const paused = await runScheduledJob("cronPausedCheck", async () => {
         const p = await env.DB.prepare("SELECT value FROM indexer_state WHERE key='cron_paused'").first<{ value: string }>();
-        if (p?.value === "1") return;
-      } catch (e) { console.error("cron_paused check", e); }
+        return p?.value === "1";
+      });
+      if (paused) return;
       // assets (incl. supply) are maintained deterministically from the event stream — no Counterparty refetch.
-      let caughtUp = false;
-      try { const r = await syncEvents(env, { maxEvents: 10000 }); caughtUp = !!r?.caught_up; } catch (e) { console.error("syncEvents", e); }
+      const syncResult = await runScheduledJob("syncEvents", () => syncEvents(env, { maxEvents: 10000 }));
+      const caughtUp = !!syncResult?.caught_up;
       // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
       if (caughtUp) {
         // One-off historical credit/debit ledger backfill (migration 0038): while indexer_state
         // 'ledger_backfill_active'='1', walk a bounded batch of the event stream and insert only CREDIT/DEBIT
         // rows (isolated — never touches balances/mirror/signals, so no contention risk). Runs FIRST so it gets
         // tick budget; clears the flag when caught up. Grinds through history over a day or two, hands-free.
-        try {
+        await runScheduledJob("backfillLedger", async () => {
           const bf = await env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='backfill_active'").first<{ value: string }>();
           if (bf?.value === "1") {
             // Multi-row compact inserts keep a 50k pass comfortably bounded while reducing the
@@ -190,60 +192,62 @@ export default {
               await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
               const parity = await verifyLedgerParity(env);
               if (parity.ok) await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='1' WHERE key='read_cutover'").run();
-              else console.error("compact ledger parity", parity);
+              else console.error({ event: "ledger_parity", outcome: "error", parity });
             }
           }
-        } catch (e) { console.error("backfillLedger", e); }
+        });
         // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).
         // Returns needs_backfill until the first full rebuild cycle completes and anchors the cursor at tip.
         // Its return carries the dirty entity sets, which we reuse for the scoped tag rebuild below (one
         // derivation shared by signals + tags).
-        let cascade: SignalsCascadeResult | null = null;
-        try { cascade = await runSignalsCascade(env); } catch (e) { console.error("runSignalsCascade", e); }
+        const cascade: SignalsCascadeResult | null =
+          (await runScheduledJob("runSignalsCascade", () => runSignalsCascade(env))) ?? null;
         // Layer-C backstop: advance the FULL rebuild a couple bounded passes per tick. It maintains the
         // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra
         // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
-        try { await runSignalsStep(env, 2); } catch (e) { console.error("runSignalsStep", e); }
+        await runScheduledJob("runSignalsStep", () => runSignalsStep(env, 2));
         // Rebuild the polymorphic tags (categorical layer) for JUST the entities the cascade touched — the
         // dirty-scoped equivalent of buildTags (no 430k-row global DELETE+reinsert every tick).
-        try { if (cascade?.dirty) await buildTagsScoped(env, cascade.dirty); } catch (e) { console.error("buildTagsScoped", e); }
+        if (cascade?.dirty) {
+          await runScheduledJob("buildTagsScoped", () => buildTagsScoped(env, cascade.dirty!));
+        }
         // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
-        try { await maybeRebuildTags(env); } catch (e) { console.error("maybeRebuildTags", e); }
+        await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
         // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).
-        try { await crawlEmblemStep(env); } catch (e) { console.error("crawlEmblem", e); }
+        await runScheduledJob("crawlEmblem", () => crawlEmblemStep(env));
         // Maintain authoritative asset supply (+asset_id/mime_type): backfill all assets once, then
         // refetch only assets touched by a supply-changing event, plus XCP every tick (fee-burn drift).
-        try { await crawlAssetSupply(env); } catch (e) { console.error("crawlAssetSupply", e); }
+        await runScheduledJob("crawlAssetSupply", () => crawlAssetSupply(env));
         // Refresh SQLite optimizer stats periodically (~weekly). Without stats D1 picked terrible join orders
         // (exchanges overview scanned all 1.75M sends = 18s); ANALYZE fixed plans globally (→0.5s). Gated by
         // block-delta because ANALYZE itself is ~10s — far too heavy to run every 2-min tick.
-        try { await maybeAnalyze(env); } catch (e) { console.error("maybeAnalyze", e); }
+        await runScheduledJob("maybeAnalyze", () => maybeAnalyze(env));
         // Collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf, ~daily.
-        try { await maybeCrawlCollections(env); } catch (e) { console.error("crawlCollections", e); }
+        await runScheduledJob("crawlCollections", () => maybeCrawlCollections(env));
         // Fold in the tokenscan project directory (~60 collections + sites) as source='tokenscan' tags, ~weekly.
-        try { await maybeCrawlTokenscan(env); } catch (e) { console.error("crawlTokenscan", e); }
+        await runScheduledJob("crawlTokenscan", () => maybeCrawlTokenscan(env));
         // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
-        try { await maybeCrawlEmblemSales(env); } catch (e) { console.error("crawlEmblemSales", e); }
+        await runScheduledJob("crawlEmblemSales", () => maybeCrawlEmblemSales(env));
         // Recover post-April-2024 sales getNFTSales stopped indexing (getAssetTransfers + Seaport decode).
-        try { await crawlEmblemTransfers(env); } catch (e) { console.error("crawlEmblemTransfers", e); }
+        await runScheduledJob("crawlEmblemTransfers", () => crawlEmblemTransfers(env));
         // Refresh live Emblem listings (Sequence Marketplace API) so the Radar can flag "buyable on ETH", ~hourly.
-        try { await maybeCrawlEmblemListings(env); } catch (e) { console.error("crawlEmblemListings", e); }
+        await runScheduledJob("crawlEmblemListings", () => maybeCrawlEmblemListings(env));
         // Continue the Scarce.city sales sweep (Bitcoin-native marketplace; one bounded asset batch per tick).
-        try { await crawlScarceSales(env); } catch (e) { console.error("crawlScarceSales", e); }
+        await runScheduledJob("crawlScarceSales", () => crawlScarceSales(env));
         // Classify Emblem vault contents/crack state (real vs scam sales) — one bounded vault batch per tick.
-        try { await classifyVaults(env); } catch (e) { console.error("classifyVaults", e); }
+        await runScheduledJob("classifyVaults", () => classifyVaults(env));
         // Capture Emblem /meta (claim vs contents) for 'foreign' vaults — splits legit foreign from empty scams.
-        try { await crawlEmblemMeta(env); } catch (e) { console.error("crawlEmblemMeta", e); }
+        await runScheduledJob("crawlEmblemMeta", () => crawlEmblemMeta(env));
         // Attribute Emblem empty-shell scams to BTC identities (creator bridge → address_signals.shell_scams). Daily-gated.
-        try { await buildScamAttribution(env); } catch (e) { console.error("buildScamAttribution", e); }
+        await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
         // Keep the graph-reputation trait fresh: advance an in-progress Min-k-PPR rebuild a couple units/tick,
         // and kick a fresh weekly rebuild when idle (trust/distrust tiers + scam seeds stay current, no staleness).
-        try { await maybeBuildGraph(env); } catch (e) { console.error("maybeBuildGraph", e); }
+        await runScheduledJob("maybeBuildGraph", () => maybeBuildGraph(env));
         // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
-        try { await buildTrades(env); } catch (e) { console.error("buildTrades", e); }
+        await runScheduledJob("buildTrades", () => buildTrades(env));
         // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).
-        try { await maybeCrawlPrices(env); } catch (e) { console.error("crawlPrices", e); }
-        try { await applyTradeUsd(env); } catch (e) { console.error("applyTradeUsd", e); }
+        await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
+        await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
       }
     })());
   },
