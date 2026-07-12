@@ -10,7 +10,7 @@ import { AssetArt } from "@/components/asset-art";
 import { AssetIcon } from "@/components/ui/badges";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
-import { SearchBox } from "@/components/search-box";
+import { SearchBox } from "@/components/chrome/search-box";
 import { commas, short, timeAgo, usdCompact } from "@/lib/format";
 
 type Scalar = string | number | null | undefined;

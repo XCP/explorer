@@ -1,7 +1,7 @@
 import type { TxAction } from "@xcp/shared/chain";
-import { DispenserStorefront, FairminterCampaign, OrderOffer } from "@/components/tx-offer";
-import { DispenseReceipt, SendReceipt, FairmintReceipt, GenericReceipt } from "@/components/tx-receipt";
-import { BroadcastDecl, IssuanceBirth, BetDecl, RpsDecl } from "@/components/tx-declaration";
+import { DispenserStorefront, FairminterCampaign, OrderOffer } from "@/features/transactions/components/tx-offer";
+import { DispenseReceipt, SendReceipt, FairmintReceipt, GenericReceipt } from "@/features/transactions/components/tx-receipt";
+import { BroadcastDecl, IssuanceBirth, BetDecl, RpsDecl } from "@/features/transactions/components/tx-declaration";
 
 /**
  * The tx page's second half — routed by the page's JOB, not just its kind (v21 lab):

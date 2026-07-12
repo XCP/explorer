@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SWRProvider } from "@/lib/swr-provider";
-import { TopBar } from "@/components/top-bar";
-import { Footer } from "@/components/footer";
+import { TopBar } from "@/components/chrome/top-bar";
+import { Footer } from "@/components/chrome/footer";
 
 // Match the xcpdex family: Geist sans (UI) + Geist mono (numbers/hashes/addresses).
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SyncStatus } from "@/components/sync-status";
+import { SyncStatus } from "@/components/chrome/sync-status";
 
 // V2-lab footer: a brand/about column, then the four link columns (Explore / Discover / Ecosystem /
 // Data), then the brand row with the live sync line. Stays a server component; SyncStatus is the

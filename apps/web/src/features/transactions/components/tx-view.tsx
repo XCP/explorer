@@ -13,9 +13,9 @@ import { addrCell, assetCell, type Col } from "@/lib/cells";
 import { eventChip } from "@/lib/mempool";
 import { KIND_TAB, btcAmt, satsUsd } from "@/lib/tx";
 import { usePrices } from "@/lib/prices";
-import { TxActionPanel } from "@/components/tx-action-panel";
-import { BitcoinTab, useBitcoinTx } from "@/components/tx-bitcoin";
-import { EventsTab } from "@/components/tx-events";
+import { TxActionPanel } from "@/features/transactions/components/tx-action-panel";
+import { BitcoinTab, useBitcoinTx } from "@/features/transactions/components/tx-bitcoin";
+import { EventsTab } from "@/features/transactions/components/tx-events";
 import { commas, ts, timeAgo } from "@/lib/format";
 
 /**

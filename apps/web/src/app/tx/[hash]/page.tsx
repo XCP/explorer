@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { TxView } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
-import { TxLive } from "@/components/tx-view";
+import { TxLive } from "@/features/transactions/components/tx-view";
 import { KIND_TITLE } from "@/lib/tx";
 import { short } from "@/lib/format";
 
 /**
- * The transaction page — a thin server shell around the live client view (components/tx-view.tsx). The
+ * The transaction page — a thin server shell around the live client view. The
  * server render carries the first TxView (mempool-aware: the API falls through to the node's mempool for
  * a just-broadcast tx), then the island polls it to settlement. This page's primary user is two parties
  * watching a payment confirm, so freshness beats cache: revalidate 5.

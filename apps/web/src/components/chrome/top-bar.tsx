@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { SearchBox } from "@/components/search-box";
-import { NavMenu, type NavGroup } from "@/components/nav-menu";
-import { StatusStrip } from "@/components/status-strip";
+import { SearchBox } from "@/components/chrome/search-box";
+import { NavMenu, type NavGroup } from "@/components/chrome/nav-menu";
+import { StatusStrip } from "@/components/chrome/status-strip";
 
 /**
  * Global chrome (v3 direction, design-lab v11): deliberately SIMPLE — the identity burden lives in
