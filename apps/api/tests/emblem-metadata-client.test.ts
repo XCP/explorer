@@ -9,6 +9,7 @@ test("Emblem metadata parsing accepts consumed fields", () => {
       { coin: "btc", balance: "1" },
       { coin: "ordinalsbtc", balance: 2 },
     ],
+    addresses: [{ coin: "BTC", address: "1abc" }],
     fraud: false,
   };
   assert.deepEqual(parseEmblemMetadata(metadata), metadata);
@@ -20,4 +21,5 @@ test("Emblem metadata parsing rejects provider drift", () => {
   assert.throws(() => parseEmblemMetadata({ values: {} }), /values must be an array/);
   assert.throws(() => parseEmblemMetadata({ values: [{ balance: null }] }), /balance must be a string or number/);
   assert.throws(() => parseEmblemMetadata({ fraud: 1 }), /fraud must be a boolean/);
+  assert.throws(() => parseEmblemMetadata({ addresses: [{ address: 1 }] }), /address must be a string/);
 });

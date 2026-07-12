@@ -16,13 +16,13 @@ import type { Env } from "#api/env";
 import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
 import { fetchEtherscanMintLogs } from "#api/integrations/etherscan-logs";
 import { fetchEmblemCuratedCollections } from "#api/integrations/emblem-curated";
+import { fetchEmblemMetadata } from "#api/integrations/emblem-metadata";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
   setIndexerState as setState,
 } from "#api/indexer/state";
 
-const META = "https://v2.emblemvault.io/meta";
 const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
 const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
 const ZERO_TOPIC = "0x" + "0".repeat(64);
@@ -110,16 +110,14 @@ async function enumEtherscan(
 // get the proper rate limit). Tri-state: ok=false = fetch failed/blank (retry); ok=true = valid record.
 async function resolveBtc(tokenId: string): Promise<{ ok: boolean; btc: string | null }> {
   try {
-    const r = await fetch(`${META}/${tokenId}`, {
+    const metadata = await fetchEmblemMetadata(tokenId, {
       headers: { "x-api-key": "demo", "user-agent": "xcp.io-indexer" },
-      signal: AbortSignal.timeout(12000),
+      acceptNotFound: false,
     });
-    if (!r.ok) return { ok: false, btc: null }; // non-200 (rate limit / down) -> retry later
     // A 200 is DEFINITIVE. Emblem's "not found" record for a bogus/burned token id has NO addresses[]; mark it
     // ok anyway (btc=null) so it drains as resolved. Otherwise those ~20k unresolvable ids sit at the front of
     // the `resolved=0 LIMIT 60` queue and get retried forever (the stall), starving real tokens behind them.
-    const a = ((await r.json()) as { addresses?: unknown })?.addresses;
-    return { ok: true, btc: Array.isArray(a) ? pickBtc(a) : null };
+    return { ok: true, btc: pickBtc(metadata.addresses) };
   } catch {
     return { ok: false, btc: null };
   } // network/parse error -> retry later

@@ -10,6 +10,7 @@ export interface EmblemMetadata {
   name?: string;
   values?: EmblemMetadataValue[];
   fraud?: boolean;
+  addresses?: Array<{ coin?: string; address?: string }>;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -39,15 +40,30 @@ export function parseEmblemMetadata(value: unknown): EmblemMetadata {
       }
     }
   }
+  if (value.addresses !== undefined) {
+    if (!Array.isArray(value.addresses)) throw new Error("Emblem metadata addresses must be an array");
+    for (const [index, item] of value.addresses.entries()) {
+      if (!isObject(item)) throw new Error(`Emblem metadata address ${index} must be an object`);
+      if (item.coin !== undefined && typeof item.coin !== "string") {
+        throw new Error(`Emblem metadata address ${index} coin must be a string`);
+      }
+      if (item.address !== undefined && typeof item.address !== "string") {
+        throw new Error(`Emblem metadata address ${index} address must be a string`);
+      }
+    }
+  }
   return value as EmblemMetadata;
 }
 
-export async function fetchEmblemMetadata(tokenId: string): Promise<EmblemMetadata> {
+export async function fetchEmblemMetadata(
+  tokenId: string,
+  options: { headers?: Record<string, string>; acceptNotFound?: boolean } = {},
+): Promise<EmblemMetadata> {
   const response = await fetch(`${EMBLEM_METADATA_URL}/${encodeURIComponent(tokenId)}`, {
-    headers: { accept: "application/json" },
+    headers: { accept: "application/json", ...options.headers },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (response.status === 404) return {};
+  if (response.status === 404 && options.acceptNotFound !== false) return {};
   if (!response.ok) throw new Error(`Emblem metadata request failed: ${response.status}`);
   return parseEmblemMetadata(await response.json());
 }
