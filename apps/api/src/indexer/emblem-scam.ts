@@ -13,7 +13,7 @@
  *
  * Rebuildable from the mirror + Emblem metadata. Periodic (daily gate) — the whole cohort is tiny & stable.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const HEAVY_DAILY = 144; // ~1 day of Counterparty blocks

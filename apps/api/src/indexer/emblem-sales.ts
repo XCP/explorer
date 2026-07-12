@@ -4,7 +4,7 @@
  * Each sale is attributed to the wrapped Counterparty asset via emblem_vaults(token_id -> btc_address -> its balance).
  * Feeds the unified sales stream as the 'emblem' venue (priced in ETH). Resumable per-contract pageKey cursor.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const ALCHEMY_SALES = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTSales`;

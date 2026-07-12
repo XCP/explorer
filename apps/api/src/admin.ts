@@ -3,7 +3,7 @@
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance.
  */
 import { Hono } from "hono";
-import type { Env } from "./index";
+import type { Env } from "./env";
 import { syncEvents, backfillLedger } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade, verifySignals } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";

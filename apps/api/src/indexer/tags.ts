@@ -15,7 +15,7 @@
  * Each rule carries `key` = the SELECT column that equals entity_id, so the scoped variant is just the full
  * SQL with ` AND <key> IN (?,?,…)` appended (every rule ends on a WHERE-condition, so the append is safe).
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 
 interface Rule { tag: string; key: string; sql: string }
 

@@ -6,7 +6,7 @@
  * the /collections + /tag pages with no special-casing. buildTags' computed rebuild leaves source='issuer'
  * intact (it only touches source='computed').
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 
 interface IssuerCollection { issuer: string; tag: string; name: string; site?: string }
 

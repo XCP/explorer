@@ -23,7 +23,7 @@
  *
  * Note: address_signals.rep_score (personalized-PageRank) is maintained separately (expensive); untouched here.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { CURATED_LOWQ_SQL, EXCHANGES_SQL, CURATED_BURNS_SQL } from "./curated";
 import { EMBLEM_DDL } from "./emblem";

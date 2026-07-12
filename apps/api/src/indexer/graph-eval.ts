@@ -6,7 +6,7 @@
  * docs/graph-reputation.md (Phase C/D). The graph trait is a DISPLAYED tier + curation queue, so "success" =
  * precise tiers, gaming resistance, and good curation candidates — decomposed into the criteria below.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 
 // Known-legit assets that must NOT read distrusted (coverage watchlist — the BITCRYSTALS class + anchors).
 const LEGIT_WATCHLIST = ["BITCRYSTALS", "SJCX", "FLDC", "GEMZ", "SCOTCOIN", "TRIGGERS", "MAFIACASH", "RUSTBITS", "XCP", "PEPECASH", "BITCORN", "FLDC"];

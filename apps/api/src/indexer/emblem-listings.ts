@@ -6,7 +6,7 @@
  * contents_asset). Bounded + resumable: a rotating subset of contracts per call, upsert live asks, prune
  * stale/expired ones. Requires SEQUENCE_ACCESS_KEY; no-ops without it (so the rest of the cron is unaffected).
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const SEQ_BASE = "https://marketplace-api.sequence.app/mainnet/rpc/Marketplace/ListCollectiblesWithLowestListing";

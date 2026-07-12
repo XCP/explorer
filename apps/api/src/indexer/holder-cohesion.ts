@@ -6,7 +6,7 @@
  *
  * Cursored (asset-name) so a driver can walk the candidate set across calls without a per-run timeout.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 
 const inList = (ids: string[]) => ids.filter((s) => /^[a-zA-Z0-9._]+$/.test(s)).map((s) => `'${s}'`).join(",") || "''";
 const STRONG_W = 1.6; // ln(1+n) ≥ 1.6 ⇔ ~4+ repeated interactions between the pair

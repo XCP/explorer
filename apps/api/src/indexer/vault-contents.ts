@@ -18,7 +18,7 @@
  * Bounded + resumable (rowid cursor, wraps to re-sweep — vaults get cracked long after they're minted,
  * so a single pass is never final). Cron / admin driven, like the other Emblem sidecars.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const BATCH = 400; // vaults per step; aggregates join sends/balances on a vault ROWID RANGE (2 bound params,

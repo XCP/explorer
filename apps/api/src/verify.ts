@@ -4,7 +4,7 @@
  * backfill is caught up (tip parity) — see VERIFICATION.md for methodology + thresholds.
  */
 import { Hono } from "hono";
-import type { Env } from "./index";
+import type { Env } from "./env";
 import { requireAdmin } from "./middleware/admin-auth";
 import { parseCounterpartyJson } from "./indexer/codec";
 

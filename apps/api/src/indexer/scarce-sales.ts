@@ -6,7 +6,7 @@
  * asset universe (resumable rowid cursor), query per asset, and keep the hits. Feeds the unified sales
  * stream as the 'scarce.city' venue (BTC-priced). Idempotent on (asset, sold_at).
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const SALES_URL = (asset: string) => `https://scarce.city/api/marketplace/digital/${encodeURIComponent(asset)}/sales`;

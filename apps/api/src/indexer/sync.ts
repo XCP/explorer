@@ -16,7 +16,7 @@
  * tables, restore balances from the nearest snapshot, reset the event cursor, replay forward. Balance
  * snapshots are written only near the tip (FOLLOWING window) and pruned keep-one-below-cutoff.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { normalize } from "./codec";
 import { type Ev, type Stmt, type Ctx, bi, str } from "./events/context";
 import { dispatch } from "./events/dispatch";

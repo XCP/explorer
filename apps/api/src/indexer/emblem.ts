@@ -12,7 +12,7 @@
  *
  * Resumable per-contract pageKey/block cursor in indexer_state; bounded per step (cron + admin driven).
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const ALCHEMY_NFT = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTsForContract`;

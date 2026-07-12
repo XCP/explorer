@@ -7,7 +7,7 @@
  *
  * `prices(day, currency, usd)` is the calendar; `applyTradeUsd` maps each trade's day+currency onto it.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerStateInt as getState, setIndexerState as setState } from "./state";
 
 export const PRICES_DDL = `CREATE TABLE IF NOT EXISTS prices (

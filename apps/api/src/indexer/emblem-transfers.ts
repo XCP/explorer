@@ -7,7 +7,7 @@
  * IGNORE dedupes the overlap with the getNFTSales era). Seaport only for now — Blur/LooksRare use other
  * events (a trickle here; follow-up). Bounded + resumable (per-contract block cursor + pageKey). Cron/admin.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { decodeOrderFulfilled, ORDER_FULFILLED_TOPIC } from "./seaport";
 

@@ -23,7 +23,7 @@
  *  - MAINTENANCE: recompute the dirty queue (assets touched by a supply-changing event, queued by
  *    sync.ts) + XCP every run, then the small fairminter/pool derivations.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { normalize } from "./codec";
 

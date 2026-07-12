@@ -19,7 +19,7 @@
  *   ITERATE: ~20 degree-normalized PPR passes (damping 0.85) per slot as set-based UPDATE-JOINs; slots 0..K-1
  *          forward (trust subsets), slot K reverse (distrust). trust = MIN over the k subsets; distrust = slot K.
  */
-import type { Env } from "../index";
+import type { Env } from "../env";
 import { getIndexerState as getState, setIndexerState as setState } from "./state";
 import { q } from "../db";
 import {
