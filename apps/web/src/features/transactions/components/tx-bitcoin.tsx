@@ -3,6 +3,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { useState } from "react";
 import type { BitcoinTxIo, BitcoinTxSummary } from "@xcp/shared/chain";
+import { fetcher } from "@/lib/api/client";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -56,18 +57,41 @@ const fromMempoolSpace = (t: MempoolSpaceTx): BitcoinTxSummary => ({
 type Sourced = BitcoinTxSummary & { source: "mempool.space" | "counterparty node" };
 const REQUEST_TIMEOUT_MS = 8_000;
 
+function isMempoolSpaceTx(value: unknown): value is MempoolSpaceTx {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const tx = value as Record<string, unknown>;
+  return (
+    typeof tx.fee === "number" &&
+    Number.isFinite(tx.fee) &&
+    typeof tx.weight === "number" &&
+    Number.isFinite(tx.weight) &&
+    typeof tx.size === "number" &&
+    Number.isFinite(tx.size) &&
+    Array.isArray(tx.vin) &&
+    tx.vin.every((input) => typeof input === "object" && input !== null && !Array.isArray(input)) &&
+    Array.isArray(tx.vout) &&
+    tx.vout.every(
+      (output) =>
+        typeof output === "object" &&
+        output !== null &&
+        !Array.isArray(output) &&
+        typeof (output as Record<string, unknown>).value === "number" &&
+        Number.isFinite((output as Record<string, unknown>).value),
+    )
+  );
+}
+
 async function fetchBitcoinTx(hash: string): Promise<Sourced> {
   try {
     const r = await fetch(`https://mempool.space/api/tx/${hash}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-    if (r.ok) return { ...fromMempoolSpace(await r.json()), source: "mempool.space" };
+    if (r.ok) {
+      const value: unknown = await r.json();
+      if (isMempoolSpaceTx(value)) return { ...fromMempoolSpace(value), source: "mempool.space" };
+    }
   } catch {
     /* fall through to the node */
   }
-  const r2 = await fetch(apiUrl(`/v2/transactions/${encodeURIComponent(hash)}/bitcoin`), {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!r2.ok) throw new Error(String(r2.status));
-  const env = (await r2.json()) as Envelope<BitcoinTxSummary>;
+  const env = await fetcher<Envelope<BitcoinTxSummary>>(apiUrl(`/v2/transactions/${encodeURIComponent(hash)}/bitcoin`));
   if (!env.result) throw new Error("no result");
   return { ...env.result, source: "counterparty node" };
 }
