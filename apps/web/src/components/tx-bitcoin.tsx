@@ -36,13 +36,16 @@ const fromMempoolSpace = (t: MempoolSpaceTx): BitcoinTxSummary => ({
 });
 
 type Sourced = BitcoinTxSummary & { source: "mempool.space" | "counterparty node" };
+const REQUEST_TIMEOUT_MS = 8_000;
 
 async function fetchBitcoinTx(hash: string): Promise<Sourced> {
   try {
-    const r = await fetch(`https://mempool.space/api/tx/${hash}`);
+    const r = await fetch(`https://mempool.space/api/tx/${hash}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     if (r.ok) return { ...fromMempoolSpace(await r.json()), source: "mempool.space" };
   } catch { /* fall through to the node */ }
-  const r2 = await fetch(apiUrl(`/v2/transactions/${encodeURIComponent(hash)}/bitcoin`));
+  const r2 = await fetch(apiUrl(`/v2/transactions/${encodeURIComponent(hash)}/bitcoin`), {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (!r2.ok) throw new Error(String(r2.status));
   const env = (await r2.json()) as Envelope<BitcoinTxSummary>;
   if (!env.result) throw new Error("no result");

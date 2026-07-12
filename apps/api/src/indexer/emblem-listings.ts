@@ -13,6 +13,7 @@ const PAGE_SIZE = 100;
 const MAX_PAGES_PER_CONTRACT = 5;   // includeEmpty=false returns only listed tokens, so this is plenty
 const CONTRACTS_PER_RUN = 6;        // rotate through all ~36 Emblem contracts over several hourly runs
 const MAP_CHUNK = 90;               // stay under D1's 100 bound-param cap on the token_id IN-list
+const REQUEST_TIMEOUT_MS = 20_000;
 
 // The lowest-listing order fields we read (Sequence webrpc Order — services/marketplace/marketplace.gen.go).
 interface SeqOrder {
@@ -39,8 +40,10 @@ async function fetchPage(key: string, contract: string, page: number): Promise<L
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Access-Key": key },
     body: JSON.stringify({ contractAddress: contract, filter: { includeEmpty: false }, page: { page, pageSize: PAGE_SIZE } }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  return r.json();
+  if (!r.ok) throw new Error(`Sequence listings request failed: ${r.status}`);
+  return r.json() as Promise<ListResp>;
 }
 
 // A live ask flattened to what emblem_listings stores (asset resolved separately, in a batched lookup).
@@ -90,12 +93,20 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
 
   const now = Math.floor(Date.now() / 1000);
   const start = parseInt((await getState(env, "emblem_listings_ci")) || "0", 10) % contracts.length;
-  let upserts = 0, live = 0;
+  let upserts = 0, live = 0, failed = 0;
   const processed: string[] = [];
 
   for (let n = 0; n < CONTRACTS_PER_RUN; n++) {
     const contract = contracts[(start + n) % contracts.length].toLowerCase();
-    const asks = await sweepContract(key, contract);
+    let asks: Ask[];
+    try {
+      asks = await sweepContract(key, contract);
+    } catch {
+      // Preserve the last known rows for a contract when its refresh fails. Pruning here would
+      // turn a transient upstream outage into false delistings for every token in the contract.
+      failed++;
+      continue;
+    }
     live += asks.length;
     if (asks.length) {
       const assetOf = await mapAssets(env, contract, asks.map((a) => a.tokenId));
@@ -117,5 +128,5 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
   // global expiry sweep
   await env.DB.prepare(`DELETE FROM emblem_listings WHERE expiry > 0 AND expiry < ?`).bind(now).run();
   await setState(env, "emblem_listings_ci", String((start + CONTRACTS_PER_RUN) % contracts.length));
-  return { processed: processed.length, live, upserts };
+  return { processed: processed.length, failed, live, upserts };
 }
