@@ -61,6 +61,13 @@ rewrote ~11.2M rows/day despite infrastructure membership being stable.
 Bounded Emblem/Scarce crawler responses report the batch and cursor state without recounting their complete
 staging tables. Completion and retry logic never depended on those telemetry-only totals.
 
+The daily burn-adjust self-heal starts from indexed burn addresses, materializes the 1,337 affected assets,
+then seeks balances only for those assets. Production old/new parity was exact; the isolated new aggregation
+read ~1.06M rows in 6.3s versus the former all-balances plan's ~3.04M rows / 23.6s.
+
+Daily metric series cache for six hours (rather than 30 minutes), and lifetime trade-venue aggregates cache
+hourly (rather than two minutes). Their live feeds remain independently fresh; only full-history regrouping is gated.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code
