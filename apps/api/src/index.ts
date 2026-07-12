@@ -34,6 +34,7 @@ import { admin } from "./admin";
 
 export interface Env {
   DB: D1Database;
+  LEDGER_DB: D1Database;
   XCPDEX: Fetcher;              // service binding -> xcpdex-api worker (swap market data)
   COUNTERPARTY_API_BASE: string;          // https://api.counterparty.io:4000/v2
   XCPDEX_API: string;           // https://xcpdex-api.me-bbe.workers.dev (fallback/ref)
@@ -173,10 +174,10 @@ export default {
         // rows (isolated — never touches balances/mirror/signals, so no contention risk). Runs FIRST so it gets
         // tick budget; clears the flag when caught up. Grinds through history over a day or two, hands-free.
         try {
-          const bf = await env.DB.prepare("SELECT value FROM indexer_state WHERE key='ledger_backfill_active'").first<{ value: string }>();
+          const bf = await env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='backfill_active'").first<{ value: string }>();
           if (bf?.value === "1") {
             const r = await backfillLedger(env, { maxEvents: 10000 });
-            if (r.caught_up) await env.DB.prepare("UPDATE indexer_state SET value='0' WHERE key='ledger_backfill_active'").run();
+            if (r.caught_up) await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
           }
         } catch (e) { console.error("backfillLedger", e); }
         // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).

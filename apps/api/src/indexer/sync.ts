@@ -21,6 +21,7 @@ import { normalize } from "./codec";
 import { type Ev, type Stmt, type Ctx, bi, str } from "./events/context";
 import { dispatch } from "./events/dispatch";
 import { counterpartyJson } from "./counterparty";
+import { hashToBytes } from "./compact-codec";
 
 const CHUNK = 1000;                 // events per API page
 const MAX_EVENTS_PER_RUN = 50_000;  // cap per invocation (backfill driven by repeated calls)
@@ -35,6 +36,14 @@ async function getState(db: D1Database, k: string): Promise<string | null> {
 }
 function setStateStmt(db: D1Database, k: string, v: string): D1PreparedStatement {
   return db.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v);
+}
+
+async function getLedgerState(db: D1Database, key: string): Promise<string | null> {
+  return (await db.prepare(`SELECT value FROM ledger_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null;
+}
+
+async function setLedgerState(db: D1Database, key: string, value: string): Promise<void> {
+  await db.prepare(`INSERT INTO ledger_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(key, value).run();
 }
 
 // Flush statements in D1-sized batches. STRICT: a batch failure throws so the caller aborts the run
@@ -97,9 +106,9 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
   let processed = 0, written = 0;
   const done: Record<string, boolean> = {};
   for (const k of LEDGER_KINDS) {
-    done[k.type] = (await getState(env.DB, k.doneKey)) === "1";
+    done[k.type] = (await getLedgerState(env.LEDGER_DB, k.doneKey)) === "1";
     if (done[k.type]) continue;
-    let cursor = await getState(env.DB, k.cursorKey); // null on first pass = newest page
+    let cursor = await getLedgerState(env.LEDGER_DB, k.cursorKey); // null on first pass = newest page
     while (processed < cap) {
       // Per-page durability: a 429/throw here ends the call, but every prior page is already committed and its
       // cursor persisted, so the next call resumes cleanly with no lost work. This is what makes it 429-resilient.
@@ -107,22 +116,40 @@ export async function backfillLedger(env: Env, opts: { maxEvents?: number } = {}
         api, `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`);
       const rows = d.result || [];
       const page: Stmt[] = [];
+      const addresses = new Set<string>();
+      const assets = new Set<string>();
       for (const ev of rows) {
         const p = ev.params;
         const holder = (p.utxo as string) || (p.address as string);
         if (holder && p.asset) {
+          const utxoAddress = p.utxo ? str(p.utxo_address ?? null) : null;
+          addresses.add(holder);
+          assets.add(p.asset);
+          if (utxoAddress) addresses.add(utxoAddress);
           page.push((db) => db.prepare(
-            `INSERT OR IGNORE INTO ${k.table} (event_index,block_index,tx_hash,address,asset,quantity,calling_function,utxo_address) VALUES (?,?,?,?,?,?,?,?)`,
-          ).bind(ev.event_index, ev.block_index, ev.tx_hash, holder, p.asset, str(p.quantity) ?? "0", str(p.calling_function ?? null), p.utxo ? str(p.utxo_address ?? null) : null));
+            `INSERT OR IGNORE INTO ledger_events
+               (event_index,direction,block_index,tx_hash,address_id,asset_id,quantity,calling_function,utxo_address_id)
+             SELECT ?,?,?,?,ad.address_id,ast.asset_id,?,?,ua.address_id
+               FROM address_dictionary ad JOIN asset_dictionary ast
+               LEFT JOIN address_dictionary ua ON ua.address=?
+              WHERE ad.address=? AND ast.asset=?`,
+          ).bind(ev.event_index, k.type === "CREDIT" ? 1 : 0, ev.block_index, hashToBytes(ev.tx_hash),
+            str(p.quantity) ?? "0", str(p.calling_function ?? null), utxoAddress, holder, p.asset));
           written++;
         }
         processed++;
       }
-      if (page.length) await batchAll(env.DB, page);
+      if (page.length) {
+        const dictionary: Stmt[] = [
+          ...[...addresses].map((address): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address)),
+          ...[...assets].map((asset): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset)),
+        ];
+        await batchAll(env.LEDGER_DB, [...dictionary, ...page]);
+      }
       const nc = d.next_cursor;
-      if (nc == null || rows.length === 0) { await setStateStmt(env.DB, k.doneKey, "1").run(); done[k.type] = true; break; }
+      if (nc == null || rows.length === 0) { await setLedgerState(env.LEDGER_DB, k.doneKey, "1"); done[k.type] = true; break; }
       cursor = String(nc);
-      await setStateStmt(env.DB, k.cursorKey, cursor).run();
+      await setLedgerState(env.LEDGER_DB, k.cursorKey, cursor);
     }
   }
   return { processed, written, credit_done: !!done["CREDIT"], debit_done: !!done["DEBIT"], caught_up: !!done["CREDIT"] && !!done["DEBIT"] };
@@ -222,9 +249,17 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
     while (lastIdx < tip && applied < cap) {
       const evs = await fetchAsc(api, lastIdx + 1);
       if (!evs.length) break;
-      const ctx: Ctx = { stmts: [], balDelta: new Map(), maxBlock: lastBlock, supplyDirty: new Set() };
+      const ctx: Ctx = {
+        stmts: [], ledgerStmts: [], ledgerAddresses: new Set(), ledgerAssets: new Set(),
+        balDelta: new Map(), maxBlock: lastBlock, supplyDirty: new Set(),
+      };
       for (const ev of evs) dispatch(ev, ctx);
       await batchAll(env.DB, ctx.stmts);
+      const ledgerDictionary: Stmt[] = [
+        ...[...ctx.ledgerAddresses].map((address): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address)),
+        ...[...ctx.ledgerAssets].map((asset): Stmt => (db) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset)),
+      ];
+      await batchAll(env.LEDGER_DB, [...ledgerDictionary, ...ctx.ledgerStmts]);
       await applyBalances(env, ctx, followingWindow);
       if (ctx.supplyDirty.size > 0) await enqueueSupply(env.DB, [...ctx.supplyDirty]);
 

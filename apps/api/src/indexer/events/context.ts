@@ -25,6 +25,9 @@ export interface Ev {
 // and the set of assets whose supply changed (recomputed deterministically — see asset-supply.ts).
 export interface Ctx {
   stmts: Stmt[];
+  ledgerStmts: Stmt[];
+  ledgerAddresses: Set<string>;
+  ledgerAssets: Set<string>;
   balDelta: Map<string, { holder: string; asset: string; htype: string; delta: bigint; divisible: boolean; block: number; evIdx: number; utxoAddr: string | null }>;
   maxBlock: number;
   supplyDirty: Set<string>;
