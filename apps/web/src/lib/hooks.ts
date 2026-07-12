@@ -4,7 +4,7 @@ import type { RecordKind } from "@xcp/shared/records";
 import type { AssetDetail, AssetIndexRow } from "@xcp/shared/assets";
 import type { BlockDetail, BlockRow, TxDetail } from "@xcp/shared/chain";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
-import type { StatsOverview } from "@xcp/shared/stats";
+import type { SyncOverview } from "@xcp/shared/stats";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { apiUrl, type Envelope } from "./api";
@@ -21,7 +21,7 @@ function useDetail<T>(path: string | null) {
 
 // The home summary + footer heartbeat both read this; poll every 60s so the tip height stays current.
 export const useStats = () => {
-  const { data, error, isLoading } = useSWR<Envelope<StatsOverview>>(apiUrl("/v2/"), { refreshInterval: 60_000 });
+  const { data, error, isLoading } = useSWR<Envelope<SyncOverview>>(apiUrl("/v2/status"), { refreshInterval: 60_000 });
   return { item: data?.result, error, isLoading };
 };
 // Distinct pending-tx count for the footer heartbeat — the same /v2/mempool feed as useMempool, but

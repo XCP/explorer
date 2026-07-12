@@ -8,12 +8,13 @@ import { scoreAsset, assetScore, assetTier, scoreConviction, convictionScore, ty
 import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "../reputation/config";
 import {
   listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText, assetEscrowText,
-  assetSignalsRow, assetTags, assetSales, assetCollection, assetArtist, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
+  assetSignalsRow, assetTags, assetSales, assetCollection, assetArtist, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
   listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetCollectionCohort, assetQualitySignals, latestUsdRate,
   assetActivityVenues, assetActivityFlows, assetActiveUsers,
 } from "../queries/assets";
+import { readAssetFeedCounts } from "../queries/asset-feed-counts";
 
 export const assets = router();
 
@@ -80,7 +81,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     assetCollection(c.env.DB, r.asset).catch(() => null),
     assetArtist(c.env.DB, r.asset).catch(() => null),
     // per-feed tab counts (the detail page's tab bar) — same filters as the feed list endpoints
-    assetFeedCounts(c.env.DB, r.asset, r.issuer).catch(() => null),
+    readAssetFeedCounts(c.env.DB, r.asset, r.issuer).catch(() => null),
   ]);
   const raw = BigInt(sup?.supply ?? 0);
   const burnedRaw = BigInt(burn?.burned ?? 0);

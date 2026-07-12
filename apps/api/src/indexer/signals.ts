@@ -26,6 +26,10 @@
 import type { Env } from "../index";
 import { CURATED_LOWQ_SQL, EXCHANGES_SQL, CURATED_BURNS_SQL } from "./curated";
 import { EMBLEM_DDL } from "./emblem";
+import {
+  ASSET_FEED_COUNT_SOURCES, FEED_COUNT_COLUMNS, feedCountResetSql, feedCountWriteSql,
+  type FeedCountColumn,
+} from "./asset-feed-counts";
 
 
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
@@ -99,6 +103,27 @@ interface FeatureUnit {
 // on burned_pct, and (addr_iss, addr_surv) on locked_assets — so the resetter is co-gated even if it alone is
 // under the row threshold.
 const HEAVY_DAILY_BLOCKS = 144;
+
+/**
+ * One exact asset-tab counter derived from a source that emits one asset row per matching record.
+ * Full rebuilds aggregate the population; the cascade applies the identical aggregation to dirty assets.
+ * The scoped reset unit immediately before these units makes reorgs from one row to zero exact.
+ */
+function feedCountUnit(
+  column: FeedCountColumn,
+  reads: string[],
+  source: string,
+  heavyEveryBlocks?: number,
+): FeatureUnit {
+  return {
+    name: `feed_count_${column}`,
+    scope: "asset",
+    reads,
+    heavyEveryBlocks,
+    full: feedCountWriteSql(column, source),
+    scoped: (ph) => feedCountWriteSql(column, source, `AND asset IN (${ph})`),
+  };
+}
 
 // ---------------------------------------------------------------------------------------------------
 // FEATURE UNITS. Order matters: a unit may read an earlier unit's output (see dependsOn). The cascade
@@ -402,6 +427,23 @@ const UNITS: FeatureUnit[] = [
   // seed asset metadata + precomputed age (tip − first issuance) + recency. age_blocks/recency_blocks are
   // tip-relative (change for all assets as blocks pass) so this is periodic. (A full INSERT...SELECT of all
   // assets exceeds D1's per-statement write cap, so it's an UPDATE of existing rows.)
+  // ===== ASSET DETAIL - materialized earned-tab counts =====
+  // D1 Insights: the old per-request twelve-scalar aggregation read 2.8bn rows/week. Seed every known
+  // asset once, then reset/recompute only dirty assets in the per-block cascade. The full units are the
+  // canonical backfill/self-heal; reads stay on the live-query fallback until feed_count_ready runs.
+  { name: "feed_count_seed", scope: "asset", reads: ["assets"], periodic: true,
+    full: `INSERT OR IGNORE INTO asset_feed_counts (asset,updated_at) SELECT asset,unixepoch() FROM assets` },
+  { name: "feed_count_scoped_reset", scope: "asset", reads: [],
+    full: `SELECT 1`,
+    scoped: (ph) => feedCountResetSql(ph) },
+  ...FEED_COUNT_COLUMNS.map((column) => {
+    const source = ASSET_FEED_COUNT_SOURCES[column];
+    return feedCountUnit(column, source.reads, source.sql, source.heavy ? HEAVY_DAILY_BLOCKS : undefined);
+  }),
+  { name: "feed_count_ready", scope: "global", reads: [], periodic: true,
+    full: `INSERT INTO indexer_state (key,value) VALUES ('asset_feed_counts_ready','1')
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value` },
+
   { name: "asset_seed", scope: "asset", reads: ["assets", "blocks"], periodic: true,
     full: `UPDATE asset_signals SET asset_longname=(SELECT asset_longname FROM assets a WHERE a.asset=asset_signals.asset), issuer=(SELECT issuer FROM assets a WHERE a.asset=asset_signals.asset), divisible=(SELECT divisible FROM assets a WHERE a.asset=asset_signals.asset), locked=(SELECT locked FROM assets a WHERE a.asset=asset_signals.asset), supply=(SELECT CAST(supply_normalized AS REAL) FROM assets a WHERE a.asset=asset_signals.asset), age_blocks=((SELECT MAX(block_index) FROM blocks)-(SELECT first_issuance_block_index FROM assets a WHERE a.asset=asset_signals.asset)), recency_blocks=((SELECT MAX(block_index) FROM blocks)-last_trade_blk) WHERE EXISTS (SELECT 1 FROM assets a WHERE a.asset=asset_signals.asset)` },
 
@@ -489,9 +531,15 @@ async function dirtyAssets(env: Env, lo: number, hi: number): Promise<string[]> 
       UNION SELECT asset FROM sends WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT asset FROM dispenses WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT asset FROM dispensers WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT asset FROM fairmints WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT asset FROM dividends WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT dividend_asset FROM dividends WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT asset FROM destructions WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT forward_asset FROM order_matches WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT backward_asset FROM order_matches WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT asset_a FROM pools WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT asset_b FROM pools WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT lp_asset FROM pools WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT asset FROM balances WHERE updated_block_index BETWEEN ?1 AND ?2
     ) WHERE asset IS NOT NULL`;
   const r = await env.DB.prepare(sql).bind(lo, hi).all<{ asset: string }>();

@@ -44,13 +44,26 @@ export async function cached(
   };
   const hit = await c.env.DB.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`).bind(key).first<{ body: string; ctype: string; expires_at: number }>().catch(() => null);
   if (hit?.body) {
-    if (now < hit.expires_at) return send(hit.body, hit.ctype);            // fresh
+    if (now < hit.expires_at) {
+      const response = send(hit.body, hit.ctype);
+      response.headers.set("x-d1-cache", "HIT");
+      return response;
+    }
     if (now < hit.expires_at + swr) {                                      // stale: serve now, refresh in bg
       const ctx = (() => { try { return c.executionCtx; } catch { return null; } })();
-      if (ctx) { ctx.waitUntil(write().catch(() => {})); return send(hit.body, hit.ctype); }
+      if (ctx) {
+        ctx.waitUntil(write().catch(() => {}));
+        const response = send(hit.body, hit.ctype);
+        response.headers.set("x-d1-cache", "STALE");
+        return response;
+      }
     }
   }
-  return send(await write());                                             // miss / too stale: compute now
+  const started = Date.now();
+  const response = send(await write());                                   // miss / too stale: compute now
+  response.headers.set("x-d1-cache", "MISS");
+  response.headers.set("server-timing", `producer;dur=${Date.now() - started}`);
+  return response;
 }
 export const lim = (c: Ctx, def = 50, max = 100) =>
   Math.min(max, Math.max(1, parseInt(c.req.query("limit") || String(def), 10)));

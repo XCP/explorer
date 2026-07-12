@@ -10,7 +10,7 @@
  */
 import type {
   AssetIndexRow, FeaturedAsset, AssetCohortRow, BalanceRow, AssetListRow,
-  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales, AssetFeedCounts,
+  HolderTierRow, HolderArchetypes, AssetReviewDistribution, AssetReviewTopRow, AssetSales,
   AssetActiveUser,
 } from "@xcp/shared/assets";
 import type {
@@ -408,26 +408,6 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
  *  from-issuer feed (listIssued's issuer-or-owner predicate in
  *  queries/addresses.ts), so each tab's count matches its table. `issuer` may be null (native path
  *  never reaches here, but an assets row can lack an issuer) — the from_issuer count is then 0. */
-export function assetFeedCounts(db: D1Database, asset: string, issuer: string | null): Promise<AssetFeedCounts | null> {
-  return one<AssetFeedCounts>(
-    db,
-    `SELECT
-       (SELECT COUNT(*) FROM trades WHERE asset=?1) sales,
-       (SELECT COUNT(*) FROM issuances WHERE asset=?1) issuances,
-       (SELECT COUNT(*) FROM dispensers WHERE asset=?1) dispensers,
-       (SELECT COUNT(*) FROM dispenses WHERE asset=?1) dispenses,
-       (SELECT COUNT(*) FROM orders WHERE give_asset=?1 OR get_asset=?1) orders,
-       (SELECT COUNT(*) FROM sends WHERE asset=?1) sends,
-       (SELECT COUNT(*) FROM assets WHERE asset_longname LIKE ?2) subassets,
-       (SELECT COUNT(*) FROM assets WHERE issuer=?3 OR owner=?3) from_issuer,
-       (SELECT COUNT(*) FROM fairmints WHERE asset=?1) fairmints,
-       (SELECT COUNT(*) FROM dividends WHERE asset=?1 OR dividend_asset=?1) dividends,
-       (SELECT COUNT(*) FROM destructions WHERE asset=?1) destructions,
-       (SELECT COUNT(*) FROM pools WHERE asset_a=?1 OR asset_b=?1 OR lp_asset=?1) pools`,
-    asset, asset + ".%", issuer
-  );
-}
-
 /** The asset's collection tag + project site. Considers both collection sources — the curated pepe.wtf
  *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
  *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green

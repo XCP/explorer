@@ -9,6 +9,12 @@ export interface StatsOverview {
   indexed_block: string | null; // indexer cursor (stored as text in indexer_state)
 }
 
+/** GET /v2/status - cheap live heartbeat; never scans the large mirror tables. */
+export interface SyncOverview {
+  tip: number | null;
+  indexed_block: string | null;
+}
+
 /** GET /v2/stats — lifetime network counts + totals (cached). */
 export interface NetworkStats {
   tip: number | null;

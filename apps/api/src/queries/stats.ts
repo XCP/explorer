@@ -4,7 +4,7 @@
  * pass in the config-driven reputation SQL; every DB read and every SQL string lives here. The
  * counts/totals row shapes are the wire contract (@xcp/shared/stats).
  */
-import type { StatsOverview, NetworkStats } from "@xcp/shared/stats";
+import type { StatsOverview, SyncOverview, NetworkStats } from "@xcp/shared/stats";
 import { q, one } from "../db";
 
 /** The lifetime-counts half of NetworkStats (everything the totals query does not supply). */
@@ -39,6 +39,15 @@ export function homeOverview(db: D1Database): Promise<StatsOverview | null> {
             (SELECT COUNT(*) FROM assets) assets,
             (SELECT COUNT(*) FROM transactions) transactions,
             (SELECT COUNT(*) FROM balances) balances,
+            (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`
+  );
+}
+
+/** Live sync heartbeat. Unlike homeOverview, this never scans assets/transactions/balances. */
+export function syncOverview(db: D1Database): Promise<SyncOverview | null> {
+  return one<SyncOverview>(
+    db,
+    `SELECT (SELECT MAX(block_index) FROM blocks) tip,
             (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`
   );
 }

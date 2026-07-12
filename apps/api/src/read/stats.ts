@@ -1,9 +1,9 @@
 /** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards. */
-import { router, cached } from "./respond";
+import { router, cached, J } from "./respond";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
 import {
-  homeOverview, networkCounts, networkTotals, metricSeries, maxBlock, leaderboards, type MetricName,
+  homeOverview, syncOverview, networkCounts, networkTotals, metricSeries, maxBlock, leaderboards, type MetricName,
 } from "../queries/stats";
 
 export const stats = router();
@@ -12,9 +12,15 @@ export const stats = router();
 // home summary — counts are O(n) covering-index scans (millions of rows); the D1 response cache runs them at
 // most once/ttl globally instead of once per colo. Edge stays short so `tip`/`indexed_block` feel live.
 stats.get("/v2/", async (c) =>
-  cached(c, "home", { ttl: 60, edge: 15 }, async () => ({
+  cached(c, "home", { ttl: 3600, edge: 120, swr: 86400 }, async () => ({
     result: await homeOverview(c.env.DB),
   })));
+
+// Live footer/status-strip heartbeat. This intentionally excludes global row counts: D1 Insights showed
+// the old 60-second home query scanning ~5.2m rows per refresh (~20bn rows/week) for counts the heartbeat
+// consumers never render.
+stats.get("/v2/status", async (c) =>
+  J(c, { result: await syncOverview(c.env.DB) }, 15));
 
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
@@ -23,13 +29,10 @@ stats.get("/v2/metrics", async (c) => {
   // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
   const series = async (name: MetricName) => (await metricSeries(c.env.DB, name, days))
     .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
-  const transactions = await series("transactions");
-  const issuances = await series("issuances");
-  const dispenses = await series("dispenses");
-  const trades = await series("trades");
-  const sends = await series("sends");
-  const btc_fees = await series("btc_fees");
-  const xcp_burned = await series("xcp_burned");
+  const [transactions, issuances, dispenses, trades, sends, btc_fees, xcp_burned] = await Promise.all([
+    series("transactions"), series("issuances"), series("dispenses"), series("trades"),
+    series("sends"), series("btc_fees"), series("xcp_burned"),
+  ]);
   return { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } };
   });
 });

@@ -5,6 +5,26 @@ How the read API stays fast on D1. Three layers, in priority order: **(1) query 
 `wrangler d1 insights xcpio --sort-by reads --sort-type avg` (rows-read is the cost/latency proxy in D1) and
 `EXPLAIN QUERY PLAN` over live data.
 
+## 2026-07-12 production findings
+
+Seven-day D1 Insights showed the old `/v2/` heartbeat query ran **3,840 times**, averaging
+**5,233,723 rows read** per run: about **20.1 billion rows**. The UI only consumed `tip` and
+`indexed_block`. `/v2/status` now serves those two indexed scalar reads; `/v2/` keeps its
+compatibility payload behind a one-hour D1 cache plus day-long stale-while-revalidate.
+
+`assetFeedCounts()` was the next largest user-facing read: **10,601 runs**, averaging **264,346 rows
+read** (about **2.8 billion rows** total). These exact counts power earned tabs and historical
+navigation, so they must not simply be removed. The intended fix is a rebuildable
+`asset_feed_counts` read model maintained by the existing full-rebuild + dirty-set cascade, with
+parity tests against the current aggregation before cutover.
+
+Random-access pagination is a product requirement: investigators need to jump directly to the oldest
+records or an arbitrary page. Offset pagination remains the public contract. Cursors may be added as an
+optional fast path for sequential next/previous browsing, but must not replace page/offset navigation.
+
+`cached()` responses expose `x-d1-cache: HIT|STALE|MISS`; producer misses also expose
+`Server-Timing: producer;dur=...` for browser and synthetic diagnostics.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code
