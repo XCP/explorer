@@ -14,13 +14,13 @@
  */
 import type { Env } from "#api/env";
 import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
+import { fetchEtherscanMintLogs } from "#api/integrations/etherscan-logs";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
   setIndexerState as setState,
 } from "#api/indexer/state";
 
-const ETHERSCAN = "https://api.etherscan.io/v2/api?chainid=1";
 const META = "https://v2.emblemvault.io/meta";
 const CURATED = "https://v2.emblemvault.io/curated";
 const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
@@ -97,14 +97,8 @@ async function enumEtherscan(
   const ids = new Set<string>();
   let last = fromBlock;
   for (const topic0 of [TRANSFER_SINGLE, TRANSFER_BATCH]) {
-    const d = (await (
-      await fetch(
-        `${ETHERSCAN}&module=logs&action=getLogs&address=${contract}&topic0=${topic0}&topic2=${ZERO_TOPIC}&topic0_2_opr=and&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=${ETHERSCAN_PAGE}&apikey=${key}`,
-        { signal: AbortSignal.timeout(25000) },
-      )
-    ).json()) as { result?: Array<{ blockNumber: string; data?: string }> };
-    if (!Array.isArray(d?.result)) continue;
-    for (const log of d.result) {
+    const logs = await fetchEtherscanMintLogs(key, contract, topic0, ZERO_TOPIC, fromBlock, ETHERSCAN_PAGE);
+    for (const log of logs) {
       last = Math.max(last, parseInt(log.blockNumber, 16));
       const w = (log.data || "0x").slice(2).match(/.{64}/g) || [];
       if (topic0 === TRANSFER_SINGLE) ids.add(hexToDec("0x" + w[0]));
