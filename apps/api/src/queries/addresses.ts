@@ -101,16 +101,17 @@ export function listIssued(db: D1Database, address: string, p: Page): Promise<Ad
 export function addressSummary(db: D1Database, address: string): Promise<AddressSummary | null> {
   return one<AddressSummary>(
     db,
-    `SELECT (SELECT quantity_normalized FROM balances WHERE holder=? AND asset='XCP') xcp,
-            (SELECT COUNT(*) FROM balances WHERE holder=? AND holder_type='address' AND CAST(quantity AS INTEGER)>0) assets,
-            (SELECT COUNT(*) FROM assets WHERE issuer=?) issued,
-            (SELECT COUNT(*) FROM dispensers WHERE source=?) dispensers,
-            (SELECT COUNT(*) FROM dispensers WHERE source=? AND status=0) open_dispensers,
-            (SELECT COUNT(*) FROM orders WHERE source=? AND status='open') open_orders,
-            (SELECT MIN(block_index) FROM sends WHERE source=? OR destination=?) first_block,
-            (SELECT MAX(block_index) FROM sends WHERE source=? OR destination=?) last_block,
-            (SELECT ROUND(disp_trust,1) FROM address_signals WHERE address=?) dispenser_trust`,
-    address, address, address, address, address, address, address, address, address, address, address
+    `SELECT (SELECT quantity_normalized FROM balances WHERE holder=?1 AND asset='XCP') xcp,
+            COALESCE(sg.assets_held,0) assets,
+            (SELECT COUNT(*) FROM assets WHERE issuer=?1) issued,
+            (SELECT COUNT(*) FROM dispensers WHERE source=?1) dispensers,
+            (SELECT COUNT(*) FROM dispensers WHERE source=?1 AND status=0) open_dispensers,
+            (SELECT COUNT(*) FROM orders WHERE source=?1 AND status='open') open_orders,
+            sg.first_block,
+            NULLIF(sg.last_block,0) last_block,
+            ROUND(sg.disp_trust,1) dispenser_trust
+       FROM (SELECT ?1 address) v LEFT JOIN address_signals sg ON sg.address=v.address`,
+    address,
   );
 }
 

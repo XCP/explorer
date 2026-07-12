@@ -18,6 +18,14 @@ navigation, so they must not simply be removed. The intended fix is a rebuildabl
 `asset_feed_counts` read model maintained by the existing full-rebuild + dirty-set cascade, with
 parity tests against the current aggregation before cutover.
 
+Implemented in migrations 0042-0043: the ten event-table counts plus the formerly full-scanning
+subasset-prefix count now come from `asset_feed_counts`. Global parity checks returned zero mismatches.
+The only live field left in that projection is `from_issuer`, served by the existing issuer/owner indexes.
+
+Address summary likewise reads `assets_held`, `first_block`, `last_block`, and dispenser trust from the
+cascade-maintained `address_signals` row. It retains exact indexed point counts for issued assets, dispensers,
+open dispensers, and open orders. This removes the live balance count and bidirectional sends MIN/MAX scans.
+
 Random-access pagination is a product requirement: investigators need to jump directly to the oldest
 records or an arbitrary page. Offset pagination remains the public contract. Cursors may be added as an
 optional fast path for sequential next/previous browsing, but must not replace page/offset navigation.
