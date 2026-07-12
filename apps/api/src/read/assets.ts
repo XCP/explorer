@@ -7,13 +7,14 @@ import { router, J, lim, off, round, cached } from "./respond";
 import { scoreAsset, assetScore, assetTier, scoreConviction, convictionScore, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "../reputation/config";
 import {
-  listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText, assetEscrowText,
+  listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply,
   assetSignalsRow, assetTags, assetSales, assetCollection, assetArtist, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
   assetReviewDistribution, assetReviewTop, assetValidation, listAssetBalances, listAssetIssuances, listAssetSends,
   listAssetDispensers, listAssetDispenses, listAssetOrders, listAssetFairmints, listAssetDividends,
   listAssetDestructions, listAssetPools, listAssetPoolMatches, listSubassets, assetCohort, assetCollectionCohort, assetQualitySignals, latestUsdRate,
   assetActivityVenues, assetActivityFlows, assetActiveUsers,
 } from "../queries/assets";
+import { assetAccounting } from "../queries/asset-accounting";
 import { readAssetFeedCounts } from "../queries/asset-feed-counts";
 
 export const assets = router();
@@ -63,19 +64,11 @@ assets.get("/v2/assets/:asset", async (c) => {
     r = await getAsset(c.env.DB, a);
     if (!r) return c.json({ error: "Asset not found" }, 404);
   }
-  // The five reads below are independent — run them concurrently (wall-time = slowest, not the sum;
+  // These reads are independent — run them concurrently (wall-time = slowest, not the sum;
   // the sequential version was the classic multiple-round-trips D1 anti-pattern).
-  const [holder_count, sup, burn, esc, sigRes, tagsRes, salesRes, collectionRes, artistRes, feedCountsRes] = await Promise.all([
-    holderCount(c.env.DB, r.asset),
-    // supply isn't stored during event replay -> derive it: minted (valid issuances) minus destructions.
-    // CAST the result to TEXT so D1 returns a STRING — a JS number would silently lose precision for
-    // supplies > 2^53 (e.g. PEPECASH ~1e17 minor-units). The SUM itself is exact int64 inside SQLite.
-    assetSupplyText(c.env.DB, r.asset),
-    // Burned = supply sitting in known burn addresses; circulating = total issued minus that. Canonical
-    // supply is left intact — burned/circulating sit alongside.
-    assetBurnedText(c.env.DB, r.asset),
-    // Escrow = supply locked in open dispensers + open DEX orders (debited from balances, held by no address).
-    assetEscrowText(c.env.DB, r.asset),
+  const [accounting, sigRes, tagsRes, salesRes, collectionRes, artistRes, feedCountsRes] = await Promise.all([
+    // Supply stays exact TEXT across SQLite/JS; holders, supply, burned, and escrow share one trip.
+    assetAccounting(c.env.DB, r.asset),
     assetSignalsRow(c.env.DB, r.asset).catch(() => null),
     assetTags(c.env.DB, r.asset).catch((): string[] => []),
     // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
@@ -85,9 +78,10 @@ assets.get("/v2/assets/:asset", async (c) => {
     // per-feed tab counts (the detail page's tab bar) — same filters as the feed list endpoints
     readAssetFeedCounts(c.env.DB, r.asset, r.issuer).catch(() => null),
   ]);
-  const raw = BigInt(sup?.supply ?? 0);
-  const burnedRaw = BigInt(burn?.burned ?? 0);
-  const escrowRaw = BigInt(esc?.escrow ?? 0);
+  const holder_count = accounting?.holder_count ?? 0;
+  const raw = BigInt(accounting?.supply ?? 0);
+  const burnedRaw = BigInt(accounting?.burned ?? 0);
+  const escrowRaw = BigInt(accounting?.escrow ?? 0);
   const circRaw = raw - burnedRaw;
   // exact BigInt -> normalized decimal string (pure string math; no float, preserves >2^53 precision).
   const norm = (x: bigint) => {

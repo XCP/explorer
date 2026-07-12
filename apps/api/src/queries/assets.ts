@@ -113,41 +113,6 @@ export function xcpNativeSupply(db: D1Database): Promise<{ supply: number | null
   );
 }
 
-/** Total minted (valid issuances) minus destructions, CAST TEXT so >2^53 supplies keep precision. */
-export function assetSupplyText(db: D1Database, asset: string): Promise<{ supply: string | null } | null> {
-  return one<{ supply: string | null }>(
-    db,
-    `SELECT CAST((SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) FROM issuances WHERE asset=? AND status LIKE 'valid%')
-              - (SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) FROM destructions WHERE asset=? AND status LIKE 'valid%') AS TEXT) supply`,
-    asset, asset
-  );
-}
-
-/** Supply sitting in known burn addresses, CAST TEXT for the same precision reason. */
-export function assetBurnedText(db: D1Database, asset: string): Promise<{ burned: string | null } | null> {
-  return one<{ burned: string | null }>(
-    db,
-    `SELECT CAST(COALESCE(SUM(CAST(b.quantity AS INTEGER)),0) AS TEXT) burned
-     FROM balances b JOIN address_signals s ON s.address=b.holder WHERE b.asset=? AND s.is_burn=1`,
-    asset
-  );
-}
-
-/** Protocol-escrowed supply — inventory locked in open dispensers + open DEX orders. Counterparty
- *  debits the `give` amount out of balances at creation/open with no offsetting credit, so this supply
- *  is real and circulating yet held by no address (invisible to any balances-based holder view). Verified
- *  to reconcile exactly: address balances + utxo balances + this escrow = total supply. BigInt-exact TEXT. */
-export function assetEscrowText(db: D1Database, asset: string): Promise<{ escrow: string | null } | null> {
-  return one<{ escrow: string | null }>(
-    db,
-    `SELECT CAST(
-       (SELECT COALESCE(SUM(CAST(give_remaining AS INTEGER)),0) FROM dispensers WHERE asset=? AND status=0)
-       + (SELECT COALESCE(SUM(CAST(give_remaining AS INTEGER)),0) FROM orders WHERE give_asset=? AND status='open')
-       AS TEXT) escrow`,
-    asset, asset
-  );
-}
-
 /** The one-line issuance brief an offer storefront shows about its asset: total supply + locked. */
 export function assetBrief(db: D1Database, asset: string): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
   return one<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null }>(
