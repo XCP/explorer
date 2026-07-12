@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-export type NavGroup = { heading?: string; links: [label: string, href: string][] };
+export type NavGroup = { heading?: string; links: [label: string, href: Route][] };
 
 /**
  * Disclosure nav dropdown (desktop). Interaction contract:

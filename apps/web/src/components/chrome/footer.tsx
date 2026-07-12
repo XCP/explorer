@@ -1,10 +1,11 @@
 import Link from "next/link";
+import type { Route } from "next";
 import { SyncStatus } from "@/components/chrome/sync-status";
 
 // V2-lab footer: a brand/about column, then the four link columns (Explore / Discover / Ecosystem /
 // Data), then the brand row with the live sync line. Stays a server component; SyncStatus is the
 // only client island.
-type FooterLink = [label: string, href: string];
+type FooterLink = [label: string, href: Route | `https://${string}`];
 
 const EXPLORE: FooterLink[] = [
   ["Assets", "/assets"],
@@ -47,7 +48,7 @@ function Column({ heading, links }: { heading: string; links: FooterLink[] }) {
             </li>
           ) : (
             <li key={href}>
-              <Link href={href} className={linkClass}>{label}</Link>
+              <Link href={href as Route} className={linkClass}>{label}</Link>
             </li>
           )
         )}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import type { AssetDetail } from "@xcp/shared/assets";
 import { collectionLabel, commas } from "@/lib/format";
 
@@ -33,7 +34,7 @@ export function ContextBand({ detail, collectionAssets }: {
   if (detail.collection) {
     // Refined inline on desktop, centered placard on mobile (design-lab options 1 + 3). One markup: `.cb-flow`
     // is display:contents on desktop (count sits left, links push right) and a centered meta row on mobile.
-    const tagHref = `/tag/${encodeURIComponent(detail.collection)}`;
+    const tagHref = `/tag/${encodeURIComponent(detail.collection)}` as Route;
     const site = detail.collection_site;
     const hasSC = detail.collection_series != null && detail.collection_card != null;
     const label = collectionLabel(detail.collection);

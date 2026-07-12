@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { SearchBox } from "@/components/chrome/search-box";
@@ -12,7 +13,7 @@ import { StatusStrip } from "@/components/chrome/status-strip";
  * then one slim row: XCP.io wordmark · Assets · Trades · Blocks · Explore ▾ · Discover ▾ · search ·
  * Connect. Tickers live in the strip, not this row.
  */
-const PRIMARY: [string, string][] = [
+const PRIMARY: [string, Route][] = [
   ["Assets", "/assets"],
   ["Collections", "/collections"],
   ["Radar", "/radar"],
