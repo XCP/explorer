@@ -50,24 +50,35 @@ the old binding.
 First-wave tables, in expected value order:
 
 1. `transactions` (~3.15M): hash TEXT to BLOB; source/destination to address ids.
-2. `sends` (~1.77M): use existing `tx_index` instead of duplicated `tx_hash` when the transaction is
-   guaranteed to exist; source/destination and asset become ids.
-3. `balances` (~1.83M): holder identity and asset become ids; keep exact quantities as TEXT because they
-   can exceed JavaScript's safe integer range.
+2. `sends` (~1.77M): preserve Counterparty's `(tx_index,msg_index)` one-to-many identity and retain
+   `tx_hash` as a BLOB; source/destination and asset become ids.
+3. `balances` (~1.83M): keep one polymorphic table; address holders use `address_id`, UTXO holders use
+   `(utxo_tx_hash,utxo_vout)`, and asset becomes an id. Exact quantities remain TEXT because they can
+   exceed JavaScript's safe integer range.
 4. `orders` and `issuances` (~560k each): compact hashes, addresses, and asset columns.
 5. `order_matches`: replace the 129-character composite id with `(tx0_index, tx1_index)` while rebuilding
    the public id at the boundary.
 
 Production probes supporting the prototype (2026-07-12):
 
-- all 1,770,387 sends have a non-null `tx_index`; none point to a missing transaction, so their repeated
-  `tx_hash` can be reconstructed without loss;
+- all 1,770,387 sends have non-null `tx_index` and `msg_index`; `(tx_index,msg_index)` is unique, one
+  transaction may emit up to 1,000 sends, and Counterparty retains a compact BLOB `tx_hash` alongside
+  that composite identity, so the prototype does the same;
 - 45,603 `source_address` and 46,229 `destination_address` values differ from the generic source/destination,
   so those semantic columns remain independently interned;
-- 58,262 balances refer to asset strings absent from the canonical `assets` table, so `asset_dictionary`
-  is an observed-value dictionary rather than a lossy FK to registered assets;
+- the only balance asset absent from this mirror's `assets` table is the protocol-native `XCP` sentinel
+  (58,263 rows), so the compact asset identity source must seed XCP explicitly before registered assets;
 - 46,779 UTXO balances use ~66-character one-use holders; these are split into BLOB hash plus integer vout
   instead of being placed in a dictionary that would add overhead without deduplication.
+
+Counterparty Core keeps address and UTXO balances in one table: address rows populate `address`, while
+UTXO rows leave it null and populate `(utxo_tx_hash,utxo_vout)` plus `utxo_address`. The prototype follows
+that source model, adds an exact XOR constraint and a virtual `holder_type` for ergonomics, and keeps
+aggregate supply as one `SUM` over one table.
+
+These relationships were checked against Counterparty Core commit `ca2496d`—particularly
+`ledger/migration_data/compact_hash_tables.py`, `ledger/balances.py`, `ledger/events.py`,
+`ledger/supplies.py`, and `api/queries.py`. Source semantics win over inferred normalization.
 
 The executable DDL and index-plan tests live in `src/indexer/compact-primary-prototype.ts` and
 `tests/compact-primary-prototype.test.ts`. They are intentionally not a production migration.
