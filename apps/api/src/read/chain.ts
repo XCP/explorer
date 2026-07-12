@@ -2,7 +2,7 @@
  *  queries/chain.ts (blocks/tx) and queries/records.ts (the 21 per-kind feeds). */
 import { RECORD_KINDS } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
-import { parseCounterpartyJson } from "#api/indexer/codec";
+import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
 import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
@@ -225,14 +225,13 @@ chain.get("/v2/transactions/:hash", async (c) => {
 chain.get("/v2/transactions/:hash/events", async (c) => {
   const hash = c.req.param("hash");
   try {
-    const r = await fetch(
-      `${c.env.COUNTERPARTY_API_BASE}/transactions/${encodeURIComponent(hash)}/events?verbose=true&limit=100`,
-      { signal: AbortSignal.timeout(8000) },
-    );
-    if (!r.ok) return J(c, { result: [] as TxEvent[] }, 30);
-    const j = parseCounterpartyJson(await r.text()) as {
+    const j = await counterpartyJson<{
       result?: { event?: string; event_index?: number; params?: Record<string, unknown> }[];
-    };
+    }>(c.env.COUNTERPARTY_API_BASE, `/transactions/${encodeURIComponent(hash)}/events?verbose=true&limit=100`, {
+      timeoutMs: 8_000,
+      maxRetries: 0,
+      malformedRetries: 0,
+    });
     const events: TxEvent[] = (j.result ?? []).map((e) => ({
       event: String(e.event ?? ""),
       event_index: e.event_index ?? null,
@@ -272,12 +271,11 @@ const sats = (btc?: number) => (btc != null && Number.isFinite(btc) ? Math.round
 chain.get("/v2/transactions/:hash/bitcoin", async (c) => {
   const hash = c.req.param("hash");
   try {
-    const r = await fetch(
-      `${c.env.COUNTERPARTY_API_BASE}/bitcoin/transactions/${encodeURIComponent(hash)}?verbose=true`,
-      { signal: AbortSignal.timeout(8000) },
+    const j = await counterpartyJson<{ result?: BitcoindTx }>(
+      c.env.COUNTERPARTY_API_BASE,
+      `/bitcoin/transactions/${encodeURIComponent(hash)}?verbose=true`,
+      { timeoutMs: 8_000, maxRetries: 0, malformedRetries: 0 },
     );
-    if (!r.ok) return c.json({ error: "bitcoin tx unavailable" }, 502);
-    const j = parseCounterpartyJson(await r.text()) as { result?: BitcoindTx };
     const t = j.result;
     if (!t) return c.json({ error: "bitcoin tx unavailable" }, 502);
     const vin: BitcoinTxIo[] = (t.vin ?? []).map((v) =>
