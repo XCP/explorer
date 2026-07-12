@@ -34,6 +34,18 @@ These are repository rules, not suggestions. `npm run check` enforces the mechan
 - Protocol constants stay beside the protocol handler; provider limits stay beside the provider client;
   scoring policy stays in `reputation/config.ts`. Do not create a global constants grab bag.
 
+## Data replacement
+
+- Never delete a published dataset before its replacement is durable.
+- For provider-owned rows, validate the complete response, upsert fresh rows, then reconcile only stale rows
+  owned by that provider. A failed fetch or write must leave the prior generation intact.
+- For large derived models, build into staging or a new generation and switch the active generation only after
+  validation. Do not emulate staging with runtime DDL.
+- Deletes are appropriate for domain facts such as expiry, confirmed upstream removal, reorg rollback, explicit
+  administrative reset, and retention pruning. Their scope must express that reason directly.
+- A transaction containing delete-then-insert is not the default replacement strategy. Use it only for bounded
+  internal scratch state that readers cannot observe.
+
 ## Formatting and checks
 
 - Prettier is the formatting authority; do not hand-align code against it.
