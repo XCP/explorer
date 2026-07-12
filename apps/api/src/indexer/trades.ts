@@ -104,10 +104,10 @@ function emblemSql(rowFilter = "") {
 
 /** Scarce.city: a Bitcoin-native card sale (qty 1) priced in BTC. No on-chain tx/block — sold_at IS
  *  the time; block_index left 0. buyer/seller aren't in the API. usd_value filled later via BTC/USD. */
-function scarceSql() {
+function scarceSql(rowFilter = "") {
   return `INSERT OR IGNORE INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,buyer,seller,tx_hash)
     SELECT 'scarce.city', s.asset || '_' || s.sold_at, s.asset, s.sold_at, 0, 1.0, 'BTC', s.price_btc, NULL, NULL, NULL
-    FROM scarce_city_sales s`;
+    FROM scarce_city_sales s WHERE true ${rowFilter}`;
 }
 
 export interface TradesBuildProgress {
@@ -164,8 +164,14 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
     writes.emblem_reconcile = result.meta.rows_written ?? 0;
     await setState(env, "trades_emblem_full_gen", fullGen);
   }
-  // Scarce.city: re-fold the staging table every pass (idempotent; grows as the sweep continues).
-  await env.DB.prepare(scarceSql()).run();
+  // Scarce.city sales are immutable. Fold only staging rows beyond the saved rowid.
+  const scarceTip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM scarce_city_sales`).first<{ m: number }>())?.m) || 0;
+  const scarceCur = await getState(env, "trades_cur_scarce");
+  if (scarceCur < scarceTip) {
+    const result = await env.DB.prepare(scarceSql(`AND s.rowid>${scarceCur} AND s.rowid<=${scarceTip}`)).run();
+    writes.scarce = result.meta.rows_written ?? 0;
+    await setState(env, "trades_cur_scarce", scarceTip);
+  }
 
   out.writes = writes;
   out.done = out.dex_done && out.dispense_done;

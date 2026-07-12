@@ -50,6 +50,10 @@ Maintenance telemetry never recounts the full trades ledger after a bounded batc
 rowid-cursor incremental for new sales with one daily full reconciliation for later vault reclassification;
 the former two-minute full upsert produced ~158.7M writes and ~31 minutes of D1 work per day.
 
+Scarce.city's immutable staging rows are also folded by rowid cursor. Asset-supply global derivations (XCP,
+fairminter totals, pool values) are tip-gated instead of repeating on every two-minute cron tick; the dirty
+asset queue continues draining independently even when the tip is unchanged.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code

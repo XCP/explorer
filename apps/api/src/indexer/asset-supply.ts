@@ -85,8 +85,12 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
     return { phase: "backfill", from: cursor, to: hi };
   }
 
-  // ---- MAINTENANCE phase: dirty queue + XCP, then derived tables ----
-  await recomputeXcp(env); // XCP supply drifts every block from fee-burns
+  // ---- MAINTENANCE phase: dirty queue + tip-gated global derivations ----
+  // Cron runs every 2 minutes while Bitcoin changes roughly every 10. XCP/fairminter/pool state can only
+  // change with a mirrored block, so do not rescan their full histories five times at the same tip.
+  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const derivedDue = parseInt((await getState(env.DB, "asset_derived_tip")) || "-1", 10) < tip;
+  if (derivedDue) await recomputeXcp(env);
   const queue: string[] = JSON.parse((await getState(env.DB, "asset_supply_queue")) || "[]");
   const todo = queue.slice(0, DIRTY_PER_RUN).filter((a) => a && a !== "XCP");
   let recomputed = 0;
@@ -98,8 +102,9 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
   }
   await setState(env.DB, "asset_supply_queue", JSON.stringify(queue.slice(DIRTY_PER_RUN)));
 
-  const fm = await refreshFairminters(env).catch((e) => ({ error: String(e).slice(0, 80) }));
-  const pl = await refreshPools(env).catch((e) => ({ error: String(e).slice(0, 80) }));
+  const fm = derivedDue ? await refreshFairminters(env).catch((e) => ({ error: String(e).slice(0, 80) })) : { skipped: true };
+  const pl = derivedDue ? await refreshPools(env).catch((e) => ({ error: String(e).slice(0, 80) })) : { skipped: true };
+  if (derivedDue && !("error" in fm) && !("error" in pl)) await setState(env.DB, "asset_derived_tip", String(tip));
   return { phase: "maintenance", recomputed, queue_remaining: Math.max(0, queue.length - DIRTY_PER_RUN), fairminters: fm, pools: pl };
 }
 
