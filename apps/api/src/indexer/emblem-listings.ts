@@ -35,7 +35,6 @@ async function sweepContract(key: string, contract: string): Promise<Ask[]> {
   const asks: Ask[] = [];
   for (let page = 1; page <= MAX_PAGES_PER_CONTRACT; page++) {
     const resp = await fetchSequenceListingsPage(key, contract, page);
-    if (resp.error) break; // registered-but-empty contracts just return no collectibles; a hard error stops this contract
     for (const it of resp.collectibles ?? []) {
       const o = it.listing ?? it.order;
       const tokenId = o?.tokenId ?? it.metadata?.tokenId;

@@ -78,6 +78,12 @@ export function parseSequenceListingsPage(value: unknown): SequenceListingsPage 
   return value as SequenceListingsPage;
 }
 
+export function requireSequenceListingsPage(value: unknown): SequenceListingsPage {
+  const page = parseSequenceListingsPage(value);
+  if (page.error) throw new Error(`Sequence listings error: ${page.error.slice(0, 120)}`);
+  return page;
+}
+
 export async function fetchSequenceListingsPage(
   accessKey: string,
   contract: string,
@@ -94,5 +100,5 @@ export async function fetchSequenceListingsPage(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Sequence listings request failed: ${response.status}`);
-  return parseSequenceListingsPage(await response.json());
+  return requireSequenceListingsPage(await response.json());
 }

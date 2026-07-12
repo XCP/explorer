@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSequenceListingsPage } from "#api/integrations/sequence";
+import { parseSequenceListingsPage, requireSequenceListingsPage } from "#api/integrations/sequence";
 
 test("Sequence listings parsing accepts the consumed provider shape", () => {
   const response = {
@@ -20,6 +20,7 @@ test("Sequence listings parsing accepts provider error envelopes", () => {
     error: "not found",
     msg: "missing",
   });
+  assert.throws(() => requireSequenceListingsPage({ error: "upstream unavailable" }), /upstream unavailable/);
 });
 
 test("Sequence listings parsing rejects provider drift", () => {
