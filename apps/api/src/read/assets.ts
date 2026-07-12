@@ -3,6 +3,7 @@
  *  parse → query (queries/assets.ts owns the SQL) → respond. The BigInt supply derivation and the
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
 import type { AssetDetail, AssetActivityMonth } from "@xcp/shared/assets";
+import { fetchExternalMetadata } from "#api/integrations/external-metadata";
 import { router, J, lim, off, round, cached } from "#api/read/respond";
 import {
   scoreAsset,
@@ -396,25 +397,6 @@ function jsonCandidates(url: string): string[] {
   return [...new Set(out)];
 }
 
-// Arweave / ar.io gateways answer intermittently — the same tx can 404 on a cold gateway node and then 200 on
-// the next hit — so retry those a few times before giving up. Non-gateway hosts get a single shot. First 2xx wins.
-async function fetchFirstOk(urls: string[]): Promise<{ res: Response | null; lastStatus: number }> {
-  let lastStatus = 0;
-  for (const u of urls) {
-    const tries = /arweave\.net\/|\.ar\.io\//i.test(u) ? 3 : 1;
-    for (let i = 0; i < tries; i++) {
-      const r = await fetch(u, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(8000),
-        headers: { "user-agent": "xcp.io/1.0", accept: "application/json,*/*" },
-      }).catch(() => null);
-      if (r && r.ok) return { res: r, lastStatus };
-      if (r) lastStatus = r.status;
-    }
-  }
-  return { res: null, lastStatus };
-}
-
 // The image URLs *inside* these arweave JSONs carry the same "/<filename>.png" sub-path that 404s, so rewrite
 // any arweave image URL to its bare tx id before handing the JSON to the client to render. Only touches URLs
 // ending in an image extension — website/external_url links are left alone.
@@ -443,8 +425,8 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
   if (!ptr) return J(c, { result: null }, 300);
   try {
     // Try the pointer as-given, then the arweave bare-tx and http fallbacks (retrying flaky gateways).
-    const { res, lastStatus } = await fetchFirstOk(jsonCandidates(ptr.url));
-    if (!res) {
+    const { text, lastStatus } = await fetchExternalMetadata(jsonCandidates(ptr.url));
+    if (text === null) {
       // Distinguish a permanently-dead metadata host (DNS gone / Cloudflare 52x origin errors) from a transient
       // blip, and say so plainly — the asset's art is served separately and is unaffected. Cache dead hosts longer.
       let host = "the metadata source";
@@ -457,7 +439,6 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
       const error = offline ? `The metadata host (${host}) is offline.` : `source returned ${lastStatus}`;
       return J(c, { result: { url: ptr.url, error } }, offline ? 3600 : 60);
     }
-    const text = (await res.text()).slice(0, 262144); // 256KB cap
     if (ptr.hash) {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
       const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
