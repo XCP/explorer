@@ -5,14 +5,13 @@
  * Feeds the unified sales stream as the 'emblem' venue (priced in ETH). Resumable per-contract pageKey cursor.
  */
 import type { Env } from "#api/env";
+import { fetchAlchemyNftSales } from "#api/integrations/alchemy-sales";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
   setIndexerState as setState,
 } from "#api/indexer/state";
 
-const ALCHEMY_SALES = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTSales`;
-const PAGE = 1000;
 const MAX_PAGES_PER_RUN = 25; // big contracts need ~46 pages; complete them in fewer cron cycles
 
 export const EMBLEM_SALES_DDL = `CREATE TABLE IF NOT EXISTS emblem_sales (
@@ -74,13 +73,9 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
     contract_done?: boolean;
   } = { contract, inserted: 0, pages: 0 };
   for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
-    let url = `${ALCHEMY_SALES(key)}?contractAddress=${contract}&order=asc&limit=${PAGE}`;
-    if (cursor) url += `&pageKey=${encodeURIComponent(cursor)}`;
     let d: { nftSales?: NftSale[]; pageKey?: string };
     try {
-      d = (await (
-        await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })
-      ).json()) as { nftSales?: NftSale[]; pageKey?: string };
+      d = await fetchAlchemyNftSales(key, contract, cursor);
     } catch (e) {
       out.err = String(e).slice(0, 80);
       break;
