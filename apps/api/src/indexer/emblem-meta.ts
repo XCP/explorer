@@ -13,20 +13,10 @@
  * (marks meta_crawled=1); cron / admin driven.
  */
 import type { Env } from "#api/env";
+import { fetchEmblemMetadata } from "#api/integrations/emblem-metadata";
 
-const META = (id: string) => `https://v2.emblemvault.io/meta/${encodeURIComponent(id)}`;
 const PER_RUN = 80; // vaults per step (bounded under the Worker subrequest/CPU budget)
 const CONCURRENCY = 5;
-
-interface MetaValue {
-  coin?: string;
-  balance?: string | number;
-}
-interface VaultMeta {
-  name?: string;
-  values?: MetaValue[];
-  fraud?: boolean;
-}
 
 /** The card a vault CLAIMS: the leading alphanumeric token of its name, uppercased. Emblem CP vaults lead
  *  with the ticker ("PEPECASH | Series 1 #78" → PEPECASH; "PepeonMusk" → PEPEONMUSK). Resolved against the
@@ -43,11 +33,9 @@ interface Parsed {
   has: number;
   fraud: number;
 }
-async function fetchMeta(id: string): Promise<Parsed> {
+async function fetchMeta(id: string): Promise<Parsed | null> {
   try {
-    const r = await fetch(META(id), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20000) });
-    if (!r.ok) return { id, claimed: null, coins: null, has: 0, fraud: 0 };
-    const j = (await r.json()) as VaultMeta;
+    const j = await fetchEmblemMetadata(id);
     const vals = Array.isArray(j.values) ? j.values : [];
     const coins = [
       ...new Set(
@@ -65,7 +53,7 @@ async function fetchMeta(id: string): Promise<Parsed> {
       fraud: j.fraud === true ? 1 : 0,
     };
   } catch {
-    return { id, claimed: null, coins: null, has: 0, fraud: 0 };
+    return null;
   }
 }
 
@@ -87,9 +75,16 @@ export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>
   }
 
   const parsed: Parsed[] = [];
+  let failed = 0;
   for (let i = 0; i < rows.length; i += CONCURRENCY) {
-    parsed.push(...(await Promise.all(rows.slice(i, i + CONCURRENCY).map((r) => fetchMeta(r.token_id)))));
+    const results = await Promise.all(rows.slice(i, i + CONCURRENCY).map((r) => fetchMeta(r.token_id)));
+    for (const result of results) {
+      if (result) parsed.push(result);
+      else failed++;
+    }
   }
+  out.updated = parsed.length;
+  out.failed = failed;
 
   // Per row: store the claim + contents, and RESOLVE claimed_asset inline (the leading token bound twice —
   // once as the stored name, once to seek a matching real Counterparty asset; NULL if it isn't one).

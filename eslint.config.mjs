@@ -4,7 +4,16 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
-  { ignores: ["**/.open-next/**", "**/.next/**", "**/.wrangler/**", "**/.test-dist/**", "**/node_modules/**"] },
+  {
+    ignores: [
+      "**/.dry-run/**",
+      "**/.open-next/**",
+      "**/.next/**",
+      "**/.wrangler/**",
+      "**/.test-dist/**",
+      "**/node_modules/**",
+    ],
+  },
   {
     ...reactHooks.configs.flat["recommended-latest"],
     files: ["apps/web/src/**/*.{ts,tsx}"],
