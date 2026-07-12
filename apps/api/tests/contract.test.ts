@@ -162,7 +162,9 @@ test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (
 
 test("contract: GET /v2/assets/XCP — AssetDetail native reduced path", async (t) => {
   if (skipUnlessLive(t)) return;
-  const j = await getJson("/v2/assets/XCP");
+  // Native assets cache for five minutes; bust that cache so a post-deploy contract run validates the
+  // version just uploaded instead of accepting the previous worker's response shape.
+  const j = await getJson(`/v2/assets/XCP?contract=${Date.now()}`);
   assertShape(j.result, ASSET_DETAIL, "XCP.");
   assert.equal(j.result.type, "native", "XCP must report type=native");
   assertShape(j.result.feed_counts, ASSET_FEED_COUNTS, "XCP.feed_counts.");
