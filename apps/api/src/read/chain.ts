@@ -8,6 +8,7 @@ import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } fro
 import { listRecords, classifyTx, recordsByTxHash, dispensesOfDispenser, dispenserTotals, matchesOfOrder } from "../queries/records";
 import { assetCollection, assetBrief } from "../queries/assets";
 import { mempoolTxActions } from "./mempool";
+import { boundedInteger } from "../http/numbers";
 
 export const chain = router();
 
@@ -19,7 +20,7 @@ chain.get("/v2/blocks", async (c) => {
 });
 
 chain.get("/v2/blocks/:n", async (c) => {
-  const n = parseInt(c.req.param("n"), 10);
+  const n = boundedInteger(c.req.param("n"), { defaultValue: -1, min: -1 });
   const b = await getBlock(c.env.DB, n);
   if (!b) return c.json({ error: "Block not found" }, 404);
   const transactions = await blockTransactions(c.env.DB, n);

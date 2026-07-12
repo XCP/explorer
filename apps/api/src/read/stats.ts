@@ -2,6 +2,7 @@
 import { router, cached, J } from "./respond";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "../reputation/score";
 import { ASSET_PENALTY } from "../reputation/config";
+import { boundedInteger } from "../http/numbers";
 import {
   homeOverview, syncOverview, networkCounts, networkTotals, metricSeries, maxBlock, leaderboards, type MetricName,
 } from "../queries/stats";
@@ -23,7 +24,7 @@ stats.get("/v2/status", async (c) =>
 
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
-  const days = Math.min(365, Math.max(7, parseInt(c.req.query("days") || "90", 10)));
+  const days = boundedInteger(c.req.query("days"), { defaultValue: 90, min: 7, max: 365 });
   // Daily buckets do not justify full-history regrouping every 30 minutes. Six hours keeps today's partial
   // bucket useful while bounding each low-cardinality days variant to four producers/day.
   return cached(c, `metrics:${days}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {

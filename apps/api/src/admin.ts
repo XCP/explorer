@@ -25,6 +25,7 @@ import { buildGraphTrust } from "./indexer/graph";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "./queries/curated";
 import { requireAdmin } from "./middleware/admin-auth";
+import { boundedInteger, optionalBoundedInteger } from "./http/numbers";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -57,8 +58,8 @@ admin.post("/admin/btc-stats", async (c) => {
 
 // Export the address universe the BTC exporter should cover (real users + anything scored/curated).
 admin.get("/admin/btc-stats/addresses", async (c) => {
-  const limit = Math.min(10_000, Math.max(1, parseInt(c.req.query("limit") || "5000", 10)));
-  const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
+  const limit = boundedInteger(c.req.query("limit"), { defaultValue: 5000, min: 1, max: 10_000 });
+  const offset = boundedInteger(c.req.query("offset"), { defaultValue: 0, min: 0 });
   const r = await c.env.DB.prepare(
     `SELECT address FROM address_signals ORDER BY address LIMIT ? OFFSET ?`).bind(limit, offset).all<{ address: string }>();
   return c.json({ result: r.results.map((x) => x.address), next_offset: r.results.length === limit ? offset + limit : null });
@@ -66,7 +67,7 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
 
 // Drive the full Counterparty mirror (chronological event replay). Repeat until caught_up.
 admin.post("/admin/sync", async (c) => {
-  const events = c.req.query("events") ? parseInt(c.req.query("events")!, 10) : undefined;
+  const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncEvents(c.env, { maxEvents: events }));
 });
 
@@ -75,7 +76,7 @@ admin.post("/admin/sync", async (c) => {
 // until {caught_up:true}. ?events=N tunes the per-call batch (default 10000). Its own cursor; forward capture
 // (events/balance.ts) handles new events.
 admin.post("/admin/backfill-ledger", async (c) => {
-  const events = c.req.query("events") ? parseInt(c.req.query("events")!, 10) : undefined;
+  const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await backfillLedger(c.env, { maxEvents: events }));
 });
 
@@ -94,7 +95,7 @@ admin.post("/admin/reindex", async (c) => {
 // Rebuild precomputed reputation signal tables (address_signals + asset_signals). Heavy; cron advances
 // it a couple bounded passes per caught-up tick. Manual trigger here for on-demand refresh.
 admin.post("/admin/refresh-signals", async (c) => {
-  const steps = Math.min(6, Math.max(1, parseInt(c.req.query("steps") || "3", 10)));
+  const steps = boundedInteger(c.req.query("steps"), { defaultValue: 3, min: 1, max: 6 });
   return c.json(await runSignalsStep(c.env, steps));
 });
 
@@ -231,7 +232,7 @@ admin.post("/admin/apply-usd", async (c) => {
 // tune the units advanced per call. See src/indexer/graph.ts + docs/graph-reputation.md.
 //   POST /admin/build-graph?reset=1   then   POST /admin/build-graph  (repeat until done)
 admin.post("/admin/build-graph", async (c) => {
-  const work = c.req.query("work") ? parseInt(c.req.query("work")!, 10) : undefined;
+  const work = optionalBoundedInteger(c.req.query("work"), { min: 1, max: 40 });
   const reset = c.req.query("reset") === "1";
   const bipartite = c.req.query("bipartite") === "1"; // experiment: include holder<->asset edges
   return c.json(await buildGraphTrust(c.env, { work, reset, bipartite }));

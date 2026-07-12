@@ -6,6 +6,7 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
 import { requireAdmin } from "./middleware/admin-auth";
+import { boundedInteger, optionalBoundedInteger } from "./http/numbers";
 import { parseCounterpartyJson } from "./indexer/codec";
 
 export const verify = new Hono<{ Bindings: Env }>();
@@ -47,10 +48,12 @@ async function counterpartyJson<T = unknown>(base: string, path: string): Promis
 // NEW_FAIRMINT->fairmints). Returns blocks where ours < Counterparty so we can scope the rescue.
 verify.get("/admin/diag", async (c) => {
   const base = c.env.COUNTERPARTY_API_BASE;
-  const explicit = (c.req.query("blocks") || "").split(",").map((s) => parseInt(s, 10)).filter(Number.isFinite);
-  const from = parseInt(c.req.query("from") || "280000", 10);
-  const to = parseInt(c.req.query("to") || "955000", 10);
-  const n = Math.min(40, Math.max(2, parseInt(c.req.query("n") || "15", 10)));
+  const explicit = (c.req.query("blocks") || "").split(",")
+    .map((value) => optionalBoundedInteger(value, { min: 0 }))
+    .filter((value): value is number => value !== undefined);
+  const from = boundedInteger(c.req.query("from"), { defaultValue: 280000, min: 0 });
+  const to = boundedInteger(c.req.query("to"), { defaultValue: 955000, min: from });
+  const n = boundedInteger(c.req.query("n"), { defaultValue: 15, min: 2, max: 40 });
   const step = Math.max(1, Math.floor((to - from) / (n - 1)));
   const blocks: number[] = explicit.length ? explicit.slice(0, 40) : [];
   if (!blocks.length) for (let b = from; b <= to && blocks.length < n; b += step) blocks.push(b);

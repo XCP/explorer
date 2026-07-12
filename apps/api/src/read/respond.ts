@@ -6,6 +6,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Env } from "../env";
+import { boundedInteger } from "../http/numbers";
 
 export type ReadApp = Hono<{ Bindings: Env }>;
 export type Ctx = Context<{ Bindings: Env }>;
@@ -66,8 +67,9 @@ export async function cached(
   return response;
 }
 export const lim = (c: Ctx, def = 50, max = 100) =>
-  Math.min(max, Math.max(1, parseInt(c.req.query("limit") || String(def), 10)));
-export const off = (c: Ctx) => Math.max(0, parseInt(c.req.query("offset") || "0", 10));
+  boundedInteger(c.req.query("limit"), { defaultValue: def, min: 1, max });
+export const off = (c: Ctx) =>
+  boundedInteger(c.req.query("offset"), { defaultValue: 0, min: 0 });
 
 /* ---------- formatting ---------- */
 // single JS rounding strategy (replaces the per-endpoint num()/Math.round mix).
