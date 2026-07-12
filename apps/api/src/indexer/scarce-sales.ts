@@ -7,39 +7,20 @@
  * stream as the 'scarce.city' venue (BTC-priced). Idempotent on (asset, sold_at).
  */
 import type { Env } from "#api/env";
+import { fetchScarceCitySales } from "#api/integrations/scarce-city";
 import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
 
-const SALES_URL = (asset: string) => `https://scarce.city/api/marketplace/digital/${encodeURIComponent(asset)}/sales`;
 const ASSETS_PER_RUN = 90; // bounded per cron tick (stays well under the Worker subrequest/CPU budget)
 const CONCURRENCY = 5;
+
+export function nextScarceCursor(rows: Array<{ rowid: number }>, firstFailedRowid: number | null): number {
+  if (!rows.length) return 0;
+  return firstFailedRowid === null ? rows[rows.length - 1].rowid : firstFailedRowid - 1;
+}
 
 export const SCARCE_SALES_DDL = `CREATE TABLE IF NOT EXISTS scarce_city_sales (
   asset TEXT NOT NULL, sold_at INTEGER NOT NULL, price_btc REAL NOT NULL, PRIMARY KEY (asset, sold_at))`;
 export const SCARCE_SALES_IDX = `CREATE INDEX IF NOT EXISTS idx_scarce_asset ON scarce_city_sales(asset)`;
-
-interface ScarceSale {
-  assetName?: string;
-  priceInBtc?: string | number;
-  timestamp?: string;
-}
-
-/** One asset's sales, or [] on any miss (404 / HTML / network). Bounded timeout so one slow asset
- *  can't stall the whole run. */
-async function fetchSales(asset: string): Promise<ScarceSale[]> {
-  try {
-    const r = await fetch(SALES_URL(asset), {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!r.ok) return [];
-    const ct = r.headers.get("content-type") || "";
-    if (!ct.includes("json")) return []; // the SPA returns HTML for unknown assets
-    const d = await r.json();
-    return Array.isArray(d) ? (d as ScarceSale[]) : [];
-  } catch {
-    return [];
-  }
-}
 
 /** One bounded, resumable step: sweep the next ASSETS_PER_RUN assets by rowid, query scarce.city for
  *  each, upsert any sales. Wraps the cursor at the end of the universe to re-sweep for new sales. */
@@ -55,11 +36,12 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
         .all<{ rowid: number; asset: string }>()
     ).results || [];
 
-  const out: { from: number; to: number; assets: number; sales_found: number; wrapped?: boolean } = {
+  const out: { from: number; to: number; assets: number; sales_found: number; failed: number; wrapped?: boolean } = {
     from: cursor,
     to: cursor,
     assets: rows.length,
     sales_found: 0,
+    failed: 0,
   };
   if (!rows.length) {
     // past the end — wrap to re-sweep for new sales next tick
@@ -70,15 +52,29 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
 
   // fetch in small concurrent waves; collect upserts
   const upserts: { asset: string; sold_at: number; price: number }[] = [];
+  let firstFailedRowid: number | null = null;
   for (let i = 0; i < rows.length; i += CONCURRENCY) {
     const wave = rows.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(wave.map((r) => fetchSales(r.asset).then((s) => ({ asset: r.asset, sales: s }))));
-    for (const { asset, sales } of results) {
+    const results = await Promise.all(
+      wave.map(async (row) => {
+        try {
+          return { row, sales: await fetchScarceCitySales(row.asset), failed: false };
+        } catch {
+          return { row, sales: [], failed: true };
+        }
+      }),
+    );
+    for (const { row, sales, failed } of results) {
+      if (failed) {
+        out.failed++;
+        firstFailedRowid = firstFailedRowid === null ? row.rowid : Math.min(firstFailedRowid, row.rowid);
+        continue;
+      }
       for (const s of sales) {
         const t = s.timestamp ? Math.floor(Date.parse(s.timestamp) / 1000) : NaN;
         const p = Number(s.priceInBtc);
         if (!Number.isFinite(t) || !Number.isFinite(p) || p <= 0) continue;
-        upserts.push({ asset, sold_at: t, price: p });
+        upserts.push({ asset: row.asset, sold_at: t, price: p });
       }
     }
   }
@@ -95,7 +91,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
     out.sales_found = upserts.length;
   }
 
-  const last = rows[rows.length - 1].rowid;
+  const last = nextScarceCursor(rows, firstFailedRowid);
   await setState(env.DB, "scarce_cursor", String(last));
   out.to = last;
   return out;
