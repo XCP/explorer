@@ -8,9 +8,9 @@
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance — so catch-up never contends.
  */
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import type { Env } from "./env";
 export type { Env } from "./env";
+import { describeHttpError, requestId } from "./http/errors";
 import { syncEvents, backfillLedger, verifyLedgerParity } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
@@ -138,16 +138,18 @@ app.route("/", admin);    // /admin/* — operational routes (token-gated)
 // request path so it's traceable). Intentional not-found payloads are returned directly by handlers (c.json(
 // { error }, 404)) — they never throw, so they don't pass through here and keep their exact shape.
 app.onError((err, c) => {
-  const status = err instanceof HTTPException ? err.status : 500;
+  const failure = describeHttpError(err);
+  const id = requestId(c.req.header("X-Request-Id"));
   console.error({
     event: "request_error",
+    request_id: id,
     method: c.req.method,
     path: c.req.path,
-    status,
-    error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+    status: failure.status,
+    error: failure.internal,
   });
-  const message = err instanceof HTTPException ? err.message : "Internal Server Error";
-  return c.json({ error: message }, status);
+  c.header("X-Request-Id", id);
+  return c.json({ error: failure.publicMessage }, failure.status);
 });
 
 export default {
