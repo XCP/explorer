@@ -102,7 +102,7 @@ export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> 
   let cur = await getState(env, "usd_cur");
   if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs
   const hi = Math.min(cur + USD_WINDOW, tip);
-  await env.DB.prepare(`
+  const result = await env.DB.prepare(`
     UPDATE trades SET usd_value = total * (
       SELECT p.usd FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
     WHERE currency IN ('BTC','ETH','XCP') AND usd_value IS NULL
@@ -110,6 +110,5 @@ export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> 
       AND EXISTS (SELECT 1 FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
   `).bind(cur, hi).run();
   await setState(env, "usd_cur", hi);
-  const known = await env.DB.prepare(`SELECT COUNT(*) n, ROUND(SUM(usd_value)) usd FROM trades WHERE usd_value IS NOT NULL`).first<{ n: number; usd: number }>();
-  return { from: cur, to: hi, tip, priced_rows: known?.n ?? 0, total_usd: known?.usd ?? 0, done: hi >= tip };
+  return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip };
 }

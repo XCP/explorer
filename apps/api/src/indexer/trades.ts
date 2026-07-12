@@ -69,7 +69,7 @@ function dispenseSql(lo: number, hi: number) {
  *  /meta, indexer/emblem-meta.ts); 'non_counterparty' if its value is genuinely on another chain (Namecoin,
  *  Ordinals, BTC … — NOT a scam, just invisible to us). Only 'real' sales carry an attributed asset.
  *  ETH block→time is approximated (piecewise around the merge; tight for Emblem's 2021+ era). */
-function emblemSql() {
+function emblemSql(rowFilter = "") {
   const eth = ETH_TOKENS.map((t) => `'${t}'`).join(",");
   const isUsdc = `es.token_addr = '${USDC}'`;
   // The sale's unix time, in the same clock as a BTC crack (sends.block_time), so full-at-sale is decidable.
@@ -96,7 +96,7 @@ function emblemSql() {
            ELSE 'non_counterparty' END
     FROM emblem_sales es
     JOIN emblem_vaults ev ON ev.token_id = es.token_id AND ev.contract = es.contract
-    WHERE ev.btc_address IS NOT NULL AND CAST(es.price_raw AS REAL) > 0
+    WHERE ev.btc_address IS NOT NULL AND CAST(es.price_raw AS REAL) > 0 ${rowFilter}
       AND es.token_addr IN (${eth}, '${USDC}')
     ON CONFLICT(venue,ref) DO UPDATE SET
       asset = excluded.asset, quantity = excluded.quantity, sale_class = excluded.sale_class`;
@@ -116,7 +116,7 @@ export interface TradesBuildProgress {
   dex_done: boolean;
   dispense?: { from: number; to: number };
   dispense_done: boolean;
-  counts: Record<string, number>;
+  writes: Record<string, number>;
   done: boolean;
 }
 
@@ -125,11 +125,13 @@ export interface TradesBuildProgress {
 export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
   const out: Partial<TradesBuildProgress> = { tip };
+  const writes: Record<string, number> = {};
 
   const dcur = await getState(env, "trades_cur_dex");
   if (dcur < tip) {
     const hi = Math.min(dcur + WINDOW, tip);
-    await env.DB.prepare(dexSql(dcur, hi)).run();
+    const result = await env.DB.prepare(dexSql(dcur, hi)).run();
+    writes.dex = result.meta.rows_written ?? 0;
     await setState(env, "trades_cur_dex", hi);
     out.dex = { from: dcur, to: hi };
   }
@@ -138,19 +140,34 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const pcur = await getState(env, "trades_cur_dispense");
   if (pcur < tip) {
     const hi = Math.min(pcur + WINDOW, tip);
-    await env.DB.prepare(dispenseSql(pcur, hi)).run();
+    const result = await env.DB.prepare(dispenseSql(pcur, hi)).run();
+    writes.dispense = result.meta.rows_written ?? 0;
     await setState(env, "trades_cur_dispense", hi);
     out.dispense = { from: pcur, to: hi };
   }
   out.dispense_done = (await getState(env, "trades_cur_dispense")) >= tip;
 
-  // Emblem: re-fold the staging table every pass (idempotent; grows as the sales backfill continues).
-  await env.DB.prepare(emblemSql()).run();
+  // New Emblem sales are folded by rowid cursor. Vault classification can change after a sale, so a daily
+  // full reconciliation remains as the self-healing backstop instead of rewriting ~231k rows every 2 minutes.
+  const emblemTip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM emblem_sales`).first<{ m: number }>())?.m) || 0;
+  const emblemCur = await getState(env, "trades_cur_emblem");
+  const fullGen = Math.floor(tip / 144);
+  if (emblemCur < emblemTip) {
+    const result = await env.DB.prepare(emblemSql(`AND es.rowid>${emblemCur} AND es.rowid<=${emblemTip}`)).run();
+    writes.emblem_new = result.meta.rows_written ?? 0;
+    await setState(env, "trades_cur_emblem", emblemTip);
+    // A genesis fold already used the current classification for every sale; do not immediately repeat it.
+    if (emblemCur === 0) await setState(env, "trades_emblem_full_gen", fullGen);
+  }
+  if (await getState(env, "trades_emblem_full_gen") < fullGen) {
+    const result = await env.DB.prepare(emblemSql()).run();
+    writes.emblem_reconcile = result.meta.rows_written ?? 0;
+    await setState(env, "trades_emblem_full_gen", fullGen);
+  }
   // Scarce.city: re-fold the staging table every pass (idempotent; grows as the sweep continues).
   await env.DB.prepare(scarceSql()).run();
 
-  const counts = await env.DB.prepare(`SELECT venue, COUNT(*) n FROM trades GROUP BY venue`).all<{ venue: string; n: number }>();
-  out.counts = Object.fromEntries((counts.results || []).map((r) => [r.venue, r.n]));
+  out.writes = writes;
   out.done = out.dex_done && out.dispense_done;
   return out as TradesBuildProgress;
 }

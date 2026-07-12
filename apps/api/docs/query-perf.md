@@ -46,6 +46,10 @@ for every BTC day (~8.3M rows per refresh before the change).
 Migration 0047 adds a partial burn-address index and the `assets_burned` rebuild fixes its join order to
 start from the tiny curated burn set. The former plan drove from all sends and took 39s in D1 Insights.
 
+Maintenance telemetry never recounts the full trades ledger after a bounded batch. Emblem trade folding is
+rowid-cursor incremental for new sales with one daily full reconciliation for later vault reclassification;
+the former two-minute full upsert produced ~158.7M writes and ~31 minutes of D1 work per day.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code
