@@ -72,7 +72,11 @@ Address send-derived repairs use one source grouping and one destination groupin
 the source pass and `assets_received` into the destination pass, removing two full sends scans per daily cycle.
 
 Reputation tiers use the persistent global SWR cache instead of recomputing the ~867k-row histogram per colo.
-Exchange/vault global aggregates refresh hourly; expensive holder-cohort relationships use a one-hour edge TTL.
+Exchange globals refresh daily, vault globals hourly; expensive holder-cohort relationships use a one-hour edge TTL.
+
+The exchange directory refreshes daily. Its plan already starts from the 23-wallet partial index; the remaining
+work is an irreducible distinct aggregation over ~373k deposits. A covering sends index was rejected because the
+database is 7.66GB against D1's 10GB ceiling and the persistent SWR cache removes the user-facing cold wait.
 
 ## Layer 1 — query shape (fewest rows scanned)
 
