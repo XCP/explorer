@@ -429,10 +429,8 @@ const UNITS: FeatureUnit[] = [
   // assets exceeds D1's per-statement write cap, so it's an UPDATE of existing rows.)
   // ===== ASSET DETAIL - materialized earned-tab counts =====
   // D1 Insights: the old per-request twelve-scalar aggregation read 2.8bn rows/week. Seed every known
-  // asset once, then reset/recompute only dirty assets in the per-block cascade. The full units are the
+  // active asset, then reset/recompute only dirty assets in the per-block cascade. The full units are the
   // canonical backfill/self-heal; reads stay on the live-query fallback until feed_count_ready runs.
-  { name: "feed_count_seed", scope: "asset", reads: ["assets"], periodic: true,
-    full: `INSERT OR IGNORE INTO asset_feed_counts (asset,updated_at) SELECT asset,unixepoch() FROM assets` },
   { name: "feed_count_scoped_reset", scope: "asset", reads: [],
     full: `SELECT 1`,
     scoped: (ph) => feedCountResetSql(ph) },
