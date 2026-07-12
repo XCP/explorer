@@ -14,8 +14,11 @@ import { StatusStrip } from "@/components/status-strip";
  */
 const PRIMARY: [string, string][] = [
   ["Assets", "/assets"],
+  ["Collections", "/collections"],
+  ["Radar", "/radar"],
+  ["Leaderboards", "/leaderboards"],
+  ["Firsts", "/firsts"],
   ["Trades", "/trades"],
-  ["Blocks", "/blocks"],
 ];
 const EXPLORE: NavGroup[] = [
   { heading: "Transfers", links: [["Sends", "/sends"], ["Sweeps", "/sweeps"], ["Dispenses", "/dispenses"]] },
@@ -24,7 +27,7 @@ const EXPLORE: NavGroup[] = [
   { heading: "Chain", links: [["Transactions", "/transactions"], ["Broadcasts", "/broadcasts"]] },
 ];
 const DISCOVER: NavGroup[] = [
-  { links: [["Radar", "/radar"], ["Mempool", "/mempool"], ["Collections", "/collections"], ["Leaderboards", "/leaderboards"], ["Reputation", "/reputation"], ["Firsts", "/firsts"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Network Stats", "/stats"]] },
+  { links: [["Mempool", "/mempool"], ["Reputation", "/reputation"], ["Vaults", "/vaults"], ["Exchanges", "/exchanges"], ["Blocks", "/blocks"], ["Network Stats", "/stats"]] },
 ];
 
 function WalletButton({ full = false }: { full?: boolean }) {
@@ -85,7 +88,7 @@ export function TopBar() {
           </nav>
 
           {/* desktop search */}
-          <div className="hidden sm:block ml-auto flex-1 max-w-md xl:max-w-lg"><SearchBox autoFocusKey /></div>
+          <div className="hidden sm:block ml-auto flex-1 max-w-sm xl:max-w-md"><SearchBox autoFocusKey /></div>
 
           {/* desktop right */}
           <div className="hidden sm:block shrink-0"><WalletButton /></div>
@@ -103,7 +106,7 @@ export function TopBar() {
         {/* mobile drawer — same IA as desktop: primary row, then the grouped catalogs */}
         {menuOpen && (
           <nav id="mobile-menu" aria-label="Primary" className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto overscroll-contain">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {PRIMARY.map(([label, href]) => (
                 <Link key={href} href={href} className={`flex-1 text-center rounded-md border px-2 py-2 !no-underline text-sm ${active(href) ? "border-zinc-600 !text-zinc-100 bg-zinc-900" : "border-zinc-800 !text-zinc-400"}`}>{label}</Link>
               ))}

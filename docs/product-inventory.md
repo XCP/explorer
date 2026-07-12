@@ -104,10 +104,9 @@ Dividends, Destructions, Burns, Transactions, Broadcasts.
 
 ## The front-door problem
 
-Home leads with **Latest sales / Mempool / Latest transactions** — the *speculator's daily-check* view.
-Perfect for a returning power user; answers none of the newcomer's four questions, though the data for all four
-exists (top Collections, Firsts, top Reputation, Featured). Fix = reorder the front door around the pillars +
-Firsts, let "what's live" be the second scroll. Not a reindex.
+Home now leads with the collector's four questions: **Collections / Radar / Leaderboards / Firsts**, followed
+by a grail wall and evidence previews. Latest sales remain as a compact secondary activity strip. The front-door
+reorder is implemented without adding an index or a new API surface.
 
 ---
 

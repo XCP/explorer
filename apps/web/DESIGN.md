@@ -62,17 +62,14 @@ compelling sentence this product can say; "look at the art" is the most beautifu
 
 ## Home page hierarchy (the species decision, applied)
 
-The core audience behavior: **power users check daily and want "what's happening right now" in the
-first screenful.** The home is a *now* dashboard, then the museum, then the reference.
+The home is the collector's front door, organized around four questions rather than raw protocol feeds.
 
-1. Tight hero: identity line + search.
-2. **Now strip** — live vitals: tip block, mempool pending count, last-block age. Small, live.
-3. **Happening now** — the daily-check row: **Latest sales** (trades ledger, USD-first:
-   "RAREPEPE · $114 · dispenser · 2m") · **Mempool** (pending actions, unconfirmed treatment) ·
-   **Latest transactions**. Freshness is the product here; timestamps prominent, polling live.
-4. **Featured art grid** — quality-scored assets with media; the museum face, below the now-fold.
-5. Activity chart — secondary, drawn in accent (a red activity chart reads as an incident).
-6. Compact record feeds last (deep cuts for browsing).
+1. Orienting hero: Counterparty culture, provenance, and search.
+2. Four-question launcher: Collections (what's good), Radar (what's undervalued), Leaderboards
+   (who's real), and Firsts (what happened first).
+3. **Grails on-chain** — quality-scored assets with media; the museum face is the primary evidence.
+4. Live previews for Radar, top collectors, and Counterparty Firsts.
+5. **Activity now** — one compact sales strip. Freshness remains available without owning the page.
 
 ## App chrome (v3 — decided via design-lab rounds 1-4; see /design-lab, winner v11)
 
@@ -88,7 +85,8 @@ below md). Tickers live here, never in the nav row.
 **Global header** (top-bar.tsx, sticky, SOLID bg — backdrop-blur rasterizes text and reads fuzzy
 on Windows):
 - Brand mark: `XCP.io` — mono, caps, crimson `.io`.
-- Nav IA: Assets · Trades · Blocks · Explore ▾ (the 16 record feeds) · Discover ▾. Quiet pills;
+- Nav IA: Assets · Collections · Radar · Leaderboards · Firsts · Trades · Explore ▾ · Discover ▾.
+  Blocks and other protocol feeds remain available in the menus. Quiet pills;
   active = zinc-900 pill.
 - Search: the hero utility — `/` shortcut chip, shape-routing. Mobile: full-width row of its own.
 - Exactly one primary button (Connect Wallet, brand).
