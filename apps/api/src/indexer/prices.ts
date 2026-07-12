@@ -8,6 +8,7 @@
  * `prices(day, currency, usd)` is the calendar; `applyTradeUsd` maps each trade's day+currency onto it.
  */
 import type { Env } from "../index";
+import { getIndexerStateInt as getState, setIndexerState as setState } from "./state";
 
 export const PRICES_DDL = `CREATE TABLE IF NOT EXISTS prices (
   day TEXT NOT NULL, currency TEXT NOT NULL, usd REAL, PRIMARY KEY (day, currency))`;
@@ -25,13 +26,6 @@ const WIN = 300 * DAY;       // Coinbase caps candles at 300/request
 const WINDOWS_PER_CALL = 8;  // ~2400 days per currency per admin call → backfills in ~2 passes
 
 const isoDay = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10);
-
-async function getState(env: Env, k: string): Promise<number> {
-  return parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) || "0", 10);
-}
-async function setState(env: Env, k: string, v: number): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, String(v)).run();
-}
 
 // One Coinbase window: [[time, low, high, open, close, volume], ...] (close = index 4).
 async function cbWindow(product: string, start: number, end: number): Promise<number[][]> {

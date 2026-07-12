@@ -7,6 +7,7 @@
  * stale/expired ones. Requires SEQUENCE_ACCESS_KEY; no-ops without it (so the rest of the cron is unaffected).
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const SEQ_BASE = "https://marketplace-api.sequence.app/mainnet/rpc/Marketplace/ListCollectiblesWithLowestListing";
 const PAGE_SIZE = 100;
@@ -27,13 +28,6 @@ interface SeqOrder {
 }
 interface CollectibleOrder { metadata?: { tokenId?: string }; order?: SeqOrder | null; listing?: SeqOrder | null; }
 interface ListResp { collectibles?: CollectibleOrder[]; page?: { more?: boolean }; error?: string; msg?: string; }
-
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
 
 async function fetchPage(key: string, contract: string, page: number): Promise<ListResp> {
   const r = await fetch(SEQ_BASE, {

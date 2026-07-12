@@ -149,8 +149,15 @@ app.route("/", admin);    // /admin/* — operational routes (token-gated)
 // { error }, 404)) — they never throw, so they don't pass through here and keep their exact shape.
 app.onError((err, c) => {
   const status = err instanceof HTTPException ? err.status : 500;
-  console.error(`onError ${c.req.method} ${c.req.path}`, err);
-  return c.json({ error: err.message || "Internal Server Error" }, status);
+  console.error({
+    event: "request_error",
+    method: c.req.method,
+    path: c.req.path,
+    status,
+    error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+  });
+  const message = err instanceof HTTPException ? err.message : "Internal Server Error";
+  return c.json({ error: message }, status);
 });
 
 export default {

@@ -5,6 +5,7 @@
  * Feeds the unified sales stream as the 'emblem' venue (priced in ETH). Resumable per-contract pageKey cursor.
  */
 import type { Env } from "../index";
+import { getIndexerState as getState, setIndexerState as setState } from "./state";
 
 const ALCHEMY_SALES = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTSales`;
 const PAGE = 1000;
@@ -40,13 +41,6 @@ function priceOf(s: NftSale): { raw: string; token: string } {
   }
   const token = (s?.sellerFee?.tokenAddress || s?.protocolFee?.tokenAddress || "ETH").toLowerCase();
   return { raw: amt.toString(), token };
-}
-
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
 }
 
 /** One bounded, resumable step: pull the next pages of getNFTSales for the active Emblem contract. */

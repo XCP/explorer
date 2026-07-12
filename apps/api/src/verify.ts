@@ -5,9 +5,12 @@
  */
 import { Hono } from "hono";
 import type { Env } from "./index";
+import { requireAdmin } from "./middleware/admin-auth";
 import { parseCounterpartyJson } from "./indexer/codec";
 
 export const verify = new Hono<{ Bindings: Env }>();
+
+verify.use("/admin/*", requireAdmin);
 
 // our table -> Counterparty /v2 list endpoint (result_count = Counterparty's total for that model)
 const MODELS: { table: string; cp: string }[] = [
@@ -43,7 +46,6 @@ async function counterpartyJson<T = unknown>(base: string, path: string): Promis
 // to Counterparty's per-block event counts (NEW_TRANSACTION->transactions, ASSET_ISSUANCE->issuances,
 // NEW_FAIRMINT->fairmints). Returns blocks where ours < Counterparty so we can scope the rescue.
 verify.get("/admin/diag", async (c) => {
-  if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
   const base = c.env.COUNTERPARTY_API_BASE;
   const explicit = (c.req.query("blocks") || "").split(",").map((s) => parseInt(s, 10)).filter(Number.isFinite);
   const from = parseInt(c.req.query("from") || "280000", 10);
@@ -77,7 +79,6 @@ verify.get("/admin/diag", async (c) => {
 // tx-count per block (from BLOCK_PARSED); compare to our actual transactions rows per block.
 // Any block where actual < reported lost rows. No Counterparty calls, no sampling — finds ALL of them.
 verify.get("/admin/shortblocks", async (c) => {
-  if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
   const totals = (await c.env.DB.prepare(
     `SELECT COALESCE(SUM(d),0) deficit, COUNT(*) blocks FROM (
        SELECT b.transaction_count - COUNT(t.tx_index) d
@@ -97,7 +98,6 @@ verify.get("/admin/shortblocks", async (c) => {
 });
 
 verify.get("/admin/verify", async (c) => {
-  if (c.req.query("token") !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
   const base = c.env.COUNTERPARTY_API_BASE;
 
   // 1) our counts (single query) + invariants

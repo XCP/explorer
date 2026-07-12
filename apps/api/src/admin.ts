@@ -24,22 +24,12 @@ import { buildTrades } from "./indexer/trades";
 import { buildGraphTrust } from "./indexer/graph";
 import { crawlPrices, applyTradeUsd } from "./indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "./queries/curated";
+import { requireAdmin } from "./middleware/admin-auth";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
-// Pull the admin token from `Authorization: Bearer <token>` (preferred) or the legacy `?token=` query
-// param. TODO: drop the ?token= fallback once ops scripts have migrated to the Bearer header.
-const adminToken = (c: { req: { header(name: string): string | undefined; query(name: string): string | undefined } }): string | undefined => {
-  const auth = c.req.header("Authorization");
-  if (auth?.startsWith("Bearer ")) return auth.slice(7).trim();
-  return c.req.query("token");
-};
-
 // every route is gated by the shared admin token (Bearer header, or deprecated ?token=).
-admin.use("/admin/*", async (c, next) => {
-  if (adminToken(c) !== c.env.ADMIN_TOKEN) return c.json({ error: "forbidden" }, 403);
-  await next();
-});
+admin.use("/admin/*", requireAdmin);
 
 // Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).

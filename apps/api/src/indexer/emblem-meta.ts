@@ -21,13 +21,6 @@ const CONCURRENCY = 5;
 interface MetaValue { coin?: string; balance?: string | number }
 interface VaultMeta { name?: string; values?: MetaValue[]; fraud?: boolean }
 
-async function getState(env: Env, k: string): Promise<string | null> {
-  return ((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value) ?? null;
-}
-async function setState(env: Env, k: string, v: string): Promise<void> {
-  await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v).run();
-}
-
 /** The card a vault CLAIMS: the leading alphanumeric token of its name, uppercased. Emblem CP vaults lead
  *  with the ticker ("PEPECASH | Series 1 #78" → PEPECASH; "PepeonMusk" → PEPEONMUSK). Resolved against the
  *  assets table downstream, so a non-asset leading word (e.g. "Blockhead") simply resolves to NULL. */
