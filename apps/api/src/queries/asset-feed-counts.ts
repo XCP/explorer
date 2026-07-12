@@ -35,13 +35,12 @@ export async function readAssetFeedCounts(
   const materialized = await one<AssetFeedCounts>(
     db,
     `SELECT fc.sales,fc.issuances,fc.dispensers,fc.dispenses,fc.orders,fc.sends,
-            fc.fairmints,fc.dividends,fc.destructions,fc.pools,
-            (SELECT COUNT(*) FROM assets WHERE asset_longname LIKE ?2) subassets,
-            (SELECT COUNT(*) FROM assets WHERE issuer=?3 OR owner=?3) from_issuer
+            fc.fairmints,fc.dividends,fc.destructions,fc.pools,fc.subassets,
+            (SELECT COUNT(*) FROM assets WHERE issuer=?2 OR owner=?2) from_issuer
        FROM asset_feed_counts fc
       WHERE fc.asset=?1
         AND EXISTS (SELECT 1 FROM indexer_state WHERE key='asset_feed_counts_ready' AND value='1')`,
-    asset, asset + ".%", issuer,
+    asset, issuer,
   ).catch(() => null);
   return materialized ?? readAssetFeedCountsLive(db, asset, issuer);
 }

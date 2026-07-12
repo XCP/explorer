@@ -526,6 +526,9 @@ const chunk = <T>(a: T[], n: number): T[][] => { const o: T[][] = []; for (let i
 async function dirtyAssets(env: Env, lo: number, hi: number): Promise<string[]> {
   const sql = `SELECT DISTINCT asset FROM (
       SELECT asset FROM issuances WHERE block_index BETWEEN ?1 AND ?2
+      UNION SELECT substr(a.asset_longname,1,instr(a.asset_longname,'.')-1)
+        FROM issuances i JOIN assets a ON a.asset=i.asset
+        WHERE i.block_index BETWEEN ?1 AND ?2 AND instr(a.asset_longname,'.')>0
       UNION SELECT asset FROM sends WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT asset FROM dispenses WHERE block_index BETWEEN ?1 AND ?2
       UNION SELECT asset FROM dispensers WHERE block_index BETWEEN ?1 AND ?2

@@ -18,7 +18,7 @@ function fixture(): DatabaseSync {
     CREATE TABLE dividends (asset TEXT, dividend_asset TEXT);
     CREATE TABLE destructions (asset TEXT);
     CREATE TABLE pools (asset_a TEXT, asset_b TEXT, lp_asset TEXT);
-    CREATE TABLE assets (asset TEXT PRIMARY KEY);
+    CREATE TABLE assets (asset TEXT PRIMARY KEY, asset_longname TEXT);
     CREATE TABLE asset_feed_counts (
       asset TEXT PRIMARY KEY,
       sales INTEGER NOT NULL DEFAULT 0, issuances INTEGER NOT NULL DEFAULT 0,
@@ -26,9 +26,12 @@ function fixture(): DatabaseSync {
       orders INTEGER NOT NULL DEFAULT 0, sends INTEGER NOT NULL DEFAULT 0,
       fairmints INTEGER NOT NULL DEFAULT 0, dividends INTEGER NOT NULL DEFAULT 0,
       destructions INTEGER NOT NULL DEFAULT 0, pools INTEGER NOT NULL DEFAULT 0,
+      subassets INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL DEFAULT 0
     );
-    INSERT INTO assets VALUES ('RARE'),('OTHER'),('XCP');
+    INSERT INTO assets VALUES
+      ('RARE',NULL),('OTHER',NULL),('XCP',NULL),
+      ('A1','RARE.ONE'),('A2','RARE.ONE.TWO');
     INSERT INTO asset_feed_counts (asset) SELECT asset FROM assets;
 
     INSERT INTO trades VALUES ('RARE'),('RARE'),('OTHER');
@@ -67,6 +70,7 @@ test("full and dirty-scoped builders converge, including a reorg to zero", () =>
   assert.equal(rare.orders, 3);
   assert.equal(rare.sends, 3);
   assert.equal(rare.pools, 3);
+  assert.equal(rare.subassets, 2);
 
   db.exec("DELETE FROM sends WHERE asset='RARE'");
   db.prepare(feedCountResetSql("?")).run("RARE");
@@ -78,6 +82,7 @@ test("full and dirty-scoped builders converge, including a reorg to zero", () =>
   assert.equal(rare.sends, 0, "scoped reset clears a count whose last source row disappeared");
   assert.equal(rare.orders, 3);
   assert.equal(rare.pools, 3);
+  assert.equal(rare.subassets, 2);
   const other = db.prepare("SELECT sends FROM asset_feed_counts WHERE asset='OTHER'").get() as { sends: number };
   assert.equal(other.sends, 1, "scoped rebuild leaves clean assets untouched");
 });
@@ -95,6 +100,7 @@ test("materialized feed projections exactly match one logical record per asset",
     dividends: 3,
     destructions: 2,
     pools: 3,
+    subassets: 2,
   };
   for (const [column, source] of Object.entries(ASSET_FEED_COUNT_SOURCES)) {
     const row = db.prepare(`SELECT COUNT(*) n FROM (${source.sql}) WHERE asset='RARE'`).get() as { n: number };

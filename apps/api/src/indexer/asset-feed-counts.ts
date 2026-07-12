@@ -1,6 +1,6 @@
 export const FEED_COUNT_COLUMNS = [
   "sales", "issuances", "dispensers", "dispenses", "orders",
-  "sends", "fairmints", "dividends", "destructions", "pools",
+  "sends", "fairmints", "dividends", "destructions", "pools", "subassets",
 ] as const;
 
 export type FeedCountColumn = typeof FEED_COUNT_COLUMNS[number];
@@ -28,6 +28,11 @@ export const ASSET_FEED_COUNT_SOURCES: Record<FeedCountColumn, {
     SELECT asset_a asset FROM pools
     UNION ALL SELECT asset_b FROM pools WHERE asset_b IS NOT asset_a
     UNION ALL SELECT lp_asset FROM pools WHERE lp_asset IS NOT asset_a AND lp_asset IS NOT asset_b` },
+  // The public subasset tab is keyed by the named top-level parent (PARENT.%). A nested longname is
+  // therefore one descendant of its first segment, matching the former LIKE 'PARENT.%' count exactly.
+  subassets: { reads: ["assets"], sql: `
+    SELECT substr(asset_longname,1,instr(asset_longname,'.')-1) asset
+      FROM assets WHERE instr(asset_longname,'.')>0` },
 };
 
 export function feedCountWriteSql(column: FeedCountColumn, source: string, filter = ""): string {
@@ -37,8 +42,8 @@ export function feedCountWriteSql(column: FeedCountColumn, source: string, filte
 }
 
 export function feedCountResetSql(placeholders: string): string {
-  return `INSERT INTO asset_feed_counts (asset,sales,issuances,dispensers,dispenses,orders,sends,fairmints,dividends,destructions,pools,updated_at)
-    SELECT asset,0,0,0,0,0,0,0,0,0,0,unixepoch() FROM assets WHERE asset IN (${placeholders})
+  return `INSERT INTO asset_feed_counts (asset,sales,issuances,dispensers,dispenses,orders,sends,fairmints,dividends,destructions,pools,subassets,updated_at)
+    SELECT asset,0,0,0,0,0,0,0,0,0,0,0,unixepoch() FROM assets WHERE asset IN (${placeholders})
     ON CONFLICT(asset) DO UPDATE SET sales=0,issuances=0,dispensers=0,dispenses=0,orders=0,sends=0,
-      fairmints=0,dividends=0,destructions=0,pools=0,updated_at=excluded.updated_at`;
+      fairmints=0,dividends=0,destructions=0,pools=0,subassets=0,updated_at=excluded.updated_at`;
 }
