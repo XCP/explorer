@@ -30,6 +30,7 @@ import {
   ASSET_FEED_COUNT_SOURCES, FEED_COUNT_COLUMNS, feedCountResetSql, feedCountWriteSql,
   type FeedCountColumn,
 } from "./asset-feed-counts";
+import { NETWORK_STATS_REBUILD_SQL } from "./network-stats";
 
 
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
@@ -441,6 +442,13 @@ const UNITS: FeatureUnit[] = [
   { name: "feed_count_ready", scope: "global", reads: [], periodic: true,
     full: `INSERT INTO indexer_state (key,value) VALUES ('asset_feed_counts_ready','1')
       ON CONFLICT(key) DO UPDATE SET value=excluded.value` },
+
+  // Exact global counts/totals are retained for overview metadata, but request-time full scans are not.
+  // This singleton rebuild is daily; the separately-read chain tip remains live.
+  { name: "network_stats_snapshot", scope: "global",
+    reads: ["assets", "transactions", "balances", "sends", "issuances", "dispensers", "dispenses",
+      "orders", "order_matches", "sweeps", "broadcasts", "dividends", "fairmints", "destructions"],
+    periodic: true, heavyEveryBlocks: HEAVY_DAILY_BLOCKS, full: NETWORK_STATS_REBUILD_SQL },
 
   { name: "asset_seed", scope: "asset", reads: ["assets", "blocks"], periodic: true,
     full: `UPDATE asset_signals SET asset_longname=(SELECT asset_longname FROM assets a WHERE a.asset=asset_signals.asset), issuer=(SELECT issuer FROM assets a WHERE a.asset=asset_signals.asset), divisible=(SELECT divisible FROM assets a WHERE a.asset=asset_signals.asset), locked=(SELECT locked FROM assets a WHERE a.asset=asset_signals.asset), supply=(SELECT CAST(supply_normalized AS REAL) FROM assets a WHERE a.asset=asset_signals.asset), age_blocks=((SELECT MAX(block_index) FROM blocks)-(SELECT first_issuance_block_index FROM assets a WHERE a.asset=asset_signals.asset)), recency_blocks=((SELECT MAX(block_index) FROM blocks)-last_trade_blk) WHERE EXISTS (SELECT 1 FROM assets a WHERE a.asset=asset_signals.asset)` },

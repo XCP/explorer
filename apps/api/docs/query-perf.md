@@ -50,10 +50,11 @@ Fix (`src/read/firsts.ts`, `earliest()` helper): narrow to `MIN(block_index)` fi
 of rows inside that one earliest block. EXPLAIN went `SCAN + TEMP B-TREE` → `SEARCH ... USING INDEX
 (block_index=?)`; verified to return the identical row for every key. No new index required.
 
-### Counts (`/v2/`, `/v2/stats`) — O(n), handled by Layer 2
-`COUNT(*)` over `transactions` (2.9M) / `sends` (1.75M) is a covering-index scan — the best SQLite can do for an
-exact count (no stored row count). Can't be indexed away; the D1 response cache (Layer 2) runs it ≤once/ttl.
-Future option if needed: a maintained counter row refreshed by the cron's periodic full-rebuild pass.
+### Counts (`/v2/`, `/v2/stats`) — materialized
+Migration 0044 adds `network_stats_snapshot`, a singleton read model rebuilt by the periodic signal pass.
+Exact counts, BTC fees, and XCP destroyed now cost one row read instead of scans across the mirror tables.
+Production parity was zero for every field; the old aggregate read 14.5M rows in 7.8s, while the snapshot
+lookup read one row in 0.23ms. The live tip and indexer cursor remain independently current.
 
 ### Index inventory note
 Mirror tables are already well-indexed (`block_index`, `source`/`destination`/`asset` + `block_index DESC`),

@@ -36,10 +36,9 @@ export function homeOverview(db: D1Database): Promise<StatsOverview | null> {
   return one<StatsOverview>(
     db,
     `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            (SELECT COUNT(*) FROM assets) assets,
-            (SELECT COUNT(*) FROM transactions) transactions,
-            (SELECT COUNT(*) FROM balances) balances,
-            (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`
+            s.assets,s.transactions,s.balances,
+            (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block
+       FROM network_stats_snapshot s WHERE s.singleton=1`
   );
 }
 
@@ -57,20 +56,9 @@ export function networkCounts(db: D1Database): Promise<NetworkCounts | null> {
   return one<NetworkCounts>(
     db,
     `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            (SELECT COUNT(*) FROM assets) assets,
-            (SELECT COUNT(*) FROM transactions) transactions,
-            (SELECT COUNT(*) FROM sends) sends,
-            (SELECT COUNT(*) FROM issuances) issuances,
-            (SELECT COUNT(*) FROM dispensers) dispensers,
-            (SELECT COUNT(*) FROM dispenses) dispenses,
-            (SELECT COUNT(*) FROM orders) orders,
-            (SELECT COUNT(*) FROM order_matches) order_matches,
-            (SELECT COUNT(*) FROM sweeps) sweeps,
-            (SELECT COUNT(*) FROM broadcasts) broadcasts,
-            (SELECT COUNT(*) FROM dividends) dividends,
-            (SELECT COUNT(*) FROM fairmints) fairmints,
-            (SELECT COUNT(*) FROM destructions) destructions,
-            (SELECT COUNT(*) FROM balances WHERE CAST(quantity AS INTEGER)>0) holders`
+            assets,transactions,sends,issuances,dispensers,dispenses,orders,order_matches,
+            sweeps,broadcasts,dividends,fairmints,destructions,holders
+       FROM network_stats_snapshot WHERE singleton=1`
   );
 }
 
@@ -78,8 +66,7 @@ export function networkCounts(db: D1Database): Promise<NetworkCounts | null> {
 export function networkTotals(db: D1Database): Promise<NetworkTotals | null> {
   return one<NetworkTotals>(
     db,
-    `SELECT (SELECT COALESCE(SUM(CAST(fee AS REAL)),0)/100000000.0 FROM transactions) btc_fees,
-            (SELECT COALESCE(SUM(CAST(amt AS REAL)),0)/100000000.0 FROM (${xcpDestroyed()})) xcp_destroyed`
+    `SELECT btc_fees,xcp_destroyed FROM network_stats_snapshot WHERE singleton=1`
   );
 }
 

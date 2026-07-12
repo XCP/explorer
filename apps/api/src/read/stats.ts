@@ -9,8 +9,7 @@ import {
 export const stats = router();
 
 /* ---------- home / stats ---------- */
-// home summary — counts are O(n) covering-index scans (millions of rows); the D1 response cache runs them at
-// most once/ttl globally instead of once per colo. Edge stays short so `tip`/`indexed_block` feel live.
+// Home summary is a singleton lookup; edge stays short so `tip`/`indexed_block` feel live.
 stats.get("/v2/", async (c) =>
   cached(c, "home", { ttl: 3600, edge: 120, swr: 86400 }, async () => ({
     result: await homeOverview(c.env.DB),
@@ -39,7 +38,7 @@ stats.get("/v2/metrics", async (c) => {
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) =>
-  cached(c, "stats", { ttl: 3600, edge: 120, swr: 86400 }, async () => { // day-long stale window: nobody ever blocks on the full recount
+  cached(c, "stats", { ttl: 3600, edge: 120, swr: 86400 }, async () => {
   const counts = await networkCounts(c.env.DB);
   const totals = await networkTotals(c.env.DB);
   return { result: { ...counts, ...totals } };
