@@ -5,11 +5,11 @@ import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { SectionHeader, SectionIdentity, SectionStats, SectionChip, type SectionStat } from "@/components/section-header";
 import { CopyButton } from "@/components/copy-button";
 import { GraphTrustChip } from "@/components/graph-trust-chip";
-import { AddressTabs } from "@/components/address-tabs";
-import { Holdings } from "@/components/holdings";
-import { AddressConnections, AddressLineage } from "@/components/relationships";
-import { ReputationHeader } from "@/components/reputation";
-import { ReputationStat } from "@/components/reputation-stat";
+import { AddressTabs } from "@/features/addresses/components/address-tabs";
+import { Holdings } from "@/features/addresses/components/holdings";
+import { AddressConnections, AddressLineage } from "@/features/addresses/components/relationships";
+import { ReputationHeader } from "@/features/addresses/components/reputation";
+import { ReputationStat } from "@/features/addresses/components/reputation-stat";
 import { PendingActions } from "@/components/pending-actions";
 import { commas, short } from "@/lib/format";
 
