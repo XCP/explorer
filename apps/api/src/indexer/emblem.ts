@@ -13,7 +13,11 @@
  * Resumable per-contract pageKey/block cursor in indexer_state; bounded per step (cron + admin driven).
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import {
+  getIndexerState as getState,
+  getIndexerStateStringArray,
+  setIndexerState as setState,
+} from "#api/indexer/state";
 
 const ALCHEMY_NFT = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTsForContract`;
 const ETHERSCAN = "https://api.etherscan.io/v2/api?chainid=1";
@@ -153,7 +157,7 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
   const now = Math.floor(Date.now() / 1000);
   const out: Record<string, unknown> = { enumerated: 0, resolved: 0 };
 
-  let contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "null") || [];
+  let contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
   if (!contracts.length) {
     contracts = await counterpartyContracts();
     if (contracts.length) await setState(env.DB, "emblem_contracts", JSON.stringify(contracts));

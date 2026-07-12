@@ -10,6 +10,17 @@ export async function getIndexerStateInt(db: D1Database, key: string, fallback =
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+export async function getIndexerStateStringArray(db: D1Database, key: string): Promise<string[]> {
+  const value = await getIndexerState(db, key);
+  if (value === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function setIndexerState(db: D1Database, key: string, value: string | number): Promise<void> {
   await db
     .prepare(

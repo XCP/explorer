@@ -22,6 +22,7 @@ import { type Ev, type Stmt, type Ctx, bi, str } from "#api/indexer/events/conte
 import { dispatch } from "#api/indexer/events/dispatch";
 import { counterpartyJson } from "#api/indexer/counterparty";
 import { hashToBytes } from "#api/indexer/compact-codec";
+import { getIndexerStateStringArray } from "#api/indexer/state";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -68,7 +69,7 @@ async function batchAll(db: D1Database, stmts: Stmt[]): Promise<void> {
 // supply deterministically from our own ledger (see asset-supply.ts maintenance phase).
 async function enqueueSupply(db: D1Database, assets: string[]): Promise<void> {
   if (!assets.length) return;
-  const cur: string[] = JSON.parse((await getState(db, "asset_supply_queue")) || "[]");
+  const cur = await getIndexerStateStringArray(db, "asset_supply_queue");
   const set = new Set<string>(cur);
   for (const a of assets) if (a) set.add(a);
   const capped = [...set].slice(-3000); // bound the queue; drained per run by the maintenance phase

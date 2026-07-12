@@ -24,7 +24,11 @@
  *    sync.ts) + XCP every run, then the small fairminter/pool derivations.
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import {
+  getIndexerState as getState,
+  getIndexerStateStringArray,
+  setIndexerState as setState,
+} from "#api/indexer/state";
 import { normalize } from "#api/indexer/codec";
 
 const BACKFILL_BATCH = 2000; // assets per backfill step (per-asset SUM is asset-indexed)
@@ -96,7 +100,7 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
   const derivedDue = parseInt((await getState(env.DB, "asset_derived_tip")) || "-1", 10) < tip;
   if (derivedDue) await recomputeXcp(env);
-  const queue: string[] = JSON.parse((await getState(env.DB, "asset_supply_queue")) || "[]");
+  const queue = await getIndexerStateStringArray(env.DB, "asset_supply_queue");
   const todo = queue.slice(0, DIRTY_PER_RUN).filter((a) => a && a !== "XCP");
   let recomputed = 0;
   if (todo.length) {

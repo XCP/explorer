@@ -7,7 +7,11 @@
  * stale/expired ones. Requires SEQUENCE_ACCESS_KEY; no-ops without it (so the rest of the cron is unaffected).
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import {
+  getIndexerState as getState,
+  getIndexerStateStringArray,
+  setIndexerState as setState,
+} from "#api/indexer/state";
 
 const SEQ_BASE = "https://marketplace-api.sequence.app/mainnet/rpc/Marketplace/ListCollectiblesWithLowestListing";
 const PAGE_SIZE = 100;
@@ -109,7 +113,7 @@ async function mapAssets(env: Env, contract: string, tokenIds: string[]): Promis
 export async function crawlEmblemListings(env: Env): Promise<Record<string, unknown>> {
   const key = (env as { SEQUENCE_ACCESS_KEY?: string }).SEQUENCE_ACCESS_KEY;
   if (!key) return { skipped: "no SEQUENCE_ACCESS_KEY" };
-  const contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "[]");
+  const contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
   if (!contracts.length) return { skipped: "no contracts" };
 
   const now = Math.floor(Date.now() / 1000);

@@ -8,7 +8,11 @@
  * events (a trickle here; follow-up). Bounded + resumable (per-contract block cursor + pageKey). Cron/admin.
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import {
+  getIndexerState as getState,
+  getIndexerStateStringArray,
+  setIndexerState as setState,
+} from "#api/indexer/state";
 import { decodeOrderFulfilled, ORDER_FULFILLED_TOPIC } from "#api/indexer/seaport";
 
 const PAGE = 25; // transfers per step ⇒ ≤25 receipt fetches/run (bounded subrequests)
@@ -39,7 +43,7 @@ export async function crawlEmblemTransfers(env: Env): Promise<Record<string, unk
     return ((await r.json()) as { result?: unknown }).result;
   };
 
-  const contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "[]");
+  const contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
   if (!contracts.length) return { skipped: "no contracts" };
   let ci = parseInt((await getState(env.DB, "emblem_tx_idx")) || "0", 10);
   if (ci >= contracts.length) ci = 0;

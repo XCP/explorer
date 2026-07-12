@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getIndexerState, getIndexerStateInt, setIndexerState } from "#api/indexer/state";
+import { getIndexerState, getIndexerStateInt, getIndexerStateStringArray, setIndexerState } from "#api/indexer/state";
 
 function stateDatabase(initial: Record<string, string> = {}): D1Database {
   const values = new Map(Object.entries(initial));
@@ -42,4 +42,14 @@ test("integer state uses its explicit fallback for absent or malformed values", 
 
   assert.equal(await getIndexerStateInt(db, "missing", 7), 7);
   assert.equal(await getIndexerStateInt(db, "malformed", 9), 9);
+});
+
+test("string-array state validates JSON and element types", async () => {
+  const db = stateDatabase({ valid: '["a","b"]', mixed: '["a",2]', object: '{"a":1}', malformed: "[" });
+
+  assert.deepEqual(await getIndexerStateStringArray(db, "valid"), ["a", "b"]);
+  assert.deepEqual(await getIndexerStateStringArray(db, "missing"), []);
+  assert.deepEqual(await getIndexerStateStringArray(db, "mixed"), []);
+  assert.deepEqual(await getIndexerStateStringArray(db, "object"), []);
+  assert.deepEqual(await getIndexerStateStringArray(db, "malformed"), []);
 });

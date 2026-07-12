@@ -5,7 +5,11 @@
  * Feeds the unified sales stream as the 'emblem' venue (priced in ETH). Resumable per-contract pageKey cursor.
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import {
+  getIndexerState as getState,
+  getIndexerStateStringArray,
+  setIndexerState as setState,
+} from "#api/indexer/state";
 
 const ALCHEMY_SALES = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTSales`;
 const PAGE = 1000;
@@ -54,7 +58,7 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
   await env.DB.prepare(EMBLEM_SALES_DDL).run();
   await env.DB.prepare(EMBLEM_SALES_IDX).run();
 
-  const contracts: string[] = JSON.parse((await getState(env.DB, "emblem_contracts")) || "[]");
+  const contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
   if (!contracts.length) return { skipped: "no contracts" };
   let ci = parseInt((await getState(env.DB, "emblem_sales_idx")) || "0", 10);
   if (ci >= contracts.length) ci = 0;
