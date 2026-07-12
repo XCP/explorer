@@ -25,7 +25,7 @@ stats.get("/v2/status", async (c) =>
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
   const days = Math.min(365, Math.max(7, parseInt(c.req.query("days") || "90", 10)));
-  return cached(c, `metrics:${days}`, { ttl: 1800, edge: 300 }, async () => {
+  return cached(c, `metrics:${days}`, { ttl: 1800, edge: 300, swr: 86400 }, async () => {
   // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
   const series = async (name: MetricName) => (await metricSeries(c.env.DB, name, days))
     .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();

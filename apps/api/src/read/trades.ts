@@ -42,7 +42,7 @@ trades.get("/v2/assets/:asset/trades", async (c) => {
 
 // Global aggregation → D1-cached (low-cardinality key, per the cached() contract in respond.ts).
 trades.get("/v2/trades/stats", (c) =>
-  cached(c, "trades:stats", { ttl: 120 }, async (): Promise<Envelope<TradeVenueStats[]>> => {
+  cached(c, "trades:stats", { ttl: 120, swr: 86400 }, async (): Promise<Envelope<TradeVenueStats[]>> => {
     return { result: await tradeVenueStats(c.env.DB) };
   })
 );

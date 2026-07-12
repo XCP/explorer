@@ -25,6 +25,11 @@ optional fast path for sequential next/previous browsing, but must not replace p
 `cached()` responses expose `x-d1-cache: HIT|STALE|MISS`; producer misses also expose
 `Server-Timing: producer;dur=...` for browser and synthetic diagnostics.
 
+Measured heavy global aggregations (`metrics`, `trades:stats`, `exchanges`, `vaults`, network stats,
+leaderboards, and tags) use a day-long stale window. Their normal TTL still controls refresh frequency;
+the longer stale window only ensures that a user never waits on a multi-second cold producer after a quiet
+period. Refresh runs in `waitUntil` behind the last known-good response.
+
 ## Layer 1 — query shape (fewest rows scanned)
 
 ### Firsts (`/v2/firsts`) — was the #1 offender, FIXED in code
