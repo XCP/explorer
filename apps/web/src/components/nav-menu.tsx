@@ -14,13 +14,13 @@ export type NavGroup = { heading?: string; links: [label: string, href: string][
  *  - trigger reflects state: aria-expanded + highlighted when a child route is active
  */
 export function NavMenu({ label, id, groups }: { label: string; id: string; groups: NavGroup[] }) {
-  const [open, setOpen] = useState(false);
+  const [openForPath, setOpenForPath] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
   const pathname = usePathname();
+  const open = openForPath === pathname;
+  const setOpen = (value: boolean) => setOpenForPath(value ? pathname : null);
   const active = groups.some((g) => g.links.some(([, href]) => pathname.startsWith(href)));
-
-  useEffect(() => setOpen(false), [pathname]); // navigating closes the menu
 
   const cancelClose = () => { if (closeTimer.current != null) { clearTimeout(closeTimer.current); closeTimer.current = null; } };
   const scheduleClose = () => { cancelClose(); closeTimer.current = window.setTimeout(() => setOpen(false), 150); };
@@ -28,10 +28,10 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setOpen(false); rootRef.current?.querySelector("button")?.focus(); }
+      if (e.key === "Escape") { setOpenForPath(null); rootRef.current?.querySelector("button")?.focus(); }
     };
     const onPointerDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenForPath(null);
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointerDown);
@@ -48,7 +48,7 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
     >
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-controls={id}
         className={`rounded-md px-[11px] py-1.5 transition-colors ${active || open ? "text-zinc-100 bg-zinc-900" : "text-zinc-400 hover:text-zinc-100"}`}

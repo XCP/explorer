@@ -56,9 +56,8 @@ export default async function ReputationPage() {
   const f = d.funnel;
   const grand = f.total_addresses || 1;
   const pct = (n: number) => ((100 * n) / total).toFixed(1);
-  let running = 0;
   const bands = d.tiers.map((t, i) => {
-    running += t.count;
+    const running = d.tiers.slice(0, i + 1).reduce((sum, tier) => sum + tier.count, 0);
     return { ...t, band: bandLabel((100 * running) / total, i === d.tiers.length - 1) };
   });
   const hist = d.histogram ?? [];

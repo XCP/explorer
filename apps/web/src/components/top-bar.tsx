@@ -43,7 +43,9 @@ function WalletButton({ full = false }: { full?: boolean }) {
 
 export function TopBar() {
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPath, setMenuPath] = useState<string | null>(null);
+  const menuOpen = menuPath === pathname;
+  const setMenuOpen = (value: boolean) => setMenuPath(value ? pathname : null);
   // Primary sections match their singular detail routes too: /asset/X lights Assets, /trade… Trades,
   // /block/N Blocks (the plural href is itself covered by the singular prefix).
   const SECTION_PREFIX: Record<string, string> = { "/assets": "/asset", "/trades": "/trade", "/blocks": "/block" };
@@ -59,11 +61,10 @@ export function TopBar() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => { setMenuOpen(false); }, [pathname]); // close drawer on navigation
   // Escape closes the mobile drawer
   useEffect(() => {
     if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuPath(null); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [menuOpen]);
@@ -94,7 +95,7 @@ export function TopBar() {
           <div className="hidden sm:block shrink-0"><WalletButton /></div>
 
           {/* mobile hamburger */}
-          <button onClick={() => setMenuOpen((o) => !o)} aria-label="Menu" aria-expanded={menuOpen} aria-controls="mobile-menu"
+          <button onClick={() => setMenuOpen(!menuOpen)} aria-label="Menu" aria-expanded={menuOpen} aria-controls="mobile-menu"
             className="sm:hidden ml-auto flex items-center justify-center size-8 rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300">
             <span aria-hidden="true" className="text-base leading-none">{menuOpen ? "✕" : "≡"}</span>
           </button>

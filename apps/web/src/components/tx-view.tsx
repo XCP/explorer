@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import useSWR from "swr";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { CheckCircle2, Clock, XCircle } from "lucide-react";
 import type { TxView } from "@xcp/shared/chain";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
@@ -91,13 +91,11 @@ function StatusHero({ v }: { v: TxView }) {
 /** Localized timestamp: the viewer's own timezone, named — with the UTC instant in `title` and shown
  *  muted alongside. Renders UTC until mounted (SSR and first paint match; locale applies on hydrate). */
 function LocalTime({ t }: { t: number | null | undefined }) {
-  const [local, setLocal] = useState<string | null>(null);
-  useEffect(() => {
-    if (t == null) return;
-    const d = new Date(t * 1000);
-    setLocal(d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" }));
-  }, [t]);
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
   if (t == null) return <>—</>;
+  const local = mounted
+    ? new Date(t * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
+    : null;
   return (
     <span title={`${ts(t)} UTC`}>
       {local ?? `${ts(t)} UTC`} <span className="text-zinc-500">· {timeAgo(t)}</span>

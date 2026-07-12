@@ -1,9 +1,14 @@
 // Workspace lint gate — enforces the hard rules in CLAUDE.md that the compiler can't.
 // Run via `npm run lint` (part of `npm run check`); CI and the edit hook both call it.
 import tseslint from "typescript-eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
   { ignores: ["**/.open-next/**", "**/.next/**", "**/.wrangler/**", "**/.test-dist/**", "**/node_modules/**"] },
+  {
+    ...reactHooks.configs.flat["recommended-latest"],
+    files: ["apps/web/src/**/*.{ts,tsx}"],
+  },
   {
     files: ["apps/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.ts"],
     languageOptions: { parser: tseslint.parser, parserOptions: { ecmaVersion: "latest" } },

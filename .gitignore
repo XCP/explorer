@@ -9,6 +9,7 @@ tailout*
 .tt
 .DS_Store
 .next/
+apps/web/next-env.d.ts
 .open-next/
 .turbo/
 out/

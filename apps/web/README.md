@@ -1,32 +1,53 @@
 # xcp.io Explorer (web)
 
-Counterparty explorer — Next.js (App Router) + SWR + Tailwind v4, deployed to Cloudflare via OpenNext.
-Read-only; consumes **api.xcp.io** (the D1 Counterparty mirror). Design logic in [DESIGN.md](./DESIGN.md).
+Counterparty explorer built with Next.js App Router, React, SWR, and Tailwind, deployed to Cloudflare
+Workers through OpenNext. The application consumes the `xcp-api` Worker.
 
 ## Run locally
+
 ```bash
 npm install
-npm run dev            # http://localhost:3000
+npm run dev -w xcp-explorer-web
 ```
-By default it talks to the live API (`https://xcp-api.me-bbe.workers.dev`). To point elsewhere
-(e.g. a local `apps/api` via `wrangler dev`), create `.env.local`:
-```
+
+By default the app reads the live API. To point at a local API, create `apps/web/.env.local`:
+
+```text
 NEXT_PUBLIC_API_BASE=http://localhost:8787
 ```
 
-## Build / deploy
+## Runtime and deployment
+
+The App Router runs in Next's Node.js runtime. OpenNext transforms the production build into the `xcp-web`
+Cloudflare Worker. Server Components call the API through the `API_WORKER` service binding in production;
+browser requests and ordinary local development use `NEXT_PUBLIC_API_BASE`. R2 stores OpenNext's
+incremental cache.
+
+Use `next dev` for normal UI work. Use an OpenNext preview/build when changing Cloudflare bindings, caching,
+runtime compatibility, or deployment configuration. OpenNext's Windows support is best-effort, so Linux CI
+is the authoritative deployment build.
+
 ```bash
-npm run build          # next build (validates all routes)
-npm run deploy         # opennextjs-cloudflare build && deploy  (Cloudflare worker: xcp-web)
+npm run build -w xcp-explorer-web
+npm run test:e2e -w xcp-explorer-web
+npm run deploy -w xcp-explorer-web
 ```
 
-## Layout
-- `src/lib/api.ts` — API client + envelope fetcher (base = `NEXT_PUBLIC_API_BASE`).
-- `src/lib/swr-provider.tsx` — SWR cache (dedupe, no focus-revalidate, keepPrevious).
-- `src/lib/hooks.ts` — typed hooks per endpoint (`useAssets`, `useAsset`, `useAddress*`, `useBlock(s)`, `useTx`, `useIndex`).
-- `src/lib/indexes.tsx` — column config for every index page (one place for per-model display).
-- `src/components/` — `ui.tsx` (Card/Table/Row/Cell/badges/buttons), `index-page.tsx` (generic index), `nav.tsx`.
-- `src/app/` — routes: `/` (dashboard), `/assets`, `/asset/[asset]`, `/address/[address]`, `/block/[n]`,
-  `/tx/[hash]`, and index pages (`/sends`, `/issuances`, `/orders`, `/matches`, `/dispensers`, `/dispenses`,
-  `/sweeps`, `/broadcasts`, `/burns`, `/dividends`, `/bets`, `/fairminters`, `/fairmints`, `/destructions`,
-  `/btcpays`, `/transactions`).
+## Source map
+
+- `src/app/` — routes, layouts, metadata, and route composition.
+- `src/components/ui/` — shared visual primitives.
+- `src/components/` — current shared and feature components; these are being grouped into `chrome/` and
+  feature-owned folders as described in the architecture assessment.
+- `src/lib/api.ts` — current shared URL, browser fetcher, and server binding access; scheduled to split into
+  explicit client/server modules.
+- `src/lib/hooks.ts` — shared SWR hooks for live and paginated reads.
+- `src/lib/registry.tsx` — typed record-table definitions.
+- `src/lib/cells.tsx` — shared record-table cell renderers and column contracts.
+- `packages/shared` — API/web wire DTOs and record kinds.
+
+Architecture and visual references:
+
+- [`ARCHITECTURE-ASSESSMENT.md`](./ARCHITECTURE-ASSESSMENT.md)
+- [`DESIGN.md`](./DESIGN.md)
+- [`TABLES.md`](./TABLES.md)

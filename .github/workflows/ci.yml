@@ -16,3 +16,20 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test -w xcpdex-api
+
+  web-deployment-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build -w xcp-explorer-web
+      - run: npm run test:e2e -w xcp-explorer-web
+      - name: Build OpenNext Worker
+        working-directory: apps/web
+        run: npx opennextjs-cloudflare build --skipNextBuild
