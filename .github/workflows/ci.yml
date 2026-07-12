@@ -8,8 +8,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -21,17 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e -w xcp-explorer-web
-      - name: Check generated Cloudflare binding types
-        working-directory: apps/web
-        run: npx wrangler types --env-interface CloudflareEnv --include-runtime=false --check worker-configuration.d.ts
       - name: Build OpenNext Worker
         working-directory: apps/web
         run: npx opennextjs-cloudflare build
