@@ -9,6 +9,8 @@
  */
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import type { Env } from "./env";
+export type { Env } from "./env";
 import { syncEvents, backfillLedger, verifyLedgerParity } from "./indexer/sync";
 import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./indexer/signals";
 import { crawlEmblemStep } from "./indexer/emblem";
@@ -32,19 +34,6 @@ import { read } from "./read/router";
 import { verify } from "./verify";
 import { legacy } from "./legacy";
 import { admin } from "./admin";
-
-export interface Env {
-  DB: D1Database;
-  LEDGER_DB: D1Database;
-  XCPDEX: Fetcher;              // service binding -> xcpdex-api worker (swap market data)
-  COUNTERPARTY_API_BASE: string;          // https://api.counterparty.io:4000/v2
-  XCPDEX_API: string;           // https://xcpdex-api.me-bbe.workers.dev (fallback/ref)
-  CONSOLIDATION_API: string;    // Hetzner consolidation origin (api.xcp.io today; grey-cloud origin after cutover)
-  ADMIN_TOKEN: string;
-  ALCHEMY_KEY: string;          // Alchemy NFT API key (Emblem Vault token-id enumeration, primary)
-  ETHERSCAN_KEY: string;        // Etherscan API key (Emblem enumeration fallback)
-  SEQUENCE_ACCESS_KEY: string;  // Sequence Marketplace API project access key (live Emblem listings)
-}
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.

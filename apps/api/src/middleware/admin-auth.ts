@@ -1,5 +1,5 @@
 import { createMiddleware } from "hono/factory";
-import type { Env } from "../index";
+import type { Env } from "../env";
 
 type AdminRequest = {
   header(name: string): string | undefined;
