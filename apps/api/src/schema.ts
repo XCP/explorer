@@ -61,6 +61,11 @@ export interface AssetSignalsRow {
   distinct_dispense_buyers: number; // migration 0023 (distinct non-self dispense destinations)
   max_dispense_btc_clean: number; // migration 0023 (largest non-self dispense BTC — clean max_dispense_btc)
   emblem_trades: number; // migration 0023 (count of Emblem-vault sales attributed to the asset)
+  graph_trust: number; // migration 0024 (personalized-PageRank trust mass from the seeded collector/creator network)
+  graph_distrust: number; // migration 0024 (PPR mass from the distrust seeds)
+  holder_cohesion: number | null; // migration 0040 (interaction edges among top holders ÷ holder count; NULL until built)
+  cohesion_edges: number | null; // migration 0040 (raw edge count among top holders)
+  cohesion_strong: number | null; // migration 0040 (edges with w≥1.6 ⇔ ~4+ repeated interactions)
 }
 
 /** Mirror of the `address_signals` table (ADDR_DDL in signals.ts). */

@@ -6,9 +6,10 @@ import type { AssetListRow } from "@xcp/shared/assets";
 import { commas, compact, short, fromSats } from "@/lib/format";
 import { orderView, matchView } from "@/lib/trading-pair";
 import { lockStateCell,
-  type Col, type RecordContext, blockCell, txCell, addrCell, assetCell, assetChip, timeCell, viewCell,
+  type Col, type RecordContext, blockCell, txCell, addrCell, addrEndsCell, assetCell, assetChip, timeCell, viewCell,
   signedQty, statusPill, dispenserPill, sendTypeChip, actionBadge, sweepFlagsBadge, betTypeBadge, tchip,
 } from "@/lib/cells";
+import { AssetIcon } from "@/components/ui/badges";
 
 // The record catalog — for each RecordKind the explorer serves as a list feed, its URL slug, page
 // title, and column layout. Keyed by RecordKind so the API's list routes and the web's index pages
@@ -41,7 +42,10 @@ const cDest: Col = { label: "Destination", priority: 2, w: "minmax(120px,1fr)", 
 const fmtPrice = (n: number) => (n === 0 ? "—" : n >= 1 ? commas(n.toFixed(4)) : parseFloat(n.toFixed(8)).toLocaleString(undefined, { maximumFractionDigits: 8 }));
 const side = (d: "buy" | "sell") => <span className={`side ${d}`}>{d}</span>;
 const pairCell = (base: string, quote: string) => (
-  <span className="inline-flex max-w-full items-center gap-1 font-mono"><Link href={`/asset/${base}`} className="text-zinc-100 truncate">{base}</Link><span className="text-zinc-600 shrink-0">/{quote}</span></span>
+  <span className="inline-flex max-w-full items-center gap-2 font-mono">
+    <AssetIcon asset={base} size={22} className="aicon" />
+    <Link href={`/asset/${base}`} className="text-zinc-100 truncate">{base}</Link><span className="text-zinc-600 shrink-0">/{quote}</span>
+  </span>
 );
 // Filled % from give-side fill progress; Expires as blocks-left against the context's chain tip.
 const filledPct = (r: OrderRow) => {
@@ -137,8 +141,8 @@ const ORDER_MATCH_COLS: Col<OrderMatchRow>[] = [
   { label: "Price", numeric: true, priority: 2, cell: (r) => { const v = matchView(r); return v.price ? fmtPrice(v.price) : "—"; } },
   { label: "Quantity", numeric: true, priority: 2, cell: (r) => commas(matchView(r).baseQty) },
   { label: "Total", numeric: true, priority: 4, cell: (r) => commas(matchView(r).quoteQty) },
-  { label: "Buyer", priority: 3, w: "minmax(0,1.5fr)", cell: (r) => { const v = matchView(r); return addrCell(v.direction === "buy" ? r.tx0_address : r.tx1_address); } },
-  { label: "Seller", priority: 4, w: "minmax(0,1.5fr)", cell: (r) => { const v = matchView(r); return addrCell(v.direction === "buy" ? r.tx1_address : r.tx0_address); } },
+  { label: "Buyer", priority: 3, w: "minmax(0,1.2fr)", cell: (r) => { const v = matchView(r); return addrEndsCell(v.direction === "buy" ? r.tx0_address : r.tx1_address); } },
+  { label: "Seller", priority: 4, w: "minmax(0,1.2fr)", cell: (r) => { const v = matchView(r); return addrEndsCell(v.direction === "buy" ? r.tx1_address : r.tx0_address); } },
   cStatus,
   { label: "View", srOnly: true, priority: 1, w: "44px", cell: (r) => viewCell(r.tx1_hash ?? r.tx0_hash) },
 ];

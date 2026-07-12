@@ -192,14 +192,15 @@ export function reputationTop(db: D1Database, expr: string, notInfra: string): P
   );
 }
 
-/** The scoring funnel: every address in the mirror, split into infrastructure (by kind) vs the rest. The
- *  read layer derives no-history = total − infrastructure − scored. Powers the /reputation "who counts" act. */
+/** The infrastructure census: how the mirror's non-user addresses break down by kind. The read layer
+ *  builds the funnel as infrastructure + scored (the real-address total); "no history" is 0 by
+ *  definition. Powers the /reputation "who counts" act. */
 export function reputationFunnel(db: D1Database): Promise<{
-  total: number; infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number;
+  infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number;
 } | null> {
-  return one<{ total: number; infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number }>(
+  return one<{ infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number }>(
     db,
-    `SELECT COUNT(*) total,
+    `SELECT
        SUM(CASE WHEN is_exchange=1 OR is_deposit=1 OR is_burn=1 OR COALESCE(is_emblem_vault,0)=1 OR COALESCE(likely_service,0)=1 THEN 1 ELSE 0 END) infra,
        SUM(CASE WHEN is_exchange=1 THEN 1 ELSE 0 END) exchanges,
        SUM(CASE WHEN is_deposit=1 THEN 1 ELSE 0 END) deposits,

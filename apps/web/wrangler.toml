@@ -15,3 +15,9 @@ NEXT_PUBLIC_API_BASE = "https://xcp-api.me-bbe.workers.dev"
 [[services]]
 binding = "API_WORKER"
 service = "xcp-api"
+
+# OpenNext incremental cache (ISR / Next Data Cache) — persists `revalidate` fetches so SSR reads hit this
+# bucket instead of re-querying D1 cold on every request. Binding name is fixed by r2IncrementalCache.
+[[r2_buckets]]
+binding = "NEXT_INC_CACHE_R2_BUCKET"
+bucket_name = "xcp-web-inc-cache"

@@ -2,6 +2,7 @@
 
 Counterparty explorer. `apps/api` = Cloudflare Worker + D1 (api.xcp.io). `apps/web` = Next.js 15 on
 OpenNext/Cloudflare (xcp.io). `packages/shared` = the wire contract. Read
+`docs/orientation.md` FIRST (project state: shipped / in-progress / slated + how we work),
 `apps/api/docs/architecture.md` (data architecture) and `docs/refactor-proposal.md` (target
 structure + roadmap) before structural work.
 

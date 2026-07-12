@@ -34,6 +34,10 @@ const CANONICAL: Record<string, string> = {
 };
 export const canonicalCollection = (tag: string): string => CANONICAL[tag] ?? tag;
 
+/** Collections the owner has REMOVED — every crawl skips these slugs so a deletion stays deleted
+ *  across rebuilds. (wojak-npc: removed by owner 2026-07-11.) */
+export const EXCLUDED_COLLECTIONS = new Set<string>(["wojak-npc"]);
+
 interface Member {
   name: string;
   series: number | null;

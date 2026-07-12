@@ -12,9 +12,11 @@ import type { ReactNode } from "react";
 export const FULL_BLEED = "w-screen ml-[calc(50%-50vw)] -mt-4";
 
 export function SectionHeader({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
-  // `flush`: the tab bar continues the band directly below and carries the bottom border instead.
+  // `flush`: the tab bar continues the band directly below and carries the bottom border instead. It must
+  // sit FLUSH — `!mb-0` cancels <main>'s space-y-6 (Tailwind v4 emits it as margin-bottom on non-last
+  // children), which would otherwise open a 24px page-background stripe between the stats and the tabs.
   return (
-    <div className={`section-head ${FULL_BLEED}`} style={flush ? { borderBottom: "none" } : undefined}>
+    <div className={`section-head ${FULL_BLEED}${flush ? " !mb-0" : ""}`} style={flush ? { borderBottom: "none" } : undefined}>
       <div className="sh-in" style={flush ? undefined : { paddingBottom: 18 }}>{children}</div>
     </div>
   );
@@ -22,7 +24,7 @@ export function SectionHeader({ children, flush = false }: { children: ReactNode
 
 /** The band's chip language — v19's .chip family (uppercase mono pills, tinted border + wash).
  *  grail/trusted/locked come from the lab file; open/og/neutral are app extensions in globals.css. */
-export type SectionChipVariant = "grail" | "trusted" | "locked" | "open" | "og" | "neutral";
+export type SectionChipVariant = "grail" | "trusted" | "locked" | "open" | "og" | "neutral" | "collection";
 
 export function SectionChip({ variant = "neutral", children }: { variant?: SectionChipVariant; children: ReactNode }) {
   return <span className={`chip ${variant}`}>{children}</span>;

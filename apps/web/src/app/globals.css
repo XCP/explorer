@@ -233,6 +233,10 @@ a.view:hover { color:var(--accent); }
 .pill.filled    { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
 .pill.expired   { color:#fca5a5; border-color:#96312e; background:rgba(127,29,29,.15); }
 .pill.cancelled { color:var(--t3); border-color:#34404f; background:rgba(121,131,154,.10); }
+.pill.insular { color:var(--amber); border-color:#8a6420; background:rgba(120,86,27,.12); } /* holder base trades among itself — airdrop cohort / wash / clique */
+/* Radar's dislocation read on the asset page: top-decile conviction, unpriced market. Green = opportunity,
+   and it's a link (to /radar) so it must not pick up link underline/colour. */
+.pill.undervalued { color:#86efac !important; border-color:#1d7f42; background:rgba(22,101,52,.15); text-decoration:none; }
 
 /* type chips — EXCEPTIONS ONLY (attach/move); a plain send gets nothing */
 .tchip { display:inline-flex; align-items:center; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--t3); white-space:nowrap; }
@@ -339,3 +343,79 @@ a.btn2:hover { color:var(--t2); }
   .rt .tr { gap:9px; padding:8px 10px; grid-template-columns:var(--rtc-1,var(--rtc)); }
   .rt .tr > .p2, .rt .tr > .p3 { display:none; }
 }
+
+/* ── TX PAGE: the three jobs (v21 lab — offer / receipt / declaration) ──────────────────────────
+   ① OFFER: a live dispenser / fairminter / open order — the tx page IS the storefront (there is no
+   other URL for the thing). ② RECEIPT: settled kinds — a proof document. ③ DECLARATION: broadcast /
+   issuance — the page displays what was published/created. Dead offers collapse to .tx-dead. */
+
+/* the storefront (offer hero) */
+.txstore { display:grid; grid-template-columns:250px 1fr; overflow:hidden; }
+.txstore .art { border-right:1px solid var(--border2); background:var(--panel2); padding:16px; display:flex; flex-direction:column; gap:10px; }
+.txstore .caption { text-align:center; font-family:var(--mono); font-size:12px; color:var(--t3); }
+.txstore .shop { padding:16px 18px; min-width:0; }
+.txstore .forsale { font-size:11px; font-family:var(--mono); letter-spacing:.09em; text-transform:uppercase; color:var(--t4); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.txstore .offerline { margin-top:6px; font-size:19px; color:var(--t1); }
+.txstore .offerline b { font-family:var(--mono); }
+.txstore .price { margin:14px 0 4px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.txstore .price .big { font-family:var(--mono); font-size:30px; font-weight:700; color:var(--t1); }
+.txstore .price .usd { font-size:14px; color:var(--t4); }
+.txstore .meta { display:flex; flex-wrap:wrap; gap:6px 22px; margin:10px 0 0; font-size:12px; color:var(--t4); }
+.txstore .meta b { font-family:var(--mono); color:var(--t2); font-weight:500; }
+@media (max-width:760px){ .txstore { grid-template-columns:1fr; } .txstore .art { border-right:none; border-bottom:1px solid var(--border2); flex-direction:row; align-items:center; } .txstore .art > :first-child { width:110px; } }
+
+/* stock / progress bar */
+.stockbar { margin-top:14px; }
+.stockbar .bar { height:7px; border-radius:99px; background:#181c24; overflow:hidden; }
+.stockbar .fill { height:100%; border-radius:99px; background:var(--up); }
+.stockbar.mint .fill { background:var(--accent); }
+.stockbar .lbl { display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--t4); margin-top:5px; font-family:var(--mono); }
+
+/* the how-to-accept block; tone variants per offer kind */
+.howto { margin-top:16px; border:1px solid #1d7f42; border-radius:8px; background:rgba(22,101,52,.08); padding:12px 14px; }
+.howto .h { font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:#86efac; margin-bottom:7px; }
+.howto .step { font-size:13px; color:var(--t2); line-height:1.65; word-break:break-word; }
+.howto .step b { font-family:var(--mono); color:var(--t1); }
+.howto .btns { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.howto.mint { border-color:#1a7391; background:rgba(21,94,117,.08); } .howto.mint .h { color:#7dd3fc; }
+.howto.take { border-color:#8a6420; background:rgba(120,86,27,.07); } .howto.take .h { color:var(--amber); }
+.howto.done { border-color:#1a7391; background:rgba(21,94,117,.07); } .howto.done .h { color:#7dd3fc; } /* filled = settled blue */
+.howto.gone { border-color:var(--border2); background:rgba(121,131,154,.05); } .howto.gone .h { color:var(--t3); } /* expired/cancelled = quiet */
+.txbtn { display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer; border:1px solid transparent; }
+.txbtn.buy { background:var(--brand); color:#fff !important; text-decoration:none; }
+.txbtn.buy:hover { filter:brightness(1.1); color:#fff; }
+.txbtn.ghost { border-color:var(--border); color:var(--t2) !important; background:var(--panel); text-decoration:none; }
+.txbtn.copy { border-color:#1d7f42; color:#86efac; background:none; font-family:var(--mono); font-size:12px; }
+.txbtn.copy:hover { background:rgba(22,101,52,.15); }
+
+/* the dead offer — a one-line epitaph that routes demand onward */
+.tx-dead { border:1px solid var(--border2); border-radius:8px; background:var(--panel); padding:13px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:13px; }
+.tx-dead .msg { color:var(--t3); } .tx-dead .msg b { color:var(--t2); font-family:var(--mono); }
+
+/* the receipt */
+.txreceipt { position:relative; }
+.txreceipt .sale { display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:16px; border-bottom:1px solid var(--border2); font-size:16px; color:var(--t1); }
+.txreceipt .sale b { font-family:var(--mono); }
+.txreceipt .stamp { margin-left:auto; }
+.txreceipt table { width:100%; border-collapse:collapse; font-size:13px; }
+.txreceipt th { text-align:left; font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--t4); background:var(--panel2); padding:8px 16px; border-bottom:1px solid var(--border2); }
+.txreceipt td { padding:9px 16px; border-bottom:1px solid #14171d; }
+.txreceipt .r { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.txreceipt tfoot td { border-bottom:none; background:var(--panel2); font-family:var(--mono); color:var(--t1); font-weight:600; }
+.txreceipt tfoot .note { font-family:var(--sans); font-weight:400; font-size:11px; color:var(--t4); }
+.txreceipt .parties { display:flex; flex-wrap:wrap; gap:8px 28px; padding:12px 16px; font-size:12px; color:var(--t4); }
+.txreceipt .parties b { font-family:var(--mono); font-weight:500; color:var(--t3); word-break:break-all; }
+.pill.settled { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
+
+/* the declaration */
+.txdecl { padding:18px 20px; }
+.txdecl blockquote { border-left:3px solid var(--accent); padding:6px 0 6px 16px; font-size:17px; color:var(--t1); line-height:1.5; word-break:break-word; margin:0; }
+.txdecl .oracle { font-family:var(--mono); font-size:30px; font-weight:700; color:var(--t1); }
+.txdecl .meta { margin-top:12px; font-size:12px; color:var(--t4); font-family:var(--mono); word-break:break-all; }
+.txbirth { display:flex; gap:16px; padding:16px; align-items:center; }
+.txbirth .art { width:120px; flex-shrink:0; }
+.txbirth .what { font-size:15px; color:var(--t1); line-height:1.6; }
+.txbirth .what b { font-family:var(--mono); }
+.txbirth .chips { margin-top:9px; display:flex; gap:6px; flex-wrap:wrap; }
+.txbirth .go { margin-top:11px; font-size:13px; color:var(--t3); }
+@media (max-width:560px){ .txbirth { flex-direction:column; align-items:flex-start; } }

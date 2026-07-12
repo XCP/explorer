@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { Clock } from "lucide-react";
-import type { TxDetail } from "@xcp/shared/chain";
-import type { MempoolActionRow } from "@xcp/shared/mempool";
+import type { TxView } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api";
-import { Card, KV } from "@/components/ui/card";
-import { type Col, addrCell, assetCell } from "@/lib/cells";
-import { eventChip } from "@/lib/mempool";
-import { RecordTable } from "@/components/record-table";
-import { commas, short, ts } from "@/lib/format";
+import { TxLive } from "@/components/tx-view";
+import { KIND_TITLE } from "@/lib/tx";
+import { artUrl } from "@/lib/art";
+import { short } from "@/lib/format";
 
-// Returns null on 404; only the page calls notFound() (notFound() in generateMetadata renders the
-// error boundary instead of the 404 route under OpenNext).
-async function loadTx(hash: string): Promise<TxDetail | null> {
+/**
+ * The transaction page — a thin server shell around the live client view (components/tx-view.tsx). The
+ * server render carries the first TxView (mempool-aware: the API falls through to the node's mempool for
+ * a just-broadcast tx), then the island polls it to settlement. This page's primary user is two parties
+ * watching a payment confirm, so freshness beats cache: revalidate 5.
+ */
+async function loadTx(hash: string): Promise<TxView | null> {
   try {
-    const env = await getJson<Envelope<TxDetail>>(`/v2/transactions/${encodeURIComponent(hash)}`, { revalidate: 30 });
+    const env = await getJson<Envelope<TxView>>(`/v2/transactions/${encodeURIComponent(hash)}`, { revalidate: 5 });
     return env.result ?? null;
   } catch (e) {
     if (e instanceof NotFoundError) return null;
@@ -23,70 +23,61 @@ async function loadTx(hash: string): Promise<TxDetail | null> {
   }
 }
 
-// A confirmed tx is the common case; when it isn't in the mirror we check the node's mempool. Returns []
-// when the node has no events for it (a real 404 there) so the page can 404 only when BOTH miss.
-async function loadPendingTx(hash: string): Promise<MempoolActionRow[]> {
-  try {
-    const env = await getJson<Envelope<MempoolActionRow[]>>(`/v2/mempool/transactions/${encodeURIComponent(hash)}`, { revalidate: 5 });
-    return env.result ?? [];
-  } catch (e) {
-    if (e instanceof NotFoundError) return [];
-    throw e;
+// The share unfurl SELLS when the page is a storefront — a dispenser link pasted into a chat must
+// read as "here's the thing, here's the price, it's open" (the owner's advertisement concept). The
+// og:image is the asset's art for offer/receipt/birth pages so the card itself travels with the link.
+function shareCopy(v: TxView, hash: string): { title: string; description: string; image?: string } {
+  const a = v.action;
+  const state = v.status === "mempool" ? "unconfirmed" : `${v.confirmations} confirmation${v.confirmations === 1 ? "" : "s"}`;
+  const art = (asset?: string | null) => (asset ? artUrl(asset, 800) : undefined);
+  const btc = (sats?: string | number | null) => { const n = Number(sats); return Number.isFinite(n) && n > 0 ? `${(n / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} BTC` : null; };
+  if (a?.kind === "dispenser" || a?.kind === "refill") {
+    const d = a.dispenser;
+    if (d) {
+      const open = Number(d.status) === 0 && Number(d.give_remaining_normalized) > 0;
+      const price = btc(d.satoshirate);
+      return open
+        ? { title: `Buy ${d.asset} — ${price ?? "dispenser"} · OPEN`, description: `Automatic dispenser: ${Number(d.give_remaining_normalized).toLocaleString()} in stock · send the exact amount, it vends in the next block. On xcp.io.`, image: art(d.asset) }
+        : { title: `${d.asset} dispenser — closed`, description: `This dispenser has ended · ${d.dispense_count} sales. See other ways to get ${d.asset} on xcp.io.`, image: art(d.asset) };
+    }
   }
-}
-
-const PENDING_COLS: Col<MempoolActionRow>[] = [
-  { label: "Event", cell: (r) => eventChip(r.event) },
-  { label: "Asset", weight: "primary", cell: (r) => assetCell(r.asset ?? undefined) },
-  { label: "Quantity", numeric: true, cell: (r) => (r.quantity_normalized != null ? commas(r.quantity_normalized) : "—") },
-  { label: "From", cell: (r) => addrCell(r.source ?? undefined) },
-  { label: "To", cell: (r) => addrCell(r.destination ?? undefined) },
-];
-
-// Unconfirmed-tx view: the tx is not yet in the mirror but the node's mempool has action(s) for it.
-function PendingTx({ hash, actions }: { hash: string; actions: MempoolActionRow[] }) {
-  return (
-    <Card title="Transaction">
-      <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-2.5 text-sm">
-        <Clock className="size-4 shrink-0 text-amber-400" />
-        <span className="font-medium text-zinc-200">Unconfirmed</span>
-        <span className="text-amber-400/80">· in mempool</span>
-      </div>
-      <KV k="Hash" v={<span className="font-mono break-all">{hash}</span>} />
-      <div className="mt-4"><RecordTable cols={PENDING_COLS} rows={actions} /></div>
-    </Card>
-  );
+  if (a?.kind === "fairminter") {
+    const f = a.fairminter;
+    const open = (f.status ?? "").startsWith("open");
+    return { title: `${open ? "Mint" : "Fair mint over:"} ${f.asset_longname || f.asset}${open ? " — open now" : ""}`, description: open ? `Anyone can mint. Terms + progress on xcp.io.` : `Minting has closed — see the asset on xcp.io.`, image: art(f.asset) };
+  }
+  if (a?.kind === "order") {
+    const o = a.order;
+    return { title: `${o.status === "open" ? "Open order" : `Order (${(o.status ?? "ended").split(":")[0]})`}: ${Number(o.give_quantity_normalized).toLocaleString()} ${o.give_asset} for ${Number(o.get_quantity_normalized).toLocaleString()} ${o.get_asset}`, description: `Counterparty DEX order · ${state}. Take it on xcpdex.` };
+  }
+  if (a?.kind === "dispense") {
+    const d = a.dispenses[0];
+    return { title: `${Number(d.dispense_quantity_normalized).toLocaleString()} ${d.asset} bought for ${btc(d.btc_amount) ?? "BTC"}`, description: `Dispense receipt · ${state} · on xcp.io.`, image: art(d.asset) };
+  }
+  if (a?.kind === "issuance") {
+    const i = a.issuance;
+    return { title: `${i.asset_longname || i.asset} — issuance`, description: `Birth record on xcp.io · ${state}.`, image: art(i.asset) };
+  }
+  const kind = a ? KIND_TITLE[a.kind] : null;
+  return { title: `${kind ? `${kind} — ` : ""}Transaction ${short(hash)}`, description: `Counterparty transaction ${hash} (${state}).` };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ hash: string }> }): Promise<Metadata> {
   const { hash } = await params;
-  const title = `Transaction ${short(hash)}`;
-  const description = `Counterparty transaction ${hash}.`;
-  return { title, description, openGraph: { title: `${title} | XCP.io`, description } };
+  const v = await loadTx(hash).catch(() => null);
+  if (!v) return { title: `Transaction ${short(hash)}`, description: `Counterparty transaction ${hash}.` };
+  const s = shareCopy(v, hash);
+  return {
+    title: s.title,
+    description: s.description,
+    openGraph: { title: `${s.title} | XCP.io`, description: s.description, ...(s.image ? { images: [{ url: s.image }] } : {}) },
+    twitter: { card: s.image ? "summary_large_image" : "summary", title: `${s.title} | XCP.io`, description: s.description, ...(s.image ? { images: [s.image] } : {}) },
+  };
 }
 
 export default async function TxPage({ params }: { params: Promise<{ hash: string }> }) {
   const { hash } = await params;
   const item = await loadTx(hash);
-  if (!item) {
-    const pending = await loadPendingTx(hash);
-    if (pending.length === 0) notFound();
-    return <PendingTx hash={hash} actions={pending} />;
-  }
-
-  return (
-    <Card title="Transaction">
-      <KV k="Hash" v={<span className="font-mono break-all">{item.tx_hash}</span>} />
-      <KV k="Block" v={<Link href={`/block/${item.block_index}`}>{commas(item.block_index)}</Link>} />
-      <KV k="Time" v={ts(item.block_time)} />
-      <KV k="Source" v={item.source ? <Link href={`/address/${item.source}`} className="font-mono break-all">{item.source}</Link> : "—"} />
-      <KV k="Destination" v={item.destination ? <Link href={`/address/${item.destination}`} className="font-mono break-all">{item.destination}</Link> : "—"} />
-      <KV k="BTC amount" v={item.btc_amount ? <span className="font-mono">{item.btc_amount}</span> : "—"} />
-      <KV k="Fee" v={item.fee ? <span className="font-mono">{item.fee}</span> : "—"} />
-      <KV k="Supported" v={item.supported ? "yes" : "no"} />
-      <div className="mt-3 text-xs">
-        <a href={`https://www.xcp.io/tx/${item.tx_hash}`} target="_blank" rel="noopener noreferrer" className="!text-zinc-400 hover:!text-(--color-accent) !no-underline">Raw decode ↗</a>
-      </div>
-    </Card>
-  );
+  if (!item) notFound();
+  return <TxLive hash={hash} initial={item} />;
 }

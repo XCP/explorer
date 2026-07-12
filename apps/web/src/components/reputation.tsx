@@ -1,6 +1,6 @@
 "use client";
 import useSWR from "swr";
-import { ShieldCheck, Stamp, Wallet, Store, Building2, Coins, Crown, ArrowDownToLine, Flame, type LucideIcon } from "lucide-react";
+import { ShieldCheck, Stamp, Wallet, Store, Building2, Coins, Crown, ArrowDownToLine, Flame, Sparkles, Hammer, ArrowLeftRight, HandCoins, Layers, Rocket, Tag, type LucideIcon } from "lucide-react";
 import type { AddressReputation } from "@xcp/shared/addresses";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -10,16 +10,31 @@ import { commas } from "@/lib/format";
 // Composed address reputation: intrinsic, earned-only (mud/dust-proof), validated predictive.
 // Leads with band + tags + EVIDENCE so it's explainable, never a black-box number. New = neutral.
 const BAND: Record<string, { color: string; ring: string; bg: string }> = {
+  OG: { color: "text-sky-400", ring: "ring-sky-500/30", bg: "bg-sky-500/10" },
   Established: { color: "text-emerald-400", ring: "ring-emerald-500/30", bg: "bg-emerald-500/10" },
-  Proven: { color: "text-sky-400", ring: "ring-sky-500/30", bg: "bg-sky-500/10" },
   Active: { color: "text-zinc-300", ring: "ring-zinc-600", bg: "bg-zinc-800" },
-  Quiet: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
+  Casual: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
   New: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
   "No history": { color: "text-zinc-500", ring: "ring-zinc-800", bg: "bg-zinc-900/60" },
   Exchange: { color: "text-violet-300", ring: "ring-violet-500/30", bg: "bg-violet-500/10" },
   "Exchange deposit": { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
 };
-const TAG_ICON: Record<string, LucideIcon> = { OG: Crown, Creator: Stamp, Collector: Wallet, Merchant: Store, Exchange: Building2, Whale: Coins, "Exchange deposit": ArrowDownToLine, Burner: Flame };
+const TAG_ICON: Record<string, LucideIcon> = {
+  OG: Crown, "Early Adopter": Sparkles, Creator: Stamp, "Prolific Creator": Hammer, Collector: Wallet,
+  Merchant: Store, Trader: ArrowLeftRight, "Active Trader": ArrowLeftRight, "Dividend Payer": HandCoins,
+  Exchange: Building2, Whale: Coins, "Exchange deposit": ArrowDownToLine, Burner: Flame,
+  "Stamp Creator": Stamp, "Stamp Collector": Layers, "SRC-20 Deployer": Rocket, "BTNS User": Tag,
+};
+// Persona = the dominant ROLE (what it does). Its own icon + colour so it reads as a headline identity,
+// distinct from the reputation band (whether to trust it) below it.
+const PERSONA_STYLE: Record<string, { icon: LucideIcon; color: string }> = {
+  creator: { icon: Hammer, color: "text-fuchsia-400" },
+  collector: { icon: Wallet, color: "text-sky-400" },
+  merchant: { icon: Store, color: "text-amber-400" },
+  trader: { icon: ArrowLeftRight, color: "text-emerald-400" },
+  service: { icon: Building2, color: "text-violet-300" },
+  dormant: { icon: Coins, color: "text-zinc-500" },
+};
 
 export function ReputationHeader({ address }: { address: string }) {
   const { data, isLoading } = useSWR<Envelope<AddressReputation>>(apiUrl(`/v2/addresses/${encodeURIComponent(address)}/reputation`));
@@ -48,6 +63,16 @@ export function ReputationHeader({ address }: { address: string }) {
           <div className="text-[10px] uppercase tracking-wider text-zinc-400">reputation</div>
         </div>
         <div className="flex-1 min-w-0">
+          {r.persona && r.persona.primary !== "dormant" && (() => {
+            const p = PERSONA_STYLE[r.persona.primary] ?? PERSONA_STYLE.collector;
+            const PI = p.icon;
+            return (
+              <div className="flex items-center gap-2 mb-1" title={r.persona.blurb}>
+                <PI className={`size-4 ${p.color}`} />
+                <span className={`text-lg font-bold leading-none ${p.color}`}>{r.persona.label}</span>
+              </div>
+            );
+          })()}
           <div className="flex items-center gap-2 flex-wrap">
             <ShieldCheck className={`size-4 ${b.color}`} />
             <span className={`font-semibold ${b.color}`}>{r.band}</span>

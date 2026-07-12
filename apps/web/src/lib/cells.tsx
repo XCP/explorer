@@ -50,12 +50,17 @@ export const blockCell = (n?: number | null) => (n != null ? <Link className="bl
 export const txCell = (h?: string | null) => (h ? <Link href={`/tx/${h}`}>{mono(short(h))}</Link> : "—");
 /** Address — single-line ellipsis over the FULL string, complete address in title. Never 4+4 (R5). */
 export const addrCell = (a?: string | null) => (a ? <Link className="address" href={`/address/${a}`} title={a}>{a}</Link> : "—");
+/** Bookended address (prefix…suffix, full in title) — the owner-sanctioned exception for the matches
+ *  table, where two address columns share a row and the front-ellipsis form was unreadable. */
+export const addrEndsCell = (a?: string | null) =>
+  a ? <Link className="font-mono text-[12px] text-(--t3)" style={{ color: "var(--t3)" }} href={`/address/${a}`} title={a}>{short(a, 8, 6)}</Link> : "—";
 /** Row anchor: icon + linked mono name, one line (v20 .asset anatomy). `display` overrides (longnames). */
 export const assetCell = (a?: string | null, display?: string | null) =>
   a ? <span className="asset"><AssetIcon asset={a} size={22} className="aicon" /><Link className="aname" href={`/asset/${a}`}>{display || a}</Link></span> : "—";
-/** Secondary asset reference (16px icon) — e.g. the dividend currency next to the anchor asset. */
-export const assetChip = (a?: string | null) =>
-  a ? <Link href={`/asset/${a}`} className="inline-flex items-center gap-1.5"><AssetIcon asset={a} size={16} />{a}</Link> : "—";
+/** Secondary asset reference (16px icon) — e.g. the dividend currency next to the anchor asset, or an
+ *  asset named inside prose (the tx-page story sentences). `display` overrides for longnames. */
+export const assetChip = (a?: string | null, display?: string | null) =>
+  a ? <Link href={`/asset/${a}`} className="inline-flex items-center gap-1.5 align-middle"><AssetIcon asset={a} size={16} />{display || a}</Link> : "—";
 /** Relative time with the absolute UTC in `title` (R9) — the leading cell (.time). */
 export const timeCell = (t?: number | null) =>
   t ? <span className="time" title={ts(t)}>{timeAgo(t)}</span> : <span className="time">—</span>;

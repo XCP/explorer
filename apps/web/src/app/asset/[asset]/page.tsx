@@ -157,6 +157,9 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
               <div className="row"><span className="k">Supply</span><span className="amt mono">{amount(item.supply_normalized, item.divisible)}{item.locked ? <> <span className="time">locked</span></> : null}</span></div>
               <div className="row"><span className="k">Divisible</span><span className="amt mono">{item.divisible ? "Yes" : "No"} <span className="time">{item.divisible ? "8 decimals" : "whole units"}</span></span></div>
               {item.burned_normalized != null && Number(item.burned_normalized) > 0 && <div className="row"><span className="k">Burned</span><span className="amt mono">{amount(item.burned_normalized, item.divisible)}</span></div>}
+              {/* Conviction — who holds it + how scarce (the Radar signal, on the asset itself; zero market
+                  inputs). The undervalued pill is Radar's dislocation cut: top-decile conviction, unpriced. */}
+              {item.conviction && <div className="row"><span className="k">Conviction</span><span className="amt mono" title="Who holds it + how scarce — held by proven creators and active collectors across a scarce supply. No trade/volume inputs; can't be pumped."><span>{item.conviction.score}</span><span className="time">/100</span>{item.conviction.undervalued && <> <Link href="/radar" className="pill undervalued" title="Top-decile conviction but almost no realized sales — the smart money holds it and the market hasn't priced it. See Radar.">undervalued</Link></>}</span></div>}
             </div>
           </div>
           {hasMarket && (

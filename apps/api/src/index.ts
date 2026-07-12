@@ -14,6 +14,7 @@ import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "./
 import { crawlEmblemStep } from "./indexer/emblem";
 import { crawlAssetSupply } from "./indexer/asset-supply";
 import { buildTags, buildTagsScoped } from "./indexer/tags";
+import { buildIssuerCollections } from "./indexer/issuer-collections";
 import { crawlCollections } from "./indexer/collections";
 import { crawlEmblemSales } from "./indexer/emblem-sales";
 import { crawlScarceSales } from "./indexer/scarce-sales";
@@ -102,7 +103,10 @@ async function maybeRebuildTags(env: Env): Promise<void> {
   const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
   const last = parseInt(((await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='tags_rebuilt_blk'`).first<{ value: string }>())?.value) || "0", 10);
   if (tip - last < 144) return; // ~1 day of blocks
-  await buildTags(env);
+  // Behavioral-only: intrinsic asset-type tags never change and are seeded per-issuance by buildTagsScoped,
+  // so the daily self-heal skips re-deriving ~254k immutable type tags (the /admin/rebuild-tags path stays full).
+  await buildTags(env, { includeTypes: false });
+  await buildIssuerCollections(env).catch((e) => console.error("buildIssuerCollections", e)); // cheap; re-derive issuer-defined collections
   await env.DB.prepare(`INSERT INTO indexer_state (key,value) VALUES ('tags_rebuilt_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(tip)).run();
 }
 

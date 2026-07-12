@@ -120,6 +120,16 @@ export interface AddressReputationEvidence {
   btns_user: boolean;
 }
 
+/** Dominant address ROLE — what it does (creator/collector/merchant/trader/service), orthogonal to the
+ *  reputation score (whether to trust it). `label` is the composed headline ("Creator · also collects");
+ *  `primary` keys the icon/colour. null for no-history addresses. */
+export interface AddressPersona {
+  primary: "creator" | "collector" | "merchant" | "trader" | "service" | "dormant";
+  secondary: "creator" | "collector" | "merchant" | "trader" | "service" | "dormant" | null;
+  label: string;
+  blurb: string;
+}
+
 /** GET /v2/addresses/:address/reputation — composed, explainable address score. New/quiet addresses
  *  read neutral (score/evidence null). */
 export interface AddressReputation {
@@ -128,6 +138,7 @@ export interface AddressReputation {
   band: AddressTier | string; // alias of tier
   tier_meaning: string | null;
   tags: string[]; // archetype labels (Creator/Collector/Whale/OG/…)
+  persona: AddressPersona | null; // the dominant role headline
   evidence: AddressReputationEvidence | null;
   raw?: number;
   breakdown?: Record<string, number>;
@@ -195,9 +206,9 @@ export interface ReputationTierSummary {
 /** The scoring funnel — every mirror address narrowed to the scored real-user pool. `by_kind` breaks down
  *  the infrastructure that's filtered out. Shown as the "who counts" act on /reputation. */
 export interface ReputationFunnel {
-  total_addresses: number; // every address in the mirror
+  total_addresses: number; // every REAL address = infrastructure + scored (footprint-less rows excluded)
   infrastructure: number;  // exchanges + deposits + vaults + burns + services
-  no_history: number;      // non-infra addresses with no reputation-bearing activity
+  no_history: number;      // 0 by definition — a historyless row is a contradiction (see NOT_INFRA)
   scored: number;          // the real-user pool that gets a tier
   by_kind: { exchanges: number; deposits: number; vaults: number; burns: number; services: number };
 }

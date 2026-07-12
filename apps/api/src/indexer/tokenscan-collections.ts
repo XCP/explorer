@@ -9,7 +9,7 @@
  * refreshed on the cron. Transient-safe: a failed/empty fetch leaves the existing tokenscan tags untouched.
  */
 import type { Env } from "../index";
-import { canonicalCollection } from "./collections";
+import { canonicalCollection, EXCLUDED_COLLECTIONS } from "./collections";
 
 const NFTS_URL = "https://tokenscan.io/js/nfts.js";
 
@@ -38,7 +38,7 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
   for (const c of data) {
     if (!c.name || !c.cards?.length) continue;
     const tag = canonicalCollection(slugify(c.name)); // collapse known dupes onto the pepe.wtf/canonical slug
-    if (!tag) continue;
+    if (!tag || EXCLUDED_COLLECTIONS.has(tag)) continue; // owner-removed collections stay removed
     const meta = JSON.stringify({ collection: c.name, ...(c.site ? { site: c.site } : {}) });
     const assets = [...new Set(c.cards.map(assetOf).filter(Boolean))];
     for (let i = 0; i < assets.length; i += 100) {

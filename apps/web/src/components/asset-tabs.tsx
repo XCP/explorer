@@ -4,6 +4,7 @@ import { Flame, Landmark, Vault, ArrowDownToLine, Server, Fish, Layers, Hammer, 
 import type { AssetFeedCounts, BalanceRow, HolderRole } from "@xcp/shared/assets";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { RelatedTab } from "@/components/related-tab";
+import { AssetActivity } from "@/components/asset-activity";
 import { type Col, addrCell } from "@/lib/cells";
 import { POOL_COLS, ORDER_COLS, ASSET_LIST_COLS, DISPENSER_COLS, FAIRMINT_COLS, DIVIDEND_COLS, DESTRUCTION_COLS, REGISTRY } from "@/lib/registry";
 import { TRADE_COLS } from "@/components/trades";
@@ -74,6 +75,7 @@ export function AssetTabs({ asset, collection = null, holderCount, supply = null
   // pinned to the very end (Related is a panel with no count, so it always earns the final slot).
   const tabs: TabDef[] = [
     { label: "Holders", path: `${base}/balances`, count: holderCount, cols: holderCols(supply) },
+    { label: "Activity", panel: <AssetActivity asset={asset} /> },
     { label: "Issuances", path: `${base}/issuances`, count: feedCounts?.issuances, cols: REGISTRY.issuances!.cols },
     { label: "Dispensers", path: `${base}/dispensers`, cols: DISPENSER_COLS, count: feedCounts?.dispensers },
     { label: "Dispenses", path: `${base}/dispenses`, count: feedCounts?.dispenses, cols: REGISTRY.dispenses!.cols },

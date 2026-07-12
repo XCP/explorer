@@ -77,6 +77,29 @@ export interface AssetDetail {
   collection_card?: number | null;  // pepe.wtf card number within the series (the canonical ordinal position)
   artist?: { tag: string; name: string; slug: string } | null; // pepe.wtf artist; `tag` is the /tags/<artist-slug> route
   feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
+  cohesion?: AssetCohesion | null; // holder-cohesion coordination signal; null until the batch has scored this asset
+  conviction?: AssetConviction | null; // who-holds-it + scarcity score; null when the asset isn't in the grail-shaped population
+}
+
+/** Conviction — WHO holds the asset + how scarce it is, with ZERO market/volume inputs (the Radar signal, on
+ *  the asset itself). Only computed for the same grail-shaped population Radar ranks (real, network-trusted,
+ *  ≥15 holders, named), so the number always means the same thing in both places. `undervalued` mirrors
+ *  Radar's dislocation cut: top-decile conviction while realized value is still under its threshold. */
+export interface AssetConviction {
+  score: number; // 0-100 (percentile against the scored population)
+  undervalued: boolean; // high conviction, unpriced market — the dislocation read
+}
+
+/** Holder cohesion — interaction edges among the asset's top holders ÷ holder count. Among traded assets the
+ *  median sits ~4 (active traders are interconnected in the graph's giant component), so the score is only
+ *  interesting in the tail. `insular` flags the market-integrity case only: a top-decile insular holder base
+ *  (score ≥ 9, holders trade mostly among themselves) that ALSO carries real realized volume (≥$1k) — i.e. the
+ *  wash / inflated-volume suspect. A $0-volume insular base (a harmless airdrop cohort) is not flagged. */
+export interface AssetCohesion {
+  score: number; // edges ÷ holders (2 decimals)
+  edges: number; // raw interaction edges among the top holders
+  strong: number; // of those, edges with ~4+ repeated interactions
+  insular: boolean; // insular top-decile holder base WITH real volume — inflated-volume suspect
 }
 
 /** GET /v2/assets — the asset index / search row. description is clamped to a single line server-side

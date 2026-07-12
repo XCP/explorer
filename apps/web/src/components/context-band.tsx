@@ -13,10 +13,20 @@ export function ContextBand({ detail, collectionAssets }: {
   /** member count of the asset's collection tag (n_assets from /v2/tags/:tag), when known */
   collectionAssets?: number | null;
 }) {
-  if (detail.quality?.low_quality) {
+  // Integrity verdicts — each flag is its own plain sentence; both can apply (low_quality = fake flow,
+  // insular = the holder ring behind it). The insular sentence carries the raw counts in its title.
+  const integrity: { text: string; title?: string }[] = [];
+  if (detail.quality?.low_quality) integrity.push({ text: "high self-trade share — see Quality" });
+  if (detail.cohesion?.insular) integrity.push({
+    text: "insular holder base — top holders trade mostly among themselves",
+    title: `${detail.cohesion.edges} interaction ties among the top holders${detail.cohesion.strong ? `, ${detail.cohesion.strong} strong (4+ repeats)` : ""} · cohesion ${detail.cohesion.score.toFixed(1)} (traded-asset median ≈ 4)`,
+  });
+  if (integrity.length) {
     return (
       <div className="ctxband integrity">
-        <span className="msg"><b>⚠ Trading integrity flags:</b> <span>high self-trade share — see Quality</span></span>
+        <span className="msg"><b>⚠ Trading integrity flags:</b> {integrity.map((f, i) => (
+          <span key={i} title={f.title}>{i > 0 && " · "}{f.text}</span>
+        ))}</span>
       </div>
     );
   }

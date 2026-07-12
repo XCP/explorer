@@ -187,10 +187,13 @@ export const ASSET_PCT   = { floor: 5, p50: 20.19, p90: 45.86, p99: 68.73, max: 
 // for it). Bluechip = raw≥92. Curated junk (OXBT 85.2, ORDIPEPE 84.2, both low_quality=1) is HARD-CAPPED to
 // Speculative by assetTier() regardless of raw — the flat −6 penalty only orders raws now; the gate demotes.
 // Est/Active=p90/p50.
+// A RATING ladder for assets (market-grade register), deliberately distinct from the address reputation
+// tiers (OG/Established/Active/Casual) so a tier word never means two things: Bluechip · Premium · Notable ·
+// Speculative. (Was Established/Active — renamed to Premium/Notable to end the collision with addresses.)
 export const ASSET_TIERS: { tier: string; minRaw: number; meaning: string }[] = [
   { tier: "Bluechip",    minRaw: 92,     meaning: "top ~0.03% of assets with a market — elite: broad real demand + realized value + durability" },
-  { tier: "Established", minRaw: 45.86,  meaning: "top ~10% — sustained real trading and distribution" },
-  { tier: "Active",      minRaw: 20.19,  meaning: "upper half of assets that have a real market" },
+  { tier: "Premium",     minRaw: 45.86,  meaning: "top ~10% — sustained real trading and distribution" },
+  { tier: "Notable",     minRaw: 20.19,  meaning: "upper half of assets that have a real market" },
   { tier: "Speculative", minRaw: -1e9,   meaning: "has a market but thin / early — or flagged low-quality (hard-capped here)" },
 ];
 
@@ -222,4 +225,20 @@ export const OG = { minAgeBlocks: 43800, modernBlock: 850000 };
 export const TAG = {
   creatorSurvived: 20, collectorHeld: 100, merchantDispenses: 5, whaleXcp: 50000, whaleHeld: 500,
   burnerAssets: 3, stampCreator: 5, stampCollector: 20,
+};
+
+/* ---------- ADDRESS PERSONA (2026-07-10) — the tuning surface for reputation/persona.ts ----------
+// The single dominant role (creator/collector/merchant/trader) picked from behavior. A role QUALIFIES if it
+// clears its floor; among qualifiers the most INTENSE wins, where intensity = ln(1+x)/ln(1+cap) saturates at
+// the cap (a "strong exemplar" of that role). Caps are the real knobs: lower a cap to let fewer actions max
+// out a role (surfacing light-but-real creators), raise it to demand more. Ties break creator>merchant>
+// trader>collector (creating is the most role-defining act). Floors are aligned with the archetype tags so the
+// headline persona never contradicts the tag chips. V1 starting values — face-check on prod and retune. */
+export const PERSONA = {
+  creatorFloor: 1,    // issued/created ≥1 thing at all (creation is rare → a low bar still means "a creator")
+  merchantFloor: 5,   // = TAG.merchantDispenses — runs at least a few dispenses
+  traderFloor: 10,    // ≥10 DEX trades — an actual trader, not one incidental swap
+  collectorFloor: 10, // ≥10 distinct assets held — a real collection, not a stray airdrop
+  creatorCap: 20, merchantCap: 50, traderCap: 100, collectorCap: 150, // intensity saturates here
+  secondaryRatio: 0.6, // a runner-up role must be ≥60% as intense as the primary to show as a secondary
 };

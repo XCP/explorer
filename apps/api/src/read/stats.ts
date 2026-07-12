@@ -36,7 +36,7 @@ stats.get("/v2/metrics", async (c) => {
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) =>
-  cached(c, "stats", { ttl: 3600, edge: 120 }, async () => {
+  cached(c, "stats", { ttl: 3600, edge: 120, swr: 86400 }, async () => { // day-long stale window: nobody ever blocks on the full recount
   const counts = await networkCounts(c.env.DB);
   const totals = await networkTotals(c.env.DB);
   return { result: { ...counts, ...totals } };
@@ -47,7 +47,7 @@ stats.get("/v2/leaderboards", async (c) => {
   // Fast reads from precomputed signal tables. Low-quality assets (bridge/exchange tokens + wash) are
   // HIDDEN by default — they distort the BTC/dispense boards (?include_hidden=1 to show them).
   const incl = c.req.query("include_hidden") === "1";
-  return cached(c, `lb:${incl ? 1 : 0}`, { ttl: 600, edge: 120 }, async () => {
+  return cached(c, `lb:${incl ? 1 : 0}`, { ttl: 600, edge: 120, swr: 86400 }, async () => {
   // reputation/quality boards use the composed score (same config as the read scorer). tip ages the terms.
   const tip = await maxBlock(c.env.DB);
   const addrExpr = rawSqlExpr(ADDRESS_FACTORS, tip);

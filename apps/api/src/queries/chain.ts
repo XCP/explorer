@@ -32,3 +32,9 @@ export function blockTransactions(db: D1Database, n: number): Promise<BlockTxSum
 export function getTransaction(db: D1Database, hash: string): Promise<TxDetail | null> {
   return one<TxDetail>(db, `SELECT * FROM transactions WHERE tx_hash=?`, hash);
 }
+
+/** The chain tip (highest mirrored block) — what a tx's confirmation count is measured against. */
+export async function blockTip(db: D1Database): Promise<number> {
+  const r = await one<{ m: number }>(db, `SELECT MAX(block_index) m FROM blocks`);
+  return Number(r?.m) || 0;
+}

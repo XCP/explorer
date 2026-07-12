@@ -61,6 +61,7 @@ export interface SendRow {
   quantity_normalized: string | null;
   send_type: string | null; // send | enhanced_send | mpma | attach | detach | move
   status: string | null;
+  memo: string | null; // sender-attached note (decoded; null when none)
 }
 
 /** GET /v2/issuances. Mirror: issuances. (Per-address/-asset variants SELECT a subset.) */
@@ -133,6 +134,8 @@ export interface DispenserRow {
   satoshirate_normalized: string | null;
   dispense_count: number;
   status: number | null;
+  escrow_quantity: string | null; // raw units originally escrowed — the storefront stock bar's denominator
+  closed_block_index: number | null; // when the machine closed/emptied — the dead-storefront epitaph
   /** Only on /v2/assets/:a/dispensers — the operator's precomputed track-record score. */
   operator_trust?: number;
 }
@@ -339,6 +342,48 @@ export interface PoolMatchRow {
   forward_quantity: string | null;
   backward_asset: string | null;
   backward_quantity: string | null;
+  fee_quantity: string | null; // swap fee taken by the pool (raw units)
+  fee_bps: number | null; // the pool's fee tier in basis points
+}
+
+/* ---------- tx-page-only record rows (real Counterparty messages, but not index feeds) ---------- */
+
+/** An order cancellation. Mirror: cancels. offer_hash = the canceled order's tx_hash. */
+export interface CancelRow {
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  offer_hash: string | null;
+  status: string | null;
+}
+
+/** A dispenser refill (topping up an open dispenser's stock). Mirror: dispenser_refills. */
+export interface DispenserRefillRow {
+  tx_hash: string | null;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  destination: string | null;
+  asset: string | null;
+  dispense_quantity: string | null;
+  dispenser_tx_hash: string | null;
+}
+
+/** An AMM liquidity event — deposit into or withdrawal from a pool. Mirror: pool_liquidity. */
+export interface PoolLiquidityRow {
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  kind: "deposit" | "withdrawal" | string | null;
+  asset_a: string | null;
+  asset_b: string | null;
+  quantity_a: string | null;
+  quantity_b: string | null;
+  quantity_minted: string | null;
+  quantity_destroyed: string | null;
+  status: string | null;
 }
 
 /** RecordKind → row shape. Lets registries/tables be typed per feed: Col<RecordRowMap[K]>. */

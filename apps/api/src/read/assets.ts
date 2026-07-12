@@ -4,8 +4,8 @@
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
 import type { AssetDetail, AssetActivityMonth } from "@xcp/shared/assets";
 import { router, J, lim, off, round, cached } from "./respond";
-import { scoreAsset, assetScore, assetTier, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
-import { ASSET_PENALTY, ADDRESS_TIERS } from "../reputation/config";
+import { scoreAsset, assetScore, assetTier, scoreConviction, convictionScore, type MarketState, rawSqlExpr, ASSET_FACTORS, ADDRESS_FACTORS } from "../reputation/score";
+import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "../reputation/config";
 import {
   listAssets, featuredAssets, getAsset, holderCount, xcpNativeSupply, assetSupplyText, assetBurnedText, assetEscrowText,
   assetSignalsRow, assetTags, assetSales, assetCollection, assetArtist, assetFeedCounts, chainTip, holderTiers, holderArchetypes, assetTop1Pct,
@@ -74,7 +74,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     // Escrow = supply locked in open dispensers + open DEX orders (debited from balances, held by no address).
     assetEscrowText(c.env.DB, r.asset),
     assetSignalsRow(c.env.DB, r.asset).catch(() => null),
-    assetTags(c.env.DB, r.asset).catch(() => []),
+    assetTags(c.env.DB, r.asset).catch((): string[] => []),
     // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
     assetSales(c.env.DB, r.asset).catch(() => null),
     assetCollection(c.env.DB, r.asset).catch(() => null),
@@ -101,6 +101,13 @@ assets.get("/v2/assets/:asset", async (c) => {
   const score = scored && state === "market" ? assetScore(scored.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
   const tags = tagsRes;
+  // Conviction (the Radar signal, on the asset itself): who holds it + scarcity, zero market inputs. Computed
+  // only for the grail-shaped population Radar ranks (real, network-trusted, ≥15 holders, named) so the number
+  // means the same thing in both places. undervalued mirrors Radar's dislocation cut (raw ≥ calibrated p90,
+  // realized still under the same $500 marketMax radarUndervalued() uses).
+  const convictionEligible = sig && sig.low_quality !== 1 && (sig.holders ?? 0) >= 15
+    && Number(sig.graph_trust ?? 0) > Number(sig.graph_distrust ?? 0) && !tags.includes("numeric");
+  const convictionRaw = convictionEligible ? scoreConviction(sig).raw : null;
   const body: AssetDetail = {
     ...r, supply: raw.toString(), supply_normalized: norm(raw), holder_count,
     burned: burnedRaw.toString(), burned_normalized: norm(burnedRaw),
@@ -117,6 +124,19 @@ assets.get("/v2/assets/:asset", async (c) => {
     collection_card: collectionRes?.card ?? null,
     artist: artistRes ? { tag: artistRes.tag, name: artistRes.name, slug: artistRes.slug } : null,
     feed_counts: feedCountsRes,
+    // holder cohesion: edges among top holders ÷ holders. Median among traded assets ~4, so only the top decile
+    // (≥9) is an insular holder base — the holders overwhelmingly trade among themselves. That alone is often a
+    // harmless airdrop cohort ($0 volume), so `insular` flags only the market-integrity case: insular AND real
+    // realized volume (≥$1k) ⇒ the wash / inflated-volume suspect. Score/edges/strong are stored for all so a
+    // future diagnostic view can rank the broader insular set.
+    cohesion: sig && sig.holder_cohesion != null
+      ? { score: sig.holder_cohesion, edges: sig.cohesion_edges ?? 0, strong: sig.cohesion_strong ?? 0,
+          insular: sig.holder_cohesion >= 9 && (sig.max_realized_usd ?? 0) >= 1000 }
+      : null,
+    conviction: convictionRaw != null && sig
+      ? { score: convictionScore(convictionRaw),
+          undervalued: convictionRaw >= CONVICTION_PCT.p90 && (sig.max_realized_usd ?? 0) < 500 }
+      : null,
   };
   // 120s: the asset's headline data (supply, holders, score, tags) drifts slowly; a 2-min cache window cuts
   // cold-miss recomputes 4× vs the 30s default while staying fresh enough for an explorer.

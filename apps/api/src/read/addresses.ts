@@ -4,6 +4,7 @@
  *  reputation logic, not SQL. */
 import { router, J, lim, off, round } from "./respond";
 import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, ADDRESS_FACTORS } from "../reputation/score";
+import { classifyPersona } from "../reputation/persona";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
 import {
   listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued, listAddressLedger,
@@ -60,7 +61,7 @@ addresses.get("/v2/addresses/:address/dispenses", async (c) => {
 addresses.get("/v2/addresses/:address/reputation", async (c) => {
   const h = c.req.param("address");
   const r = await addressReputationRow(c.env.DB, h);
-  if (!r || !r.first_block) return J(c, { result: { score: null, tier: "No history", band: "No history", tier_meaning: ADDRESS_TIER_MEANING["No history"], tags: [], evidence: null } }, 300);
+  if (!r || !r.first_block) return J(c, { result: { score: null, tier: "No history", band: "No history", tier_meaning: ADDRESS_TIER_MEANING["No history"], tags: [], evidence: null, persona: null } }, 300);
   const n = (v: unknown) => Number(v) || 0;
   const T = TAG;
   const xcp = n(r.xcp), first = n(r.first_block), last = n(r.last_block), tip = n(r.tip);
@@ -76,13 +77,20 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
     : n(r.is_burn) === 1 ? "burn" : n(r.likely_service) === 1 ? "service" : !activeUser ? "dormant" : "ranked";
   const tier = addressTier(raw, state);
   const score = state === "ranked" ? addressScore(raw) : null; // only real users get a 0-100 percentile
+  // PERSONA — the dominant ROLE (what it does), orthogonal to the reputation score (whether to trust it).
+  // Composed from the same signals as the archetype tags below, so the headline and the chips agree.
+  const persona = classifyPersona(r, state);
   const tags: string[] = [];
   if (state !== "ranked") tags.push(tier); // infra/dormant get their state as the tag
   if (state === "ranked") {
     if (og) tags.push("Early Adopter"); // age signal (arrived early + still active); distinct from the OG tier
-    if (n(r.survived_assets) >= T.creatorSurvived) tags.push("Creator");
+    if (n(r.survived_assets) >= 20) tags.push("Prolific Creator"); // matches tags.ts prolific_creator
+    else if (n(r.survived_assets) >= T.creatorSurvived) tags.push("Creator");
     if (n(r.assets_held) >= T.collectorHeld) tags.push("Collector");
     if (n(r.dispenses) >= T.merchantDispenses) tags.push("Merchant");
+    if (n(r.dex_trades) >= 100) tags.push("Active Trader"); // matches tags.ts trader/active_trader
+    else if (n(r.dex_trades) >= 10) tags.push("Trader");
+    if (n(r.dividends) >= 1) tags.push("Dividend Payer");
     if (xcp >= T.whaleXcp || n(r.assets_held) >= T.whaleHeld) tags.push("Whale");
     if (n(r.assets_burned) >= T.burnerAssets) tags.push("Burner");
     // Bitcoin Stamps / BTNS archetypes (descriptive segmentation tags, not score weights)
@@ -92,7 +100,7 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
     if (n(r.is_btns_user) === 1) tags.push("BTNS User");
   }
   return J(c, { result: {
-    score, tier, band: tier, tier_meaning: ADDRESS_TIER_MEANING[tier] ?? null, tags,
+    score, tier, band: tier, tier_meaning: ADDRESS_TIER_MEANING[tier] ?? null, tags, persona,
     evidence: {
       first_block: first, last_block: last, span_years: round((last - first) / 52560, 1),
       survived_assets: n(r.survived_assets), assets_distributed: n(r.assets_distributed), assets_hits: n(r.assets_hits), dividends: n(r.dividends),
@@ -141,11 +149,15 @@ addresses.get("/v2/reputation/tiers", async (c) => {
   const counts: Record<string, number> = { OG: d?.og ?? 0, Established: d?.established ?? 0, Active: d?.active ?? 0, Casual: d?.casual ?? 0 };
   const tiers = ADDRESS_TIERS.map((t) => ({ tier: t.tier, slug: t.tier.toLowerCase(), min_raw: t.minRaw, meaning: t.meaning, count: counts[t.tier] ?? 0 }));
   const scored = d?.n ?? 0;
-  const total_addresses = f?.total ?? 0;
   const infrastructure = f?.infra ?? 0;
+  // The census is every REAL address: infrastructure + scored users. "No history" is definitionally 0 —
+  // a historyless row is a contradiction (see NOT_INFRA). The mirror still carries a handful of
+  // footprint-less rows left by a since-removed graph experiment (a stale rep_score, zero on-chain
+  // history); they are not real addresses, so they're excluded from the total rather than shown as an
+  // orphan "no history" bucket.
+  const total_addresses = infrastructure + scored;
   const funnel = {
-    total_addresses, infrastructure, scored,
-    no_history: Math.max(0, total_addresses - infrastructure - scored),
+    total_addresses, infrastructure, scored, no_history: 0,
     by_kind: { exchanges: f?.exchanges ?? 0, deposits: f?.deposits ?? 0, vaults: f?.vaults ?? 0, burns: f?.burns ?? 0, services: f?.services ?? 0 },
   };
   return J(c, { result: { total: scored, mean: d?.mean ?? 0, max: d?.max ?? 0, funnel, histogram, tiers } }, 300);

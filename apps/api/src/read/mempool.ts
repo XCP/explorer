@@ -125,11 +125,16 @@ mempool.get("/v2/dispensers/:tx_hash/mempool", async (c) => {
   return J(c, envelope(hit), 10);
 });
 
+/** One tx's pending mempool actions ([] when the node has none) — also consumed by the composed
+ *  transaction view in read/chain.ts (a function import, not a route). */
+export function mempoolTxActions(c: Ctx, hash: string): Promise<MempoolActionRow[]> {
+  return fetchActions(c, `/mempool/transactions/${encodeURIComponent(hash)}/events?verbose=true`);
+}
+
 // One specific pending tx. 404 (same { error } shape as the other read 404s) when the node has no events
 // for it — the tx page uses that to distinguish "not in mempool either" from "pending".
 mempool.get("/v2/mempool/transactions/:hash", async (c) => {
-  const hash = c.req.param("hash");
-  const rows = await fetchActions(c, `/mempool/transactions/${encodeURIComponent(hash)}/events?verbose=true`);
+  const rows = await mempoolTxActions(c, c.req.param("hash"));
   if (rows.length === 0) return c.json({ error: "not in mempool" }, 404);
   return J(c, envelope(rows), 10);
 });

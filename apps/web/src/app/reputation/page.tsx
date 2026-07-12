@@ -164,7 +164,7 @@ export default async function ReputationPage() {
             </div>
             <div className="mt-2 h-3 w-full rounded bg-zinc-700/70" />
             <div className="py-3 text-center text-xs text-zinc-500">
-              −{commas(f.infrastructure)} infrastructure&nbsp;&nbsp;·&nbsp;&nbsp;−{commas(f.no_history)} no-history
+              −{commas(f.infrastructure)} infrastructure
               <div className="mx-auto mt-1 h-4 w-px bg-zinc-700" />
             </div>
             <div className="flex items-baseline justify-between">
@@ -188,8 +188,9 @@ export default async function ReputationPage() {
               </div>
             </div>
             <p className="border-t border-zinc-900 pt-3 text-sm leading-relaxed text-zinc-500">
-              Plus <span className="font-mono text-zinc-300">{commas(f.no_history)}</span> no-history wallets — real addresses that
-              hold nothing and have never created, traded, dispensed, or paid a fee.
+              There's no &ldquo;no-history&rdquo; bucket. If we have a row for an address, it did something on-chain —
+              received, sent, minted, traded, dispensed, or paid a fee. Take away the infrastructure and everything
+              left is a real user with a real record.
             </p>
           </div>
         </div>

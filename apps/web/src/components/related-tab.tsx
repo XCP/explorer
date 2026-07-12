@@ -2,16 +2,16 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import type { AssetCohortRow } from "@xcp/shared/assets";
-import type { TagDetail } from "@xcp/shared/tags";
+import type { AssetCohortRow, AssetRelated } from "@xcp/shared/assets";
 import { apiUrl, type Envelope } from "@/lib/api";
 import { collectionLabel, commas } from "@/lib/format";
+import { artUrl } from "@/lib/art";
 
 // One v19 gallery card: full art on top, mono name, one-line "why it's here".
 function GalleryCard({ asset, name, why }: { asset: string; name: string; why: ReactNode }) {
   return (
     <Link className="g-card" href={`/asset/${encodeURIComponent(asset)}`}>
-      <div className="g-art"><img src={`https://cdn.xcp.io/img/full/${encodeURIComponent(asset)}`} loading="lazy" alt="" /></div>
+      <div className="g-art"><img src={artUrl(asset, 400, "full")} loading="lazy" alt="" /></div>
       <div className="g-meta">
         <div className="g-name">{name}</div>
         <div className="g-why">{why}</div>
@@ -20,29 +20,34 @@ function GalleryCard({ asset, name, why }: { asset: string; name: string; why: R
   );
 }
 
+// The relatedness reason (v19 "g-why"): what fraction of THIS asset's holders also hold the related one.
+// The co-hold overlap IS the relationship — that's why it's on the tab. Falls back to the raw count if the
+// percentage can't be computed (subject has no counted holders).
+function coHold(r: AssetCohortRow): ReactNode {
+  return r.pct != null
+    ? <><b>{r.pct}%</b> of holders co-hold</>
+    : <><b>{commas(r.shared)}</b> co-holders</>;
+}
+
 /**
- * The v19 Related tab (design-lab/v19-banner.html): the same-collection gallery first (from the
- * collection tag's members, self excluded), then the "holders also collect" cohort. This component
- * mounts only while its tab is selected (DetailTabs renders just the active panel), so both reads
- * are lazy.
+ * The v19 Related tab (design-lab/v19-banner.html): the same-collection gallery first (siblings ranked by
+ * how strongly they share this asset's holders), then the broader "holders also collect" cohort. Every card
+ * states WHY it's related — the co-hold overlap — not a quality score. One purpose-built read (/related)
+ * resolves the collection server-side and returns both strips; this component mounts only while its tab is
+ * selected (DetailTabs renders just the active panel), so the read is lazy.
  */
 export function RelatedTab({ asset, collection }: { asset: string; collection: string | null }) {
-  // limit 13 so twelve remain after excluding the asset itself
-  const { data: tag } = useSWR<Envelope<TagDetail>>(
-    collection ? apiUrl(`/v2/tags/${encodeURIComponent(collection)}`, { limit: 13 }) : null
-  );
-  const members = (tag?.result?.members ?? []).filter((m) => m.asset !== asset).slice(0, 12);
-  const { data: cohort } = useSWR<Envelope<AssetCohortRow[]>>(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/cohort`));
-  const alsoCollect = (cohort?.result ?? []).slice(0, 6);
+  const { data } = useSWR<Envelope<AssetRelated>>(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/related`));
+  const sameCollection = data?.result?.collection ?? [];
+  const alsoCollect = data?.result?.cohort ?? [];
   return (
     <>
-      {collection && members.length > 0 && (
+      {collection && sameCollection.length > 0 && (
         <div>
           <div className="strip-title">Same collection · {collectionLabel(collection)}</div>
           <div className="gallery">
-            {members.map((m) => (
-              <GalleryCard key={m.asset} asset={m.asset} name={m.asset_longname || m.asset}
-                why={<>{m.tier}{m.score != null && <> <b>{m.score}</b></>}</>} />
+            {sameCollection.map((m) => (
+              <GalleryCard key={m.asset} asset={m.asset} name={m.asset_longname || m.asset} why={coHold(m)} />
             ))}
           </div>
         </div>
@@ -52,8 +57,7 @@ export function RelatedTab({ asset, collection }: { asset: string; collection: s
           <div className="strip-title">Holders also collect</div>
           <div className="gallery">
             {alsoCollect.map((r) => (
-              <GalleryCard key={r.asset} asset={r.asset} name={r.asset_longname || r.asset}
-                why={<><b>{commas(r.shared)}</b> co-holders</>} />
+              <GalleryCard key={r.asset} asset={r.asset} name={r.asset_longname || r.asset} why={coHold(r)} />
             ))}
           </div>
         </div>

@@ -14,7 +14,7 @@ export const router = (): ReadApp => new Hono<{ Bindings: Env }>();
 /* ---------- response + pagination ---------- */
 // Envelope: { result, result_count?, next_offset? }. Cached at the edge via cache-control.
 export const J = (c: Ctx, body: unknown, ttl = 30) =>
-  c.json(body, 200, { "cache-control": `public, max-age=${ttl}`, "access-control-allow-origin": "*" });
+  c.json(body, 200, { "cache-control": `public, max-age=${ttl}, stale-while-revalidate=${ttl}`, "access-control-allow-origin": "*" });
 
 /**
  * D1-backed response cache (the `cache` table: key, body, ctype, expires_at) with stale-while-revalidate.

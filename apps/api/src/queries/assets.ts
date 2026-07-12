@@ -148,6 +148,12 @@ export function assetEscrowText(db: D1Database, asset: string): Promise<{ escrow
   );
 }
 
+/** The one-line issuance brief an offer storefront shows about its asset: total supply + locked. */
+export function assetBrief(db: D1Database, asset: string): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
+  return one<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null }>(
+    db, `SELECT supply_normalized, divisible, locked FROM assets WHERE asset=?`, asset);
+}
+
 /** Precomputed asset-quality signal row (feeds the composed score). */
 export function assetSignalsRow(db: D1Database, asset: string): Promise<AssetSignalsRow | null> {
   return one<AssetSignalsRow>(db, `SELECT * FROM asset_signals WHERE asset=?`, asset);
