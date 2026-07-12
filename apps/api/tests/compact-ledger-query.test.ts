@@ -21,7 +21,7 @@ function fixture(): DatabaseSync {
   return db;
 }
 
-test("compact ledger preserves legacy block/hash ordering and offset pages", () => {
+test("compact ledger preserves public block/hash ordering and offset pages", () => {
   const db = fixture();
   const rows = db.prepare(ADDRESS_LEDGER_SQL).all("addr", 3, 0) as { tx_hash: string | null; direction: string }[];
   assert.deepEqual(rows.map((r) => r.tx_hash), [null, "aa".repeat(32), "bb".repeat(32)]);

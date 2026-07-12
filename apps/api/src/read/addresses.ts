@@ -7,7 +7,7 @@ import { scoreAddress, addressScore, addressTier, type AddrState, rawSqlExpr, AD
 import { classifyPersona } from "../reputation/persona";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "../reputation/config";
 import {
-  listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued, listAddressLedger, listAddressLedgerLegacy,
+  listBalances, listSends, listIssuances, listDispensers, listDispenses, listIssued, listAddressLedger, listAddressLedgerPrimary,
   addressSummary, addressReputationRow, addressConnections, addressLineage,
   maxBlockIndex, reputationDistribution, reputationTop, reputationTierMembers, reputationFunnel, reputationHistogram,
 } from "../queries/addresses";
@@ -40,7 +40,7 @@ addresses.get("/v2/addresses/:address/ledger", async (c) => {
   const cutover = await c.env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='read_cutover'").first<{ value: string }>();
   const result = cutover?.value === "1"
     ? await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page)
-    : await listAddressLedgerLegacy(c.env.DB, c.req.param("address"), page);
+    : await listAddressLedgerPrimary(c.env.DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 

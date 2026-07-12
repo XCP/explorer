@@ -13,9 +13,9 @@ const creditDebit: Handler = ({ ev, p, b, div }, ctx) => {
   const q = bi(p.quantity);
   addDelta(ctx, holder, p.asset, htype, ev.event === "CREDIT" ? q : -q, div, b, ev.event_index, p.utxo ? (p.utxo_address ?? null) : null);
   // raw ledger capture — 1:1 mirror rows, idempotent on the globally-unique event_index (replay-safe).
-  const legacyTable = ev.event === "CREDIT" ? "credits" : "debits";
+  const primaryTable = ev.event === "CREDIT" ? "credits" : "debits";
   ctx.stmts.push((db) => db.prepare(
-    `INSERT OR IGNORE INTO ${legacyTable} (event_index,block_index,tx_hash,address,asset,quantity,calling_function,utxo_address) VALUES (?,?,?,?,?,?,?,?)`,
+    `INSERT OR IGNORE INTO ${primaryTable} (event_index,block_index,tx_hash,address,asset,quantity,calling_function,utxo_address) VALUES (?,?,?,?,?,?,?,?)`,
   ).bind(ev.event_index, b, ev.tx_hash, holder, p.asset, str(p.quantity) ?? "0",
     str(p.calling_function ?? p.category ?? null), p.utxo ? str(p.utxo_address ?? null) : null));
 

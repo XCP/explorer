@@ -23,27 +23,27 @@ Database: `xcpio-ledger`, Worker binding `LEDGER_DB`.
 - `credits` and `debits` become one `ledger_events` table with a one-byte direction value.
 - Addresses/UTXOs and asset names are interned as integer ids.
 - 64-character transaction hashes are stored as 32-byte BLOBs and decoded with `LOWER(HEX(...))`.
-- `(address_id, block_index DESC, tx_hash, event_index)` preserves legacy page ordering and makes
+- `(address_id, block_index DESC, tx_hash, event_index)` preserves existing page ordering and makes
   address history an indexed base-table lookup.
-- During backfill, forward events dual-write to legacy and compact stores.
+- During backfill, forward events dual-write to primary and compact stores.
 - `backfill_active=0` means copying finished; it does not enable reads. `read_cutover=1` is set only after
   exact total-count parity.
 
 Completion gates:
 
 1. Credit and debit cursors both reach the beginning of history.
-2. Legacy and compact total counts match.
+2. Primary and compact total counts match.
 3. Counts and sums of event/block indexes match on sampled completed ranges.
 4. Decoded first, middle, and last offset pages match for busy and ordinary addresses.
 5. `EXPLAIN QUERY PLAN` continues to use `idx_ledger_address_page`.
-6. Observe compact reads for at least one day with legacy data and dual-write still available.
-7. Disable legacy writes, observe again, then remove legacy tables in a separate migration.
+6. Observe compact reads for at least one day with primary data and dual-write still available.
+7. Disable primary ledger writes, observe again, then remove the superseded tables in a separate migration.
 8. Verify D1 reports reclaimed storage. If dropped pages are not physically reclaimed by the platform,
    use the Phase 2 blue-green rebuild rather than relying on an in-place file compaction.
 
 ## Phase 2: blue-green compact primary
 
-Do not rewrite the 7.66 GB primary in place. Create `xcpio-core-v2`, apply a compact schema, replay the
+Do not rewrite the 7.66 GB primary in place. Create `xcpio-core`, apply the canonical schema, replay the
 Counterparty event stream, build derived state, and compare it with `xcpio` while production remains on
 the old binding.
 
@@ -70,6 +70,11 @@ Production probes supporting the prototype (2026-07-12):
   (58,263 rows), so the compact asset identity source must seed XCP explicitly before registered assets;
 - 46,779 UTXO balances use ~66-character one-use holders; these are split into BLOB hash plus integer vout
   instead of being placed in a dictionary that would add overhead without deduplication.
+- all 564,213 orders resolve one-to-one to transactions; all 216,388 order matches have complete unique
+  `(tx0_index,tx1_index)` identities and public ids exactly equal `tx0_hash_tx1_hash`;
+- 951 historical issuance rows have a null `msg_index`, but each belongs to a distinct transaction and none
+  collides with message zero, so the canonical rebuild can normalize them to Counterparty's default `0` and
+  enforce unique `(tx_index,msg_index)` identity.
 
 Counterparty Core keeps address and UTXO balances in one table: address rows populate `address`, while
 UTXO rows leave it null and populate `(utxo_tx_hash,utxo_vout)` plus `utxo_address`. The prototype follows
@@ -91,7 +96,7 @@ savings.
 
 - Every converted filter has a plan test proving it searches an index on the compact base table.
 - Joins/decoding happen after `LIMIT/OFFSET`, except aggregate queries intentionally operating on full sets.
-- Legacy and v2 responses are compared at offset 0, middle offsets, and the computed last page.
+- Old-store and canonical responses are compared at offset 0, middle offsets, and the computed last page.
 - Per-table counts, minimum/maximum indexes, aggregate checksums, and selected decoded rows match.
 - Reorg, replay, partial-batch retry, and rollback tests cover both database bindings.
 - Deploy with old-primary read-through, then shadow comparisons, then a reversible binding switch.

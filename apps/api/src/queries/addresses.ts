@@ -33,7 +33,7 @@ export function listAddressLedger(db: D1Database, address: string, p: Page): Pro
 }
 
 /** Temporary rollback/read-through path while the compact ledger is backfilling. */
-export function listAddressLedgerLegacy(db: D1Database, address: string, p: Page): Promise<AddressLedgerRow[]> {
+export function listAddressLedgerPrimary(db: D1Database, address: string, p: Page): Promise<AddressLedgerRow[]> {
   return q<AddressLedgerRow>(
     db,
     `SELECT 'in' direction, block_index, tx_hash, asset, quantity, calling_function FROM credits WHERE address=?1
