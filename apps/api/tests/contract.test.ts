@@ -1,10 +1,10 @@
 /**
  * Live wire-contract checks — assert the DEPLOYED read API's JSON still matches the @xcp/shared DTOs.
  *
- * HERMETIC BY DEFAULT: every test skips unless process.env.LIVE_API is set, so `npm test -w xcpdex-api`
+ * HERMETIC BY DEFAULT: every test skips unless process.env.LIVE_API is set, so `npm test -w xcp-api`
  * (and CI) never touches the network. Run the live checks with either:
- *     npm run test:contract -w xcpdex-api      (sets LIVE_API for you via tests/contract-runner.mjs)
- *     LIVE_API=1 npm test -w xcpdex-api         (POSIX shells; runs the whole suite incl. these)
+ *     npm run test:contract -w xcp-api      (sets LIVE_API for you via tests/contract-runner.mjs)
+ *     LIVE_API=1 npm test -w xcp-api         (POSIX shells; runs the whole suite incl. these)
  * Point at a different origin by setting LIVE_API to a full URL (LIVE_API=http://127.0.0.1:8787).
  *
  * Each spec below is HAND-WRITTEN from the DTO file it names, so a drift in EITHER direction fails: an API

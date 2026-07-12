@@ -257,9 +257,9 @@ that owns it.
 
 ### P2 — Make naming reflect the product and architectural roles
 
-The workspace package is still named `xcpdex-api` while the Worker is `xcp-api` and the service is the
-xcp.io explorer API. This creates cognitive friction in scripts and logs. Align the package name with the
-deployed service when operationally safe.
+The workspace package was renamed from `xcpdex-api` to `xcp-api` during the assessment refactor so npm
+commands, CI, the Worker, and the explorer API now use the same identity. The separate `XCPDEX` service
+binding retains its own name because it refers to the market-data Worker.
 
 Other naming guidance:
 
@@ -405,4 +405,3 @@ planned. Avoid combining structural movement with query/schema changes in the sa
 - [Hono validation](https://hono.dev/docs/guides/validation)
 - [Hono testing](https://hono.dev/docs/guides/testing)
 - [Hono error handling](https://hono.dev/docs/api/exception)
-

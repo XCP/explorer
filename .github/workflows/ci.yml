@@ -15,7 +15,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: npm test -w xcpdex-api
+      - run: npm test -w xcp-api
 
   web-deployment-build:
     runs-on: ubuntu-latest

@@ -31,7 +31,7 @@ structure + roadmap) before structural work.
 ## Definition of done (every change)
 
 - `npm run check` passes at the root (typecheck + lint + structure).
-- If you touched the API: `npm test -w xcpdex-api` passes; hit the affected endpoint locally or on
+- If you touched the API: `npm test -w xcp-api` passes; hit the affected endpoint locally or on
   prod and eyeball the JSON.
 - New/changed response shape → update `@xcp/shared` in the same change.
 
