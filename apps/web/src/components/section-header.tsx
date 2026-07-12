@@ -68,17 +68,3 @@ export function SectionStats({ stats }: { stats: SectionStat[] }) {
     </div>
   );
 }
-
-/** The section's own tab bar — plain links (v19 .tabs); the active tab is the caller's business. */
-export function SectionTabs({ tabs, active }: { tabs: [label: string, href: string][]; active: string }) {
-  return (
-    <nav aria-label="Section" className="tabs">
-      {tabs.map(([label, href]) => (
-        <a key={href} href={href} aria-current={label === active ? "page" : undefined}
-          className={label === active ? "active" : undefined}>
-          {label}
-        </a>
-      ))}
-    </nav>
-  );
-}

@@ -29,17 +29,3 @@ export function AreaChart({ data, height = 200 }: { data: { t: number; v: number
     </div>
   );
 }
-
-// Bar sparkline — for lightweight "pulse" charts on the home.
-export function Sparkline({ data, height = 36 }: { data: number[]; height?: number }) {
-  if (!data.length) return <div style={{ height }} className="animate-pulse bg-zinc-900 rounded" />;
-  const max = Math.max(...data, 1), w = 240, n = data.length, bw = w / n;
-  return (
-    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
-      {data.map((v, i) => {
-        const bh = Math.max(1, (v / max) * (height - 2));
-        return <rect key={i} x={i * bw} y={height - bh} width={Math.max(0.5, bw * 0.7)} height={bh} rx={0.5} className="fill-(--color-accent)" opacity={0.55} />;
-      })}
-    </svg>
-  );
-}

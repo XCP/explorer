@@ -1,8 +1,8 @@
 "use client";
 import useSWR from "swr";
 import type { RecordKind } from "@xcp/shared/records";
-import type { AssetDetail, AssetIndexRow } from "@xcp/shared/assets";
-import type { BlockDetail, BlockRow, TxDetail } from "@xcp/shared/chain";
+import type { AssetIndexRow } from "@xcp/shared/assets";
+import type { BlockRow } from "@xcp/shared/chain";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import type { SyncOverview } from "@xcp/shared/stats";
 import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
@@ -14,11 +14,6 @@ function useList<T = unknown>(path: string, params?: Record<string, string | num
   const { data, error, isLoading } = useSWR<Envelope<T[]>>(apiUrl(path, params));
   return { rows: data?.result ?? [], nextOffset: data?.next_offset, error, isLoading };
 }
-function useDetail<T>(path: string | null) {
-  const { data, error, isLoading } = useSWR<Envelope<T>>(path ? apiUrl(path) : null);
-  return { item: data?.result, error, isLoading };
-}
-
 // The home summary + footer heartbeat both read this; poll every 60s so the tip height stays current.
 export const useStats = () => {
   const { data, error, isLoading } = useSWR<Envelope<SyncOverview>>(apiUrl("/v2/status"), { refreshInterval: 60_000 });
@@ -49,10 +44,7 @@ export function useAssetMempool(asset?: string) {
 }
 export const useAssets = (query?: string, offset = 0, limit = 50, sort?: string, dir?: string) =>
   useList<AssetIndexRow>("/v2/assets", { query, offset, limit, sort, dir });
-export const useAsset = (asset?: string) => useDetail<AssetDetail>(asset ? `/v2/assets/${encodeURIComponent(asset)}` : null);
 export const useBlocks = (offset = 0, limit = 25) => useList<BlockRow>("/v2/blocks", { offset, limit });
-export const useBlock = (n?: string | number) => useDetail<BlockDetail>(n != null ? `/v2/blocks/${n}` : null);
-export const useTx = (hash?: string) => useDetail<TxDetail>(hash ? `/v2/transactions/${hash}` : null);
 // Generic index hook — one per explorer index page. `name` is the /v2/<name> list endpoint; bind the
 // row type per feed (e.g. useIndex<IssuanceRow>("issuances")) to type the rows it returns.
 export const useIndex = <T = unknown>(name: RecordKind, offset = 0, limit = 50) => useList<T>(`/v2/${name}`, { offset, limit });

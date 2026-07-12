@@ -77,9 +77,6 @@ export const signedQty = (v: string | number | null | undefined, ctx: RecordCont
     : <span className="text-(--color-up)">+{commas(v)}</span>;
 };
 
-/** Buy/sell words — the only green/red text in a table outside signed values (v20 .side). */
-export const sideWord = (side: "buy" | "sell") => <span className={`side ${side}`}>{side}</span>;
-
 /* ---- status pills (v20 .pill) — earned, never decorative; the label is the redundant channel.
    Variants open/filled/expired/cancelled are verbatim v20; pending is an app extension. ---- */
 type PillVariant = "open" | "filled" | "expired" | "cancelled" | "pending";
