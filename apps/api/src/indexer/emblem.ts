@@ -13,20 +13,19 @@
  * Resumable per-contract pageKey/block cursor in indexer_state; bounded per step (cron + admin driven).
  */
 import type { Env } from "#api/env";
+import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
   setIndexerState as setState,
 } from "#api/indexer/state";
 
-const ALCHEMY_NFT = (key: string) => `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTsForContract`;
 const ETHERSCAN = "https://api.etherscan.io/v2/api?chainid=1";
 const META = "https://v2.emblemvault.io/meta";
 const CURATED = "https://v2.emblemvault.io/curated";
 const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
 const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
 const ZERO_TOPIC = "0x" + "0".repeat(64);
-const ALCHEMY_PAGE = 100;
 const ETHERSCAN_PAGE = 1000;
 const RESOLVE_PER_STEP = 200;
 const META_CONCURRENCY = 16;
@@ -84,18 +83,9 @@ async function enumAlchemy(
   contract: string,
   pageKey: string,
 ): Promise<{ rows: { id: string; btc: string | null }[]; cursor: string }> {
-  let url = `${ALCHEMY_NFT(key)}?contractAddress=${contract}&withMetadata=true&limit=${ALCHEMY_PAGE}`;
-  if (pageKey) url += `&pageKey=${encodeURIComponent(pageKey)}`;
-  const d = (await (
-    await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) })
-  ).json()) as {
-    nfts?: Array<{ tokenId?: string; raw?: { metadata?: { addresses?: unknown } } }>;
-    pageKey?: string;
-  };
-  const rows = (d?.nfts || [])
-    .map((n) => ({ id: n?.tokenId, btc: pickBtc(n?.raw?.metadata?.addresses) }))
-    .filter((r): r is { id: string; btc: string | null } => typeof r.id === "string");
-  return { rows, cursor: d?.pageKey || "" };
+  const page = await fetchAlchemyContractNfts(key, contract, pageKey);
+  const rows = page.nfts.map((nft) => ({ id: nft.tokenId, btc: pickBtc(nft.raw?.metadata?.addresses) }));
+  return { rows, cursor: page.pageKey || "" };
 }
 
 // FALLBACK enumerate: Etherscan mint logs -> token ids only (BTC resolved later via /meta).
