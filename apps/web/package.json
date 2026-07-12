@@ -12,7 +12,6 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
-    "@types/dompurify": "^3.0.5",
     "@xcp/shared": "*",
     "date-fns": "^4.4.0",
     "dompurify": "^3.4.11",
