@@ -15,8 +15,10 @@ export function apiUrl(path: string, params?: Record<string, string | number | u
 // should import it from @xcp/shared/envelope directly.)
 export type { Envelope } from "@xcp/shared/envelope";
 
+const CLIENT_REQUEST_TIMEOUT_MS = 15_000;
+
 export async function fetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(CLIENT_REQUEST_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`API ${res.status} ${res.statusText}`);
   return res.json();
 }

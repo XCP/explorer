@@ -1,8 +1,14 @@
 "use client";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { AssetEnhanced } from "@xcp/shared/assets";
 import { apiUrl } from "@/lib/api";
-import { AssetEnhancedInfo } from "@/components/asset-enhanced-info";
+
+// The sanitizer and JSON renderer are only needed after an explicit inspect action. Keeping this
+// as a separate client chunk avoids charging every asset-page visit for an uncommon tool.
+const AssetEnhancedInfo = dynamic(() =>
+  import("@/components/asset-enhanced-info").then((m) => m.AssetEnhancedInfo)
+);
 
 const MAX = 220;
 // A JSON pointer per CIP-25 (a .json URL; legacy @/​* prefixes). External-media protocols get an inspect link.
@@ -46,7 +52,10 @@ export function AssetDescription({ asset, description }: { asset: string; descri
   const load = async () => {
     setState("loading");
     try {
-      const res = await fetch(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/enhanced`));
+      const res = await fetch(apiUrl(`/v2/assets/${encodeURIComponent(asset)}/enhanced`), {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) throw new Error(`Enhanced asset API ${res.status}`);
       const env = await res.json() as { result: AssetEnhanced | null };
       setResult(env.result);
       setState(env.result && !env.result.error && env.result.json ? "done" : "error");

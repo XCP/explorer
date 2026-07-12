@@ -15,7 +15,10 @@ export default function GraphExperiment() {
   const load = async () => {
     setState("loading");
     try {
-      const res = await fetch(apiUrl(`/v2/graph/${mode}/${encodeURIComponent(id.trim())}`));
+      const res = await fetch(apiUrl(`/v2/graph/${mode}/${encodeURIComponent(id.trim())}`), {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) throw new Error(`Graph API ${res.status}`);
       const env = (await res.json()) as { result: GraphSubgraph | null };
       setData(env.result);
       setState("idle");
