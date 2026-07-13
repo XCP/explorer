@@ -7,9 +7,18 @@ Wants=network-online.target
 Type=simple
 EnvironmentFile=%h/.config/xcp-recovery-bootstrap.env
 Environment=RECOVERY_SOURCE_LOCAL=1
-ExecStart=/usr/bin/node /tmp/bootstrap-recovery.mjs
+Environment=RECOVERY_EXPORT_SCRIPT=%h/.local/lib/xcp-recovery/export-recovery.php
+ExecStart=/usr/bin/node %h/.local/lib/xcp-recovery/bootstrap-recovery.mjs
 Restart=on-failure
 RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
 
 [Install]
 WantedBy=default.target

@@ -1,0 +1,52 @@
+# Recovery bootstrap operations
+
+The recovery importer, Stamp bootstrap, and Electrs reconciler are temporary control-plane jobs. Their durable
+state lives in D1 and R2, not in local log files. Do not retire the jobs merely because a process exits cleanly.
+
+## Current temporary resources
+
+- User services: `xcp-recovery-import`, `xcp-recovery-reconcile`, and `xcp-recovery-stamps`.
+- Secret environment: `~/.config/xcp-recovery-bootstrap.env` (mode `0600`).
+- Secured program directory: `~/.local/lib/xcp-recovery` (directory mode `0700`, files `0600`).
+- Private Cloudflare Worker: `xcp-recovery-bootstrap`.
+- Temporary Forge SSH key: `codex-recovery-audit` (Forge key id `3016796`).
+- Historical `/tmp/*recovery*` scripts and logs from the initial bootstrap deployment.
+
+Run `ops/install-recovery-services.sh <repository-root>` to stage the checked-in programs and hardened units.
+Record the remote D1 cursors before restarting one service at a time. The jobs resume from D1 receipts; never
+derive a resume cursor from journal output.
+
+## Retirement gates
+
+All of these must pass before host cleanup:
+
+1. The source import has a non-null completion timestamp and its final receipt is contiguous.
+2. Electrs reconciliation reports no rows with a null `chain_checked_at`.
+3. Stamp protection is ready and its source/parity audit has been accepted.
+4. The full R2 audit finishes from a fresh checkpoint with zero missing, malformed, or mismatched objects.
+5. Recovery finalization succeeds and canonical production reads have passed live contract tests.
+6. The production API contains every admin/read capability still needed; no job targets the private Worker.
+7. A soak period has passed with no need to resume import or reconciliation.
+
+Then run the host cleanup first in dry-run mode:
+
+```sh
+apps/api/ops/retire-recovery-bootstrap.sh
+RECOVERY_RETIRE_CONFIRMED=yes apps/api/ops/retire-recovery-bootstrap.sh --execute
+```
+
+After host cleanup, delete the private Worker from the repository root with the pinned Wrangler dependency:
+
+```sh
+npx wrangler delete --config apps/api/wrangler.recovery.toml --force
+```
+
+Finally revoke Forge SSH key id `3016796`. Confirm normal production deployment access still works before and
+after revocation. Do not delete the D1 database or R2 bucket: those are permanent recovery data stores.
+
+## Logging and secrets
+
+The services log to the user journal. Do not redirect output containing API responses into world-readable
+`/tmp` files. Keep the environment file at `0600`; never copy its bearer token into a unit file, repository,
+shell history, or cleanup log. Journal retention is governed by the host, and the jobs do not intentionally log
+the token or fee-address secret.

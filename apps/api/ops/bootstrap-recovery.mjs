@@ -12,6 +12,8 @@ const importId = process.env.RECOVERY_IMPORT_ID || "api-xcp-io";
 const server = process.env.RECOVERY_SOURCE_SSH || "forge@91.99.189.190";
 const identity = process.env.RECOVERY_SOURCE_KEY;
 const localSource = process.env.RECOVERY_SOURCE_LOCAL === "1";
+const exportScript = process.env.RECOVERY_EXPORT_SCRIPT || "/tmp/export-recovery.php";
+const sourceRoot = process.env.RECOVERY_SOURCE_ROOT || "/home/forge/api.xcp.io";
 const maxPages = Number(process.env.RECOVERY_MAX_PAGES || 0);
 const concurrency = Number(process.env.RECOVERY_IMPORT_CONCURRENCY || 3);
 if (!endpoint || !token) throw new Error("RECOVERY_API_URL and RECOVERY_ADMIN_TOKEN are required");
@@ -48,19 +50,15 @@ async function state() {
 
 async function exportPage(cursor) {
   if (localSource) {
-    const { stdout } = await execFileAsync(
-      "php",
-      ["/tmp/export-recovery.php", "/home/forge/api.xcp.io", String(cursor), "100"],
-      {
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-      },
-    );
+    const { stdout } = await execFileAsync("php", [exportScript, sourceRoot, String(cursor), "100"], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
     return JSON.parse(stdout);
   }
   const args = ["-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"];
   if (identity) args.push("-i", identity);
-  args.push(server, `php /tmp/export-recovery.php /home/forge/api.xcp.io ${cursor} 100`);
+  args.push(server, `php ${exportScript} ${sourceRoot} ${cursor} 100`);
   const { stdout } = await execFileAsync("ssh", args, { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
