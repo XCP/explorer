@@ -46,7 +46,8 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
         `SELECT key,value FROM core_state
        WHERE key IN ('backfill_active','transactions_cursor','transactions_done',
                      'blocks_cursor','blocks_done','assets_cursor','assets_done',
-                     'issuances_cursor','issuances_done','shadow_reads','read_cutover')`,
+                     'issuances_cursor','issuances_done','balances_holder_cursor','balances_asset_cursor',
+                     'balances_done','shadow_reads','read_cutover')`,
       ).all<StateRow>(),
       env.LEDGER_DB.prepare(
         `SELECT key,value FROM ledger_state
@@ -107,6 +108,13 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
       blocks: { cursor: core.blocks_cursor ?? null, complete: core.blocks_done === "1" },
       assets: { cursor: core.assets_cursor ?? null, complete: core.assets_done === "1" },
       issuances: { cursor: core.issuances_cursor ?? null, complete: core.issuances_done === "1" },
+      balances: {
+        cursor:
+          core.balances_holder_cursor == null
+            ? null
+            : { holder: core.balances_holder_cursor, asset: core.balances_asset_cursor ?? "" },
+        complete: core.balances_done === "1",
+      },
       shadow_reads: core.shadow_reads === "1",
       read_ready: core.read_cutover === "1",
     },

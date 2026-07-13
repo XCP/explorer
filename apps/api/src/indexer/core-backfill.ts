@@ -10,6 +10,7 @@ const TRANSACTION_GROUP = 8;
 const BLOCK_GROUP = 10;
 const ASSET_GROUP = 5;
 const ISSUANCE_GROUP = 4;
+const BALANCE_GROUP = 10;
 
 type SourceTransaction = {
   tx_index: number;
@@ -84,6 +85,17 @@ type SourceIssuance = {
   call_price: string | null;
 };
 
+type SourceBalance = {
+  holder: string;
+  asset: string;
+  holder_type: string;
+  quantity: string;
+  quantity_normalized: string | null;
+  updated_block_index: number | null;
+  updated_event_index: number;
+  utxo_address: string | null;
+};
+
 export type CoreTransactionBackfillResult = {
   table: "transactions";
   cursor: number;
@@ -111,6 +123,24 @@ export type CoreIssuanceBackfillResult = {
   processed: number;
   caught_up: boolean;
 };
+
+export type CoreBalanceBackfillResult = {
+  table: "balances";
+  cursor: { holder: string; asset: string } | null;
+  processed: number;
+  caught_up: boolean;
+};
+
+export function parseUtxoHolder(holder: string): { txHash: Uint8Array; vout: number } {
+  const match = /^([0-9a-f]{64}):(\d+)$/i.exec(holder);
+  if (!match) throw new Error(`invalid UTXO balance holder: ${holder}`);
+  const vout = Number(match[2]);
+  if (!Number.isSafeInteger(vout) || vout < 0 || vout > 0xffffffff)
+    throw new Error(`invalid UTXO balance vout: ${holder}`);
+  const txHash = hashToBytes(match[1]);
+  if (txHash == null) throw new Error(`invalid UTXO balance transaction hash: ${holder}`);
+  return { txHash, vout };
+}
 
 function groups<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -523,4 +553,156 @@ export async function backfillCoreIssuances(
   }
   await env.CORE_DB.batch(statements);
   return { table: "issuances", cursor: nextCursor, processed: rows.length, caught_up: rows.length < limit };
+}
+
+/**
+ * Copy one current-balance page using the source's exact (holder,asset) identity. Address and UTXO holders
+ * remain one relation; partial unique indexes select the correct upsert key without encoding either form into
+ * an ambiguous shared string in the compact store.
+ */
+export async function backfillCoreBalances(
+  env: Pick<Env, "DB" | "CORE_DB">,
+  requestedRows = DEFAULT_ROWS,
+): Promise<CoreBalanceBackfillResult> {
+  const limit = Math.max(1, Math.min(Math.trunc(requestedRows), 100));
+  const holderCursor = (await coreState(env.CORE_DB, "balances_holder_cursor")) ?? "";
+  const assetCursor = (await coreState(env.CORE_DB, "balances_asset_cursor")) ?? "";
+  const source = await env.DB.prepare(
+    `SELECT holder,asset,holder_type,quantity,quantity_normalized,updated_block_index,
+            updated_event_index,utxo_address
+       FROM balances
+      WHERE holder>? OR (holder=? AND asset>?)
+      ORDER BY holder,asset LIMIT ?`,
+  )
+    .bind(holderCursor, holderCursor, assetCursor, limit)
+    .all<SourceBalance>();
+  const rows = source.results;
+  if (rows.length === 0) {
+    await env.CORE_DB.prepare(
+      `INSERT INTO core_state(key,value) VALUES ('balances_done','1')
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).run();
+    const cursor = holderCursor ? { holder: holderCursor, asset: assetCursor } : null;
+    return { table: "balances", cursor, processed: 0, caught_up: true };
+  }
+
+  const addressRows: SourceBalance[] = [];
+  const utxoRows: Array<SourceBalance & { txHash: Uint8Array; vout: number }> = [];
+  for (const row of rows) {
+    if (row.holder_type === "address") addressRows.push(row);
+    else if (row.holder_type === "utxo") utxoRows.push({ ...row, ...parseUtxoHolder(row.holder) });
+    else throw new Error(`unsupported balance holder type: ${row.holder_type}`);
+  }
+  const assets = [...new Set(rows.map((row) => row.asset))];
+  const addresses = [
+    ...new Set([
+      ...addressRows.map((row) => row.holder),
+      ...rows.map((row) => row.utxo_address).filter((value): value is string => value != null),
+    ]),
+  ];
+  const statements: D1PreparedStatement[] = [];
+  for (const group of groups(assets, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO asset_dictionary(asset) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(asset) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(addresses, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO address_dictionary(address) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(address) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(addressRows, BALANCE_GROUP)) {
+    const values = group
+      .map(
+        () =>
+          `((SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,?,?,` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?))`,
+      )
+      .join(",");
+    const binds = group.flatMap((row) => [
+      row.holder,
+      row.asset,
+      row.quantity,
+      row.quantity_normalized,
+      row.updated_block_index,
+      row.updated_event_index,
+      row.utxo_address,
+    ]);
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO balances
+           (address_id,asset_id,quantity,quantity_normalized,updated_block_index,updated_event_index,utxo_address_id)
+         VALUES ${values}
+         ON CONFLICT(address_id,asset_id) WHERE address_id IS NOT NULL DO UPDATE SET
+           quantity=excluded.quantity,quantity_normalized=excluded.quantity_normalized,
+           updated_block_index=excluded.updated_block_index,updated_event_index=excluded.updated_event_index,
+           utxo_address_id=excluded.utxo_address_id`,
+      ).bind(...binds),
+    );
+  }
+  for (const group of groups(utxoRows, BALANCE_GROUP)) {
+    const values = group
+      .map(
+        () =>
+          `(?,?,(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,?,?,` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?))`,
+      )
+      .join(",");
+    const binds = group.flatMap((row) => [
+      row.txHash,
+      row.vout,
+      row.asset,
+      row.quantity,
+      row.quantity_normalized,
+      row.updated_block_index,
+      row.updated_event_index,
+      row.utxo_address,
+    ]);
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO balances
+           (utxo_tx_hash,utxo_vout,asset_id,quantity,quantity_normalized,updated_block_index,
+            updated_event_index,utxo_address_id)
+         VALUES ${values}
+         ON CONFLICT(utxo_tx_hash,utxo_vout,asset_id) WHERE utxo_tx_hash IS NOT NULL DO UPDATE SET
+           quantity=excluded.quantity,quantity_normalized=excluded.quantity_normalized,
+           updated_block_index=excluded.updated_block_index,updated_event_index=excluded.updated_event_index,
+           utxo_address_id=excluded.utxo_address_id`,
+      ).bind(...binds),
+    );
+  }
+
+  const last = rows.at(-1)!;
+  statements.push(
+    env.CORE_DB.prepare(
+      `INSERT INTO core_state(key,value) VALUES ('balances_holder_cursor',?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).bind(last.holder),
+    env.CORE_DB.prepare(
+      `INSERT INTO core_state(key,value) VALUES ('balances_asset_cursor',?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).bind(last.asset),
+  );
+  if (rows.length < limit) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO core_state(key,value) VALUES ('balances_done','1')
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ),
+    );
+  }
+  await env.CORE_DB.batch(statements);
+  return {
+    table: "balances",
+    cursor: { holder: last.holder, asset: last.asset },
+    processed: rows.length,
+    caught_up: rows.length < limit,
+  };
 }

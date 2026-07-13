@@ -33,6 +33,7 @@ import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/index
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import {
   backfillCoreAssets,
+  backfillCoreBalances,
   backfillCoreBlocks,
   backfillCoreIssuances,
   backfillCoreTransactions,
@@ -144,6 +145,11 @@ admin.post("/admin/backfill-core/assets", async (c) => {
 admin.post("/admin/backfill-core/issuances", async (c) => {
   const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
   return c.json(await backfillCoreIssuances(c.env, rows));
+});
+
+admin.post("/admin/backfill-core/balances", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
+  return c.json(await backfillCoreBalances(c.env, rows));
 });
 
 admin.get("/admin/core-readiness/transactions", async (c) => {
