@@ -50,10 +50,7 @@ The native discovery response is deliberately output-centric and uses satoshis t
 
 Direct page navigation is preserved: page size is bounded at 420 and `summary.pages` permits fetching any page, including the last. The extension currently fetches every batch concurrently. It should instead fetch page one for the overview and retrieve subsequent pages just before sequential signing; this avoids holding hundreds of raw transactions in memory and avoids signing stale pages.
 
-`include_stamps` has no native equivalent. The old UI defaults it to false, but the recovery index currently has no authoritative stamp/output relationship on which to enforce that filter. Before extension cutover, decide one of the following explicitly:
-
-1. Remove the option and recover every deterministically recoverable bare-multisig output.
-2. Add a source-backed output classification with tests proving what constitutes a Stamp output.
+`include_stamps` has no native equivalent and must not be carried into the canonical API. The old UI defaults it to false, but the old service implements it as a bypass over an incomplete, multi-source `is_stamp` flag. Canonical recovery instead proves that the Counterparty owner key derives to the requested address; official Stamp multisig uses a burn key in that position and cannot pass that proof for the creator. Remove the extension toggle at cutover. See [recovery-stamp-policy.md](./recovery-stamp-policy.md).
 
 Do not reproduce the old behavior heuristically.
 
@@ -134,4 +131,3 @@ The compatibility surface is removable only when all of these are true:
 - arbitrary-pair and XCP/USD needs have canonical homes or are intentionally removed from the extension;
 - the released extension no longer calls any compatibility URL;
 - old installed extension versions have a deliberate support policy—the server must not silently keep permanent compatibility code by accident.
-
