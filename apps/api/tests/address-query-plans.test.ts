@@ -31,7 +31,11 @@ function details(db: DatabaseSync, sql: string): string[] {
 }
 
 function assertIndexedOr(plan: string[], indexes: string[]): void {
-  assert.equal(plan.some((line) => line.startsWith("SCAN ")), false, plan.join("\n"));
+  assert.equal(
+    plan.some((line) => line.startsWith("SCAN ")),
+    false,
+    plan.join("\n"),
+  );
   for (const index of indexes) {
     assert.equal(
       plan.some((line) => line.includes(index)),

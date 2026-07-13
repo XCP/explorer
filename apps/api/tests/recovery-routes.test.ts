@@ -36,7 +36,10 @@ class FakeRecoveryDb {
   outputs: Row[] = [];
   pendingAttempts = 0;
   importRows = new Map<string, { cursor: number; rowsSeen: number; completed: boolean }>();
-  receipts = new Map<string, { page_cursor: number; next_cursor: number | null; rows_seen: number; rows_written: number }>();
+  receipts = new Map<
+    string,
+    { page_cursor: number; next_cursor: number | null; rows_seen: number; rows_written: number }
+  >();
   prepare(sql: string) {
     return new Statement(this, sql);
   }
