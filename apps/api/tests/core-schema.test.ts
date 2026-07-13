@@ -185,6 +185,11 @@ test("one balance table sums address and UTXO holders without a union", () => {
   ).run(new Uint8Array(32).fill(0xcd), 2, 1, 3, "7", "7");
   const total = db.prepare(CORE_TOTAL_BY_ASSET_SQL).get(3) as { total: number };
   assert.equal(total.total, 12);
+  const totalPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_TOTAL_BY_ASSET_SQL}`).all(3) as { detail: string }[];
+  assert.equal(
+    totalPlan.some((row) => row.detail.includes("idx_balances_asset_quantity")),
+    true,
+  );
   const kinds = db.prepare(`SELECT holder_type FROM balances ORDER BY holder_type`).all() as { holder_type: string }[];
   assert.deepEqual(
     kinds.map((row) => row.holder_type),

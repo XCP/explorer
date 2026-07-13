@@ -128,8 +128,9 @@ CREATE TABLE balances (
 );
 CREATE UNIQUE INDEX idx_balances_address_asset ON balances(address_id, asset_id) WHERE address_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_balances_utxo_asset ON balances(utxo_tx_hash, utxo_vout, asset_id) WHERE utxo_tx_hash IS NOT NULL;
-CREATE INDEX idx_balances_asset_quantity ON balances(asset_id, CAST(quantity AS INTEGER) DESC);
-CREATE INDEX idx_balances_utxo_address ON balances(utxo_address_id);
+CREATE INDEX idx_balances_asset_quantity ON balances(asset_id, CAST(quantity AS INTEGER) DESC)
+  WHERE CAST(quantity AS INTEGER) > 0;
+CREATE INDEX idx_balances_utxo_address ON balances(utxo_address_id) WHERE utxo_address_id IS NOT NULL;
 
 CREATE TABLE balance_snapshots (
   snapshot_id INTEGER PRIMARY KEY,

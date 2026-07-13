@@ -23,7 +23,7 @@ FROM page JOIN asset_dictionary assets ON assets.asset_id=page.asset_id
 ORDER BY page.asset_id`;
 
 export const CORE_TOTAL_BY_ASSET_SQL = `SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) total
-FROM balances WHERE asset_id=?1`;
+FROM balances WHERE asset_id=?1 AND CAST(quantity AS INTEGER)>0`;
 
 export const ORDER_MATCH_PUBLIC_ID_SQL = `SELECT LOWER(HEX(tx0_hash))||'_'||LOWER(HEX(tx1_hash)) id
 FROM order_matches WHERE tx0_index=?1 AND tx1_index=?2`;
