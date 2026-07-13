@@ -206,8 +206,9 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const attempt = c.env.RECOVERY_DB.prepare(
     `INSERT INTO recovery_attempts
-       (txid,address,status,replacement_txid,network_fee_sats,service_fee_sats,output_value_sats,block_height,reported_at,updated_at)
-     VALUES (?,?,'pending',NULL,?,?,?,NULL,?,?)
+       (txid,address,status,replacement_txid,network_fee_sats,service_fee_sats,output_value_sats,block_height,reported_at,updated_at,
+        confirmations,block_hash,block_time,chain_checked_at,status_reason)
+     VALUES (?,?,'pending',NULL,?,?,?,NULL,?,?,0,NULL,NULL,NULL,'awaiting-chain-evidence')
      ON CONFLICT(txid) DO UPDATE SET updated_at=excluded.updated_at`,
   ).bind(transaction.txid, address, body.network_fee_sats, body.service_fee_sats, body.output_value_sats, now, now);
   const inputStatements = chunks(transaction.inputs, 25).map((batch) =>
@@ -232,7 +233,8 @@ recoveryRead.get("/addresses/:address/recoveries", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 50, min: 1, max: 100 });
   const result = await c.env.RECOVERY_DB.prepare(
     `SELECT a.txid,a.status,a.replacement_txid,a.network_fee_sats,a.service_fee_sats,a.output_value_sats,
-            a.block_height,a.reported_at,a.updated_at,COUNT(i.input_txid) input_count
+            a.block_height,a.block_hash,a.block_time,a.confirmations,a.status_reason,a.chain_checked_at,
+            a.reported_at,a.updated_at,COUNT(i.input_txid) input_count
        FROM recovery_attempts a LEFT JOIN recovery_attempt_inputs i ON i.recovery_txid=a.txid
       WHERE a.address=? GROUP BY a.txid ORDER BY a.reported_at DESC LIMIT ?`,
   )

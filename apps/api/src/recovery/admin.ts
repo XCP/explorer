@@ -4,6 +4,7 @@ import { importRecoveryTransactions, type RecoveryImportTransaction } from "#api
 import { verifyRecoveryTransactions } from "#api/recovery/verify";
 import { boundedInteger } from "#api/http/numbers";
 import { advanceImportFrontier, type ImportReceipt } from "#api/recovery/import-receipts";
+import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
 
 export const recoveryAdmin = new Hono<{ Bindings: Env }>();
 
@@ -117,6 +118,11 @@ recoveryAdmin.get("/admin/recovery/imports/:id", async (c) => {
 recoveryAdmin.post("/admin/recovery/verify", async (c) => {
   const limit = boundedInteger(c.req.query("transactions"), { defaultValue: 25, min: 1, max: 100 });
   return c.json(await verifyRecoveryTransactions(c.env, limit));
+});
+
+recoveryAdmin.post("/admin/recovery/reconcile-attempts", async (c) => {
+  const limit = boundedInteger(c.req.query("attempts"), { defaultValue: 25, min: 1, max: 100 });
+  return c.json(await reconcileRecoveryAttempts(c.env, limit));
 });
 
 recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
