@@ -1,4 +1,4 @@
-// Candidate read plans for the canonical mirror. These stay isolated until shadow parity allows cutover.
+// Indexed read plans for the canonical compact schema.
 
 export const CORE_SENDS_BY_ADDRESS_SQL = `WITH page AS (
   SELECT * FROM sends WHERE source_id=?1 OR destination_id=?1

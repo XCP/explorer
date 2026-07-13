@@ -39,7 +39,7 @@ Completion gates:
 6. Observe compact reads for at least one day with primary data and dual-write still available.
 7. Disable primary ledger writes, observe again, then remove the superseded tables in a separate migration.
 8. Verify D1 reports reclaimed storage. If dropped pages are not physically reclaimed by the platform,
-   use the Phase 2 blue-green rebuild rather than relying on an in-place file compaction.
+   use the fresh compact rebuild rather than relying on an in-place file compaction.
 
 `GET /admin/ledger-readiness` (admin-token protected) automates the read-only portion of these gates. It
 checks completion state, exact total counts and first/last event indexes, then compares row count plus event,
@@ -47,13 +47,13 @@ block-index, and credit-direction sums over bounded beginning, middle, and endin
 to keep range scans bounded. A `ready: true` response is evidence for a deliberate cutover; the endpoint and
 scheduled backfill never update `read_cutover` themselves.
 
-## Phase 2: blue-green compact primary
+## Compact primary
 
-Do not rewrite the 7.66 GB primary in place. Create `xcpio-core`, apply the canonical schema, replay the
-Counterparty event stream, build derived state, and compare it with `xcpio` while production remains on
-the old binding.
+Do not rewrite the 7.66 GB primary in place. The complete pipeline and cutover gates are maintained in
+`../../../docs/compact-core-migration.md`. It captures every source table from one consistent export, transforms the
+entire snapshot in one SQLite transaction, proves parity, and imports convergent SQL into a fresh D1 database.
 
-First-wave tables, in expected value order:
+Largest compaction opportunities, in expected value order:
 
 1. `transactions` (~3.15M): hash TEXT to BLOB; source/destination to address ids.
 2. `sends` (~1.77M): preserve Counterparty's `(tx_index,msg_index)` one-to-many identity and retain
@@ -91,15 +91,16 @@ These relationships were checked against Counterparty Core commit `ca2496d`—pa
 `ledger/migration_data/compact_hash_tables.py`, `ledger/balances.py`, `ledger/events.py`,
 `ledger/supplies.py`, and `api/queries.py`. Source semantics win over inferred normalization.
 
-The canonical first-wave DDL now lives in `migrations-core/0001_core.sql`; candidate read plans live in
-`src/queries/core.ts`, with schema and index-plan coverage in `tests/core-schema.test.ts`.
-The schema is production migration material, but it cannot serve reads until the documented parity gates pass.
+The complete compact DDL lives in `migrations-core`; indexed read plans live in `src/queries/core.ts`, with schema
+and index-plan coverage in `tests/core-schema.test.ts`. The closed source-to-target manifest prevents a source table
+from being omitted silently. The schema cannot serve reads until the documented parity and application cutover
+gates pass.
 
 Values that may point outside the mirrored transaction set remain raw BLOB hashes rather than forced
 foreign keys. Small tables are normalized only when their indexes or repeated columns produce measurable
 savings.
 
-## Phase 2 query and cutover gates
+## Query and cutover gates
 
 - Every converted filter has a plan test proving it searches an index on the compact base table.
 - Joins/decoding happen after `LIMIT/OFFSET`, except aggregate queries intentionally operating on full sets.
@@ -108,7 +109,7 @@ savings.
 - Reorg, replay, partial-batch retry, and rollback tests cover both database bindings.
 - Deploy with old-primary read-through, then shadow comparisons, then a reversible binding switch.
 
-## Phase 3: long-term horizontal boundaries
+## Long-term horizontal boundaries
 
 Keep highly connected analytical tables together; D1 cannot perform cross-database SQL joins. Split only
 where request boundaries are already clean:
