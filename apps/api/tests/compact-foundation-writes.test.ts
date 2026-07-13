@@ -722,3 +722,112 @@ test("compact dispenser lifecycle preserves dispenser transaction relationships"
     .get() as Record<string, unknown>;
   assert.deepEqual({ ...refill }, { tx_index: 42, dispenser_tx_index: 40, dispense_quantity: "200" });
 });
+
+test("compact fairminter lifecycle preserves campaign and mint transaction identities", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const fairminterHash = "81".repeat(32);
+  const fairmintHash = "82".repeat(32);
+  const ctx = context();
+
+  dispatch(event("NEW_TRANSACTION", { tx_index: 50, tx_hash: fairminterHash, source: "issuer" }, 50), ctx);
+  dispatch(
+    event(
+      "NEW_FAIRMINTER",
+      {
+        tx_index: 50,
+        tx_hash: fairminterHash,
+        source: "issuer",
+        asset: "FAIR",
+        asset_parent: "PARENT",
+        asset_longname: "PARENT.FAIR",
+        description: "Fair launch",
+        price: "1",
+        quantity_by_price: "5",
+        hard_cap: "1000",
+        max_mint_per_tx: "100",
+        premint_quantity: "10",
+        minted_asset_commission_int: "2",
+        soft_cap: "500",
+        divisible: true,
+        status: "open",
+        max_mint_per_address: "200",
+      },
+      51,
+    ),
+    ctx,
+  );
+  dispatch(event("NEW_TRANSACTION", { tx_index: 51, tx_hash: fairmintHash, source: "minter" }, 52), ctx);
+  dispatch(
+    event(
+      "NEW_FAIRMINT",
+      {
+        tx_index: 51,
+        tx_hash: fairmintHash,
+        source: "minter",
+        fairminter_tx_hash: fairminterHash,
+        asset: "FAIR",
+        earn_quantity: "100",
+        paid_quantity: "20",
+        commission: "2",
+        status: "valid",
+      },
+      53,
+    ),
+    ctx,
+  );
+  dispatch(event("FAIRMINTER_UPDATE", { tx_hash: fairminterHash, status: "closed" }, 54), ctx);
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  const fairminter = database
+    .prepare(
+      `SELECT f.tx_index,lower(hex(f.tx_hash)) tx_hash,s.address source,a.asset,p.asset asset_parent,
+              f.asset_longname,f.description,f.hard_cap,f.divisible,f.status
+       FROM fairminters f
+       JOIN address_dictionary s ON s.address_id=f.source_id
+       JOIN asset_dictionary a ON a.asset_id=f.asset_id
+       JOIN asset_dictionary p ON p.asset_id=f.asset_parent_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...fairminter },
+    {
+      tx_index: 50,
+      tx_hash: fairminterHash,
+      source: "issuer",
+      asset: "FAIR",
+      asset_parent: "PARENT",
+      asset_longname: "PARENT.FAIR",
+      description: "Fair launch",
+      hard_cap: "1000",
+      divisible: 1,
+      status: "closed",
+    },
+  );
+  const fairmint = database
+    .prepare(
+      `SELECT f.event_index,f.tx_index,lower(hex(f.tx_hash)) tx_hash,f.fairminter_tx_index,
+              s.address source,a.asset,f.earn_quantity,f.paid_quantity,f.commission,f.status
+       FROM fairmints f
+       JOIN address_dictionary s ON s.address_id=f.source_id
+       JOIN asset_dictionary a ON a.asset_id=f.asset_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...fairmint },
+    {
+      event_index: 53,
+      tx_index: 51,
+      tx_hash: fairmintHash,
+      fairminter_tx_index: 50,
+      source: "minter",
+      asset: "FAIR",
+      earn_quantity: "100",
+      paid_quantity: "20",
+      commission: "2",
+      status: "valid",
+    },
+  );
+});
