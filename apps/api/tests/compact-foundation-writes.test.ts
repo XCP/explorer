@@ -328,3 +328,142 @@ test("compact asset creation, issuances, and MPMA sends preserve canonical ident
     ],
   );
 });
+
+test("compact orders preserve match pairs and lifecycle updates", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const tx0 = "21".repeat(32);
+  const tx1 = "43".repeat(32);
+  const payHash = "65".repeat(32);
+  const cancelHash = "87".repeat(32);
+  const pair = `${tx0}_${tx1}`;
+  const ctx = context();
+
+  for (const [txIndex, txHash, source] of [
+    [20, tx0, "maker"],
+    [21, tx1, "taker"],
+  ] as const) {
+    dispatch(event("NEW_TRANSACTION", { tx_index: txIndex, tx_hash: txHash, source }, txIndex), ctx);
+  }
+  dispatch(
+    event(
+      "OPEN_ORDER",
+      {
+        tx_index: 20,
+        tx_hash: tx0,
+        source: "maker",
+        give_asset: "XCP",
+        give_quantity: "1000",
+        get_asset: "BTC",
+        get_quantity: "2000",
+        expiration: 20,
+        status: "open",
+      },
+      22,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "OPEN_ORDER",
+      {
+        tx_index: 21,
+        tx_hash: tx1,
+        source: "taker",
+        give_asset: "BTC",
+        give_quantity: "2000",
+        get_asset: "XCP",
+        get_quantity: "1000",
+        expiration: 20,
+        status: "open",
+      },
+      23,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "ORDER_MATCH",
+      {
+        id: pair,
+        tx0_index: 20,
+        tx1_index: 21,
+        tx0_hash: tx0,
+        tx1_hash: tx1,
+        tx0_address: "maker",
+        tx1_address: "taker",
+        forward_asset: "XCP",
+        forward_quantity: "1000",
+        backward_asset: "BTC",
+        backward_quantity: "2000",
+        status: "pending",
+      },
+      24,
+    ),
+    ctx,
+  );
+  dispatch(event("ORDER_UPDATE", { tx_hash: tx1, give_remaining: "0", get_remaining: "0", status: "open" }, 25), ctx);
+  dispatch(
+    event(
+      "BTC_PAY",
+      {
+        tx_index: 22,
+        tx_hash: payHash,
+        source: "taker",
+        destination: "maker",
+        order_match_id: pair,
+        btc_amount: "2000",
+        status: "valid",
+      },
+      26,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "CANCEL_ORDER",
+      {
+        tx_index: 23,
+        tx_hash: cancelHash,
+        source: "maker",
+        offer_hash: tx0,
+        status: "valid",
+      },
+      27,
+    ),
+    ctx,
+  );
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  const orderRows = database
+    .prepare(`SELECT tx_index,give_remaining,get_remaining,status,closed_block_index FROM orders ORDER BY tx_index`)
+    .all() as Record<string, unknown>[];
+  assert.deepEqual(
+    orderRows.map((row) => ({ ...row })),
+    [
+      { tx_index: 20, give_remaining: "1000", get_remaining: "2000", status: "cancelled", closed_block_index: 100 },
+      { tx_index: 21, give_remaining: "0", get_remaining: "0", status: "open", closed_block_index: null },
+    ],
+  );
+  const match = database
+    .prepare(`SELECT tx0_index,tx1_index,status,forward_quantity,backward_quantity FROM order_matches`)
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...match },
+    { tx0_index: 20, tx1_index: 21, status: "completed", forward_quantity: "1000", backward_quantity: "2000" },
+  );
+  const payment = database
+    .prepare(`SELECT event_index,tx_index,order_match_tx0_index,order_match_tx1_index,btc_amount FROM btcpays`)
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...payment },
+    { event_index: 26, tx_index: 22, order_match_tx0_index: 20, order_match_tx1_index: 21, btc_amount: "2000" },
+  );
+  const cancel = database.prepare(`SELECT tx_index,offer_tx_index,status FROM cancels`).get() as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual({ ...cancel }, { tx_index: 23, offer_tx_index: 20, status: "valid" });
+});

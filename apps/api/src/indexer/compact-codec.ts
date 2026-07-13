@@ -16,3 +16,13 @@ export function parseUtxoHolder(holder: string): { txHash: Uint8Array; vout: num
   if (!txHash || !Number.isSafeInteger(vout)) throw new Error("invalid UTXO balance holder");
   return { txHash, vout };
 }
+
+/** Decode Counterparty's canonical transaction-pair match identity. */
+export function parseMatchId(id: string): { tx0Hash: Uint8Array; tx1Hash: Uint8Array } {
+  const match = /^([0-9a-fA-F]{64})_([0-9a-fA-F]{64})$/.exec(id);
+  if (!match) throw new Error("invalid match id");
+  const tx0Hash = hashToBytes(match[1]);
+  const tx1Hash = hashToBytes(match[2]);
+  if (!tx0Hash || !tx1Hash) throw new Error("invalid match id");
+  return { tx0Hash, tx1Hash };
+}
