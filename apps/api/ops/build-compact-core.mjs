@@ -43,6 +43,7 @@ let directTables;
 let sourceCounts;
 let snapshotIncomplete;
 let hashMismatches;
+let nonNullTransactionData;
 db.exec("BEGIN IMMEDIATE");
 try {
   const snapshotTables = db
@@ -76,6 +77,9 @@ try {
           WHERE lower(hex(c.tx_hash))<>lower(s.tx_hash)`,
       )
       .get().mismatches,
+  );
+  nonNullTransactionData = Number(
+    db.prepare(`SELECT COUNT(*) count FROM source.transactions WHERE data IS NOT NULL`).get().count,
   );
   db.exec("COMMIT");
 } catch (error) {
@@ -134,12 +138,15 @@ if (complete) {
     );
   }
   if (hashMismatches !== 0) throw new Error("transaction hash decoding parity failed");
+  if (nonNullTransactionData !== 0) {
+    throw new Error("source transaction data is no longer null-only and needs a compact representation");
+  }
   db.prepare(
     `INSERT INTO core_state(key,value) VALUES('build_complete','1')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }
 process.stdout.write(
-  `${JSON.stringify({ complete, bytes: allocatedBytes, storage, counts, source_counts: sourceCounts })}\n`,
+  `${JSON.stringify({ complete, bytes: allocatedBytes, storage, counts, source_counts: sourceCounts, semantic_checks: { transaction_hash_mismatches: hashMismatches, non_null_transaction_data: nonNullTransactionData } })}\n`,
 );
 db.close();

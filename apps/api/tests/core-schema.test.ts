@@ -7,6 +7,10 @@ import {
   CORE_BALANCES_BY_ADDRESS_SQL,
   CORE_TOTAL_BY_ASSET_SQL,
   ORDER_MATCH_PUBLIC_ID_SQL,
+  CORE_BLOCK_PAGE_SQL,
+  CORE_BLOCK_BY_INDEX_SQL,
+  CORE_TRANSACTIONS_BY_BLOCK_SQL,
+  CORE_TRANSACTION_BY_HASH_SQL,
 } from "#api/queries/core";
 import { CORE_TABLE_MANIFEST, GENERATED_CORE_TABLES } from "#api/indexer/core-manifest";
 
@@ -102,6 +106,10 @@ function fixture(): DatabaseSync {
     `INSERT INTO transactions(tx_index,tx_hash,block_index,block_time,source_id,destination_id,btc_amount,fee,supported,utxos_info)
      VALUES(?,?,?,?,?,?,?,?,?,?)`,
   ).run(7, new Uint8Array(32).fill(0xab), 100, 1, 1, 2, "0", "10", 1, null);
+  db.prepare(
+    `INSERT INTO blocks(block_index,block_hash,block_time,previous_block_hash,transaction_count)
+     VALUES(?,?,?,?,?)`,
+  ).run(100, new Uint8Array(32).fill(0xaa), 1, new Uint8Array(32).fill(0x99), 1);
   db.prepare(
     `INSERT INTO sends(event_index,tx_index,tx_hash,block_index,block_time,source_id,destination_id,asset_id,quantity,quantity_normalized,send_type,status,msg_index)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -239,4 +247,53 @@ test("issuances retain one-to-many transaction message identity", () => {
   ).run(21, 12, hash, 1, 100, 3, "valid");
   const count = db.prepare(`SELECT COUNT(*) n FROM issuances WHERE tx_index=12`).get() as { n: number };
   assert.equal(count.n, 2);
+});
+
+test("compact chain reads restore the public hash, address, and null-only data shape", () => {
+  const db = fixture();
+  const blocks = db.prepare(CORE_BLOCK_PAGE_SQL).all(50, 0) as { block_hash: string }[];
+  assert.equal(blocks[0].block_hash, "aa".repeat(32));
+  const block = db.prepare(CORE_BLOCK_BY_INDEX_SQL).get(100) as { previous_block_hash: string };
+  assert.equal(block.previous_block_hash, "99".repeat(32));
+  const transactions = db.prepare(CORE_TRANSACTIONS_BY_BLOCK_SQL).all(100) as {
+    tx_hash: string;
+    source: string;
+    destination: string;
+  }[];
+  assert.deepEqual({ ...transactions[0] }, {
+    tx_index: 7,
+    tx_hash: "ab".repeat(32),
+    source: "alice",
+    destination: "bob",
+    fee: "10",
+  });
+  const transaction = db.prepare(CORE_TRANSACTION_BY_HASH_SQL).get("ab".repeat(32)) as {
+    data: string | null;
+    source: string;
+  };
+  assert.equal(transaction.data, null);
+  assert.equal(transaction.source, "alice");
+});
+
+test("compact chain pages seek their base indexes before decoding", () => {
+  const db = fixture();
+  const blockPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_BLOCK_PAGE_SQL}`).all(50, 0) as { detail: string }[];
+  assert.equal(
+    blockPlan.some((row) => row.detail.includes("SCAN blocks")),
+    true,
+  );
+  const txPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_TRANSACTIONS_BY_BLOCK_SQL}`).all(100) as {
+    detail: string;
+  }[];
+  assert.equal(
+    txPlan.some((row) => row.detail.includes("idx_transactions_block")),
+    true,
+  );
+  const detailPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_TRANSACTION_BY_HASH_SQL}`).all("ab".repeat(32)) as {
+    detail: string;
+  }[];
+  assert.equal(
+    detailPlan.some((row) => row.detail.includes("sqlite_autoindex_transactions_1")),
+    true,
+  );
 });
