@@ -28,6 +28,7 @@ import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { recoveryAdmin } from "#api/recovery/admin";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
+import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/indexer/ledger-cutover";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -110,6 +111,18 @@ admin.post("/admin/backfill-ledger", async (c) => {
 admin.get("/admin/ledger-readiness", async (c) => {
   const radius = boundedInteger(c.req.query("sample_radius"), { defaultValue: 2_000, min: 1, max: 10_000 });
   return c.json(await auditLedgerReadiness(c.env, radius));
+});
+
+// Explicit activation is fail-closed: it reruns the complete readiness audit and can only set read_cutover=1.
+admin.post("/admin/ledger-cutover/activate", async (c) => {
+  const radius = boundedInteger(c.req.query("sample_radius"), { defaultValue: 2_000, min: 1, max: 10_000 });
+  const result = await activateLedgerReadCutover(c.env, radius);
+  return c.json(result, result.ok ? 200 : 409);
+});
+
+// Emergency rollback is deliberately a separate protected operation and can only set read_cutover=0.
+admin.post("/admin/ledger-cutover/rollback", async (c) => {
+  return c.json(await rollbackLedgerReadCutover(c.env.LEDGER_DB));
 });
 
 // Full re-index: reset the event cursor to -1 so the next /admin/sync (or cron) WIPES balances + snapshots

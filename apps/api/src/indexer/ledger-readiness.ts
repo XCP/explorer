@@ -57,6 +57,9 @@ export function ledgerReadinessFailures(input: {
   sampleMatches: boolean[];
 }): string[] {
   const failures: string[] = [];
+  if (input.state.read_cutover !== "0" && input.state.read_cutover !== "1") {
+    failures.push("read cutover state is missing or invalid");
+  }
   if (input.state.backfill_active !== "0") failures.push("backfill is still active");
   if (input.state.ledger_credit_done !== "1") failures.push("credit backfill is incomplete");
   if (input.state.ledger_debit_done !== "1") failures.push("debit backfill is incomplete");

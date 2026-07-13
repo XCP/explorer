@@ -53,3 +53,13 @@ test("ledger readiness never treats two empty stores as cutover-ready", () => {
     ["source ledger is empty or unreadable", "compact ledger is empty or unreadable"],
   );
 });
+
+test("ledger readiness requires an explicit valid cutover state", () => {
+  assert.deepEqual(
+    ledgerReadinessFailures({
+      ...complete,
+      state: { ...complete.state, read_cutover: null },
+    }),
+    ["read cutover state is missing or invalid"],
+  );
+});
