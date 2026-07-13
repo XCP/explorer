@@ -1,0 +1,15 @@
+[Unit]
+Description=XCP recovery source import
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/xcp-recovery-bootstrap.env
+Environment=RECOVERY_SOURCE_LOCAL=1
+ExecStart=/usr/bin/node /tmp/bootstrap-recovery.mjs
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target

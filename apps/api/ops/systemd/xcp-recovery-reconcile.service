@@ -1,0 +1,15 @@
+[Unit]
+Description=XCP recovery Electrs reconciliation
+After=network-online.target xcp-recovery-import.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/xcp-recovery-bootstrap.env
+Environment=RECOVERY_FOLLOW_IMPORT=1
+ExecStart=/usr/bin/node /tmp/reconcile-recovery.mjs
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target
