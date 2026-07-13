@@ -247,6 +247,8 @@ export interface FairminterRow {
   quantity_by_price: string | null; // asset units minted per `price` paid — divide to get the per-unit price
   hard_cap: string | null;
   soft_cap: string | null;
+  pool_quantity: string | null;
+  lp_asset: string | null;
   divisible: 0 | 1;
   earned_quantity: string | null; // running total minted
   paid_quantity: string | null; // running total paid toward soft cap

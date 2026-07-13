@@ -7,9 +7,9 @@ const newFairminter: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT INTO fairminters (tx_hash,block_index,block_time,source,asset,asset_longname,price,hard_cap,soft_cap,soft_cap_deadline_block,max_mint_per_tx,start_block,end_block,divisible,status,quantity_by_price,premint_quantity,pre_minted,minted_asset_commission_int,max_mint_per_address,burn_payment,lock_description,lock_quantity,description,mime_type,asset_parent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,asset=excluded.asset,asset_longname=excluded.asset_longname,price=excluded.price,hard_cap=excluded.hard_cap,soft_cap=excluded.soft_cap,soft_cap_deadline_block=excluded.soft_cap_deadline_block,max_mint_per_tx=excluded.max_mint_per_tx,start_block=excluded.start_block,end_block=excluded.end_block,divisible=excluded.divisible,status=excluded.status,quantity_by_price=excluded.quantity_by_price,premint_quantity=excluded.premint_quantity,pre_minted=excluded.pre_minted,minted_asset_commission_int=excluded.minted_asset_commission_int,max_mint_per_address=excluded.max_mint_per_address,burn_payment=excluded.burn_payment,lock_description=excluded.lock_description,lock_quantity=excluded.lock_quantity,description=excluded.description,mime_type=excluded.mime_type,asset_parent=excluded.asset_parent`,
+        `INSERT INTO fairminters (tx_hash,block_index,block_time,source,asset,asset_longname,price,hard_cap,soft_cap,soft_cap_deadline_block,max_mint_per_tx,start_block,end_block,divisible,status,quantity_by_price,premint_quantity,pre_minted,minted_asset_commission_int,max_mint_per_address,burn_payment,lock_description,lock_quantity,description,mime_type,asset_parent,pool_quantity,lp_asset)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,asset=excluded.asset,asset_longname=excluded.asset_longname,price=excluded.price,hard_cap=excluded.hard_cap,soft_cap=excluded.soft_cap,soft_cap_deadline_block=excluded.soft_cap_deadline_block,max_mint_per_tx=excluded.max_mint_per_tx,start_block=excluded.start_block,end_block=excluded.end_block,divisible=excluded.divisible,status=excluded.status,quantity_by_price=excluded.quantity_by_price,premint_quantity=excluded.premint_quantity,pre_minted=excluded.pre_minted,minted_asset_commission_int=excluded.minted_asset_commission_int,max_mint_per_address=excluded.max_mint_per_address,burn_payment=excluded.burn_payment,lock_description=excluded.lock_description,lock_quantity=excluded.lock_quantity,description=excluded.description,mime_type=excluded.mime_type,asset_parent=excluded.asset_parent,pool_quantity=excluded.pool_quantity,lp_asset=excluded.lp_asset`,
       )
       .bind(
         p.tx_hash,
@@ -38,6 +38,8 @@ const newFairminter: Handler = ({ p, b, bt }, ctx) => {
         cap(p.description),
         p.mime_type ?? null,
         p.asset_parent ?? null,
+        str(p.pool_quantity),
+        p.lp_asset ?? null,
       ),
   );
 };
