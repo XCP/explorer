@@ -8,8 +8,32 @@ import {
   CORE_TOTAL_BY_ASSET_SQL,
   ORDER_MATCH_PUBLIC_ID_SQL,
 } from "#api/queries/core";
+import { CORE_TABLE_MANIFEST, GENERATED_CORE_TABLES } from "#api/indexer/core-manifest";
 
 const CORE_DDL = readFileSync("migrations-core/0001_core.sql", "utf8");
+
+test("core manifest classifies the complete live source schema exactly once", () => {
+  assert.equal(CORE_TABLE_MANIFEST.length, 60);
+  const sources = CORE_TABLE_MANIFEST.map((entry) => entry.source);
+  assert.equal(new Set(sources).size, sources.length);
+  assert.deepEqual([...sources].sort(), sources);
+  assert.deepEqual(
+    CORE_TABLE_MANIFEST.filter((entry) => entry.disposition === "merge").map((entry) => entry.source),
+    ["credits", "debits"],
+  );
+});
+
+test("every table already present in compact DDL is declared by the manifest", () => {
+  const declaredTargets = new Set<string>([
+    ...CORE_TABLE_MANIFEST.flatMap((entry) => (entry.target == null ? [] : [entry.target])),
+    ...GENERATED_CORE_TABLES,
+  ]);
+  const ddlTables = [...CORE_DDL.matchAll(/CREATE TABLE\s+([a-z_]+)/gi)].map((match) => match[1]);
+  assert.deepEqual(
+    ddlTables.filter((table) => !declaredTargets.has(table)),
+    [],
+  );
+});
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");

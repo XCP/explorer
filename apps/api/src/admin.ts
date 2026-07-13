@@ -51,6 +51,7 @@ import {
   auditCoreSends,
   auditCoreTransactions,
 } from "#api/indexer/core-readiness";
+import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -61,6 +62,10 @@ admin.route("/", recoveryAdmin);
 // Cheap, read-only snapshot for operators. Large tables are probed by indexed
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
+
+// Fail-closed schema inventory: every live source table must have one explicit compact/rebuild/preserve rule,
+// and every resulting target relation must exist before the compact database can be considered complete.
+admin.get("/admin/core-coverage", async (c) => c.json(await auditCoreTableCoverage(c.env)));
 
 // Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).

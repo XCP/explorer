@@ -1,87 +1,116 @@
-# Canonical core finalization
+# Canonical compact database
 
 ## Outcome
 
-Build `xcpio-core` as the compact canonical Counterparty mirror, prove it equivalent to `xcpio`, move the
-co-located derived projections that require mirror joins, cut over reversibly, and retire superseded storage
-only after an observation window. Public API shapes, absolute offsets, last-page navigation, and domain names
-remain unchanged.
+Build one `xcpio-core` database that has logical parity with `xcpio`: the same authoritative Counterparty
+data, explorer capabilities, curated facts, and external enrichments, represented in a normalized compact
+schema. Public API shapes, absolute offsets, last-page navigation, and domain names remain unchanged.
 
-The current `xcpio-ledger` deployment solved credit/debit provenance only. It did not replace the broader
-mirror. As of 2026-07-13, `xcpio` is 7,727,796,224 bytes with 20,241,344 events indexed. The first compact-core
-wave covers 8,094,052 rows across transactions, sends, balances, orders, order matches, and issuances, plus
-blocks, assets, and balance snapshots required for a functioning and rollback-safe mirror.
+Compaction changes storage, not scope:
 
-## Source findings and decisions
+- repeated addresses and asset names become integer dictionary references;
+- transaction and match hashes become 32-byte BLOBs;
+- UTXOs become `(tx_hash, vout)` rather than repeated strings;
+- protocol-native composite identities replace synthetic text ids;
+- credits and debits become one direction-tagged provenance relation;
+- redundant indexes and columns are removed only when no query or contract requires them.
 
-- Counterparty Core remains the relationship authority. Its compact storage work interns addresses/assets,
-  stores hashes as BLOBs, splits UTXOs into hash/vout, and keeps balances polymorphic. Our schema follows those
-  semantics while preserving fields our API actually captures.
-- Sends and issuances are one-to-many per transaction. Their canonical identities are `(tx_index,msg_index)`;
-  `event_index` remains the replay idempotency key.
-- Order matches use `(tx0_index,tx1_index)` internally and reconstruct the public hash-pair id at the boundary.
-- Balances and balance snapshots represent exactly one of an address or UTXO holder. Quantities remain TEXT to
-  preserve integer precision beyond JavaScript's safe range.
-- Dictionary resolution precedes filtering. Decoding joins happen only after a limited page is selected.
-- The current indexer always stores transaction `data` as null, so the canonical table does not spend storage
-  on that column; the wire boundary can continue returning null where the contract requires it.
-- Derived tables cannot be separated casually: current signals SQL joins raw balances, sends, transactions,
-  orders, issuances, dispensers, and order matches in-process. Compact mirror and those derived projections must
-  end up in the same D1, or a persisted projection must replace each cross-database join before cutover.
+No compact table may serve reads until the complete database passes data and API parity. Physical splitting is
+not assumed. It is considered only if a measured full build cannot remain safely below D1's capacity target.
 
-## Execution plan
+## Complete source manifest
 
-1. **Canonical schema and capacity proof**
-   - Apply `migrations-core/0001_core.sql` to an isolated `xcpio-core` database.
-   - Load representative and then full first-wave data with bounded, resumable upserts.
-   - Measure total bytes, bytes per row, dictionary cardinality, index sizes, and query plans.
-   - Gate: estimated steady-state size plus two years of growth stays below the 8.5 GB provisioning threshold.
+Every live `xcpio` table belongs to exactly one class. This manifest currently accounts for all 60 tables;
+schema coverage tests must fail when a future source table or SQL consumer is not represented.
 
-2. **Deterministic importer**
-   - Maintain per-table high-water cursors in `core_state`; advance a cursor only after its batch commits.
-   - Seed dictionaries before dependent rows. Normalize legacy null issuance message indexes to zero only after
-     collision checks, and reject malformed hashes/UTXOs rather than silently coercing them.
-   - Use `INSERT ... ON CONFLICT DO UPDATE`; never delete-and-replace. Re-running a page must be a no-op.
-   - Backfill immutable history independently; rebuild current-state assets/balances chronologically or from an
-     audited snapshot followed by event catch-up.
+### Canonical protocol data: compact and preserve
 
-3. **Forward synchronization and reorg safety**
-   - Dual-write new events to both databases using the same parsed event context.
-   - Roll back every physical database to the same block before replay. Add crash tests between primary and core
-     writes; cursors make retries converge even though D1 cannot transact across bindings.
-   - Gate: both stores remain at the same block/event tips through forced retry and reorg rehearsals.
+`assets`, `balance_snapshots`, `balances`, `bet_match_resolutions`, `bet_matches`, `bets`, `blocks`,
+`broadcasts`, `btcpays`, `burns`, `cancels`, `credits`, `debits`, `destructions`, `dispenser_refills`,
+`dispensers`, `dispenses`, `dividends`, `fairminters`, `fairmints`, `issuances`, `order_matches`, `orders`,
+`pool_liquidity`, `pool_matches`, `pools`, `rps`, `rps_matches`, `sends`, `sweeps`, `transactions`.
 
-4. **Parity system**
-   - Compare counts, PK extrema, nullability, bounded checksums, and domain invariants per table.
-   - Compare decoded API results at first, middle, and computed last pages for quiet and high-volume entities.
-   - Assert every hot route uses an indexed compact-base seek before dictionary decoding.
-   - Record failures durably; audit endpoints are read-only and cannot enable cutover.
+Credits and debits are represented by one compact `ledger_events` table in the final database. Their public
+direction, ordering, quantities, calling functions, transaction references, and address history remain
+recoverable without compatibility tables.
 
-5. **Derived projection relocation**
-   - Inventory every same-D1 mirror/derived join and port the needed derived tables/builders into `xcpio-core`.
-   - Rebuild and compare signals, tags, trades, prices, feed counts, and network snapshots by domain.
-   - Keep external independently rebuildable domains (recovery and raw external-chain data) outside core.
+### Explorer projections and durable local facts: rebuild or preserve
 
-6. **Shadow, cutover, and retirement**
-   - Enable sampled shadow reads and log structural mismatches without affecting responses.
-   - After clean shadow operation, switch the Worker binding/read gate reversibly; preserve the old database and
-     dual writes through the observation window.
-   - Stop old writes only after rollback drills. Dropping old tables is a final, separately approved operation.
+`address_signals`, `asset_feed_counts`, `asset_signals`, `btc_signals`, `curated`, `exchange_top_assets`,
+`graph_baseline`, `graph_edges`, `graph_inflow`, `graph_node`, `graph_rank`, `graph_seed`,
+`network_stats_snapshot`, `pr_edges`, `prices`, `tags`, `trades`, `xcp_btc_daily`.
 
-## Immediate work queue
+Derived projections are rebuilt from compact canonical rows. Curated or independently sourced facts are copied
+with exact parity. They remain co-located when API queries require SQL joins with canonical data.
 
-1. Apply and rehearse the canonical migration on local SQLite and remote `xcpio-core`.
-2. Build typed codecs for hashes, UTXO holders, dictionary ids, and decoded DTO boundaries.
-3. Implement the importer for dictionaries, blocks, and immutable transactions first.
-4. Add per-table readiness reports and response parity fixtures.
-5. Extend import in dependency order: assets/issuances, sends, orders/matches, balances/snapshots.
-6. Complete the mirror-to-derived join inventory before selecting the production cutover unit.
+### External enrichments: preserve and continue their independent crawlers
 
-For an operator-driven transaction catch-up, run one remote Worker process and one importer process from
-`apps/api`. The importer reads `ADMIN_TOKEN` from the gitignored `.dev.vars`, logs only progress, and retries
-transient failures without advancing the destination cursor:
+`emblem_listings`, `emblem_sales`, `emblem_scam_sellers`, `emblem_vaults`, `scarce_city_sales`.
 
-```sh
-wrangler dev --remote --port 8790
-node ops/run-core-backfill.mjs
-```
+### Operational and system data
+
+- `indexer_state`: seed a new checkpoint at the snapshot boundary, then catch up chronologically.
+- `cache`: discard and warm after cutover.
+- `_cf_KV`, `d1_migrations`, `sqlite_sequence`, `sqlite_stat1`: platform or implementation state; recreate
+  through migrations and analysis rather than copying.
+
+## Relationship authority
+
+Counterparty Core v11.2 is authoritative for identities, cardinality, current-state consolidation, and
+nullability. The explorer source schema is authoritative for additional fields and durable enrichments the
+explorer captures. In particular:
+
+- sends and issuances retain their one-to-many message identities;
+- matches use Counterparty's transaction-index pairs and reconstruct public ids at the boundary;
+- balances remain one polymorphic address/UTXO relation;
+- dispensers are current state keyed by their Counterparty consolidation identity;
+- event tables retain globally unique event indexes where Counterparty supplies them;
+- exact quantities remain TEXT where they can exceed JavaScript's safe integer range.
+
+## Build procedure
+
+1. **Coverage gate**
+   - Extract every live table and column, every table written by event handlers, and every table/column read by
+     API queries.
+   - Map each to a final table and column or to an explicit derived/disposable rule.
+   - Reject unaccounted tables, columns, identities, and SQL consumers in tests.
+
+2. **Complete schema**
+   - Define all canonical, projection, curated, and enrichment tables before loading production data.
+   - Rehearse migrations locally and verify every uniqueness/nullability assumption against Counterparty source
+     and live data.
+
+3. **Local compact build**
+   - Stream a consistent source snapshot with large indexed keyset pages into local SQLite.
+   - Transform locally with `INSERT ... SELECT` into the complete compact schema.
+   - Load base rows before secondary indexes, then build and analyze indexes once.
+   - Measure the actual complete size, per-table/index size, and projected growth before provisioning the remote
+     target. Do not extrapolate from a partial first wave.
+
+4. **Remote bulk load**
+   - Generate bounded SQL import files from the verified compact build and import them into an empty staging D1.
+   - Split files below Cloudflare's import limit. Historical data is loaded in bulk; it is not written through
+     thousands of tiny Worker transactions.
+   - Record the source snapshot tip and apply later events with chronological, idempotent upserts.
+
+5. **Parity and operational gates**
+   - Compare exact counts, identities, extrema, nullability, quantities, bounded checksums, and decoded samples
+     for every canonical table.
+   - Compare complete API responses at first, middle, and computed last pages.
+   - Assert indexed base-table seeks before dictionary decoding for hot queries.
+   - Rehearse retries, interrupted catch-up, reorg rollback, and derived-projection rebuilds.
+
+6. **Shadow and cutover**
+   - Shadow production reads and record structural differences without affecting responses.
+   - Switch the database binding reversibly only after all gates pass.
+   - Preserve `xcpio` through an observation window; retirement is a separate final operation.
+
+## Current state
+
+The existing `xcpio-core` load is incomplete staging evidence and does not define the final schema. Its balance
+import was stopped after sustained writes caused D1 CPU resets and briefly affected production reads. No
+further historical loading resumes until the complete schema and coverage gates above exist.
+
+The completed compact provenance work remains useful: its unified event shape, codecs, indexes, and parity
+checks can be incorporated into the unified build rather than redesigned. It does not require the final
+database to be physically split.
