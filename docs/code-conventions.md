@@ -50,7 +50,7 @@ These are repository rules, not suggestions. `npm run check` enforces the mechan
 
 - Prettier is the formatting authority; do not hand-align code against it.
 - ESLint owns correctness and architectural rules; TypeScript runs in strict mode.
-- Files above 400 nonblank, noncomment lines produce a review warning, not a failure. Split a file only when
-  it contains distinct responsibilities or reasons to change; do not introduce indirection to satisfy a count.
+- Split a file only when it contains distinct responsibilities or reasons to change. File length alone is not a
+  lint signal; do not introduce indirection to satisfy an arbitrary count.
 - Run `npm run check` before committing. API changes also run `npm test -w xcp-api`; web changes run the
   production build and Playwright suite.

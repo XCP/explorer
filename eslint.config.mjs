@@ -61,8 +61,6 @@ export default tseslint.config(
         { prefer: "type-imports", fixStyle: "separate-type-imports" },
       ],
       "@typescript-eslint/naming-convention": ["error", { selector: "typeLike", format: ["PascalCase"] }],
-      // A review signal, not an architectural boundary. Split only when the file has distinct reasons to change.
-      "max-lines": ["warn", { max: 400, skipBlankLines: true, skipComments: true }],
     },
   },
 );
