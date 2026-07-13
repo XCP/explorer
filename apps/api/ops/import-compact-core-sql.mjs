@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createReadStream, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const directory = process.env.CORE_SQL_DIRECTORY;
@@ -31,21 +31,35 @@ const wranglerDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const wranglerCli = createRequire(import.meta.url).resolve("wrangler");
 
 function wrangler(args, options = {}) {
-  const result = spawnSync(process.execPath, [wranglerCli, ...args], {
-    cwd: wranglerDirectory,
-    encoding: "utf8",
-    stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [wranglerCli, ...args], {
+      cwd: wranglerDirectory,
+      stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
+    });
+    let stdout = "";
+    let stderr = "";
+    if (options.capture) {
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => (stdout += chunk));
+      child.stderr.on("data", (chunk) => (stderr += chunk));
+    }
+    child.once("error", reject);
+    child.once("close", (status) => {
+      if (status !== 0) {
+        const detail = options.capture ? `: ${(stderr || stdout).trim()}` : "";
+        reject(new Error(`wrangler exited with status ${status}${detail}`));
+        return;
+      }
+      resolvePromise(stdout);
+    });
   });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    const detail = options.capture ? `: ${(result.stderr || result.stdout).trim()}` : "";
-    throw new Error(`wrangler exited with status ${result.status}${detail}`);
-  }
-  return result.stdout;
 }
 
-function remoteRows(sql) {
-  const output = wrangler(["d1", "execute", database, "--remote", "--command", sql, "--json"], { capture: true });
+async function remoteRows(sql) {
+  const output = await wrangler(["d1", "execute", database, "--remote", "--command", sql, "--json"], {
+    capture: true,
+  });
   const response = JSON.parse(output);
   if (!Array.isArray(response) || response.some((entry) => entry.success !== true)) {
     throw new Error("unexpected D1 query response");
@@ -67,8 +81,10 @@ for (const file of manifest.files) {
 }
 
 const expectedTables = Object.keys(manifest.tables).sort();
-const remoteTables = remoteRows(
-  "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('d1_migrations','_cf_KV') ORDER BY name",
+const remoteTables = (
+  await remoteRows(
+    "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('d1_migrations','_cf_KV') ORDER BY name",
+  )
 ).map((row) => String(row.name));
 if (JSON.stringify(remoteTables) !== JSON.stringify(expectedTables)) {
   const expected = new Set(expectedTables);
@@ -85,7 +101,7 @@ const schemaSql = expectedTables
       `SELECT '${table.replaceAll("'", "''")}' table_name,cid,name,type,"notnull",dflt_value,pk,hidden FROM pragma_table_xinfo('${table.replaceAll("'", "''")}')`,
   )
   .join(" UNION ALL ");
-const remoteSchemaRows = remoteRows(`${schemaSql} ORDER BY table_name,cid`);
+const remoteSchemaRows = await remoteRows(`${schemaSql} ORDER BY table_name,cid`);
 const remoteSchema = Object.fromEntries(expectedTables.map((table) => [table, []]));
 for (const row of remoteSchemaRows) {
   remoteSchema[row.table_name].push({
@@ -109,7 +125,7 @@ if (existsSync(statePath)) {
     throw new Error(`import checkpoint does not match this database and manifest: ${statePath}`);
   }
 } else {
-  const rows = remoteRows("SELECT COUNT(*) AS state_rows FROM core_state");
+  const rows = await remoteRows("SELECT COUNT(*) AS state_rows FROM core_state");
   if (Number(rows[0]?.state_rows) !== 0) {
     throw new Error("target core database is not empty; use a fresh migrated database or the matching checkpoint");
   }
@@ -122,7 +138,7 @@ for (const file of manifest.files) {
   if (completed.has(file.sha256)) continue;
   const path = join(resolvedDirectory, file.file);
   process.stdout.write(`${JSON.stringify({ importing: file.file, bytes: file.bytes })}\n`);
-  wrangler(["d1", "execute", database, "--remote", "--yes", "--file", path]);
+  await wrangler(["d1", "execute", database, "--remote", "--yes", "--file", path]);
   completed.add(file.sha256);
   state.completed = [...completed];
   const temporaryStatePath = `${statePath}.tmp`;
@@ -131,8 +147,10 @@ for (const file of manifest.files) {
 }
 
 const readiness = Object.fromEntries(
-  remoteRows(
-    "SELECT key,value FROM core_state WHERE key IN ('build_complete','import_complete','seed_event_index','last_event_index')",
+  (
+    await remoteRows(
+      "SELECT key,value FROM core_state WHERE key IN ('build_complete','import_complete','seed_event_index','last_event_index')",
+    )
   ).map((row) => [row.key, row.value]),
 );
 if (
