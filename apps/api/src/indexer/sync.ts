@@ -23,6 +23,7 @@ import { dispatch } from "#api/indexer/events/dispatch";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { hashToBytes } from "#api/indexer/compact-codec";
 import { getIndexerStateStringArray } from "#api/indexer/state";
+import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -351,27 +352,14 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       const ctx: Ctx = {
         stmts: [],
         ledgerStmts: [],
-        ledgerAddresses: new Set(),
-        ledgerAssets: new Set(),
+        identities: createIdentitySet(),
         balDelta: new Map(),
         maxBlock: lastBlock,
         supplyDirty: new Set(),
       };
       for (const ev of evs) dispatch(ev, ctx);
       await batchAll(env.DB, ctx.stmts);
-      const ledgerDictionary: Stmt[] = [
-        ...[...ctx.ledgerAddresses].map(
-          (address): Stmt =>
-            (db) =>
-              db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address),
-        ),
-        ...[...ctx.ledgerAssets].map(
-          (asset): Stmt =>
-            (db) =>
-              db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset),
-        ),
-      ];
-      await batchAll(env.LEDGER_DB, [...ledgerDictionary, ...ctx.ledgerStmts]);
+      await batchAll(env.LEDGER_DB, [...dictionaryStatements(ctx.identities), ...ctx.ledgerStmts]);
       await applyBalances(env, ctx, followingWindow);
       if (ctx.supplyDirty.size > 0) await enqueueSupply(env.DB, [...ctx.supplyDirty]);
 

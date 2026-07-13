@@ -42,9 +42,9 @@ const creditDebit: Handler = ({ ev, p, b, div }, ctx) => {
   );
 
   const utxoAddress = p.utxo ? str(p.utxo_address ?? null) : null;
-  ctx.ledgerAddresses.add(holder);
-  ctx.ledgerAssets.add(p.asset);
-  if (utxoAddress) ctx.ledgerAddresses.add(utxoAddress);
+  ctx.identities.addresses.add(holder);
+  ctx.identities.assets.add(p.asset);
+  if (utxoAddress) ctx.identities.addresses.add(utxoAddress);
   ctx.ledgerStmts.push((db) =>
     db
       .prepare(

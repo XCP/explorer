@@ -26,8 +26,10 @@ export interface Ev {
 export interface Ctx {
   stmts: Stmt[];
   ledgerStmts: Stmt[];
-  ledgerAddresses: Set<string>;
-  ledgerAssets: Set<string>;
+  identities: {
+    addresses: Set<string>;
+    assets: Set<string>;
+  };
   balDelta: Map<
     string,
     {
