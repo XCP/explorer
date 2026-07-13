@@ -1,4 +1,6 @@
 // Indexed read plans for the canonical compact schema.
+import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
+import { one, q } from "#api/db";
 
 export const CORE_SENDS_BY_ADDRESS_SQL = `WITH page AS (
   SELECT * FROM sends WHERE source_id=?1 OR destination_id=?1
@@ -49,3 +51,27 @@ FROM transactions t
 LEFT JOIN address_dictionary src ON src.address_id=t.source_id
 LEFT JOIN address_dictionary dst ON dst.address_id=t.destination_id
 WHERE t.tx_hash=unhex(?1)`;
+
+export function listBlocks(db: D1Database, limit: number, offset: number): Promise<BlockRow[]> {
+  return q<BlockRow>(db, CORE_BLOCK_PAGE_SQL, limit, offset);
+}
+
+export function getBlock(db: D1Database, blockIndex: number): Promise<Omit<BlockDetail, "transactions"> | null> {
+  return one<Omit<BlockDetail, "transactions">>(db, CORE_BLOCK_BY_INDEX_SQL, blockIndex);
+}
+
+export function blockTransactions(db: D1Database, blockIndex: number): Promise<BlockTxSummary[]> {
+  return q<BlockTxSummary>(db, CORE_TRANSACTIONS_BY_BLOCK_SQL, blockIndex);
+}
+
+export function getTransaction(db: D1Database, hash: string): Promise<TxDetail | null> {
+  return one<TxDetail>(db, CORE_TRANSACTION_BY_HASH_SQL, hash);
+}
+
+export async function blockTip(db: D1Database): Promise<number> {
+  const row = await one<{ block_index: number }>(
+    db,
+    `SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1`,
+  );
+  return Number(row?.block_index) || 0;
+}
