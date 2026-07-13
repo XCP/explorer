@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "allowJs": true,
     "module": "Node16",
     "moduleResolution": "node16",
     "ignoreDeprecations": "6.0",
@@ -9,5 +10,5 @@
     "outDir": ".test-dist",
     "rootDir": "."
   },
-  "include": ["tests/node-test.d.ts", "tests/**/*.test.ts"]
+  "include": ["tests/node-test.d.ts", "tests/**/*.test.ts", "ops/recovery-bootstrap-pipeline.mjs"]
 }

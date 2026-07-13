@@ -8,6 +8,11 @@
       "types": "./src/*.ts",
       "node": "./.test-dist/src/*.js",
       "default": "./src/*.ts"
+    },
+    "#ops/*": {
+      "types": "./ops/*.mjs",
+      "node": "./.test-dist/ops/*.mjs",
+      "default": "./ops/*.mjs"
     }
   },
   "scripts": {

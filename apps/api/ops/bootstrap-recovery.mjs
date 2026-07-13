@@ -1,5 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import process from "node:process";
+import { promisify } from "node:util";
+
+import { runBootstrapPipeline } from "./recovery-bootstrap-pipeline.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const endpoint = process.env.RECOVERY_API_URL;
 const token = process.env.RECOVERY_ADMIN_TOKEN;
@@ -8,7 +13,11 @@ const server = process.env.RECOVERY_SOURCE_SSH || "forge@91.99.189.190";
 const identity = process.env.RECOVERY_SOURCE_KEY;
 const localSource = process.env.RECOVERY_SOURCE_LOCAL === "1";
 const maxPages = Number(process.env.RECOVERY_MAX_PAGES || 0);
+const concurrency = Number(process.env.RECOVERY_IMPORT_CONCURRENCY || 3);
 if (!endpoint || !token) throw new Error("RECOVERY_API_URL and RECOVERY_ADMIN_TOKEN are required");
+if (!Number.isSafeInteger(concurrency) || concurrency < 2 || concurrency > 4) {
+  throw new Error("RECOVERY_IMPORT_CONCURRENCY must be an integer from 2 through 4");
+}
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -37,27 +46,26 @@ async function state() {
   return response.json();
 }
 
-function exportPage(cursor) {
+async function exportPage(cursor) {
   if (localSource) {
-    const result = spawnSync("php", ["/tmp/export-recovery.php", "/home/forge/api.xcp.io", String(cursor), "100"], {
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    if (result.status !== 0) throw new Error(result.stderr || `recovery export exited ${result.status}`);
-    return JSON.parse(result.stdout);
+    const { stdout } = await execFileAsync(
+      "php",
+      ["/tmp/export-recovery.php", "/home/forge/api.xcp.io", String(cursor), "100"],
+      {
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    return JSON.parse(stdout);
   }
   const args = ["-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"];
   if (identity) args.push("-i", identity);
   args.push(server, `php /tmp/export-recovery.php /home/forge/api.xcp.io ${cursor} 100`);
-  const result = spawnSync("ssh", args, { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error(result.stderr || `recovery export exited ${result.status}`);
-  return JSON.parse(result.stdout);
+  const { stdout } = await execFileAsync("ssh", args, { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  return JSON.parse(stdout);
 }
 
-let cursor = Number((await state()).cursor || 0);
-let pages = 0;
-while (!maxPages || pages < maxPages) {
-  const page = exportPage(cursor);
+async function importPage(cursor, page) {
   const transactions = page.transactions.map((transaction) => ({
     ...transaction,
     outputs: transaction.outputs.map(
@@ -77,8 +85,16 @@ while (!maxPages || pages < maxPages) {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(`recovery import failed: ${JSON.stringify(result)}`);
-  pages++;
-  console.log(JSON.stringify({ page: pages, cursor, rows: page.rows, ...result }));
-  if (page.next_id == null) break;
-  cursor = page.next_id;
+  return result;
 }
+
+const cursor = Number((await state()).cursor || 0);
+await runBootstrapPipeline({
+  concurrency,
+  exportPage,
+  importPage,
+  logPage: ({ page, cursor: pageCursor, source, result }) =>
+    console.log(JSON.stringify({ page, cursor: pageCursor, rows: source.rows, ...result })),
+  maxPages,
+  startCursor: cursor,
+});
