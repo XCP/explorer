@@ -2,6 +2,7 @@
   "name": "xcp-api",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "imports": {
     "#api/*": {
       "types": "./src/*.ts",
@@ -15,7 +16,9 @@
     "test:contract": "tsc -p tsconfig.test.json && node tests/contract-runner.mjs",
     "deploy": "wrangler deploy && npm run test:contract",
     "migrate:local": "wrangler d1 migrations apply xcpio --local",
-    "migrate:remote": "wrangler d1 migrations apply xcpio --remote"
+    "migrate:remote": "wrangler d1 migrations apply xcpio --remote",
+    "migrate:recovery:local": "wrangler d1 migrations apply xcpio-btc --local",
+    "migrate:recovery:remote": "wrangler d1 migrations apply xcpio-btc --remote"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260702.1",

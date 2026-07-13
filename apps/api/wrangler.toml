@@ -22,6 +22,18 @@ database_name = "xcpio-ledger"
 database_id = "a4924205-264b-42ce-b900-0c9c03f1c28a"
 migrations_dir = "migrations-ledger"
 
+# Counterparty bare-multisig recovery index. Isolated because its source is the
+# Bitcoin chain, it is independently rebuildable, and the main D1 is near its cap.
+[[d1_databases]]
+binding = "RECOVERY_DB"
+database_name = "xcpio-btc"
+database_id = "9bc7626d-df95-49d2-a118-274cd1b34b2f"
+migrations_dir = "migrations-recovery"
+
+[[r2_buckets]]
+binding = "RECOVERY_TRANSACTIONS"
+bucket_name = "xcpio-bitcoin-transactions"
+
 # worker-to-worker (avoids the workers.dev sibling-fetch issue) for swap market data
 [[services]]
 binding = "XCPDEX"

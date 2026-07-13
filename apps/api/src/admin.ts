@@ -26,11 +26,13 @@ import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated";
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
+import { recoveryAdmin } from "#api/recovery/admin";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
 // every route is gated by the shared admin token (Bearer header, or deprecated ?token=).
 admin.use("/admin/*", requireAdmin);
+admin.route("/", recoveryAdmin);
 
 // Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).
