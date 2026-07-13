@@ -22,7 +22,12 @@ interface StampProtectionRequest {
   complete?: boolean;
 }
 
-async function storeStampProtections(env: Env, entries: StampProtectionSource[], now: number): Promise<number> {
+async function storeStampProtections(
+  env: Env,
+  entries: StampProtectionSource[],
+  now: number,
+  source = "issuance-description",
+): Promise<number> {
   const uniqueTransactions = [...new Set(entries.map(({ txid }) => txid))];
   const statements = [
     ...uniqueTransactions.map((txid) =>
@@ -34,15 +39,85 @@ async function storeStampProtections(env: Env, entries: StampProtectionSource[],
     ...entries.map(({ txid, source_reference: reference }) =>
       env.RECOVERY_DB.prepare(
         `INSERT INTO recovery_protection_sources (txid,source,source_reference,recorded_at)
-         VALUES (?,'issuance-description',?,?)
+         VALUES (?,?,?,?)
          ON CONFLICT(txid,source,source_reference) DO UPDATE SET recorded_at=excluded.recorded_at`,
-      ).bind(txid, reference, now),
+      ).bind(txid, source, reference, now),
     ),
   ];
   for (let index = 0; index < statements.length; index += 100)
     await env.RECOVERY_DB.batch(statements.slice(index, index + 100));
   return uniqueTransactions.length;
 }
+
+interface OfficialStampProtectionRequest extends StampProtectionRequest {
+  cursor?: number;
+  next_cursor?: number | null;
+  snapshot_sha256?: string;
+}
+
+recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
+  const body = await c.req.json<OfficialStampProtectionRequest>().catch(() => null);
+  if (!body || !Number.isSafeInteger(body.cursor) || Number(body.cursor) < -1)
+    return c.json({ error: "valid cursor is required" }, 400);
+  if (!/^[0-9a-f]{64}$/.test(String(body.snapshot_sha256 ?? "")))
+    return c.json({ error: "valid snapshot_sha256 is required" }, 400);
+  if (
+    body.next_cursor !== null &&
+    (!Number.isSafeInteger(body.next_cursor) || Number(body.next_cursor) <= Number(body.cursor))
+  )
+    return c.json({ error: "valid next_cursor is required" }, 400);
+  if (!Array.isArray(body.transactions) || body.transactions.length > 500)
+    return c.json({ error: "transactions must be an array of at most 500 entries" }, 400);
+  const entries = body.transactions.map((entry) => ({
+    txid: String(entry.txid ?? "").toLowerCase(),
+    source_reference: String(entry.source_reference ?? ""),
+  }));
+  if (
+    entries.some(
+      ({ txid, source_reference }) => !/^[0-9a-f]{64}$/.test(txid) || !/^stamp:[0-9]+$/.test(source_reference),
+    )
+  )
+    return c.json({ error: "each transaction requires a valid txid and stamp:<number> reference" }, 400);
+
+  const cursor = Number(body.cursor);
+  const nextCursor = body.next_cursor == null ? null : Number(body.next_cursor);
+  const now = Math.floor(Date.now() / 1000);
+  const existing = await c.env.RECOVERY_DB.prepare(
+    `SELECT next_cursor,rows_seen,snapshot_sha256 FROM recovery_stamp_import_receipts WHERE page_cursor=?`,
+  )
+    .bind(cursor)
+    .first<{ next_cursor: number | null; rows_seen: number; snapshot_sha256: string }>();
+  if (
+    existing &&
+    (Number(existing.rows_seen) !== entries.length ||
+      (existing.next_cursor == null ? null : Number(existing.next_cursor)) !== nextCursor ||
+      existing.snapshot_sha256 !== body.snapshot_sha256)
+  )
+    return c.json({ error: "official Stamp page conflicts with its recorded receipt" }, 409);
+
+  const protectedTransactions = await storeStampProtections(c.env, entries, now, "btc-stamps-indexer");
+  await c.env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_stamp_import_receipts
+       (page_cursor,next_cursor,rows_seen,snapshot_sha256,recorded_at)
+     VALUES (?,?,?,?,?) ON CONFLICT(page_cursor) DO NOTHING`,
+  )
+    .bind(cursor, nextCursor, entries.length, body.snapshot_sha256, now)
+    .run();
+  if (body.complete === true && nextCursor === null)
+    await c.env.RECOVERY_DB.prepare(
+      `INSERT INTO recovery_state (key,value,updated_at) VALUES ('official_stamp_protection_ready','1',?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+    )
+      .bind(now)
+      .run();
+  return c.json({
+    ok: true,
+    replay: Boolean(existing),
+    protected_transactions: protectedTransactions,
+    provenance_rows: entries.length,
+    next_cursor: nextCursor,
+  });
+});
 
 recoveryAdmin.post("/admin/recovery/protections/stamps", async (c) => {
   const body = await c.req.json<StampProtectionRequest>().catch(() => null);

@@ -2,14 +2,9 @@
 
 ## Decision
 
-Do not add `include_stamps` to the canonical recovery API. A Bitcoin Stamp output is not an
-optional class of an address owner's recoverable output. The recovery index must prove that the
-public key in Counterparty's owner-key position derives to the requested address. If it cannot,
-the output is not recoverable for that address and must never be returned, regardless of a client
-flag.
-
-The extension's existing toggle should be removed when it moves to the canonical recovery API.
-Until then, the old service remains responsible for its old behavior.
+Stamp-associated transactions are protected by default, independently of ownership proof. An
+explicit advanced-user option may include them, but it never bypasses the owner-key/address proof.
+Protection is additive: no source import is permitted to remove an existing protection.
 
 ## What the old option actually does
 
@@ -65,19 +60,21 @@ of ownership classification. If added, use an authoritative transaction-level ov
 and observation time). Do not infer it from repeated-byte keys, generic data-looking keys, numeric
 asset names, descriptions alone, or the old `is_stamp` boolean.
 
-Such metadata may make the classifier more conservative (for example, classify a source-confirmed
-Stamp conflict as invalid and record a precise reason). It must never make an otherwise
-non-recoverable output recoverable, and there should be no request parameter that bypasses the
-ownership proof.
+The overlay has two independent provenance sources: exact issuance descriptions in our
+Counterparty index and transaction IDs exported from the official
+`stampchain-io/btc_stamps` indexer. Official exports are imported in strict Stamp-number order;
+every page records the SHA-256 of the complete source snapshot so a replay from different data is
+rejected. Source parity reports distinguish overlap and official-only protections. Neither source
+can delete the other source's rows or unprotect a transaction.
 
 ## Cutover acceptance checks
 
-- No canonical recovery route accepts `include_stamps` or `includeStamps`.
+- Protected Stamp transactions are excluded unless explicitly included.
 - Every returned output has a source-backed Counterparty layout and an exact owner-key/address
   match.
 - Known valid Stamp transaction outputs are absent from creator-address recovery results.
 - Data-key and burn-key addresses are not treated as evidence of wallet ownership.
-- The extension removes the toggle rather than silently mapping it to an ignored parameter.
+- The official-source import has one snapshot hash and reports its parity with issuance provenance.
 
 ## Local source trail
 
@@ -92,4 +89,3 @@ ownership proof.
 - `../btc_stamps/indexer/src/index_core/script.py`
 - `../btc_stamps/indexer/src/index_core/transaction_utils.py`
 - `../btc_stamps/README.md`
-
