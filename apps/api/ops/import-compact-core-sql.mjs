@@ -60,6 +60,20 @@ for (const file of manifest.files) {
   if (digest !== file.sha256) throw new Error(`${file.file} SHA-256 mismatch`);
 }
 
+const expectedTables = Object.keys(manifest.tables).sort();
+const remoteTables = remoteRows(
+  "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('d1_migrations','_cf_KV') ORDER BY name",
+).map((row) => String(row.name));
+if (JSON.stringify(remoteTables) !== JSON.stringify(expectedTables)) {
+  const expected = new Set(expectedTables);
+  const actual = new Set(remoteTables);
+  const missing = expectedTables.filter((table) => !actual.has(table));
+  const unexpected = remoteTables.filter((table) => !expected.has(table));
+  throw new Error(
+    `remote compact schema does not match the artifact (missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"})`,
+  );
+}
+
 let state;
 if (existsSync(statePath)) {
   state = JSON.parse(readFileSync(statePath, "utf8"));
