@@ -18,7 +18,7 @@ import { AssetActivityChart } from "@/features/assets/components/asset-activity-
  */
 export function AssetActivity({ asset }: { asset: string }) {
   const { data: act } = useSWR<Envelope<AssetActivityMonth[]>>(
-    apiUrl(`/v2/assets/${encodeURIComponent(asset)}/activity`),
+    apiUrl(`/v2/assets/${encodeURIComponent(asset)}/activity`, { granularity: "month" }),
   );
   const { data: usr } = useSWR<Envelope<AssetActiveUser[]>>(
     apiUrl(`/v2/assets/${encodeURIComponent(asset)}/active-users`),
