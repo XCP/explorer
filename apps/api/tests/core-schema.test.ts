@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import {
   CORE_SENDS_BY_ADDRESS_SQL,
   CORE_BALANCES_BY_ADDRESS_SQL,
@@ -19,12 +19,10 @@ import {
   GENERATED_CORE_TABLES,
 } from "#api/indexer/core-manifest";
 
-const CORE_DDL = [
-  "migrations-core/0001_core.sql",
-  "migrations-core/0002_protocol.sql",
-  "migrations-core/0003_projections.sql",
-]
-  .map((path) => readFileSync(path, "utf8"))
+const CORE_DDL = readdirSync("migrations-core")
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => readFileSync(`migrations-core/${name}`, "utf8"))
   .join("\n");
 
 test("core manifest classifies the complete live source schema exactly once", () => {

@@ -25,9 +25,11 @@ if (incomplete.length === 0 && !allowInconsistent && consistency?.value !== "1")
   throw new Error("source snapshot is not a consistent D1 export");
 }
 
-const migrationSql = ["0001_core.sql", "0002_protocol.sql", "0003_projections.sql"].map((migration) =>
-  readFileSync(new URL(`../migrations-core/${migration}`, import.meta.url), "utf8"),
-);
+const migrationDirectory = new URL("../migrations-core/", import.meta.url);
+const migrationSql = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((migration) => readFileSync(new URL(migration, migrationDirectory), "utf8"));
 const secondaryIndexes = migrationSql.flatMap((sql) => sql.match(/\bCREATE INDEX\b[\s\S]*?;/g) ?? []);
 for (const sql of migrationSql) db.exec(sql.replaceAll(/\bCREATE INDEX\b[\s\S]*?;/g, ""));
 db.prepare(

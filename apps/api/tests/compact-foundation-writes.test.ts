@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
@@ -8,12 +8,10 @@ import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
 import { rollbackCompactDatabase, syncCompactEvents } from "#api/indexer/sync";
 
-const CORE_DDL = [
-  "migrations-core/0001_core.sql",
-  "migrations-core/0002_protocol.sql",
-  "migrations-core/0003_projections.sql",
-]
-  .map((path) => readFileSync(path, "utf8"))
+const CORE_DDL = readdirSync("migrations-core")
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => readFileSync(`migrations-core/${name}`, "utf8"))
   .join("\n");
 
 class PreparedStatement {
