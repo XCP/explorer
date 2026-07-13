@@ -5,16 +5,19 @@ state lives in D1 and R2, not in local log files. Do not retire the jobs merely 
 
 ## Current temporary resources
 
-- User services: `xcp-recovery-import`, `xcp-recovery-reconcile`, and `xcp-recovery-stamps`.
+- Forge-supervised daemons: import `945393` and reconciliation `945398`. These run the checked-in wrappers
+  from the secured program directory and remain active independently of SSH login sessions.
+- Disabled fallback user services: `xcp-recovery-import` and `xcp-recovery-reconcile` (do not enable while the
+  Forge daemons exist). The completed one-shot Stamp service remains inactive.
 - Secret environment: `~/.config/xcp-recovery-bootstrap.env` (mode `0600`).
 - Secured program directory: `~/.local/lib/xcp-recovery` (directory mode `0700`, files `0600`).
 - Private Cloudflare Worker: `xcp-recovery-bootstrap`.
 - Temporary Forge SSH key: `codex-recovery-audit` (Forge key id `3016796`).
 - Historical `/tmp/*recovery*` scripts and logs from the initial bootstrap deployment.
 
-Run `ops/install-recovery-services.sh <repository-root>` to stage the checked-in programs and hardened units.
-Record the remote D1 cursors before restarting one service at a time. The jobs resume from D1 receipts; never
-derive a resume cursor from journal output.
+Run `ops/install-recovery-services.sh <repository-root>` to stage the checked-in programs, wrappers, and fallback
+units. Record the remote D1 cursors before restarting one daemon at a time. The jobs resume from D1 receipts;
+never derive a resume cursor from log output.
 
 ## Retirement gates
 
@@ -51,7 +54,7 @@ after revocation. Do not delete the D1 database or R2 bucket: those are permanen
 
 ## Logging and secrets
 
-The services log to the user journal. Do not redirect output containing API responses into world-readable
-`/tmp` files. Keep the environment file at `0600`; never copy its bearer token into a unit file, repository,
-shell history, or cleanup log. Journal retention is governed by the host, and the jobs do not intentionally log
-the token or fee-address secret.
+The Forge daemons log to `~/.forge/daemon-<id>.log`. Do not redirect output containing API responses into
+world-readable `/tmp` files. Keep the environment file at `0600`; never copy its bearer token into a command,
+unit file, repository, shell history, or cleanup log. The jobs do not intentionally log the token or fee-address
+secret.
