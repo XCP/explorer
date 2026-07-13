@@ -98,10 +98,7 @@ test("requires provenance and ownership proof before calling an output recoverab
   const [encodedA, encodedB] = currentCounterpartyKeys(firstInputTxid);
   const candidate = script(1, [encodedA, encodedB, recoveryKey]);
   assert.equal(classifyRecovery({ scriptPubkeyHex: candidate, expectedAddress: address }).classification, "unverified");
-  assert.equal(
-    classifyRecovery({ scriptPubkeyHex: candidate, firstInputTxid }).classification,
-    "ambiguous",
-  );
+  assert.equal(classifyRecovery({ scriptPubkeyHex: candidate, firstInputTxid }).classification, "ambiguous");
   assert.equal(
     classifyRecovery({
       scriptPubkeyHex: candidate,

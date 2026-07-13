@@ -42,13 +42,15 @@ while (!maxPages || pages < maxPages) {
   const page = exportPage(cursor);
   const transactions = page.transactions.map((transaction) => ({
     ...transaction,
-    outputs: transaction.outputs.map(({
-      source_id: _sourceId,
-      source_recoverable: _sourceRecoverable,
-      source_sign_type: _sourceSignType,
-      source_addresses: _sourceAddresses,
-      ...output
-    }) => output),
+    outputs: transaction.outputs.map(
+      ({
+        source_id: _sourceId,
+        source_recoverable: _sourceRecoverable,
+        source_sign_type: _sourceSignType,
+        source_addresses: _sourceAddresses,
+        ...output
+      }) => output,
+    ),
   }));
   const response = await fetch(`${endpoint}/admin/recovery/import`, {
     method: "POST",

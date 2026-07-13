@@ -57,11 +57,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
           env.DB.prepare(
             `INSERT INTO prices (day,currency,usd) VALUES (?,?,?)
              ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd`,
-          ).bind(
-            isoDay(r.time),
-            cur,
-            r.close,
-          ),
+          ).bind(isoDay(r.time), cur, r.close),
         );
         for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
         filled += rows.length;

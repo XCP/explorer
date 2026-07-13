@@ -37,7 +37,7 @@ let outputs = 0;
 while (!maxBatches || batches < maxBatches) {
   const result = await post(`/admin/recovery/verify?transactions=${transactionLimit}`);
   if (result.transactions === 0) {
-    if (!followImport || await importComplete()) break;
+    if (!followImport || (await importComplete())) break;
     console.log(JSON.stringify({ waiting_for_import: true, batches, transactions, outputs }));
     await delay(30_000);
     continue;

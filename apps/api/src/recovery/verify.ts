@@ -8,7 +8,9 @@ interface RecoveryOutputIdentity {
 }
 
 function chunks<T>(values: T[], size: number): T[][] {
-  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
+  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
+    values.slice(index * size, (index + 1) * size),
+  );
 }
 
 export async function verifyRecoveryTransactions(
@@ -19,13 +21,18 @@ export async function verifyRecoveryTransactions(
   const transactionRows = await env.RECOVERY_DB.prepare(
     `SELECT txid FROM recovery_outputs WHERE chain_checked_at IS NULL
       GROUP BY txid ORDER BY txid LIMIT ?`,
-  ).bind(limit).all<{ txid: string }>();
+  )
+    .bind(limit)
+    .all<{ txid: string }>();
   if (transactionRows.results.length === 0) return { transactions: 0, outputs: 0, spent: 0 };
 
-  const identities = (await env.RECOVERY_DB.batch(transactionRows.results.map((row) =>
-    env.RECOVERY_DB.prepare(`SELECT txid,vout,classification FROM recovery_outputs WHERE txid=?`)
-      .bind(row.txid),
-  ))).flatMap((result) => result.results as unknown as RecoveryOutputIdentity[]);
+  const identities = (
+    await env.RECOVERY_DB.batch(
+      transactionRows.results.map((row) =>
+        env.RECOVERY_DB.prepare(`SELECT txid,vout,classification FROM recovery_outputs WHERE txid=?`).bind(row.txid),
+      ),
+    )
+  ).flatMap((result) => result.results as unknown as RecoveryOutputIdentity[]);
   const outspendsByTxid = new Map<string, Awaited<ReturnType<typeof fetchTransactionOutspends>>>();
   for (let offset = 0; offset < transactionRows.results.length; offset += 10) {
     const batch = transactionRows.results.slice(offset, offset + 10);
@@ -47,7 +54,9 @@ export async function verifyRecoveryTransactions(
     return update.bind(
       sourceVerified ? (result.spent ? "spent" : "recoverable") : identity.classification,
       sourceVerified
-        ? (result.spent ? "verified-output-already-spent" : "verified-counterparty-recovery-output")
+        ? result.spent
+          ? "verified-output-already-spent"
+          : "verified-counterparty-recovery-output"
         : "counterparty-provenance-not-verified",
       result.spent ? result.txid : null,
       result.spent ? result.block_height : null,

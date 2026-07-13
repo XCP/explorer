@@ -22,7 +22,8 @@ for (const row of page.transactions ?? []) {
       const output = transaction.output(candidate.vout);
       if (!output) throw new Error(`missing output ${candidate.vout}`);
       if (output.valueSats !== BigInt(candidate.value_sats)) throw new Error(`value mismatch at ${candidate.vout}`);
-      if (output.scriptPubkeyHex !== candidate.script_pubkey_hex) throw new Error(`script mismatch at ${candidate.vout}`);
+      if (output.scriptPubkeyHex !== candidate.script_pubkey_hex)
+        throw new Error(`script mismatch at ${candidate.vout}`);
       const parsed = parseBareMultisig(candidate.script_pubkey_hex);
       if (!parsed) throw new Error(`malformed script at ${candidate.vout}`);
       const layout = verifyCounterpartyLayout(parsed, transaction.firstInputTxid);

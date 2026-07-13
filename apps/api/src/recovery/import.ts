@@ -50,7 +50,8 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
     if (!hashPattern.test(expectedTxid)) throw new Error("invalid transaction hash");
     const transaction = parseRecoveryTransaction(row.raw_transaction_hex);
     if (transaction.txid !== expectedTxid) throw new Error(`raw transaction hash mismatch: ${expectedTxid}`);
-    if (!Array.isArray(row.outputs) || row.outputs.length === 0) throw new Error(`transaction has no outputs: ${expectedTxid}`);
+    if (!Array.isArray(row.outputs) || row.outputs.length === 0)
+      throw new Error(`transaction has no outputs: ${expectedTxid}`);
     blobs.push(
       env.RECOVERY_TRANSACTIONS.put(`transactions/${expectedTxid}.hex`, row.raw_transaction_hex.toLowerCase(), {
         httpMetadata: { contentType: "text/plain" },
@@ -60,7 +61,8 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
 
     for (const candidate of row.outputs) {
       if (!Number.isSafeInteger(candidate.vout) || candidate.vout < 0) throw new Error("invalid output index");
-      if (!Number.isSafeInteger(candidate.value_sats) || candidate.value_sats < 0) throw new Error("invalid output value");
+      if (!Number.isSafeInteger(candidate.value_sats) || candidate.value_sats < 0)
+        throw new Error("invalid output value");
       const output = transaction.output(candidate.vout);
       if (!output) throw new Error(`output does not exist: ${expectedTxid}:${candidate.vout}`);
       if (output.valueSats !== BigInt(candidate.value_sats))

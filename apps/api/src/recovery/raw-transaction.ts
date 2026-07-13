@@ -32,7 +32,8 @@ export function parseRecoveryTransaction(rawTransactionHex: string): ParsedRecov
     }),
     outputs: Array.from({ length: transaction.outputsLength }, (_, index) => {
       const output = transaction.getOutput(index);
-      if (output.amount == null || !output.script) throw new Error(`recovery transaction output ${index} is incomplete`);
+      if (output.amount == null || !output.script)
+        throw new Error(`recovery transaction output ${index} is incomplete`);
       return { valueSats: output.amount, scriptPubkeyHex: hex.encode(output.script) };
     }),
     output(index) {

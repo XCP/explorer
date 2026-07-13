@@ -29,7 +29,10 @@ function isP2pkhAddress(address: string): boolean {
 }
 
 function deterministicFeeAddress(address: string, configured: string): string | null {
-  const addresses = configured.split(",").map((value) => value.trim()).filter(Boolean);
+  const addresses = configured
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   if (addresses.length === 0) return null;
   let hash = 2166136261;
   for (const character of address) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
@@ -39,13 +42,15 @@ function deterministicFeeAddress(address: string, configured: string): string | 
 export const recoveryRead = new Hono<{ Bindings: Env }>();
 
 function chunks<T>(values: T[], size: number): T[][] {
-  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
+  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
+    values.slice(index * size, (index + 1) * size),
+  );
 }
 
 async function recoveryReadsReady(env: Env): Promise<boolean> {
-  const state = await env.RECOVERY_DB.prepare(
-    `SELECT value FROM recovery_state WHERE key='read_ready'`,
-  ).first<{ value: string }>();
+  const state = await env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='read_ready'`).first<{
+    value: string;
+  }>();
   return state?.value === "1";
 }
 
@@ -61,16 +66,20 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
   const db = c.env.RECOVERY_DB as unknown as { withSession?: (mode?: string) => D1Database };
   const session = typeof db.withSession === "function" ? db.withSession("first-unconstrained") : c.env.RECOVERY_DB;
   const [totals, outputResult, pending] = await Promise.all([
-    session.prepare(
-      `SELECT COUNT(*) output_count, COALESCE(SUM(value_sats),0) value_sats FROM recovery_outputs
+    session
+      .prepare(
+        `SELECT COUNT(*) output_count, COALESCE(SUM(value_sats),0) value_sats FROM recovery_outputs
         WHERE recovery_address=? AND classification='recoverable'
           AND NOT EXISTS (
             SELECT 1 FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
              WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout AND a.status='pending'
           )`,
-    ).bind(address).first<{ output_count: number; value_sats: number }>(),
-    session.prepare(
-      `SELECT txid,vout,value_sats,script_pubkey_hex,layout,recovery_key_position,
+      )
+      .bind(address)
+      .first<{ output_count: number; value_sats: number }>(),
+    session
+      .prepare(
+        `SELECT txid,vout,value_sats,script_pubkey_hex,layout,recovery_key_position,
               classification,block_height,verified_at
          FROM recovery_outputs WHERE recovery_address=? AND classification='recoverable'
           AND NOT EXISTS (
@@ -78,16 +87,22 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
              WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout AND a.status='pending'
           )
         ORDER BY value_sats DESC,txid,vout LIMIT ? OFFSET ?`,
-    ).bind(address, limit, offset).all<RecoveryOutputRow>(),
-    session.prepare(`SELECT COUNT(*) attempts FROM recovery_attempts WHERE address=? AND status='pending'`)
-      .bind(address).first<{ attempts: number }>(),
+      )
+      .bind(address, limit, offset)
+      .all<RecoveryOutputRow>(),
+    session
+      .prepare(`SELECT COUNT(*) attempts FROM recovery_attempts WHERE address=? AND status='pending'`)
+      .bind(address)
+      .first<{ attempts: number }>(),
   ]);
 
   const uniqueTxids = [...new Set(outputResult.results.map((row) => row.txid))];
-  const transactionEntries = await Promise.all(uniqueTxids.map(async (txid) => {
-    const object = await c.env.RECOVERY_TRANSACTIONS.get(`transactions/${txid}.hex`);
-    return [txid, object ? await object.text() : null] as const;
-  }));
+  const transactionEntries = await Promise.all(
+    uniqueTxids.map(async (txid) => {
+      const object = await c.env.RECOVERY_TRANSACTIONS.get(`transactions/${txid}.hex`);
+      return [txid, object ? await object.text() : null] as const;
+    }),
+  );
   const totalOutputs = Number(totals?.output_count ?? 0);
   const totalValue = Number(totals?.value_sats ?? 0);
   const threshold = Number(c.env.RECOVERY_FEE_EXEMPTION_SATS || 10_000);
@@ -126,7 +141,8 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
   const address = c.req.param("address");
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
   const body = await c.req.json<RecoveryReportBody>().catch(() => null);
-  if (!body || typeof body.raw_transaction_hex !== "string") return c.json({ error: "raw_transaction_hex is required" }, 400);
+  if (!body || typeof body.raw_transaction_hex !== "string")
+    return c.json({ error: "raw_transaction_hex is required" }, 400);
   const amounts = [body.network_fee_sats, body.service_fee_sats, body.output_value_sats];
   if (amounts.some((value) => !Number.isSafeInteger(value) || Number(value) < 0))
     return c.json({ error: "fee and output amounts must be non-negative safe integers" }, 400);
@@ -140,7 +156,8 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
   if (transaction.inputs.length === 0 || transaction.inputs.length > 420)
     return c.json({ error: "recovery must contain 1 to 420 inputs" }, 400);
   const uniqueInputs = new Set(transaction.inputs.map((input) => `${input.txid}:${input.vout}`));
-  if (uniqueInputs.size !== transaction.inputs.length) return c.json({ error: "recovery contains duplicate inputs" }, 400);
+  if (uniqueInputs.size !== transaction.inputs.length)
+    return c.json({ error: "recovery contains duplicate inputs" }, 400);
 
   const lookupStatement = c.env.RECOVERY_DB.prepare(
     `SELECT recovery_address,classification,value_sats,
@@ -149,24 +166,36 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
                 AND a.status='pending' LIMIT 1) pending_txid
        FROM recovery_outputs WHERE txid=? AND vout=?`,
   );
-  const lookupBatches = await Promise.all(chunks(transaction.inputs, 50).map((batch) =>
-    c.env.RECOVERY_DB.batch(batch.map((input) => lookupStatement.bind(input.txid, input.vout))),
-  ));
+  const lookupBatches = await Promise.all(
+    chunks(transaction.inputs, 50).map((batch) =>
+      c.env.RECOVERY_DB.batch(batch.map((input) => lookupStatement.bind(input.txid, input.vout))),
+    ),
+  );
   const lookups = lookupBatches.flat();
   for (let index = 0; index < lookups.length; index++) {
-    const row = lookups[index].results[0] as {
-      recovery_address?: string;
-      classification?: string;
-      value_sats?: number;
-      pending_txid?: string | null;
-    } | undefined;
+    const row = lookups[index].results[0] as
+      | {
+          recovery_address?: string;
+          classification?: string;
+          value_sats?: number;
+          pending_txid?: string | null;
+        }
+      | undefined;
     if (row?.recovery_address !== address || row.classification !== "recoverable")
-      return c.json({ error: `input is not recoverable by this address: ${transaction.inputs[index].txid}:${transaction.inputs[index].vout}` }, 409);
+      return c.json(
+        {
+          error: `input is not recoverable by this address: ${transaction.inputs[index].txid}:${transaction.inputs[index].vout}`,
+        },
+        409,
+      );
     if (row.pending_txid && row.pending_txid !== transaction.txid)
       return c.json({ error: `input is already pending in recovery ${row.pending_txid}` }, 409);
   }
 
-  const inputValue = lookups.reduce((sum, result) => sum + BigInt((result.results[0] as { value_sats: number }).value_sats), 0n);
+  const inputValue = lookups.reduce(
+    (sum, result) => sum + BigInt((result.results[0] as { value_sats: number }).value_sats),
+    0n,
+  );
   const outputValue = transaction.outputs.reduce((sum, output) => sum + output.valueSats, 0n);
   const networkFee = inputValue - outputValue;
   if (networkFee < 0n || networkFee !== BigInt(body.network_fee_sats!))
@@ -188,10 +217,7 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
        ON CONFLICT(recovery_txid,input_txid,input_vout) DO NOTHING`,
     ).bind(...batch.flatMap((input) => [transaction.txid, input.txid, input.vout])),
   );
-  await c.env.RECOVERY_DB.batch([
-    attempt,
-    ...inputStatements,
-  ]);
+  await c.env.RECOVERY_DB.batch([attempt, ...inputStatements]);
   await c.env.RECOVERY_TRANSACTIONS.put(`recoveries/${transaction.txid}.hex`, body.raw_transaction_hex.toLowerCase(), {
     httpMetadata: { contentType: "text/plain" },
     customMetadata: { address },
@@ -209,7 +235,9 @@ recoveryRead.get("/addresses/:address/recoveries", async (c) => {
             a.block_height,a.reported_at,a.updated_at,COUNT(i.input_txid) input_count
        FROM recovery_attempts a LEFT JOIN recovery_attempt_inputs i ON i.recovery_txid=a.txid
       WHERE a.address=? GROUP BY a.txid ORDER BY a.reported_at DESC LIMIT ?`,
-  ).bind(address, limit).all();
+  )
+    .bind(address, limit)
+    .all();
   c.header("Cache-Control", "private, max-age=10");
   return c.json({ address, recoveries: result.results });
 });

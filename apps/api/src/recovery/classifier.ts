@@ -4,13 +4,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { base58check } from "@scure/base";
 
 export type CounterpartyMultisigLayout = "historical-1-of-2" | "current-1-of-3";
-export type RecoveryClassification =
-  | "recoverable"
-  | "spent"
-  | "ambiguous"
-  | "unsupported"
-  | "invalid"
-  | "unverified";
+export type RecoveryClassification = "recoverable" | "spent" | "ambiguous" | "unsupported" | "invalid" | "unverified";
 
 export const RECOVERY_CLASSIFIER_VERSION = 1;
 
@@ -61,7 +55,9 @@ export function parseBareMultisig(scriptPubkeyHex: string): ParsedBareMultisig |
     const length = script[offset++];
     if (length !== 33 && length !== 65) return null;
     if (offset + length > script.length - 2) return null;
-    keyDataHex.push(Array.from(script.slice(offset, offset + length), (byte) => byte.toString(16).padStart(2, "0")).join(""));
+    keyDataHex.push(
+      Array.from(script.slice(offset, offset + length), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    );
     offset += length;
   }
 
@@ -146,15 +142,10 @@ export function classifyRecovery(evidence: RecoveryEvidence): RecoveryDecision {
     return { classification: "unsupported", reason: "requires-more-than-one-signature", parsed };
 
   const structuralLayout =
-    parsed.publicKeyCount === 2
-      ? "historical-1-of-2"
-      : parsed.publicKeyCount === 3
-        ? "current-1-of-3"
-        : undefined;
+    parsed.publicKeyCount === 2 ? "historical-1-of-2" : parsed.publicKeyCount === 3 ? "current-1-of-3" : undefined;
   if (!structuralLayout) return { classification: "unsupported", reason: "unsupported-key-count", parsed };
   const verifiedLayout = verifyCounterpartyLayout(parsed, evidence.firstInputTxid, evidence.counterpartyPrefix);
-  if (!verifiedLayout)
-    return { classification: "unverified", reason: "counterparty-provenance-not-verified", parsed };
+  if (!verifiedLayout) return { classification: "unverified", reason: "counterparty-provenance-not-verified", parsed };
   if (verifiedLayout !== structuralLayout)
     return { classification: "invalid", reason: "counterparty-layout-mismatch", layout: structuralLayout, parsed };
 
