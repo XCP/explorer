@@ -4,6 +4,9 @@ export interface Env {
   LEDGER_DB: D1Database;
   RECOVERY_DB: D1Database;
   RECOVERY_TRANSACTIONS: R2Bucket;
+  RECOVERY_FEE_ADDRESSES: string;
+  RECOVERY_FEE_PERCENT: string;
+  RECOVERY_FEE_EXEMPTION_SATS: string;
   XCPDEX: Fetcher;
   COUNTERPARTY_API_BASE: string;
   XCPDEX_API: string;

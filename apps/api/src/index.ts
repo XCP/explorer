@@ -34,6 +34,7 @@ import { read } from "#api/read/router";
 import { verify } from "#api/verify";
 import { legacy } from "#api/legacy";
 import { admin } from "#api/admin";
+import { recoveryRead } from "#api/recovery/read";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
@@ -200,6 +201,7 @@ app.route("/", read); // explorer read API: /v2/assets, /v2/addresses/{a}/balanc
 app.route("/", verify); // /admin/verify — mirror-vs-Counterparty evaluation harness
 app.route("/", legacy); // /api/v1/* — wallet-extension compatibility surface
 app.route("/", admin); // /admin/* — operational routes (token-gated)
+app.route("/", recoveryRead); // native Counterparty bare-multisig recovery
 
 // Consistent error envelope: any UNCAUGHT throw from a handler returns { error } (never a bare 500 HTML).
 // A Hono HTTPException keeps its own status; anything else is an unexpected fault → 500 (and logged with the

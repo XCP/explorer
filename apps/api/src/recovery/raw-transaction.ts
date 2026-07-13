@@ -13,7 +13,10 @@ export interface ParsedRecoveryTransaction {
 }
 
 export function parseRecoveryTransaction(rawTransactionHex: string): ParsedRecoveryTransaction {
-  const transaction = Transaction.fromRaw(hex.decode(rawTransactionHex));
+  const transaction = Transaction.fromRaw(hex.decode(rawTransactionHex), {
+    allowUnknownOutputs: true,
+    disableScriptCheck: true,
+  });
   if (transaction.inputsLength === 0) throw new Error("recovery transaction has no inputs");
   const firstInput = transaction.getInput(0);
   if (!firstInput.txid) throw new Error("recovery transaction first input has no txid");
