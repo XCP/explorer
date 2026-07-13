@@ -146,8 +146,12 @@ export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
   const [sourceResult, targetResult, sourceColumnResults, targetColumnResults] = await Promise.all([
     env.DB.prepare(`SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name`).all<SchemaTable>(),
     env.CORE_DB.prepare(`SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name`).all<SchemaTable>(),
-    env.DB.batch(compactEntries.map((entry) => env.DB.prepare(`PRAGMA table_info("${entry.source}")`))),
-    env.CORE_DB.batch(compactEntries.map((entry) => env.CORE_DB.prepare(`PRAGMA table_info("${entry.target}")`))),
+    Promise.all(
+      compactEntries.map((entry) => env.DB.prepare(`PRAGMA table_info("${entry.source}")`).all<SchemaColumn>()),
+    ),
+    Promise.all(
+      compactEntries.map((entry) => env.CORE_DB.prepare(`PRAGMA table_info("${entry.target}")`).all<SchemaColumn>()),
+    ),
   ]);
   const sourceTables = sorted(sourceResult.results.map((row) => row.name));
   const targetTables = sorted(targetResult.results.map((row) => row.name));
@@ -169,12 +173,8 @@ export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
   const unmappedSourceColumns: { table: string; columns: string[] }[] = [];
   const missingRepresentationColumns: { table: string; source_column: string; targets: readonly string[] }[] = [];
   compactEntries.forEach((entry, index) => {
-    const sourceColumns = (sourceColumnResults[index].results as unknown as SchemaColumn[]).map(
-      (column) => column.name,
-    );
-    const targetColumns = new Set(
-      (targetColumnResults[index].results as unknown as SchemaColumn[]).map((column) => column.name),
-    );
+    const sourceColumns = sourceColumnResults[index].results.map((column) => column.name);
+    const targetColumns = new Set(targetColumnResults[index].results.map((column) => column.name));
     const unmapped: string[] = [];
     for (const sourceColumn of sourceColumns) {
       const rule = CORE_COLUMN_RULES[entry.source]?.[sourceColumn];
