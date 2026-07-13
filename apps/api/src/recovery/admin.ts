@@ -51,7 +51,7 @@ async function storeStampProtections(
 
 interface OfficialStampProtectionRequest extends StampProtectionRequest {
   cursor?: number;
-  next_cursor?: number | null;
+  next_cursor?: number;
   snapshot_sha256?: string;
 }
 
@@ -61,10 +61,7 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
     return c.json({ error: "valid cursor is required" }, 400);
   if (!/^[0-9a-f]{64}$/.test(String(body.snapshot_sha256 ?? "")))
     return c.json({ error: "valid snapshot_sha256 is required" }, 400);
-  if (
-    body.next_cursor !== null &&
-    (!Number.isSafeInteger(body.next_cursor) || Number(body.next_cursor) <= Number(body.cursor))
-  )
+  if (!Number.isSafeInteger(body.next_cursor) || Number(body.next_cursor) <= Number(body.cursor))
     return c.json({ error: "valid next_cursor is required" }, 400);
   if (!Array.isArray(body.transactions) || body.transactions.length > 500)
     return c.json({ error: "transactions must be an array of at most 500 entries" }, 400);
@@ -80,7 +77,7 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
     return c.json({ error: "each transaction requires a valid txid and stamp:<number> reference" }, 400);
 
   const cursor = Number(body.cursor);
-  const nextCursor = body.next_cursor == null ? null : Number(body.next_cursor);
+  const nextCursor = Number(body.next_cursor);
   const now = Math.floor(Date.now() / 1000);
   const existing = await c.env.RECOVERY_DB.prepare(
     `SELECT next_cursor,rows_seen,snapshot_sha256 FROM recovery_stamp_import_receipts WHERE page_cursor=?`,
@@ -90,7 +87,7 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
   if (
     existing &&
     (Number(existing.rows_seen) !== entries.length ||
-      (existing.next_cursor == null ? null : Number(existing.next_cursor)) !== nextCursor ||
+      Number(existing.next_cursor) !== nextCursor ||
       existing.snapshot_sha256 !== body.snapshot_sha256)
   )
     return c.json({ error: "official Stamp page conflicts with its recorded receipt" }, 409);
@@ -103,7 +100,7 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
   )
     .bind(cursor, nextCursor, entries.length, body.snapshot_sha256, now)
     .run();
-  if (body.complete === true && nextCursor === null)
+  if (body.complete === true)
     await c.env.RECOVERY_DB.prepare(
       `INSERT INTO recovery_state (key,value,updated_at) VALUES ('official_stamp_protection_ready','1',?)
        ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
@@ -164,6 +161,32 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/bootstrap", async (c) => 
     next_cursor: page.next_cursor,
     complete: page.next_cursor === null,
   });
+});
+
+recoveryAdmin.get("/admin/recovery/protections/stamps/parity", async (c) => {
+  const [counts, readiness, receipts] = await Promise.all([
+    c.env.RECOVERY_DB.prepare(
+      `SELECT
+         COUNT(DISTINCT txid) protected_transactions,
+         COUNT(DISTINCT CASE WHEN source='issuance-description' THEN txid END) issuance_transactions,
+         COUNT(DISTINCT CASE WHEN source='btc-stamps-indexer' THEN txid END) official_transactions,
+         COUNT(DISTINCT CASE WHEN source='btc-stamps-indexer' AND NOT EXISTS (
+           SELECT 1 FROM recovery_protection_sources i
+            WHERE i.txid=recovery_protection_sources.txid AND i.source='issuance-description'
+         ) THEN txid END) official_only_transactions
+       FROM recovery_protection_sources`,
+    ).first(),
+    c.env.RECOVERY_DB.prepare(
+      `SELECT key,value,updated_at FROM recovery_state
+        WHERE key IN ('stamp_protection_ready','official_stamp_protection_ready') ORDER BY key`,
+    ).all(),
+    c.env.RECOVERY_DB.prepare(
+      `SELECT COUNT(*) pages,COALESCE(SUM(rows_seen),0) rows_seen,
+              COUNT(DISTINCT snapshot_sha256) snapshots,MAX(next_cursor) cursor
+         FROM recovery_stamp_import_receipts`,
+    ).first(),
+  ]);
+  return c.json({ counts, readiness: readiness.results, import: receipts });
 });
 
 recoveryAdmin.post("/admin/recovery/import", async (c) => {
@@ -284,7 +307,7 @@ recoveryAdmin.get("/admin/recovery/audit/transactions", async (c) => {
 });
 
 recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
-  const [imports, unchecked, verificationFailures, stampProtection] = await Promise.all([
+  const [imports, unchecked, verificationFailures, stampProtection, officialStampProtection] = await Promise.all([
     c.env.RECOVERY_DB.prepare(
       `SELECT COUNT(*) total, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) completed FROM recovery_imports`,
     ).first<{ total: number; completed: number }>(),
@@ -295,18 +318,23 @@ recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
     c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='stamp_protection_ready'`).first<{
       value: string;
     }>(),
+    c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='official_stamp_protection_ready'`).first<{
+      value: string;
+    }>(),
   ]);
   const totalImports = Number(imports?.total ?? 0);
   const completedImports = Number(imports?.completed ?? 0);
   const uncheckedOutputs = Number(unchecked?.count ?? 0);
   const failedTransactions = Number(verificationFailures?.count ?? 0);
   const stampProtectionReady = stampProtection?.value === "1";
+  const officialStampProtectionReady = officialStampProtection?.value === "1";
   if (
     totalImports === 0 ||
     completedImports !== totalImports ||
     uncheckedOutputs !== 0 ||
     failedTransactions !== 0 ||
-    !stampProtectionReady
+    !stampProtectionReady ||
+    !officialStampProtectionReady
   ) {
     return c.json(
       {
@@ -316,6 +344,7 @@ recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
         unchecked_outputs: uncheckedOutputs,
         failed_transactions: failedTransactions,
         stamp_protection_ready: stampProtectionReady,
+        official_stamp_protection_ready: officialStampProtectionReady,
       },
       409,
     );

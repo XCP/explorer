@@ -3,14 +3,11 @@
 -- protection rows or protected transaction records.
 CREATE TABLE recovery_stamp_import_receipts (
   page_cursor INTEGER PRIMARY KEY,
-  next_cursor INTEGER,
+  next_cursor INTEGER NOT NULL,
   rows_seen INTEGER NOT NULL CHECK (rows_seen >= 0),
   snapshot_sha256 TEXT NOT NULL CHECK (length(snapshot_sha256) = 64),
   recorded_at INTEGER NOT NULL,
-  CHECK (
-    next_cursor IS NULL
-    OR next_cursor > page_cursor
-  )
+  CHECK (next_cursor > page_cursor)
 );
 
 INSERT INTO

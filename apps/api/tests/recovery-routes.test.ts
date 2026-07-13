@@ -32,6 +32,7 @@ class Statement {
 class FakeRecoveryDb {
   readReady = false;
   stampProtectionReady = false;
+  officialStampProtectionReady = false;
   imports: Array<{ completed: boolean }> = [];
   uncheckedOutputs = 0;
   outputs: Row[] = [];
@@ -58,6 +59,8 @@ class FakeRecoveryDb {
   }
   first(sql: string, values: unknown[]): Row | null {
     if (sql.includes("FROM recovery_state")) {
+      if (sql.includes("official_stamp_protection_ready"))
+        return this.officialStampProtectionReady ? { value: "1" } : null;
       if (sql.includes("stamp_protection_ready")) return this.stampProtectionReady ? { value: "1" } : null;
       return this.readReady ? { value: "1" } : null;
     }
@@ -209,6 +212,7 @@ test("finalization refuses absent, incomplete, and unchecked imports before open
     unchecked_outputs: 3,
     failed_transactions: 0,
     stamp_protection_ready: false,
+    official_stamp_protection_ready: false,
   });
   assert.equal(db.readReady, false);
 });
@@ -219,6 +223,7 @@ test("finalization opens reads only after every import and output is complete", 
   const db = new FakeRecoveryDb();
   db.imports = [{ completed: true }, { completed: true }];
   db.stampProtectionReady = true;
+  db.officialStampProtectionReady = true;
 
   const response = await app.request("/admin/recovery/finalize", { method: "POST" }, env(db));
   assert.equal(response.status, 200);

@@ -37,23 +37,42 @@ const rows = parsed.map((row, index) => {
 });
 
 const remaining = rows.filter((row) => row.stamp > cursor);
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function importPage(payload) {
+  let lastError;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const response = await fetch(new URL("/admin/recovery/protections/stamps/official", endpoint), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (response.ok) return body;
+      if (response.status >= 400 && response.status < 500)
+        throw new Error(`official Stamp bootstrap rejected (${response.status}): ${JSON.stringify(body)}`);
+      lastError = new Error(`official Stamp bootstrap failed (${response.status})`);
+    } catch (error) {
+      if (String(error?.message).includes("rejected")) throw error;
+      lastError = error;
+    }
+    await delay(Math.min(30_000, 1_000 * 2 ** attempt));
+  }
+  throw lastError;
+}
+
 for (let offset = 0; offset < remaining.length; offset += pageSize) {
   const page = remaining.slice(offset, offset + pageSize);
   const finalPage = offset + page.length === remaining.length;
-  const nextCursor = finalPage ? null : page.at(-1).stamp;
-  const response = await fetch(new URL("/admin/recovery/protections/stamps/official", endpoint), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      cursor,
-      next_cursor: nextCursor,
-      complete: finalPage,
-      snapshot_sha256: snapshotSha256,
-      transactions: page.map(({ stamp, txid }) => ({ txid, source_reference: `stamp:${stamp}` })),
-    }),
+  const nextCursor = page.at(-1).stamp;
+  const body = await importPage({
+    cursor,
+    next_cursor: nextCursor,
+    complete: finalPage,
+    snapshot_sha256: snapshotSha256,
+    transactions: page.map(({ stamp, txid }) => ({ txid, source_reference: `stamp:${stamp}` })),
   });
-  const body = await response.json();
-  if (!response.ok) throw new Error(`official Stamp bootstrap rejected (${response.status}): ${JSON.stringify(body)}`);
   console.log(JSON.stringify({ cursor, snapshot_sha256: snapshotSha256, ...body }));
   cursor = page.at(-1).stamp;
 }
