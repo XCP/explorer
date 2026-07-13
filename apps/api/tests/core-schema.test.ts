@@ -10,7 +10,13 @@ import {
 } from "#api/queries/core";
 import { CORE_TABLE_MANIFEST, GENERATED_CORE_TABLES } from "#api/indexer/core-manifest";
 
-const CORE_DDL = readFileSync("migrations-core/0001_core.sql", "utf8");
+const CORE_DDL = [
+  "migrations-core/0001_core.sql",
+  "migrations-core/0002_protocol.sql",
+  "migrations-core/0003_projections.sql",
+]
+  .map((path) => readFileSync(path, "utf8"))
+  .join("\n");
 
 test("core manifest classifies the complete live source schema exactly once", () => {
   assert.equal(CORE_TABLE_MANIFEST.length, 60);
@@ -32,6 +38,56 @@ test("every table already present in compact DDL is declared by the manifest", (
   assert.deepEqual(
     ddlTables.filter((table) => !declaredTargets.has(table)),
     [],
+  );
+});
+
+test("every canonical or merged source relation has a compact target table", () => {
+  const ddlTables = new Set([...CORE_DDL.matchAll(/CREATE TABLE\s+([a-z_]+)/gi)].map((match) => match[1]));
+  const required = new Set(
+    CORE_TABLE_MANIFEST.filter((entry) => entry.disposition === "compact" || entry.disposition === "merge").flatMap(
+      (entry) => (entry.target == null ? [] : [entry.target]),
+    ),
+  );
+  assert.deepEqual(
+    [...required].filter((table) => !ddlTables.has(table)),
+    [],
+  );
+});
+
+test("complete compact DDL contains every required target relation", () => {
+  const ddlTables = new Set([...CORE_DDL.matchAll(/CREATE TABLE\s+([a-z_]+)/gi)].map((match) => match[1]));
+  const required = new Set<string>([
+    ...CORE_TABLE_MANIFEST.flatMap((entry) => (entry.target == null ? [] : [entry.target])),
+    ...GENERATED_CORE_TABLES,
+  ]);
+  assert.deepEqual(
+    [...required].filter((table) => !ddlTables.has(table)),
+    [],
+  );
+});
+
+test("canonical protocol identities reject duplicate matches and ledger directions outside the domain", () => {
+  const db = fixture();
+  const h0 = new Uint8Array(32).fill(0x31);
+  const h1 = new Uint8Array(32).fill(0x32);
+  db.prepare(`INSERT INTO bet_matches(tx0_index,tx1_index,tx0_hash,tx1_hash,block_index) VALUES(?,?,?,?,?)`).run(
+    30,
+    31,
+    h0,
+    h1,
+    100,
+  );
+  assert.throws(() =>
+    db
+      .prepare(`INSERT INTO bet_matches(tx0_index,tx1_index,tx0_hash,tx1_hash,block_index) VALUES(?,?,?,?,?)`)
+      .run(30, 31, h0, h1, 101),
+  );
+  assert.throws(() =>
+    db
+      .prepare(
+        `INSERT INTO ledger_events(event_index,direction,block_index,address_id,asset_id,quantity) VALUES(?,?,?,?,?,?)`,
+      )
+      .run(1, 2, 100, 1, 1, "1"),
   );
 });
 
