@@ -5,6 +5,8 @@ const base = process.env.CORE_SNAPSHOT_BASE ?? "http://127.0.0.1:8793";
 const output = process.env.CORE_SNAPSHOT_PATH;
 const pageRows = Math.max(1, Math.min(Number(process.env.CORE_SNAPSHOT_ROWS ?? 1_000), 2_000));
 const maxPages = Math.max(0, Number(process.env.CORE_SNAPSHOT_MAX_PAGES ?? 0));
+const pageDelayMs = Math.max(0, Number(process.env.CORE_SNAPSHOT_DELAY_MS ?? 100));
+const maxAttempts = Math.max(1, Number(process.env.CORE_SNAPSHOT_MAX_ATTEMPTS ?? 8));
 const tableFilter = new Set(
   (process.env.CORE_SNAPSHOT_TABLES ?? "")
     .split(",")
@@ -21,10 +23,30 @@ const token = tokenLine
   .trim()
   .replace(/^(?:"(.*)"|'(.*)')$/, "$1$2");
 
+const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 async function get(path) {
-  const response = await fetch(`${base}${path}`, { headers: { authorization: `Bearer ${token}` } });
-  if (!response.ok) throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
-  return response.json();
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(`${base}${path}`, { headers: { authorization: `Bearer ${token}` } });
+      if (response.ok) return response.json();
+      const detail = await response.text();
+      const d1Reset = detail.includes("D1 DB exceeded its CPU time limit") || detail.includes("D1_ERROR");
+      if (response.status < 500 && response.status !== 429 && !d1Reset) {
+        const error = new Error(`${path} failed: ${response.status} ${detail}`);
+        error.retryable = false;
+        throw error;
+      }
+      if (attempt === maxAttempts) throw new Error(`${path} failed: ${response.status} ${detail}`);
+    } catch (error) {
+      if (error.retryable === false) throw error;
+      if (attempt === maxAttempts) throw error;
+    }
+    const retryMs = Math.min(30_000, 500 * 2 ** (attempt - 1));
+    process.stderr.write(`${JSON.stringify({ path, attempt, retry_ms: retryMs })}\n`);
+    await sleep(retryMs);
+  }
+  throw new Error(`${path} exhausted retries`);
 }
 
 const schema = await get("/admin/core-snapshot/schema");
@@ -97,6 +119,7 @@ for (const table of tables) {
     pages++;
     if (page.caught_up) break;
     if (maxPages > 0 && pages >= maxPages) break;
+    if (pageDelayMs > 0) await sleep(pageDelayMs);
     if (state.rows_copied % (pageRows * 100) === 0) {
       process.stdout.write(`${JSON.stringify({ table: table.name, rows: state.rows_copied, cursor: state.cursor })}\n`);
     }
