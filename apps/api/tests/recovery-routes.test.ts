@@ -207,6 +207,7 @@ test("finalization refuses absent, incomplete, and unchecked imports before open
     total_imports: 2,
     completed_imports: 1,
     unchecked_outputs: 3,
+    failed_transactions: 0,
     stamp_protection_ready: false,
   });
   assert.equal(db.readReady, false);

@@ -284,13 +284,14 @@ recoveryAdmin.get("/admin/recovery/audit/transactions", async (c) => {
 });
 
 recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
-  const [imports, unchecked, stampProtection] = await Promise.all([
+  const [imports, unchecked, verificationFailures, stampProtection] = await Promise.all([
     c.env.RECOVERY_DB.prepare(
       `SELECT COUNT(*) total, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) completed FROM recovery_imports`,
     ).first<{ total: number; completed: number }>(),
     c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) count FROM recovery_outputs WHERE chain_checked_at IS NULL`).first<{
       count: number;
     }>(),
+    c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) count FROM recovery_verification_failures`).first<{ count: number }>(),
     c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='stamp_protection_ready'`).first<{
       value: string;
     }>(),
@@ -298,14 +299,22 @@ recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
   const totalImports = Number(imports?.total ?? 0);
   const completedImports = Number(imports?.completed ?? 0);
   const uncheckedOutputs = Number(unchecked?.count ?? 0);
+  const failedTransactions = Number(verificationFailures?.count ?? 0);
   const stampProtectionReady = stampProtection?.value === "1";
-  if (totalImports === 0 || completedImports !== totalImports || uncheckedOutputs !== 0 || !stampProtectionReady) {
+  if (
+    totalImports === 0 ||
+    completedImports !== totalImports ||
+    uncheckedOutputs !== 0 ||
+    failedTransactions !== 0 ||
+    !stampProtectionReady
+  ) {
     return c.json(
       {
         error: "recovery index is not ready",
         total_imports: totalImports,
         completed_imports: completedImports,
         unchecked_outputs: uncheckedOutputs,
+        failed_transactions: failedTransactions,
         stamp_protection_ready: stampProtectionReady,
       },
       409,
