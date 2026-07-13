@@ -1,4 +1,5 @@
 import type { Env } from "#api/env";
+import { hashToBytes } from "#api/indexer/compact-codec";
 
 type TransactionMeta = {
   rows: number;
@@ -91,6 +92,38 @@ type IssuanceSample = {
   call_price: string | null;
 };
 
+type BalanceSample = {
+  holder: string;
+  asset: string;
+  holder_type: string;
+  quantity: string;
+  quantity_normalized: string | null;
+  updated_block_index: number | null;
+  updated_event_index: number;
+  utxo_address: string | null;
+};
+
+type SendSample = {
+  event_index: number;
+  tx_index: number;
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  destination: string | null;
+  source_address: string | null;
+  destination_address: string | null;
+  asset: string | null;
+  quantity: string | null;
+  quantity_normalized: string | null;
+  memo: string | null;
+  memo_hex: string | null;
+  send_type: string | null;
+  status: string | null;
+  fee_paid: string | null;
+  msg_index: number;
+};
+
 export type CoreTransactionReadiness = {
   ready: boolean;
   read_only: true;
@@ -134,6 +167,34 @@ export type CoreBlockReadiness = {
 };
 
 export type CoreIssuanceReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: number | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  extrema: {
+    source: { first: number | null; last: number | null };
+    core: { first: number | null; last: number | null };
+    match: boolean;
+  };
+  samples: Array<{ event_index: number; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreBalanceReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: { holder: string; asset: string } | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  frontier: {
+    source: { holder: string; asset: string } | null;
+    core: { holder: string; asset: string } | null;
+    match: boolean;
+  };
+  samples: Array<{ holder: string; asset: string; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreSendReadiness = {
   ready: boolean;
   read_only: true;
   state: { cursor: number | null; done: boolean };
@@ -232,6 +293,48 @@ export function coreIssuanceReadinessFailures(input: {
     failures.push("issuance event extrema differ");
   }
   if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded issuance samples differ");
+  return failures;
+}
+
+export function coreBalanceReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFrontier: { holder: string; asset: string } | null;
+  coreFrontier: { holder: string; asset: string } | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source balances are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core balances are empty or unreadable");
+  if (!input.done) failures.push("balance backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("balance row counts differ");
+  if (JSON.stringify(input.sourceFrontier) !== JSON.stringify(input.coreFrontier)) {
+    failures.push("balance composite frontiers differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded balance samples differ");
+  return failures;
+}
+
+export function coreSendReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFirst: number | null;
+  sourceLast: number | null;
+  coreFirst: number | null;
+  coreLast: number | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source sends are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core sends are empty or unreadable");
+  if (!input.done) failures.push("send backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("send row counts differ");
+  if (input.sourceFirst !== input.coreFirst || input.sourceLast !== input.coreLast) {
+    failures.push("send event extrema differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded send samples differ");
   return failures;
 }
 
@@ -548,6 +651,184 @@ export async function auditCoreIssuances(env: Pick<Env, "DB" | "CORE_DB">): Prom
       cursor: state.has("issuances_cursor") ? Number(state.get("issuances_cursor")) : null,
       done,
     },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    extrema: {
+      source: { first: source.first_index, last: source.last_index },
+      core: { first: core.first_index, last: core.last_index },
+      match: source.first_index === core.first_index && source.last_index === core.last_index,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, composite frontier, and decoded address/UTXO parity evidence for current balances. */
+export async function auditCoreBalances(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreBalanceReadiness> {
+  const sourceSampleSql = `SELECT holder,asset,holder_type,quantity,quantity_normalized,updated_block_index,
+                                  updated_event_index,utxo_address FROM balances`;
+  const [sourceMeta, coreMeta, firstSource, lastSource, addressSource, stateRows] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) rows FROM balances`).first<{ rows: number }>(),
+    env.CORE_DB.prepare(`SELECT COUNT(*) rows FROM balances`).first<{ rows: number }>(),
+    env.DB.prepare(`${sourceSampleSql} ORDER BY holder,asset LIMIT 1`).first<BalanceSample>(),
+    env.DB.prepare(`${sourceSampleSql} ORDER BY holder DESC,asset DESC LIMIT 1`).first<BalanceSample>(),
+    env.DB.prepare(`${sourceSampleSql} WHERE holder_type='address' LIMIT 1`).first<BalanceSample>(),
+    env.CORE_DB.prepare(
+      `SELECT key,value FROM core_state
+        WHERE key IN ('balances_holder_cursor','balances_asset_cursor','balances_done')`,
+    ).all<{ key: string; value: string }>(),
+  ]);
+  const anchors = [firstSource, addressSource, lastSource].filter(
+    (row, index, rows): row is BalanceSample =>
+      row != null &&
+      rows.findIndex((candidate) => candidate?.holder === row.holder && candidate.asset === row.asset) === index,
+  );
+  const samples = await Promise.all(
+    anchors.map(async (sourceRow) => {
+      let coreRow: BalanceSample | null;
+      if (sourceRow.holder_type === "address") {
+        coreRow = await env.CORE_DB.prepare(
+          `SELECT holder.address holder,asset.asset,b.holder_type,b.quantity,b.quantity_normalized,
+                  b.updated_block_index,b.updated_event_index,utxo_address.address utxo_address
+             FROM balances b
+             JOIN address_dictionary holder ON holder.address_id=b.address_id
+             JOIN asset_dictionary asset ON asset.asset_id=b.asset_id
+             LEFT JOIN address_dictionary utxo_address ON utxo_address.address_id=b.utxo_address_id
+            WHERE b.address_id=(SELECT address_id FROM address_dictionary WHERE address=?)
+              AND b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)`,
+        )
+          .bind(sourceRow.holder, sourceRow.asset)
+          .first<BalanceSample>();
+      } else {
+        const match = /^([0-9a-f]{64}):(\d+)$/i.exec(sourceRow.holder);
+        const txHash = match ? hashToBytes(match[1]) : null;
+        const vout = match ? Number(match[2]) : -1;
+        coreRow =
+          txHash == null
+            ? null
+            : await env.CORE_DB.prepare(
+                `SELECT LOWER(HEX(b.utxo_tx_hash))||':'||b.utxo_vout holder,asset.asset,b.holder_type,
+                        b.quantity,b.quantity_normalized,b.updated_block_index,b.updated_event_index,
+                        utxo_address.address utxo_address
+                   FROM balances b
+                   JOIN asset_dictionary asset ON asset.asset_id=b.asset_id
+                   LEFT JOIN address_dictionary utxo_address ON utxo_address.address_id=b.utxo_address_id
+                  WHERE b.utxo_tx_hash=? AND b.utxo_vout=?
+                    AND b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)`,
+              )
+                .bind(txHash, vout, sourceRow.asset)
+                .first<BalanceSample>();
+      }
+      return {
+        holder: sourceRow.holder,
+        asset: sourceRow.asset,
+        match: JSON.stringify(sourceRow) === JSON.stringify(coreRow),
+      };
+    }),
+  );
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const sourceRows = Number(sourceMeta?.rows ?? 0);
+  const coreRows = Number(coreMeta?.rows ?? 0);
+  const sourceFrontier = lastSource == null ? null : { holder: lastSource.holder, asset: lastSource.asset };
+  const coreFrontier = state.has("balances_holder_cursor")
+    ? { holder: state.get("balances_holder_cursor")!, asset: state.get("balances_asset_cursor") ?? "" }
+    : null;
+  const done = state.get("balances_done") === "1";
+  const failures = coreBalanceReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFrontier,
+    coreFrontier,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: { cursor: coreFrontier, done },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    frontier: {
+      source: sourceFrontier,
+      core: coreFrontier,
+      match: failures.indexOf("balance composite frontiers differ") < 0,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, event frontier, and decoded-row parity evidence for canonical sends. */
+export async function auditCoreSends(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreSendReadiness> {
+  const [sourceMeta, coreMeta, stateRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT COUNT(*) rows,MIN(event_index) first_index,MAX(event_index) last_index FROM sends`,
+    ).first<IssuanceMeta>(),
+    env.CORE_DB.prepare(
+      `SELECT COUNT(*) rows,MIN(event_index) first_index,MAX(event_index) last_index FROM sends`,
+    ).first<IssuanceMeta>(),
+    env.CORE_DB.prepare(`SELECT key,value FROM core_state WHERE key IN ('sends_cursor','sends_done')`).all<{
+      key: string;
+      value: string;
+    }>(),
+  ]);
+  const source = sourceMeta ?? { rows: 0, first_index: null, last_index: null };
+  const core = coreMeta ?? { rows: 0, first_index: null, last_index: null };
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const samples = await Promise.all(
+    sampleIndexes(core).map(async (eventIndex) => {
+      const [sourceRow, coreRow] = await Promise.all([
+        env.DB.prepare(
+          `SELECT event_index,tx_index,LOWER(tx_hash) tx_hash,block_index,block_time,source,destination,
+                  source_address,destination_address,asset,quantity,quantity_normalized,memo,memo_hex,
+                  send_type,status,fee_paid,msg_index
+             FROM sends WHERE event_index=?`,
+        )
+          .bind(eventIndex)
+          .first<SendSample>(),
+        env.CORE_DB.prepare(
+          `SELECT s.event_index,s.tx_index,LOWER(HEX(s.tx_hash)) tx_hash,s.block_index,s.block_time,
+                  source.address source,destination.address destination,source_address.address source_address,
+                  destination_address.address destination_address,asset.asset,s.quantity,s.quantity_normalized,
+                  s.memo,s.memo_hex,s.send_type,s.status,s.fee_paid,s.msg_index
+             FROM sends s
+             LEFT JOIN address_dictionary source ON source.address_id=s.source_id
+             LEFT JOIN address_dictionary destination ON destination.address_id=s.destination_id
+             LEFT JOIN address_dictionary source_address ON source_address.address_id=s.source_address_id
+             LEFT JOIN address_dictionary destination_address
+                    ON destination_address.address_id=s.destination_address_id
+             LEFT JOIN asset_dictionary asset ON asset.asset_id=s.asset_id
+            WHERE s.event_index=?`,
+        )
+          .bind(eventIndex)
+          .first<SendSample>(),
+      ]);
+      return { event_index: eventIndex, match: JSON.stringify(sourceRow) === JSON.stringify(coreRow) };
+    }),
+  );
+  const sourceRows = Number(source.rows);
+  const coreRows = Number(core.rows);
+  const done = state.get("sends_done") === "1";
+  const failures = coreSendReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFirst: source.first_index,
+    sourceLast: source.last_index,
+    coreFirst: core.first_index,
+    coreLast: core.last_index,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: { cursor: state.has("sends_cursor") ? Number(state.get("sends_cursor")) : null, done },
     progress: {
       source: sourceRows,
       core: coreRows,

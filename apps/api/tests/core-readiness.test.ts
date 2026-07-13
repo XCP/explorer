@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   coreAssetReadinessFailures,
+  coreBalanceReadinessFailures,
   coreBlockReadinessFailures,
   coreIssuanceReadinessFailures,
+  coreSendReadinessFailures,
   coreTransactionReadinessFailures,
 } from "#api/indexer/core-readiness";
 
@@ -137,6 +139,57 @@ test("core issuance readiness requires a complete matching event projection", ()
     coreLast: 900_000,
     done: false,
     sampleMatches: [true, false],
+  });
+  assert.equal(failures.length, 4);
+});
+
+test("core balance readiness requires count, composite frontier, and decoded parity", () => {
+  const frontier = { holder: "bc1qholder", asset: "XCP" };
+  assert.deepEqual(
+    coreBalanceReadinessFailures({
+      sourceRows: 1_834_239,
+      coreRows: 1_834_239,
+      sourceFrontier: frontier,
+      coreFrontier: frontier,
+      done: true,
+      sampleMatches: [true, true, true],
+    }),
+    [],
+  );
+  const failures = coreBalanceReadinessFailures({
+    sourceRows: 10,
+    coreRows: 9,
+    sourceFrontier: frontier,
+    coreFrontier: { holder: "bc1qholder", asset: "BTC" },
+    done: false,
+    sampleMatches: [true, false],
+  });
+  assert.equal(failures.length, 4);
+});
+
+test("core send readiness requires a complete matching event projection", () => {
+  assert.deepEqual(
+    coreSendReadinessFailures({
+      sourceRows: 1_770_398,
+      coreRows: 1_770_398,
+      sourceFirst: 6565,
+      sourceLast: 20_241_394,
+      coreFirst: 6565,
+      coreLast: 20_241_394,
+      done: true,
+      sampleMatches: [true, true, true],
+    }),
+    [],
+  );
+  const failures = coreSendReadinessFailures({
+    sourceRows: 10,
+    coreRows: 9,
+    sourceFirst: 6565,
+    sourceLast: 20_241_394,
+    coreFirst: 6566,
+    coreLast: 20_241_394,
+    done: false,
+    sampleMatches: [false],
   });
   assert.equal(failures.length, 4);
 });

@@ -11,6 +11,7 @@ const BLOCK_GROUP = 10;
 const ASSET_GROUP = 5;
 const ISSUANCE_GROUP = 4;
 const BALANCE_GROUP = 10;
+const SEND_GROUP = 5;
 
 type SourceTransaction = {
   tx_index: number;
@@ -96,6 +97,27 @@ type SourceBalance = {
   utxo_address: string | null;
 };
 
+type SourceSend = {
+  event_index: number;
+  tx_index: number;
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  destination: string | null;
+  source_address: string | null;
+  destination_address: string | null;
+  asset: string | null;
+  quantity: string | null;
+  quantity_normalized: string | null;
+  memo: string | null;
+  memo_hex: string | null;
+  send_type: string | null;
+  status: string | null;
+  fee_paid: string | null;
+  msg_index: number;
+};
+
 export type CoreTransactionBackfillResult = {
   table: "transactions";
   cursor: number;
@@ -131,6 +153,13 @@ export type CoreBalanceBackfillResult = {
   caught_up: boolean;
 };
 
+export type CoreSendBackfillResult = {
+  table: "sends";
+  cursor: number;
+  processed: number;
+  caught_up: boolean;
+};
+
 export function parseUtxoHolder(holder: string): { txHash: Uint8Array; vout: number } {
   const match = /^([0-9a-f]{64}):(\d+)$/i.exec(holder);
   if (!match) throw new Error(`invalid UTXO balance holder: ${holder}`);
@@ -146,6 +175,15 @@ function groups<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
   for (let offset = 0; offset < values.length; offset += size) result.push(values.slice(offset, offset + size));
   return result;
+}
+
+function coreStateUpsert(db: D1Database, key: string, value: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO core_state(key,value) VALUES (?,?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    )
+    .bind(key, value);
 }
 
 async function coreState(db: D1Database, key: string): Promise<string | null> {
@@ -183,7 +221,7 @@ export async function backfillCoreTransactions(
   const addresses = [
     ...new Set(rows.flatMap((row) => [row.source, row.destination]).filter((value): value is string => value != null)),
   ];
-  const statements: D1PreparedStatement[] = [];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "transactions_done", "0")];
   for (const group of groups(addresses, DICTIONARY_GROUP)) {
     statements.push(
       env.CORE_DB.prepare(
@@ -267,7 +305,7 @@ export async function backfillCoreBlocks(
     return { table: "blocks", cursor, processed: 0, caught_up: true };
   }
 
-  const statements: D1PreparedStatement[] = [];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "blocks_done", "0")];
   for (const group of groups(rows, BLOCK_GROUP)) {
     const values = group.map(() => `(?,?,?,?,?,?,?,?,?)`).join(",");
     const binds = group.flatMap((row) => [
@@ -346,7 +384,7 @@ export async function backfillCoreAssets(
   const addresses = [
     ...new Set(rows.flatMap((row) => [row.issuer, row.owner]).filter((value): value is string => value != null)),
   ];
-  const statements: D1PreparedStatement[] = [];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "assets_done", "0")];
   for (const group of groups(assetNames, DICTIONARY_GROUP)) {
     statements.push(
       env.CORE_DB.prepare(
@@ -464,7 +502,7 @@ export async function backfillCoreIssuances(
   const addresses = [
     ...new Set(rows.flatMap((row) => [row.source, row.issuer]).filter((value): value is string => value != null)),
   ];
-  const statements: D1PreparedStatement[] = [];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "issuances_done", "0")];
   for (const group of groups(assets, DICTIONARY_GROUP)) {
     statements.push(
       env.CORE_DB.prepare(
@@ -600,7 +638,7 @@ export async function backfillCoreBalances(
       ...rows.map((row) => row.utxo_address).filter((value): value is string => value != null),
     ]),
   ];
-  const statements: D1PreparedStatement[] = [];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "balances_done", "0")];
   for (const group of groups(assets, DICTIONARY_GROUP)) {
     statements.push(
       env.CORE_DB.prepare(
@@ -705,4 +743,110 @@ export async function backfillCoreBalances(
     processed: rows.length,
     caught_up: rows.length < limit,
   };
+}
+
+/**
+ * Copy one send page by Counterparty's unique event identity. Transaction/message identities remain explicit,
+ * while repeated asset and address text is replaced with compact dictionary ids.
+ */
+export async function backfillCoreSends(
+  env: Pick<Env, "DB" | "CORE_DB">,
+  requestedRows = DEFAULT_ROWS,
+): Promise<CoreSendBackfillResult> {
+  const limit = Math.max(1, Math.min(Math.trunc(requestedRows), 100));
+  const cursor = Number((await coreState(env.CORE_DB, "sends_cursor")) ?? -1);
+  const source = await env.DB.prepare(
+    `SELECT event_index,tx_index,tx_hash,block_index,block_time,source,destination,source_address,
+            destination_address,asset,quantity,quantity_normalized,memo,memo_hex,send_type,status,fee_paid,msg_index
+       FROM sends WHERE event_index>? ORDER BY event_index LIMIT ?`,
+  )
+    .bind(cursor, limit)
+    .all<SourceSend>();
+  const rows = source.results;
+  if (rows.length === 0) {
+    await env.CORE_DB.prepare(
+      `INSERT INTO core_state(key,value) VALUES ('sends_done','1')
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).run();
+    return { table: "sends", cursor, processed: 0, caught_up: true };
+  }
+
+  const assets = [...new Set(rows.map((row) => row.asset).filter((value): value is string => value != null))];
+  const addresses = [
+    ...new Set(
+      rows
+        .flatMap((row) => [row.source, row.destination, row.source_address, row.destination_address])
+        .filter((value): value is string => value != null),
+    ),
+  ];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "sends_done", "0")];
+  for (const group of groups(assets, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO asset_dictionary(asset) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(asset) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(addresses, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO address_dictionary(address) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(address) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(rows, SEND_GROUP)) {
+    const values = group
+      .map(
+        () =>
+          `(?,?,?,?,?,` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,?,?,?,?,?,?)`,
+      )
+      .join(",");
+    const binds = group.flatMap((row) => [
+      row.event_index,
+      row.tx_index,
+      hashToBytes(row.tx_hash),
+      row.block_index,
+      row.block_time,
+      row.source,
+      row.destination,
+      row.source_address,
+      row.destination_address,
+      row.asset,
+      row.quantity,
+      row.quantity_normalized,
+      row.memo,
+      row.memo_hex,
+      row.send_type,
+      row.status,
+      row.fee_paid,
+      row.msg_index,
+    ]);
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO sends
+           (event_index,tx_index,tx_hash,block_index,block_time,source_id,destination_id,source_address_id,
+            destination_address_id,asset_id,quantity,quantity_normalized,memo,memo_hex,send_type,status,fee_paid,msg_index)
+         VALUES ${values}
+         ON CONFLICT(event_index) DO UPDATE SET
+           tx_index=excluded.tx_index,tx_hash=excluded.tx_hash,block_index=excluded.block_index,
+           block_time=excluded.block_time,source_id=excluded.source_id,destination_id=excluded.destination_id,
+           source_address_id=excluded.source_address_id,destination_address_id=excluded.destination_address_id,
+           asset_id=excluded.asset_id,quantity=excluded.quantity,quantity_normalized=excluded.quantity_normalized,
+           memo=excluded.memo,memo_hex=excluded.memo_hex,send_type=excluded.send_type,status=excluded.status,
+           fee_paid=excluded.fee_paid,msg_index=excluded.msg_index`,
+      ).bind(...binds),
+    );
+  }
+  const nextCursor = rows.at(-1)?.event_index ?? cursor;
+  statements.push(coreStateUpsert(env.CORE_DB, "sends_cursor", String(nextCursor)));
+  if (rows.length < limit) statements.push(coreStateUpsert(env.CORE_DB, "sends_done", "1"));
+  await env.CORE_DB.batch(statements);
+  return { table: "sends", cursor: nextCursor, processed: rows.length, caught_up: rows.length < limit };
 }
