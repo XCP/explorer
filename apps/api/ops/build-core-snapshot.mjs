@@ -86,6 +86,9 @@ for (const table of tables) {
   const exists = db.prepare(`SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?`).get(table.name);
   if (!exists) db.exec(table.sql);
   db.prepare(`INSERT INTO snapshot_state(table_name) VALUES(?) ON CONFLICT(table_name) DO NOTHING`).run(table.name);
+}
+
+for (const table of tables) {
   let state = db.prepare(`SELECT cursor,complete,rows_copied FROM snapshot_state WHERE table_name=?`).get(table.name);
   if (state.complete === 1) continue;
   const columns = db

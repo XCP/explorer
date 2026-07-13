@@ -34,12 +34,51 @@ if (!hasSchema) {
 }
 
 const transformDirectory = new URL("./core-transform/", import.meta.url);
-for (const file of readdirSync(transformDirectory)
-  .filter((name) => name.endsWith(".sql"))
-  .sort()) {
-  const started = performance.now();
-  db.exec(readFileSync(new URL(file, transformDirectory), "utf8"));
-  process.stdout.write(`${JSON.stringify({ transform: file, ms: Math.round(performance.now() - started) })}\n`);
+const quoteIdentifier = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
+const remappedSources = new Set(["credits", "debits", "indexer_state", "pr_edges"]);
+const count = (relation) => Number(db.prepare(`SELECT COUNT(*) count FROM ${relation}`).get().count);
+let directTables;
+let sourceCounts;
+let snapshotIncomplete;
+let hashMismatches;
+db.exec("BEGIN IMMEDIATE");
+try {
+  const snapshotTables = db
+    .prepare(`SELECT table_name FROM source.snapshot_state ORDER BY table_name`)
+    .all()
+    .map((row) => row.table_name);
+  directTables = snapshotTables.filter((table) => !remappedSources.has(table));
+  snapshotIncomplete = db
+    .prepare(`SELECT table_name FROM source.snapshot_state WHERE complete<>1 ORDER BY table_name`)
+    .all();
+  for (const file of readdirSync(transformDirectory)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()) {
+    const started = performance.now();
+    const sql = readFileSync(new URL(file, transformDirectory), "utf8")
+      .replace(/^\s*BEGIN IMMEDIATE;\s*/i, "")
+      .replace(/\s*COMMIT;\s*$/i, "");
+    db.exec(sql);
+    process.stdout.write(`${JSON.stringify({ transform: file, ms: Math.round(performance.now() - started) })}\n`);
+  }
+  sourceCounts = Object.fromEntries(directTables.map((table) => [table, count(`source.${quoteIdentifier(table)}`)]));
+  sourceCounts.ledger_events = count("source.credits") + count("source.debits");
+  sourceCounts.indexer_state = count("source.indexer_state");
+  sourceCounts.pr_edges = count("source.pr_edges");
+  hashMismatches = Number(
+    db
+      .prepare(
+        `SELECT COUNT(*) mismatches
+           FROM source.transactions s
+           JOIN transactions c ON c.tx_index=s.tx_index
+          WHERE lower(hex(c.tx_hash))<>lower(s.tx_hash)`,
+      )
+      .get().mismatches,
+  );
+  db.exec("COMMIT");
+} catch (error) {
+  db.exec("ROLLBACK");
+  throw error;
 }
 
 const indexStarted = performance.now();
@@ -76,27 +115,13 @@ const storage = {
     .slice(0, 20),
   top_objects: storageObjects.slice(0, 20),
 };
-const quoteIdentifier = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
-const snapshotTables = db
-  .prepare(`SELECT table_name FROM source.snapshot_state ORDER BY table_name`)
-  .all()
-  .map((row) => row.table_name);
-const remappedSources = new Set(["credits", "debits", "indexer_state", "pr_edges"]);
-const directTables = snapshotTables.filter((table) => !remappedSources.has(table));
-const count = (relation) => Number(db.prepare(`SELECT COUNT(*) count FROM ${relation}`).get().count);
 const counts = Object.fromEntries(directTables.map((table) => [table, count(quoteIdentifier(table))]));
-const sourceCounts = Object.fromEntries(
-  directTables.map((table) => [table, count(`source.${quoteIdentifier(table)}`)]),
-);
-sourceCounts.ledger_events = count("source.credits") + count("source.debits");
 counts.ledger_events = count("ledger_events");
-sourceCounts.indexer_state = count("source.indexer_state");
 counts.indexer_state = Number(
   db.prepare(`SELECT COUNT(*) count FROM core_state WHERE key LIKE 'source_indexer:%'`).get().count,
 );
-sourceCounts.pr_edges = count("source.pr_edges");
 counts.pr_edges = Number(db.prepare(`SELECT coalesce(sum(multiplicity),0) count FROM pr_edges`).get().count);
-const complete = incomplete.length === 0;
+const complete = snapshotIncomplete.length === 0;
 if (complete) {
   const mismatches = Object.keys(sourceCounts).filter((table) => Number(sourceCounts[table]) !== Number(counts[table]));
   if (mismatches.length > 0) {
@@ -106,15 +131,7 @@ if (complete) {
         .join(", ")}`,
     );
   }
-  const hashMismatch = db
-    .prepare(
-      `SELECT COUNT(*) mismatches
-         FROM source.transactions s
-         JOIN transactions c ON c.tx_index=s.tx_index
-        WHERE lower(hex(c.tx_hash))<>lower(s.tx_hash)`,
-    )
-    .get();
-  if (Number(hashMismatch.mismatches) !== 0) throw new Error("transaction hash decoding parity failed");
+  if (hashMismatches !== 0) throw new Error("transaction hash decoding parity failed");
 }
 process.stdout.write(
   `${JSON.stringify({ complete, bytes: allocatedBytes, storage, counts, source_counts: sourceCounts })}\n`,
