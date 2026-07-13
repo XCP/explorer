@@ -9,7 +9,10 @@ interface RecoveryOutputIdentity {
 
 type FetchOutspends = typeof fetchTransactionOutspends;
 const ELECTRS_BATCH_SIZE = 10;
-const ELECTRS_BATCH_INTERVAL_MS = 2_000;
+// The public Electrs allowance replenishes at roughly four requests/second.
+// Stay below that sustained rate so a long reconciliation does not create a
+// growing 429 retry queue after its initial burst allowance is consumed.
+const ELECTRS_BATCH_INTERVAL_MS = 3_000;
 
 export function verificationRetryDelay(attempts: number): number {
   return Math.min(6 * 60 * 60, 30 * 2 ** Math.min(10, Math.max(0, attempts - 1)));
