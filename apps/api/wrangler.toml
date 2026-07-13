@@ -1,6 +1,7 @@
 name = "xcp-api"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
+minify = true
 
 [limits]
 cpu_ms = 300000

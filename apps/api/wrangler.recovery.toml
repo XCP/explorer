@@ -1,6 +1,7 @@
 name = "xcp-recovery-bootstrap"
 main = "src/recovery/bootstrap-worker.ts"
 compatibility_date = "2025-01-01"
+minify = true
 workers_dev = true
 preview_urls = false
 
