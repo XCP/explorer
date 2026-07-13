@@ -46,7 +46,7 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
         `SELECT key,value FROM core_state
        WHERE key IN ('build_complete','import_complete','snapshot_consistent',
                      'snapshot_mode','snapshot_expected_tables','seed_event_index','last_event_index',
-                     'seed_reconciled','parity_verified','forward_write_ready')`,
+                     'seed_reconciled','parity_verified','forward_write_ready','read_surface_complete')`,
       ).all<StateRow>(),
       env.LEDGER_DB.prepare(
         `SELECT key,value FROM ledger_state
@@ -116,12 +116,14 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
       },
       parity_verified: core.parity_verified === "1",
       forward_write_ready: core.forward_write_ready === "1",
+      read_surface_complete: core.read_surface_complete === "1",
       read_ready:
         core.build_complete === "1" &&
         core.import_complete === "1" &&
         core.seed_reconciled === "1" &&
         core.parity_verified === "1" &&
-        core.forward_write_ready === "1",
+        core.forward_write_ready === "1" &&
+        core.read_surface_complete === "1",
     },
     ledger: {
       backfill_active: ledger.backfill_active === "1",

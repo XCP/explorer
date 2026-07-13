@@ -34,14 +34,15 @@ Credits and debits are represented by one compact `ledger_events` table in the f
 direction, ordering, quantities, calling functions, transaction references, and address history remain
 recoverable without compatibility tables.
 
-### Explorer projections and durable local facts: rebuild or preserve
+### Explorer projections and durable local facts: preserve
 
 `address_signals`, `asset_feed_counts`, `asset_signals`, `btc_signals`, `curated`, `exchange_top_assets`,
 `graph_baseline`, `graph_edges`, `graph_inflow`, `graph_node`, `graph_rank`, `graph_seed`,
 `network_stats_snapshot`, `pr_edges`, `prices`, `tags`, `trades`, `xcp_btc_daily`.
 
-Derived projections are rebuilt from compact canonical rows. Curated or independently sourced facts are copied
-with exact parity. They remain co-located when API queries require SQL joins with canonical data.
+These rows are copied into their compact representation with exact parity, including `tags` and `trades`.
+Their existing maintenance jobs remain useful for incremental updates and repair, but rebuilding is not part of
+the migration path. They remain co-located when API queries require SQL joins with canonical data.
 
 ### External enrichments: preserve and continue their independent crawlers
 
@@ -77,14 +78,13 @@ explorer captures. In particular:
 
 2. **Complete schema**
    - Define all canonical, projection, curated, and enrichment tables before loading production data.
-   - Rehearse migrations locally and verify every uniqueness/nullability assumption against Counterparty source
-     and live data.
+   - Verify every uniqueness/nullability assumption against Counterparty source and live data.
 
-3. **Local compact build**
+3. **Build the final compact artifact**
    - Use Cloudflare's native D1 SQL export for the canonical source snapshot and stream-import it into local
      SQLite. D1 blocks other requests while producing an export, so run this only in an announced maintenance
      window; the HTTP keyset copier is a non-blocking sizing baseline, not a consistency boundary.
-   - Transform locally with `INSERT ... SELECT` into the complete compact schema.
+   - Transform the complete snapshot with `INSERT ... SELECT` into the final import artifact.
    - Load base rows before secondary indexes, then build and analyze indexes once.
    - Measure the actual complete size, per-table/index size, and projected growth before provisioning the remote
      target. Do not extrapolate from a partial first wave.
@@ -105,7 +105,7 @@ explorer captures. In particular:
      for every canonical table.
    - Compare complete API responses at first, middle, and computed last pages.
    - Assert indexed base-table seeks before dictionary decoding for hot queries.
-   - Rehearse retries, interrupted catch-up, reorg rollback, and derived-projection rebuilds.
+   - Test retries, interrupted catch-up, reorg rollback, and projection maintenance.
 
 6. **Shadow and cutover**
    - Shadow production reads and record structural differences without affecting responses.

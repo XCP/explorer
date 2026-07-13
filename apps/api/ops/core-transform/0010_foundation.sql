@@ -207,7 +207,8 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;
 INSERT INTO core_state(key,value) VALUES
   ('seed_reconciled','0'),
   ('parity_verified','0'),
-  ('forward_write_ready','0')
+  ('forward_write_ready','0'),
+  ('read_surface_complete','0')
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;
 
 COMMIT;

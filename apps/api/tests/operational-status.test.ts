@@ -43,6 +43,7 @@ test("operational status aggregates durable frontiers without counting recovery 
     { key: "seed_reconciled", value: "1" },
     { key: "parity_verified", value: "1" },
     { key: "forward_write_ready", value: "1" },
+    { key: "read_surface_complete", value: "1" },
   ]);
   const ledger = new Database(() => [
     { key: "backfill_active", value: "1" },
@@ -81,6 +82,7 @@ test("operational status aggregates durable frontiers without counting recovery 
     replay: { seed_event_index: 100, last_event_index: 120, reconciled: true },
     parity_verified: true,
     forward_write_ready: true,
+    read_surface_complete: true,
     read_ready: true,
   });
   assert.deepEqual(result.ledger.debit, { cursor: "200", complete: false });

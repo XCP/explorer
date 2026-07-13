@@ -1,6 +1,6 @@
 import type { Env } from "#api/env";
 
-export type CoreTableDisposition = "compact" | "merge" | "rebuild" | "preserve" | "seed" | "discard" | "platform";
+export type CoreTableDisposition = "compact" | "merge" | "preserve" | "seed" | "discard" | "platform";
 
 export interface CoreTableManifestEntry {
   source: string;
@@ -14,9 +14,9 @@ export interface CoreTableManifestEntry {
  */
 export const CORE_TABLE_MANIFEST = [
   { source: "_cf_KV", target: null, disposition: "platform" },
-  { source: "address_signals", target: "address_signals", disposition: "rebuild" },
-  { source: "asset_feed_counts", target: "asset_feed_counts", disposition: "rebuild" },
-  { source: "asset_signals", target: "asset_signals", disposition: "rebuild" },
+  { source: "address_signals", target: "address_signals", disposition: "preserve" },
+  { source: "asset_feed_counts", target: "asset_feed_counts", disposition: "preserve" },
+  { source: "asset_signals", target: "asset_signals", disposition: "preserve" },
   { source: "assets", target: "assets", disposition: "compact" },
   { source: "balance_snapshots", target: "balance_snapshots", disposition: "compact" },
   { source: "balances", target: "balances", disposition: "compact" },
@@ -43,25 +43,25 @@ export const CORE_TABLE_MANIFEST = [
   { source: "emblem_sales", target: "emblem_sales", disposition: "preserve" },
   { source: "emblem_scam_sellers", target: "emblem_scam_sellers", disposition: "preserve" },
   { source: "emblem_vaults", target: "emblem_vaults", disposition: "preserve" },
-  { source: "exchange_top_assets", target: "exchange_top_assets", disposition: "rebuild" },
+  { source: "exchange_top_assets", target: "exchange_top_assets", disposition: "preserve" },
   { source: "fairminters", target: "fairminters", disposition: "compact" },
   { source: "fairmints", target: "fairmints", disposition: "compact" },
-  { source: "graph_baseline", target: "graph_baseline", disposition: "rebuild" },
-  { source: "graph_edges", target: "graph_edges", disposition: "rebuild" },
-  { source: "graph_inflow", target: "graph_inflow", disposition: "rebuild" },
-  { source: "graph_node", target: "graph_node", disposition: "rebuild" },
-  { source: "graph_rank", target: "graph_rank", disposition: "rebuild" },
-  { source: "graph_seed", target: "graph_seed", disposition: "rebuild" },
+  { source: "graph_baseline", target: "graph_baseline", disposition: "preserve" },
+  { source: "graph_edges", target: "graph_edges", disposition: "preserve" },
+  { source: "graph_inflow", target: "graph_inflow", disposition: "preserve" },
+  { source: "graph_node", target: "graph_node", disposition: "preserve" },
+  { source: "graph_rank", target: "graph_rank", disposition: "preserve" },
+  { source: "graph_seed", target: "graph_seed", disposition: "preserve" },
   { source: "indexer_state", target: "core_state", disposition: "seed" },
   { source: "issuances", target: "issuances", disposition: "compact" },
-  { source: "network_stats_snapshot", target: "network_stats_snapshot", disposition: "rebuild" },
+  { source: "network_stats_snapshot", target: "network_stats_snapshot", disposition: "preserve" },
   { source: "order_matches", target: "order_matches", disposition: "compact" },
   { source: "orders", target: "orders", disposition: "compact" },
   { source: "pool_liquidity", target: "pool_liquidity", disposition: "compact" },
   { source: "pool_matches", target: "pool_matches", disposition: "compact" },
   { source: "pools", target: "pools", disposition: "compact" },
-  { source: "pr_edges", target: "pr_edges", disposition: "rebuild" },
-  { source: "prices", target: "prices", disposition: "rebuild" },
+  { source: "pr_edges", target: "pr_edges", disposition: "preserve" },
+  { source: "prices", target: "prices", disposition: "preserve" },
   { source: "rps", target: "rps", disposition: "compact" },
   { source: "rps_matches", target: "rps_matches", disposition: "compact" },
   { source: "scarce_city_sales", target: "scarce_city_sales", disposition: "preserve" },
@@ -69,8 +69,8 @@ export const CORE_TABLE_MANIFEST = [
   { source: "sqlite_sequence", target: null, disposition: "platform" },
   { source: "sqlite_stat1", target: null, disposition: "platform" },
   { source: "sweeps", target: "sweeps", disposition: "compact" },
-  { source: "tags", target: "tags", disposition: "rebuild" },
-  { source: "trades", target: "trades", disposition: "rebuild" },
+  { source: "tags", target: "tags", disposition: "preserve" },
+  { source: "trades", target: "trades", disposition: "preserve" },
   { source: "transactions", target: "transactions", disposition: "compact" },
   { source: "xcp_btc_daily", target: "xcp_btc_daily", disposition: "preserve" },
 ] as const satisfies readonly CoreTableManifestEntry[];
