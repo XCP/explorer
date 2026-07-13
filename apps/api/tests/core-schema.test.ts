@@ -330,3 +330,14 @@ test("compact chain pages seek their base indexes before decoding", () => {
     true,
   );
 });
+
+test("latest compact prices seek the currency history", () => {
+  const db = fixture();
+  const plan = db
+    .prepare(`EXPLAIN QUERY PLAN SELECT usd,day FROM prices WHERE currency=? ORDER BY day DESC LIMIT 1`)
+    .all("XCP") as { detail: string }[];
+  assert.equal(
+    plan.some((row) => row.detail.includes("idx_prices_currency_day")),
+    true,
+  );
+});
