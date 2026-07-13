@@ -24,6 +24,7 @@ import { counterpartyJson } from "#api/integrations/counterparty";
 import { hashToBytes } from "#api/indexer/compact-codec";
 import { getIndexerStateStringArray } from "#api/indexer/state";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
+import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -37,6 +38,16 @@ async function getState(db: D1Database, k: string): Promise<string | null> {
   return (
     (await db.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(k).first<{ value: string }>())?.value ?? null
   );
+}
+
+async function compactWritesEnabled(db: D1Database): Promise<boolean> {
+  const required = ["build_complete", "snapshot_consistent", "import_complete", "forward_write_ready"];
+  const rows = await db
+    .prepare(`SELECT key,value FROM core_state WHERE key IN (?,?,?,?)`)
+    .bind(...required)
+    .all<{ key: string; value: string }>();
+  const state = Object.fromEntries(rows.results.map((row) => [row.key, row.value]));
+  return required.every((key) => state[key] === "1");
 }
 function setStateStmt(db: D1Database, k: string, v: string): D1PreparedStatement {
   return db
@@ -301,6 +312,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
   if (lock.meta.changes === 0) return { skipped: "locked" };
 
   try {
+    const writeCompact = await compactWritesEnabled(env.CORE_DB);
     let lastIdx = parseInt((await getState(env.DB, "last_event_index")) || "-1", 10);
     // Full re-index (cursor reset to -1): wipe ALL DERIVED STATE so it recomputes from scratch. The general
     // hazard (learned from the negative-balance bug): any derived store with a per-row high-water or a "done"
@@ -353,6 +365,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
         stmts: [],
         ledgerStmts: [],
         identities: createIdentitySet(),
+        compact: writeCompact ? { stmts: [], identities: createIdentitySet() } : null,
         balDelta: new Map(),
         maxBlock: lastBlock,
         supplyDirty: new Set(),
@@ -361,6 +374,20 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       await batchAll(env.DB, ctx.stmts);
       await batchAll(env.LEDGER_DB, [...dictionaryStatements(ctx.identities), ...ctx.ledgerStmts]);
       await applyBalances(env, ctx, followingWindow);
+      if (ctx.compact) {
+        await batchAll(env.CORE_DB, [
+          ...dictionaryStatements(ctx.compact.identities),
+          ...ctx.compact.stmts,
+          ...ctx.ledgerStmts,
+        ]);
+        await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
+        await env.CORE_DB.prepare(
+          `INSERT INTO core_state(key,value) VALUES('last_event_index',?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+        )
+          .bind(String(evs[evs.length - 1].event_index))
+          .run();
+      }
       if (ctx.supplyDirty.size > 0) await enqueueSupply(env.DB, [...ctx.supplyDirty]);
 
       lastIdx = evs[evs.length - 1].event_index;

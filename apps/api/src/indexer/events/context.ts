@@ -30,6 +30,13 @@ export interface Ctx {
     addresses: Set<string>;
     assets: Set<string>;
   };
+  compact: {
+    stmts: Stmt[];
+    identities: {
+      addresses: Set<string>;
+      assets: Set<string>;
+    };
+  } | null;
   balDelta: Map<
     string,
     {
