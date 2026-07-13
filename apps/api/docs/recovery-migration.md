@@ -61,3 +61,18 @@ The classifier therefore:
 5. Spent-state freshness and RBF attempt tracking pass live checks.
 6. The extension switches to the native routes.
 7. Only then remove the proxy, old route surface, binding, and compatibility code.
+
+## Stamp transaction protection
+
+Stamp protection is transaction-level and independent of recovery ownership classification. The bootstrap
+scans `issuances` in indexed `event_index` order and runs the existing description classifier against each
+issuance row. It does not join through the asset-level `stamp` tag: an asset can have several issuances, and a
+later ordinary reissuance must not be treated as the Stamp transaction merely because the asset remains tagged.
+Each match records the exact issuance event as provenance, including when multiple issuance events refer to the
+same transaction.
+
+Description classification is deliberately fail-safe for recovery, but it cannot establish Bitcoin Stamps'
+raw-transaction `keyburn` validity by itself. Before public cutover, compare the derived transaction set with a
+versioned export from the official Bitcoin Stamps index. Import official matches as an additional provenance
+source rather than replacing issuance provenance; investigate differences and keep the union protected by
+default. Neither source may bypass the separate Counterparty ownership proof required for recovery.
