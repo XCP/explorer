@@ -19,14 +19,20 @@ type NextFetchInit = RequestInit & { next?: { revalidate?: number } };
 // Production Server Components use the sibling Worker binding. Next dev/build falls back to the public
 // origin when the binding is absent or its local stub has nothing behind it.
 async function serverFetch(url: string, init: NextFetchInit): Promise<Response> {
-  try {
-    const binding = getCloudflareContext().env.API_WORKER;
-    if (binding) {
-      const response = await binding.fetch(url, { ...init, signal: AbortSignal.timeout(BINDING_TIMEOUT_MS) });
-      if (response.status < 500) return response;
+  // `next dev` exposes a placeholder service binding with nothing behind it.
+  // Calling it burns the full timeout (twice for metadata + page) and can turn
+  // an ordinary 404 into the error boundary. The real binding exists only in
+  // the deployed production Worker; development uses the public origin.
+  if (process.env.NODE_ENV === "production") {
+    try {
+      const binding = getCloudflareContext().env.API_WORKER;
+      if (binding) {
+        const response = await binding.fetch(url, { ...init, signal: AbortSignal.timeout(BINDING_TIMEOUT_MS) });
+        if (response.status < 500) return response;
+      }
+    } catch {
+      // Outside the OpenNext runtime, or a failed binding: use ordinary fetch below.
     }
-  } catch {
-    // Outside the OpenNext runtime, or a local binding stub: use ordinary fetch below.
   }
   return fetch(url, { ...init, signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS) });
 }
