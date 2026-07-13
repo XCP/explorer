@@ -273,8 +273,13 @@ export default {
           // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra
           // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
           await runScheduledJob("runSignalsStep", () => runSignalsStep(env, 2));
-          // Publish the expensive exchange depositor aggregate off the request path (~daily).
-          await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
+          // Publish the expensive exchange depositor aggregate off the request path (~daily). The first build
+          // scans historical sends, so do not compete with the one-time compact-ledger backfill.
+          const ledgerBackfill = await env.LEDGER_DB.prepare(
+            "SELECT value FROM ledger_state WHERE key='backfill_active'",
+          ).first<{ value: string }>();
+          if (ledgerBackfill?.value !== "1")
+            await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
           // Rebuild the polymorphic tags (categorical layer) for JUST the entities the cascade touched — the
           // dirty-scoped equivalent of buildTags (no 430k-row global DELETE+reinsert every tick).
           if (cascade?.dirty) {
