@@ -2,8 +2,19 @@
 import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
 import { one, q } from "#api/db";
 
-export const CORE_SENDS_BY_ADDRESS_SQL = `WITH page AS (
-  SELECT * FROM sends WHERE source_id=?1 OR destination_id=?1
+export const CORE_SENDS_BY_ADDRESS_SQL = `WITH candidates AS (
+  SELECT * FROM (
+    SELECT * FROM sends WHERE source_id=?1
+    ORDER BY block_index DESC,event_index DESC LIMIT (?2 + ?3)
+  )
+  UNION ALL
+  SELECT * FROM (
+    SELECT * FROM sends
+    WHERE destination_id=?1 AND (source_id IS NULL OR source_id<>?1)
+    ORDER BY block_index DESC,event_index DESC LIMIT (?2 + ?3)
+  )
+), page AS (
+  SELECT * FROM candidates
   ORDER BY block_index DESC,event_index DESC LIMIT ?2 OFFSET ?3
 )
 SELECT LOWER(HEX(page.tx_hash)) tx_hash,
