@@ -111,13 +111,17 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
       const value = m.series != null && m.card != null ? m.series * 1000 + m.card : null; // sort key: S1C1=1001, S2C1=2001…
       stmts.push(
         env.DB.prepare(
-          `INSERT OR REPLACE INTO tags (entity_type,entity_id,tag,source,value,meta) VALUES ('asset',?,?,'collection',?,?)`,
+          `INSERT INTO tags (entity_type,entity_id,tag,source,value,meta) VALUES ('asset',?,?,'collection',?,?)
+           ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET
+             source=excluded.source,value=excluded.value,meta=excluded.meta`,
         ).bind(m.name, tag, value, meta),
       );
       if (m.artist) {
         stmts.push(
           env.DB.prepare(
-            `INSERT OR REPLACE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'artist',?)`,
+            `INSERT INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'artist',?)
+             ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET
+               source=excluded.source,value=NULL,meta=excluded.meta`,
           ).bind(m.name, `artist-${m.artist.slug}`, JSON.stringify({ name: m.artist.name, slug: m.artist.slug })),
         );
       }

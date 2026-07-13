@@ -54,7 +54,10 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
       }
       if (rows.length) {
         const stmts = rows.map((r) =>
-          env.DB.prepare(`INSERT OR REPLACE INTO prices (day,currency,usd) VALUES (?,?,?)`).bind(
+          env.DB.prepare(
+            `INSERT INTO prices (day,currency,usd) VALUES (?,?,?)
+             ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd`,
+          ).bind(
             isoDay(r.time),
             cur,
             r.close,
@@ -83,11 +86,12 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     GROUP BY date(block_time,'unixepoch')`,
   ).run();
   await env.DB.prepare(
-    `INSERT OR REPLACE INTO prices (day,currency,usd)
+    `INSERT INTO prices (day,currency,usd)
     SELECT b.day,'XCP',
       (SELECT x.xcpbtc FROM xcp_btc_daily x WHERE x.day<=b.day ORDER BY x.day DESC LIMIT 1)*b.usd
     FROM prices b WHERE b.currency='BTC'
-      AND EXISTS (SELECT 1 FROM xcp_btc_daily x WHERE x.day<=b.day)`,
+      AND EXISTS (SELECT 1 FROM xcp_btc_daily x WHERE x.day<=b.day)
+    ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd`,
   ).run();
 
   const c = await env.DB.prepare(

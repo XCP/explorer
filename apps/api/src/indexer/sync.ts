@@ -274,7 +274,9 @@ async function applyBalances(env: Env, ctx: Ctx, snapshot: boolean): Promise<voi
       stmts.push((db) =>
         db
           .prepare(
-            `INSERT OR REPLACE INTO balance_snapshots (holder,asset,block_index,quantity,updated_event_index) VALUES (?,?,?,?,?)`,
+            `INSERT INTO balance_snapshots (holder,asset,block_index,quantity,updated_event_index) VALUES (?,?,?,?,?)
+             ON CONFLICT(holder,asset,block_index) DO UPDATE SET
+               quantity=excluded.quantity,updated_event_index=excluded.updated_event_index`,
           )
           .bind(k.holder, k.asset, k.block, raw, k.evIdx),
       );

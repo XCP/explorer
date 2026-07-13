@@ -9,7 +9,8 @@ const broadcast: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO broadcasts (tx_hash,block_index,block_time,source,timestamp,value,fee_fraction_int,text,locked,mime_type,status,btns,btns_op,btns_tick) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO broadcasts (tx_hash,block_index,block_time,source,timestamp,value,fee_fraction_int,text,locked,mime_type,status,btns,btns_op,btns_tick) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,timestamp=excluded.timestamp,value=excluded.value,fee_fraction_int=excluded.fee_fraction_int,text=excluded.text,locked=excluded.locked,mime_type=excluded.mime_type,status=excluded.status,btns=excluded.btns,btns_op=excluded.btns_op,btns_tick=excluded.btns_tick`,
       )
       .bind(
         p.tx_hash,

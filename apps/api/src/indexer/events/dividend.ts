@@ -7,7 +7,8 @@ const dividend: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO dividends (tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit,quantity_per_unit_normalized,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO dividends (tx_hash,block_index,block_time,source,asset,dividend_asset,quantity_per_unit,quantity_per_unit_normalized,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,asset=excluded.asset,dividend_asset=excluded.dividend_asset,quantity_per_unit=excluded.quantity_per_unit,quantity_per_unit_normalized=excluded.quantity_per_unit_normalized,fee_paid=excluded.fee_paid,status=excluded.status`,
       )
       .bind(
         p.tx_hash,

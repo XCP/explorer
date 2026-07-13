@@ -8,8 +8,9 @@ const open: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO orders (tx_hash,block_index,block_time,source,give_asset,give_quantity,give_remaining,get_asset,get_quantity,get_remaining,expiration,expire_index,fee_required,fee_required_remaining,fee_provided,fee_provided_remaining,status,closed_block_index)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+        `INSERT INTO orders (tx_hash,block_index,block_time,source,give_asset,give_quantity,give_remaining,get_asset,get_quantity,get_remaining,expiration,expire_index,fee_required,fee_required_remaining,fee_provided,fee_provided_remaining,status,closed_block_index)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,give_asset=excluded.give_asset,give_quantity=excluded.give_quantity,give_remaining=excluded.give_remaining,get_asset=excluded.get_asset,get_quantity=excluded.get_quantity,get_remaining=excluded.get_remaining,expiration=excluded.expiration,expire_index=excluded.expire_index,fee_required=excluded.fee_required,fee_required_remaining=excluded.fee_required_remaining,fee_provided=excluded.fee_provided,fee_provided_remaining=excluded.fee_provided_remaining,status=excluded.status,closed_block_index=excluded.closed_block_index`,
       )
       .bind(
         p.tx_hash,
@@ -82,7 +83,8 @@ const status: Handler = ({ ev, p, b, bt }, ctx) => {
     ctx.stmts.push((db) =>
       db
         .prepare(
-          `INSERT OR REPLACE INTO cancels (tx_hash,block_index,block_time,source,offer_hash,status) VALUES (?,?,?,?,?,?)`,
+          `INSERT INTO cancels (tx_hash,block_index,block_time,source,offer_hash,status) VALUES (?,?,?,?,?,?)
+           ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,offer_hash=excluded.offer_hash,status=excluded.status`,
         )
         .bind(p.tx_hash, b, bt, p.source ?? null, p.offer_hash ?? p.order_hash ?? null, p.status ?? "valid"),
     );
@@ -93,8 +95,9 @@ const match: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO order_matches (id,tx0_hash,tx1_hash,tx0_address,tx1_address,forward_asset,forward_quantity,backward_asset,backward_quantity,block_index,block_time,status,match_expire_index,fee_paid,tx0_index,tx1_index,tx0_block_index,tx1_block_index,tx0_expiration,tx1_expiration)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO order_matches (id,tx0_hash,tx1_hash,tx0_address,tx1_address,forward_asset,forward_quantity,backward_asset,backward_quantity,block_index,block_time,status,match_expire_index,fee_paid,tx0_index,tx1_index,tx0_block_index,tx1_block_index,tx0_expiration,tx1_expiration)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET tx0_hash=excluded.tx0_hash,tx1_hash=excluded.tx1_hash,tx0_address=excluded.tx0_address,tx1_address=excluded.tx1_address,forward_asset=excluded.forward_asset,forward_quantity=excluded.forward_quantity,backward_asset=excluded.backward_asset,backward_quantity=excluded.backward_quantity,block_index=excluded.block_index,block_time=excluded.block_time,status=excluded.status,match_expire_index=excluded.match_expire_index,fee_paid=excluded.fee_paid,tx0_index=excluded.tx0_index,tx1_index=excluded.tx1_index,tx0_block_index=excluded.tx0_block_index,tx1_block_index=excluded.tx1_block_index,tx0_expiration=excluded.tx0_expiration,tx1_expiration=excluded.tx1_expiration`,
       )
       .bind(
         p.id ?? `${p.tx0_hash}_${p.tx1_hash}`,

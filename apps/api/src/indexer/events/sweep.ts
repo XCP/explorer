@@ -7,7 +7,8 @@ const sweep: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO sweeps (tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO sweeps (tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,destination=excluded.destination,flags=excluded.flags,memo=excluded.memo,fee_paid=excluded.fee_paid,status=excluded.status`,
       )
       .bind(
         p.tx_hash,

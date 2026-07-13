@@ -6,7 +6,8 @@ const burn: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO burns (tx_hash,block_index,block_time,source,burned,burned_normalized,earned,earned_normalized,status) VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO burns (tx_hash,block_index,block_time,source,burned,burned_normalized,earned,earned_normalized,status) VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,burned=excluded.burned,burned_normalized=excluded.burned_normalized,earned=excluded.earned,earned_normalized=excluded.earned_normalized,status=excluded.status`,
       )
       .bind(
         p.tx_hash,

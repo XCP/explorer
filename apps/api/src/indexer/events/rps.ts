@@ -7,8 +7,9 @@ const openRps: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO rps (tx_hash,block_index,block_time,source,possible_moves,wager,move_random_hash,expiration,expire_index,status)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO rps (tx_hash,block_index,block_time,source,possible_moves,wager,move_random_hash,expiration,expire_index,status)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,possible_moves=excluded.possible_moves,wager=excluded.wager,move_random_hash=excluded.move_random_hash,expiration=excluded.expiration,expire_index=excluded.expire_index,status=excluded.status`,
       )
       .bind(
         p.tx_hash,
@@ -37,8 +38,9 @@ const rpsMatch: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO rps_matches (id,tx0_hash,tx0_address,tx1_hash,tx1_address,possible_moves,wager,block_index,block_time,status)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO rps_matches (id,tx0_hash,tx0_address,tx1_hash,tx1_address,possible_moves,wager,block_index,block_time,status)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET tx0_hash=excluded.tx0_hash,tx0_address=excluded.tx0_address,tx1_hash=excluded.tx1_hash,tx1_address=excluded.tx1_address,possible_moves=excluded.possible_moves,wager=excluded.wager,block_index=excluded.block_index,block_time=excluded.block_time,status=excluded.status`,
       )
       .bind(
         p.id ?? `${p.tx0_hash}_${p.tx1_hash}`,

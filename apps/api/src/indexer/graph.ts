@@ -179,7 +179,8 @@ async function applySeeds(env: Env): Promise<void> {
     .filter((p) => p.length)
     .map((part) =>
       env.DB.prepare(
-        `INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES ${part.map(() => "(?,?,?)").join(",")}`,
+        `INSERT INTO graph_seed (node,slot,s) VALUES ${part.map(() => "(?,?,?)").join(",")}
+         ON CONFLICT(node,slot) DO UPDATE SET s=excluded.s`,
       ).bind(...part.flat()),
     );
   for (const b of chunk(stmts, 20)) await env.DB.batch(b);

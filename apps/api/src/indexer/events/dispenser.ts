@@ -9,8 +9,9 @@ const open: Handler = ({ p, b, bt, div }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO dispensers (tx_hash,block_index,block_time,source,asset,give_quantity,give_quantity_normalized,escrow_quantity,give_remaining,give_remaining_normalized,satoshirate,satoshirate_normalized,status,oracle_address,dispense_count,closed_block_index,origin)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`,
+        `INSERT INTO dispensers (tx_hash,block_index,block_time,source,asset,give_quantity,give_quantity_normalized,escrow_quantity,give_remaining,give_remaining_normalized,satoshirate,satoshirate_normalized,status,oracle_address,dispense_count,closed_block_index,origin)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)
+     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,asset=excluded.asset,give_quantity=excluded.give_quantity,give_quantity_normalized=excluded.give_quantity_normalized,escrow_quantity=excluded.escrow_quantity,give_remaining=excluded.give_remaining,give_remaining_normalized=excluded.give_remaining_normalized,satoshirate=excluded.satoshirate,satoshirate_normalized=excluded.satoshirate_normalized,status=excluded.status,oracle_address=excluded.oracle_address,dispense_count=excluded.dispense_count,closed_block_index=excluded.closed_block_index,origin=excluded.origin`,
       )
       .bind(
         p.tx_hash,

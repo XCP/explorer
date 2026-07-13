@@ -7,8 +7,9 @@ const openBet: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO bets (tx_hash,block_index,block_time,source,feed_address,bet_type,deadline,wager_quantity,wager_remaining,counterwager_quantity,counterwager_remaining,target_value,leverage,expiration,expire_index,fee_fraction_int,status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO bets (tx_hash,block_index,block_time,source,feed_address,bet_type,deadline,wager_quantity,wager_remaining,counterwager_quantity,counterwager_remaining,target_value,leverage,expiration,expire_index,fee_fraction_int,status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,feed_address=excluded.feed_address,bet_type=excluded.bet_type,deadline=excluded.deadline,wager_quantity=excluded.wager_quantity,wager_remaining=excluded.wager_remaining,counterwager_quantity=excluded.counterwager_quantity,counterwager_remaining=excluded.counterwager_remaining,target_value=excluded.target_value,leverage=excluded.leverage,expiration=excluded.expiration,expire_index=excluded.expire_index,fee_fraction_int=excluded.fee_fraction_int,status=excluded.status`,
       )
       .bind(
         p.tx_hash,
@@ -56,8 +57,9 @@ const betMatch: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO bet_matches (id,tx0_hash,tx0_address,tx1_hash,tx1_address,feed_address,forward_quantity,backward_quantity,deadline,target_value,leverage,initial_value,block_index,block_time,status,tx0_bet_type,tx1_bet_type,fee_fraction_int,match_expire_index)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO bet_matches (id,tx0_hash,tx0_address,tx1_hash,tx1_address,feed_address,forward_quantity,backward_quantity,deadline,target_value,leverage,initial_value,block_index,block_time,status,tx0_bet_type,tx1_bet_type,fee_fraction_int,match_expire_index)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET tx0_hash=excluded.tx0_hash,tx0_address=excluded.tx0_address,tx1_hash=excluded.tx1_hash,tx1_address=excluded.tx1_address,feed_address=excluded.feed_address,forward_quantity=excluded.forward_quantity,backward_quantity=excluded.backward_quantity,deadline=excluded.deadline,target_value=excluded.target_value,leverage=excluded.leverage,initial_value=excluded.initial_value,block_index=excluded.block_index,block_time=excluded.block_time,status=excluded.status,tx0_bet_type=excluded.tx0_bet_type,tx1_bet_type=excluded.tx1_bet_type,fee_fraction_int=excluded.fee_fraction_int,match_expire_index=excluded.match_expire_index`,
       )
       .bind(
         p.id ?? `${p.tx0_hash}_${p.tx1_hash}`,
