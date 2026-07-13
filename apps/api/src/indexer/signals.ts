@@ -76,9 +76,6 @@ const INDEX_DDL = [
   // read-path query optimizations (verified via EXPLAIN QUERY PLAN):
   // top-holders: serve `WHERE asset=? ORDER BY CAST(quantity AS INTEGER) DESC` from the index (no temp sort).
   "CREATE INDEX IF NOT EXISTS idx_bal_asset_qty ON balances(asset, CAST(quantity AS INTEGER) DESC)",
-  // address connections: index the other side of order_matches so `tx0_address OR tx1_address` uses a
-  // multi-index OR instead of a full 216k-row scan on every address page.
-  "CREATE INDEX IF NOT EXISTS idx_om_addr1 ON order_matches(tx1_address, block_index DESC)",
 ];
 
 type Scope = "asset" | "address" | "global";

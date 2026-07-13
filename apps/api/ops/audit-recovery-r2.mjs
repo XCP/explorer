@@ -1,7 +1,7 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 
-const endpoint = process.env.RECOVERY_BOOTSTRAP_URL;
-const token = process.env.ADMIN_TOKEN;
+const endpoint = process.env.RECOVERY_BOOTSTRAP_URL ?? process.env.RECOVERY_API_URL;
+const token = process.env.ADMIN_TOKEN ?? process.env.RECOVERY_ADMIN_TOKEN;
 const checkpointPath = process.env.RECOVERY_R2_AUDIT_CHECKPOINT ?? "recovery-r2-audit.json";
 const limit = Number(process.env.RECOVERY_R2_AUDIT_PAGE_SIZE ?? 50);
 
