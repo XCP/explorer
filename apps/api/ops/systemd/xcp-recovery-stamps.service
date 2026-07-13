@@ -1,0 +1,14 @@
+[Unit]
+Description=XCP recovery Stamp protection bootstrap
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/xcp-recovery-bootstrap.env
+ExecStart=/usr/bin/node /tmp/bootstrap-stamp-protection.mjs
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target
