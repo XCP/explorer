@@ -17,6 +17,12 @@ interface IssuerCollection {
 
 const ISSUER_COLLECTIONS: IssuerCollection[] = [
   {
+    issuer: "bc1qv9zuv6ycly3gvnt2qrrw7ve9f3vlyjapmefrym",
+    tag: "corruptionaires",
+    name: "Corruptionaires",
+    site: "https://corruptionaires.neocities.org/",
+  },
+  {
     issuer: "1DPPDehtoLLjhXKHibfC3iJVSqwCooivUX",
     tag: "new-liberty-standard",
     name: "New Liberty Standard",
