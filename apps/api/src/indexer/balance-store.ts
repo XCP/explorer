@@ -64,8 +64,16 @@ export async function applyCompactBalanceDeltas(
   for (const key of keys) {
     const identity = `${key.holder} ${key.asset}`;
     const existing = current.get(identity);
-    if (existing && key.evIdx <= existing.eventIndex) continue;
-    const quantity = ((existing?.quantity ?? 0n) + key.delta).toString();
+    const eventHighWater = existing?.eventIndex ?? -1;
+    const changes = key.changes.filter((change) => change.evIdx > eventHighWater);
+    if (changes.length === 0) continue;
+    const latest = changes.reduce((left, right) => (right.evIdx > left.evIdx ? right : left));
+    const latestUtxoAddress = changes.reduce(
+      (value, change) => (change.evIdx >= value.evIdx && change.utxoAddr ? change : value),
+      { evIdx: -1, utxoAddr: null as string | null },
+    ).utxoAddr;
+    const delta = changes.reduce((sum, change) => sum + change.delta, 0n);
+    const quantity = ((existing?.quantity ?? 0n) + delta).toString();
     const normalized = normalize(quantity, key.divisible);
     if (key.htype === "address") {
       statements.push((target) =>
@@ -77,7 +85,7 @@ export async function applyCompactBalanceDeltas(
              ON CONFLICT DO UPDATE SET quantity=excluded.quantity,quantity_normalized=excluded.quantity_normalized,
                updated_block_index=excluded.updated_block_index,updated_event_index=excluded.updated_event_index`,
           )
-          .bind(quantity, normalized, key.block, key.evIdx, key.holder, key.asset),
+          .bind(quantity, normalized, latest.block, latest.evIdx, key.holder, key.asset),
       );
       if (snapshot) {
         statements.push((target) =>
@@ -88,7 +96,7 @@ export async function applyCompactBalanceDeltas(
                WHERE a.address=? AND s.asset=?
                ON CONFLICT DO UPDATE SET quantity=excluded.quantity,updated_event_index=excluded.updated_event_index`,
             )
-            .bind(key.block, quantity, key.evIdx, key.holder, key.asset),
+            .bind(latest.block, quantity, latest.evIdx, key.holder, key.asset),
         );
       }
     } else {
@@ -104,7 +112,7 @@ export async function applyCompactBalanceDeltas(
                updated_block_index=excluded.updated_block_index,updated_event_index=excluded.updated_event_index,
                utxo_address_id=coalesce(excluded.utxo_address_id,balances.utxo_address_id)`,
           )
-          .bind(utxo.txHash, utxo.vout, quantity, normalized, key.block, key.evIdx, key.utxoAddr, key.asset),
+          .bind(utxo.txHash, utxo.vout, quantity, normalized, latest.block, latest.evIdx, latestUtxoAddress, key.asset),
       );
       if (snapshot) {
         statements.push((target) =>
@@ -114,7 +122,7 @@ export async function applyCompactBalanceDeltas(
                SELECT ?,?,s.asset_id,?,?,? FROM asset_dictionary s WHERE s.asset=?
                ON CONFLICT DO UPDATE SET quantity=excluded.quantity,updated_event_index=excluded.updated_event_index`,
             )
-            .bind(utxo.txHash, utxo.vout, key.block, quantity, key.evIdx, key.asset),
+            .bind(utxo.txHash, utxo.vout, latest.block, quantity, latest.evIdx, key.asset),
         );
       }
     }

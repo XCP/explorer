@@ -48,6 +48,12 @@ export interface Ctx {
       block: number;
       evIdx: number;
       utxoAddr: string | null;
+      changes: {
+        delta: bigint;
+        block: number;
+        evIdx: number;
+        utxoAddr: string | null;
+      }[];
     }
   >;
   maxBlock: number;
@@ -110,8 +116,21 @@ export function addDelta(
   const e = ctx.balDelta.get(key);
   if (e) {
     e.delta += delta;
+    e.changes.push({ delta, block, evIdx, utxoAddr });
     if (block > e.block) e.block = block;
     if (evIdx > e.evIdx) e.evIdx = evIdx;
     if (utxoAddr) e.utxoAddr = utxoAddr;
-  } else ctx.balDelta.set(key, { holder, asset, htype, delta, divisible, block, evIdx, utxoAddr });
+  } else {
+    ctx.balDelta.set(key, {
+      holder,
+      asset,
+      htype,
+      delta,
+      divisible,
+      block,
+      evIdx,
+      utxoAddr,
+      changes: [{ delta, block, evIdx, utxoAddr }],
+    });
+  }
 }

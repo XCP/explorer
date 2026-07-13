@@ -50,6 +50,11 @@ async function get(path) {
 }
 
 const schema = await get("/admin/core-snapshot/schema");
+const schemaTableNames = new Set(schema.tables.map((table) => table.name));
+const unknownTables = [...tableFilter].filter((table) => !schemaTableNames.has(table));
+if (unknownTables.length > 0) {
+  throw new Error(`CORE_SNAPSHOT_TABLES contains unknown tables: ${unknownTables.join(", ")}`);
+}
 const tables = schema.tables.filter((table) => tableFilter.size === 0 || tableFilter.has(table.name));
 const db = new DatabaseSync(output);
 db.exec(`
@@ -73,6 +78,11 @@ const stateColumns = new Set(
 if (!stateColumns.has("high_water")) {
   db.exec(`ALTER TABLE snapshot_state ADD COLUMN high_water INTEGER NOT NULL DEFAULT 0`);
 }
+const existingStateCount = Number(db.prepare(`SELECT COUNT(*) count FROM snapshot_state`).get().count);
+if (tableFilter.size > 0 && existingStateCount === 0) {
+  db.close();
+  throw new Error("CORE_SNAPSHOT_TABLES is only valid when resuming an initialized full snapshot");
+}
 db.prepare(
   `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_mode','http_live_baseline')
   ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
@@ -83,8 +93,8 @@ db.prepare(
 ).run();
 db.prepare(
   `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_expected_tables',?)
-  ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-).run(String(tables.length));
+  ON CONFLICT(key) DO NOTHING`,
+).run(String(schema.tables.length));
 for (const [key, value] of Object.entries(schema.source_state)) {
   db.prepare(`INSERT INTO snapshot_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`).run(
     `source_${key}`,
@@ -93,6 +103,13 @@ for (const [key, value] of Object.entries(schema.source_state)) {
 }
 
 for (const table of tables) {
+  if (tableFilter.size > 0) {
+    const initialized = db.prepare(`SELECT 1 FROM snapshot_state WHERE table_name=?`).get(table.name);
+    if (!initialized) {
+      db.close();
+      throw new Error(`filtered resume table is absent from the initialized manifest: ${table.name}`);
+    }
+  }
   const exists = db.prepare(`SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?`).get(table.name);
   if (!exists) db.exec(table.sql);
   db.prepare(`INSERT INTO snapshot_state(table_name) VALUES(?) ON CONFLICT(table_name) DO NOTHING`).run(table.name);

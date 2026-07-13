@@ -201,6 +201,30 @@ test("compact foundational writes preserve identities and converge on replay", a
   assert.equal(snapshot.count, 2);
 });
 
+test("compact balance catch-up applies only events above an imported row high-water", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`
+    INSERT INTO address_dictionary(address) VALUES ('alice');
+    INSERT INTO asset_dictionary(asset) VALUES ('RARE');
+    INSERT INTO balances(address_id,asset_id,quantity,updated_block_index,updated_event_index)
+    SELECT a.address_id,s.asset_id,'10',100,4
+    FROM address_dictionary a,asset_dictionary s
+    WHERE a.address='alice' AND s.asset='RARE';
+  `);
+  const ctx = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "5" }, 3), ctx);
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "7" }, 5), ctx);
+
+  await applyCompactBalanceDeltas(d1(database), ctx.balDelta, false);
+
+  const balance = database.prepare(`SELECT quantity,updated_event_index FROM balances`).get() as {
+    quantity: string;
+    updated_event_index: number;
+  };
+  assert.deepEqual({ ...balance }, { quantity: "17", updated_event_index: 5 });
+});
+
 test("compact asset creation, issuances, and MPMA sends preserve canonical identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
