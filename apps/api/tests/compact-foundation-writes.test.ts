@@ -831,3 +831,169 @@ test("compact fairminter lifecycle preserves campaign and mint transaction ident
     },
   );
 });
+
+test("compact pool lifecycle preserves pair, swap, and liquidity identities", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const depositHash = "91".repeat(32);
+  const matchHash = "92".repeat(32);
+  const withdrawalHash = "93".repeat(32);
+  const ctx = context();
+
+  dispatch(event("NEW_TRANSACTION", { tx_index: 60, tx_hash: depositHash, source: "maker" }, 60), ctx);
+  dispatch(
+    event(
+      "OPEN_POOL",
+      {
+        tx_index: 60,
+        tx_hash: depositHash,
+        source: "maker",
+        asset_a: "RARE",
+        asset_b: "XCP",
+        lp_asset: "A123",
+        reserve_a: "1000",
+        reserve_b: "2000",
+      },
+      61,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "NEW_POOL_DEPOSIT",
+      {
+        tx_index: 60,
+        tx_hash: depositHash,
+        source: "maker",
+        asset_a: "RARE",
+        asset_b: "XCP",
+        quantity_a: "1000",
+        quantity_b: "2000",
+        quantity_minted: "1400",
+        status: "valid",
+      },
+      62,
+    ),
+    ctx,
+  );
+  dispatch(event("POOL_UPDATE", { asset_a: "RARE", asset_b: "XCP", reserve_a: "900", reserve_b: "2200" }, 63), ctx);
+  dispatch(event("NEW_TRANSACTION", { tx_index: 61, tx_hash: matchHash, source: "trader" }, 64), ctx);
+  dispatch(
+    event(
+      "POOL_MATCH",
+      {
+        tx_index: 61,
+        tx_hash: matchHash,
+        order_tx_hash: matchHash,
+        source: "trader",
+        asset_a: "RARE",
+        asset_b: "XCP",
+        forward_asset: "RARE",
+        forward_quantity: "100",
+        backward_asset: "XCP",
+        backward_quantity: "200",
+        fee_quantity: "1",
+        fee_bps: 50,
+        status: "valid",
+      },
+      65,
+    ),
+    ctx,
+  );
+  dispatch(event("NEW_TRANSACTION", { tx_index: 62, tx_hash: withdrawalHash, source: "maker" }, 66), ctx);
+  dispatch(
+    event(
+      "NEW_POOL_WITHDRAWAL",
+      {
+        tx_index: 62,
+        tx_hash: withdrawalHash,
+        source: "maker",
+        asset_a: "RARE",
+        asset_b: "XCP",
+        quantity_a: "90",
+        quantity_b: "220",
+        quantity_destroyed: "140",
+        status: "valid",
+      },
+      67,
+    ),
+    ctx,
+  );
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  const pool = database
+    .prepare(
+      `SELECT a.asset asset_a,b.asset asset_b,p.lp_asset,p.pair,p.reserve_a,p.reserve_b,p.status
+       FROM pools p
+       JOIN asset_dictionary a ON a.asset_id=p.asset_a_id
+       JOIN asset_dictionary b ON b.asset_id=p.asset_b_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...pool },
+    {
+      asset_a: "RARE",
+      asset_b: "XCP",
+      lp_asset: "A123",
+      pair: "RARE_XCP",
+      reserve_a: "900",
+      reserve_b: "2200",
+      status: "open",
+    },
+  );
+  const swap = database
+    .prepare(
+      `SELECT p.event_index,p.tx_index,p.order_tx_index,s.address source,f.asset forward_asset,
+              b.asset backward_asset,p.forward_quantity,p.backward_quantity,p.fee_quantity,p.fee_bps
+       FROM pool_matches p
+       JOIN address_dictionary s ON s.address_id=p.source_id
+       JOIN asset_dictionary f ON f.asset_id=p.forward_asset_id
+       JOIN asset_dictionary b ON b.asset_id=p.backward_asset_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...swap },
+    {
+      event_index: 65,
+      tx_index: 61,
+      order_tx_index: 61,
+      source: "trader",
+      forward_asset: "RARE",
+      backward_asset: "XCP",
+      forward_quantity: "100",
+      backward_quantity: "200",
+      fee_quantity: "1",
+      fee_bps: 50,
+    },
+  );
+  const liquidity = database
+    .prepare(
+      `SELECT event_index,tx_index,kind,quantity_a,quantity_b,quantity_minted,quantity_destroyed FROM pool_liquidity ORDER BY event_index`,
+    )
+    .all() as Record<string, unknown>[];
+  assert.deepEqual(
+    liquidity.map((row) => ({ ...row })),
+    [
+      {
+        event_index: 62,
+        tx_index: 60,
+        kind: "deposit",
+        quantity_a: "1000",
+        quantity_b: "2000",
+        quantity_minted: "1400",
+        quantity_destroyed: null,
+      },
+      {
+        event_index: 67,
+        tx_index: 62,
+        kind: "withdrawal",
+        quantity_a: "90",
+        quantity_b: "220",
+        quantity_minted: null,
+        quantity_destroyed: "140",
+      },
+    ],
+  );
+});
