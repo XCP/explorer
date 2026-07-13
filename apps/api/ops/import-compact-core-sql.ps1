@@ -60,8 +60,10 @@ if (Test-Path -LiteralPath $statePath) {
     throw "import checkpoint does not match this database and manifest: $statePath"
   }
 } else {
-  $rows = @(Read-RemoteRows "SELECT COUNT(*) AS state_rows FROM core_state")
-  if ([int64]$rows[0].state_rows -ne 0) { throw "target core database is not empty" }
+  $rows = @(Read-RemoteRows "SELECT EXISTS(SELECT 1 FROM address_dictionary)+EXISTS(SELECT 1 FROM core_state) AS imported")
+  if ([int64]$rows[0].imported -ne 0 -and $env:CORE_IMPORT_ALLOW_UPSERT -ne "1") {
+    throw "target core database is not empty; set CORE_IMPORT_ALLOW_UPSERT=1 only for a convergent retry"
+  }
   $state = [pscustomobject]@{ database = $database; manifest_sha256 = $manifestHash; completed = @() }
   $state | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $statePath -Encoding UTF8
 }

@@ -141,8 +141,10 @@ if (existsSync(statePath)) {
     throw new Error(`import checkpoint does not match this database and manifest: ${statePath}`);
   }
 } else {
-  const rows = await remoteRows("SELECT COUNT(*) AS state_rows FROM core_state");
-  if (Number(rows[0]?.state_rows) !== 0) {
+  const rows = await remoteRows(
+    "SELECT EXISTS(SELECT 1 FROM address_dictionary)+EXISTS(SELECT 1 FROM core_state) AS imported",
+  );
+  if (Number(rows[0]?.imported) !== 0 && process.env.CORE_IMPORT_ALLOW_UPSERT !== "1") {
     throw new Error("target core database is not empty; use a fresh migrated database or the matching checkpoint");
   }
   state = { database, manifest_sha256: manifestSha256, completed: [] };
