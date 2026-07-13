@@ -2,9 +2,8 @@ import Link from "next/link";
 import type { Route } from "next";
 import { SyncStatus } from "@/components/chrome/sync-status";
 
-// V2-lab footer: a brand/about column, then the four link columns (Explore / Discover / Ecosystem /
-// Data), then the brand row with the live sync line. Stays a server component; SyncStatus is the
-// only client island.
+// Brand/about column, four navigation columns, and a live sync line. The footer stays server-rendered;
+// SyncStatus is its only client island.
 type FooterLink = [label: string, href: Route | `https://${string}`];
 
 const EXPLORE: FooterLink[] = [
@@ -31,6 +30,7 @@ const ECOSYSTEM: FooterLink[] = [
 ];
 const DATA: FooterLink[] = [
   ["API", "https://xcp-api.me-bbe.workers.dev"],
+  ["IMG CDN", "https://cdn.xcp.io"],
   ["GitHub repo", "https://github.com/XCP/explorer"],
 ];
 
