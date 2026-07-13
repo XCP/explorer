@@ -31,10 +31,12 @@ class Statement {
 
 class FakeRecoveryDb {
   readReady = false;
+  stampProtectionReady = false;
   imports: Array<{ completed: boolean }> = [];
   uncheckedOutputs = 0;
   outputs: Row[] = [];
   pendingAttempts = 0;
+  protectedTxids = new Set<string>();
   importRows = new Map<string, { cursor: number; rowsSeen: number; completed: boolean }>();
   receipts = new Map<
     string,
@@ -55,7 +57,10 @@ class FakeRecoveryDb {
     );
   }
   first(sql: string, values: unknown[]): Row | null {
-    if (sql.includes("FROM recovery_state")) return this.readReady ? { value: "1" } : null;
+    if (sql.includes("FROM recovery_state")) {
+      if (sql.includes("stamp_protection_ready")) return this.stampProtectionReady ? { value: "1" } : null;
+      return this.readReady ? { value: "1" } : null;
+    }
     if (sql.includes("COUNT(*) total") && sql.includes("recovery_imports"))
       return {
         total: this.imports.length,
@@ -64,9 +69,17 @@ class FakeRecoveryDb {
     if (sql.includes("chain_checked_at IS NULL")) return { count: this.uncheckedOutputs };
     if (sql.includes("COUNT(*) output_count")) {
       const address = values[0];
-      const matching = this.outputs.filter(
-        (row) => row.recovery_address === address && row.classification === "recoverable",
-      );
+      const protectedOnly = sql.includes("AND EXISTS (SELECT 1 FROM recovery_protected_transactions");
+      const excludesProtected = sql.includes("AND NOT EXISTS (SELECT 1 FROM recovery_protected_transactions");
+      const matching = this.outputs.filter((row) => {
+        const protectedStamp = this.protectedTxids.has(String(row.txid));
+        return (
+          row.recovery_address === address &&
+          row.classification === "recoverable" &&
+          (!protectedOnly || protectedStamp) &&
+          (!excludesProtected || !protectedStamp)
+        );
+      });
       return {
         output_count: matching.length,
         value_sats: matching.reduce((sum, row) => sum + Number(row.value_sats), 0),
@@ -91,7 +104,13 @@ class FakeRecoveryDb {
     if (sql.includes("FROM recovery_outputs WHERE recovery_address")) {
       const [address, limit, offset] = values as [string, number, number];
       return this.outputs
-        .filter((row) => row.recovery_address === address && row.classification === "recoverable")
+        .filter(
+          (row) =>
+            row.recovery_address === address &&
+            row.classification === "recoverable" &&
+            (!sql.includes("AND NOT EXISTS (SELECT 1 FROM recovery_protected_transactions") ||
+              !this.protectedTxids.has(String(row.txid))),
+        )
         .sort((a, b) => Number(b.value_sats) - Number(a.value_sats) || String(a.txid).localeCompare(String(b.txid)))
         .slice(offset, offset + limit);
     }
@@ -99,6 +118,7 @@ class FakeRecoveryDb {
   }
   run(sql: string, values: unknown[] = []) {
     if (sql.includes("recovery_state") && sql.includes("read_ready")) this.readReady = true;
+    if (sql.includes("recovery_state") && sql.includes("stamp_protection_ready")) this.stampProtectionReady = true;
     if (sql.includes("INSERT INTO recovery_imports")) {
       const [id, cursor] = values as [string, number];
       if (!this.importRows.has(id)) this.importRows.set(id, { cursor, rowsSeen: 0, completed: false });
@@ -187,6 +207,7 @@ test("finalization refuses absent, incomplete, and unchecked imports before open
     total_imports: 2,
     completed_imports: 1,
     unchecked_outputs: 3,
+    stamp_protection_ready: false,
   });
   assert.equal(db.readReady, false);
 });
@@ -196,6 +217,7 @@ test("finalization opens reads only after every import and output is complete", 
   app.route("/", recoveryAdmin);
   const db = new FakeRecoveryDb();
   db.imports = [{ completed: true }, { completed: true }];
+  db.stampProtectionReady = true;
 
   const response = await app.request("/admin/recovery/finalize", { method: "POST" }, env(db));
   assert.equal(response.status, 200);
@@ -275,4 +297,46 @@ test("recovery output pagination supports direct navigation to the final page", 
   assert.equal(body.outputs[0].value_sats, 100);
   assert.equal(Object.keys(body.transactions).length, 1);
   assert.deepEqual(body.missing_transactions, []);
+});
+
+test("Stamp transaction outputs are excluded by default and require explicit inclusion", async () => {
+  const app = new Hono<{ Bindings: Env }>();
+  app.route("/", recoveryRead);
+  const db = new FakeRecoveryDb();
+  db.readReady = true;
+  const address = "1BitcoinEaterAddressDontSendf59kuE";
+  const safeTxid = "1".repeat(64);
+  const protectedTxid = "2".repeat(64);
+  db.outputs = [safeTxid, protectedTxid].map((txid, index) => ({
+    txid,
+    vout: 0,
+    value_sats: (index + 1) * 100,
+    script_pubkey_hex: "51",
+    layout: "historical-1-of-2",
+    recovery_key_position: 0,
+    classification: "recoverable",
+    recovery_address: address,
+    block_height: 100,
+    verified_at: 1,
+  }));
+  db.protectedTxids.add(protectedTxid);
+  const bindings = env(db, new Map(db.outputs.map((row) => [`transactions/${row.txid}.hex`, "raw"])));
+
+  let response = await app.request(`/addresses/${address}/recovery`, undefined, bindings);
+  let body = (await response.json()) as { summary: Row; protection: Row; outputs: Row[] };
+  assert.equal(body.summary.total_outputs, 1);
+  assert.deepEqual(
+    body.outputs.map((row) => row.txid),
+    [safeTxid],
+  );
+  assert.deepEqual(body.protection, {
+    protected_stamp_outputs: 1,
+    protected_stamp_value_sats: 200,
+    included: false,
+  });
+
+  response = await app.request(`/addresses/${address}/recovery?include_protected_stamps=true`, undefined, bindings);
+  body = (await response.json()) as { summary: Row; protection: Row; outputs: Row[] };
+  assert.equal(body.summary.total_outputs, 2);
+  assert.equal(body.protection.included, true);
 });

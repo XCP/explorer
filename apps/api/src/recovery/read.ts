@@ -60,16 +60,22 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
   const page = boundedInteger(c.req.query("page"), { defaultValue: 1, min: 1 });
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 420, min: 1, max: 420 });
+  const includeProtectedStamps = c.req.query("include_protected_stamps") === "true";
   const offset = (page - 1) * limit;
   if (!Number.isSafeInteger(offset)) return c.json({ error: "page is too large" }, 400);
 
   const db = c.env.RECOVERY_DB as unknown as { withSession?: (mode?: string) => D1Database };
   const session = typeof db.withSession === "function" ? db.withSession("first-unconstrained") : c.env.RECOVERY_DB;
-  const [totals, outputResult, pending] = await Promise.all([
+  const protectionFilter = includeProtectedStamps
+    ? ""
+    : `AND NOT EXISTS (SELECT 1 FROM recovery_protected_transactions p
+                        WHERE p.txid=recovery_outputs.txid AND p.protection_kind='stamp')`;
+  const [totals, outputResult, pending, protectedTotals] = await Promise.all([
     session
       .prepare(
         `SELECT COUNT(*) output_count, COALESCE(SUM(value_sats),0) value_sats FROM recovery_outputs
         WHERE recovery_address=? AND classification='recoverable'
+          ${protectionFilter}
           AND NOT EXISTS (
             SELECT 1 FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
              WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout AND a.status='pending'
@@ -82,6 +88,7 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
         `SELECT txid,vout,value_sats,script_pubkey_hex,layout,recovery_key_position,
               classification,block_height,verified_at
          FROM recovery_outputs WHERE recovery_address=? AND classification='recoverable'
+          ${protectionFilter}
           AND NOT EXISTS (
             SELECT 1 FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
              WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout AND a.status='pending'
@@ -94,6 +101,15 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
       .prepare(`SELECT COUNT(*) attempts FROM recovery_attempts WHERE address=? AND status='pending'`)
       .bind(address)
       .first<{ attempts: number }>(),
+    session
+      .prepare(
+        `SELECT COUNT(*) output_count,COALESCE(SUM(value_sats),0) value_sats
+           FROM recovery_outputs WHERE recovery_address=? AND classification='recoverable'
+            AND EXISTS (SELECT 1 FROM recovery_protected_transactions p
+                         WHERE p.txid=recovery_outputs.txid AND p.protection_kind='stamp')`,
+      )
+      .bind(address)
+      .first<{ output_count: number; value_sats: number }>(),
   ]);
 
   const uniqueTxids = [...new Set(outputResult.results.map((row) => row.txid))];
@@ -123,6 +139,11 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
       exemption_sats: threshold,
     },
     pending_attempts: Number(pending?.attempts ?? 0),
+    protection: {
+      protected_stamp_outputs: Number(protectedTotals?.output_count ?? 0),
+      protected_stamp_value_sats: Number(protectedTotals?.value_sats ?? 0),
+      included: includeProtectedStamps,
+    },
     outputs: outputResult.results,
     transactions: Object.fromEntries(transactionEntries),
     missing_transactions: transactionEntries.filter(([, raw]) => raw == null).map(([txid]) => txid),
@@ -134,6 +155,7 @@ interface RecoveryReportBody {
   network_fee_sats?: number;
   service_fee_sats?: number;
   output_value_sats?: number;
+  include_protected_stamps?: boolean;
 }
 
 recoveryRead.post("/addresses/:address/recoveries", async (c) => {
@@ -161,6 +183,8 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
 
   const lookupStatement = c.env.RECOVERY_DB.prepare(
     `SELECT recovery_address,classification,value_sats,
+            EXISTS(SELECT 1 FROM recovery_protected_transactions p
+                    WHERE p.txid=recovery_outputs.txid AND p.protection_kind='stamp') protected_stamp,
             (SELECT a.txid FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
               WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout
                 AND a.status='pending' LIMIT 1) pending_txid
@@ -179,6 +203,7 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
           classification?: string;
           value_sats?: number;
           pending_txid?: string | null;
+          protected_stamp?: number;
         }
       | undefined;
     if (row?.recovery_address !== address || row.classification !== "recoverable")
@@ -188,6 +213,8 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
         },
         409,
       );
+    if (Number(row.protected_stamp) === 1 && body.include_protected_stamps !== true)
+      return c.json({ error: "input belongs to a protected Stamp transaction; explicit opt-in is required" }, 409);
     if (row.pending_txid && row.pending_txid !== transaction.txid)
       return c.json({ error: `input is already pending in recovery ${row.pending_txid}` }, 409);
   }

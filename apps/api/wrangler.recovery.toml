@@ -9,6 +9,12 @@ preview_urls = false
 cpu_ms = 300000
 
 [[d1_databases]]
+binding = "DB"
+database_name = "xcpio"
+database_id = "0aa317ef-600f-4908-b7e3-fb8df8c71104"
+migrations_dir = "migrations"
+
+[[d1_databases]]
 binding = "RECOVERY_DB"
 database_name = "xcpio-btc"
 database_id = "9bc7626d-df95-49d2-a118-274cd1b34b2f"
