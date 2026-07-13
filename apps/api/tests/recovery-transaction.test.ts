@@ -14,6 +14,8 @@ test("recovery transaction parsing exposes canonical txid, first input, and exac
 
   assert.equal(parsed.txid, transaction.id);
   assert.equal(parsed.firstInputTxid, previousTxid);
+  assert.deepEqual(parsed.inputs, [{ txid: previousTxid, vout: 7 }]);
+  assert.deepEqual(parsed.outputs, [{ valueSats: 1_000n, scriptPubkeyHex: script }]);
   assert.deepEqual(parsed.output(0), { valueSats: 1_000n, scriptPubkeyHex: script });
   assert.equal(parsed.output(1), null);
 });
