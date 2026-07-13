@@ -71,6 +71,10 @@ db.prepare(
   `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_consistent','0')
   ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 ).run();
+db.prepare(
+  `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_expected_tables',?)
+  ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+).run(String(tables.length));
 for (const [key, value] of Object.entries(schema.source_state)) {
   db.prepare(`INSERT INTO snapshot_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`).run(
     `source_${key}`,
@@ -89,6 +93,7 @@ for (const table of tables) {
     .all()
     .filter((column) => column.hidden === 0)
     .map((column) => column.name);
+  const rowsPerPage = Math.min(pageRows, Math.max(100, Math.floor(20_000 / Math.max(1, columns.length))));
   const quoted = columns.map((column) => `"${column.replaceAll('"', '""')}"`).join(",");
   const placeholders = columns.map(() => "?").join(",");
   const insert = db.prepare(`INSERT INTO "${table.name}" (${quoted}) VALUES (${placeholders})`);
@@ -96,7 +101,7 @@ for (const table of tables) {
   let pages = 0;
   for (;;) {
     const page = await get(
-      `/admin/core-snapshot/${encodeURIComponent(table.name)}?after=${state.cursor}&rows=${pageRows}`,
+      `/admin/core-snapshot/${encodeURIComponent(table.name)}?after=${state.cursor}&rows=${rowsPerPage}`,
     );
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -120,7 +125,7 @@ for (const table of tables) {
     if (page.caught_up) break;
     if (maxPages > 0 && pages >= maxPages) break;
     if (pageDelayMs > 0) await sleep(pageDelayMs);
-    if (state.rows_copied % (pageRows * 100) === 0) {
+    if (state.rows_copied % (rowsPerPage * 100) === 0) {
       process.stdout.write(`${JSON.stringify({ table: table.name, rows: state.rows_copied, cursor: state.cursor })}\n`);
     }
   }
