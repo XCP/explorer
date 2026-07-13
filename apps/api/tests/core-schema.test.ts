@@ -12,7 +12,7 @@ import {
   CORE_TRANSACTIONS_BY_BLOCK_SQL,
   CORE_TRANSACTION_BY_HASH_SQL,
 } from "#api/queries/core";
-import { CORE_TABLE_MANIFEST, GENERATED_CORE_TABLES } from "#api/indexer/core-manifest";
+import { CORE_COLUMN_RULES, CORE_TABLE_MANIFEST, GENERATED_CORE_TABLES } from "#api/indexer/core-manifest";
 
 const CORE_DDL = [
   "migrations-core/0001_core.sql",
@@ -68,6 +68,24 @@ test("complete compact DDL contains every required target relation", () => {
     [...required].filter((table) => !ddlTables.has(table)),
     [],
   );
+});
+
+test("every exceptional source-column representation resolves to compact columns", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(CORE_DDL);
+  for (const [table, columns] of Object.entries(CORE_COLUMN_RULES)) {
+    const target = CORE_TABLE_MANIFEST.find((entry) => entry.source === table)?.target;
+    assert.ok(target, `${table} has no target table`);
+    const targetColumns = new Set(
+      (db.prepare(`PRAGMA table_info("${target}")`).all() as { name: string }[]).map((column) => column.name),
+    );
+    for (const [sourceColumn, rule] of Object.entries(columns)) {
+      for (const targetColumn of rule.targets) {
+        assert.equal(targetColumns.has(targetColumn), true, `${table}.${sourceColumn} -> ${targetColumn}`);
+      }
+      if (rule.targets.length === 0) assert.equal(rule.invariant, "null_only", `${table}.${sourceColumn}`);
+    }
+  }
 });
 
 test("canonical protocol identities reject duplicate matches and ledger directions outside the domain", () => {
@@ -260,13 +278,16 @@ test("compact chain reads restore the public hash, address, and null-only data s
     source: string;
     destination: string;
   }[];
-  assert.deepEqual({ ...transactions[0] }, {
-    tx_index: 7,
-    tx_hash: "ab".repeat(32),
-    source: "alice",
-    destination: "bob",
-    fee: "10",
-  });
+  assert.deepEqual(
+    { ...transactions[0] },
+    {
+      tx_index: 7,
+      tx_hash: "ab".repeat(32),
+      source: "alice",
+      destination: "bob",
+      fee: "10",
+    },
+  );
   const transaction = db.prepare(CORE_TRANSACTION_BY_HASH_SQL).get("ab".repeat(32)) as {
     data: string | null;
     source: string;

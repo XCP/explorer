@@ -77,11 +77,59 @@ export const CORE_TABLE_MANIFEST = [
 
 export const GENERATED_CORE_TABLES = ["address_dictionary", "asset_dictionary", "entity_dictionary"] as const;
 
+interface CoreColumnRule {
+  targets: readonly string[];
+  invariant?: "null_only";
+}
+
+/** Source columns whose compact representation is not the same name or the conventional `${name}_id`. */
+export const CORE_COLUMN_RULES: Readonly<Record<string, Readonly<Record<string, CoreColumnRule>>>> = {
+  assets: {
+    asset: { targets: ["asset_id"] },
+    asset_id: { targets: ["numeric_asset_id"] },
+  },
+  balance_snapshots: { holder: { targets: ["address_id", "utxo_tx_hash", "utxo_vout"] } },
+  balances: { holder: { targets: ["address_id", "utxo_tx_hash", "utxo_vout"] } },
+  bet_match_resolutions: {
+    bet_match_id: { targets: ["bet_match_tx0_index", "bet_match_tx1_index"] },
+  },
+  bet_matches: { id: { targets: ["tx0_index", "tx1_index"] } },
+  btcpays: {
+    id: { targets: ["event_index"] },
+    order_match_id: { targets: ["order_match_tx0_index", "order_match_tx1_index"] },
+  },
+  cancels: { offer_hash: { targets: ["offer_tx_index"] } },
+  destructions: { id: { targets: ["event_index"] } },
+  dispenser_refills: { dispenser_tx_hash: { targets: ["dispenser_tx_index"] } },
+  dispenses: {
+    id: { targets: ["event_index"] },
+    dispenser_tx_hash: { targets: ["dispenser_tx_index"] },
+  },
+  fairmints: {
+    id: { targets: ["event_index"] },
+    fairminter_tx_hash: { targets: ["fairminter_tx_index"] },
+  },
+  issuances: { id: { targets: ["event_index"] } },
+  order_matches: { id: { targets: ["tx0_index", "tx1_index"] } },
+  pool_liquidity: { id: { targets: ["event_index"] } },
+  pool_matches: {
+    id: { targets: ["event_index"] },
+    order_tx_hash: { targets: ["order_tx_index"] },
+  },
+  rps_matches: { id: { targets: ["tx0_index", "tx1_index"] } },
+  sends: { id: { targets: ["event_index"] } },
+  transactions: { data: { targets: [], invariant: "null_only" } },
+};
+
 export const CORE_SNAPSHOT_TABLES = CORE_TABLE_MANIFEST.filter(
   (entry) => entry.disposition !== "platform" && entry.disposition !== "discard",
 ).map((entry) => entry.source);
 
 interface SchemaTable {
+  name: string;
+}
+
+interface SchemaColumn {
   name: string;
 }
 
@@ -94,9 +142,12 @@ function difference(left: readonly string[], right: ReadonlySet<string>): string
 }
 
 export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
-  const [sourceResult, targetResult] = await Promise.all([
+  const compactEntries = CORE_TABLE_MANIFEST.filter((entry) => entry.disposition === "compact");
+  const [sourceResult, targetResult, sourceColumnResults, targetColumnResults] = await Promise.all([
     env.DB.prepare(`SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name`).all<SchemaTable>(),
     env.CORE_DB.prepare(`SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name`).all<SchemaTable>(),
+    env.DB.batch(compactEntries.map((entry) => env.DB.prepare(`PRAGMA table_info("${entry.source}")`))),
+    env.CORE_DB.batch(compactEntries.map((entry) => env.CORE_DB.prepare(`PRAGMA table_info("${entry.target}")`))),
   ]);
   const sourceTables = sorted(sourceResult.results.map((row) => row.name));
   const targetTables = sorted(targetResult.results.map((row) => row.name));
@@ -115,9 +166,41 @@ export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
   const unclassifiedSources = difference(sourceTables, manifestSet);
   const absentSources = difference(manifestSources, sourceSet);
   const missingTargets = difference(requiredTargets, targetSet);
+  const unmappedSourceColumns: { table: string; columns: string[] }[] = [];
+  const missingRepresentationColumns: { table: string; source_column: string; targets: readonly string[] }[] = [];
+  compactEntries.forEach((entry, index) => {
+    const sourceColumns = (sourceColumnResults[index].results as unknown as SchemaColumn[]).map(
+      (column) => column.name,
+    );
+    const targetColumns = new Set(
+      (targetColumnResults[index].results as unknown as SchemaColumn[]).map((column) => column.name),
+    );
+    const unmapped: string[] = [];
+    for (const sourceColumn of sourceColumns) {
+      const rule = CORE_COLUMN_RULES[entry.source]?.[sourceColumn];
+      if (rule) {
+        const missing = rule.targets.filter((target) => !targetColumns.has(target));
+        if (missing.length > 0) {
+          missingRepresentationColumns.push({
+            table: entry.source,
+            source_column: sourceColumn,
+            targets: missing,
+          });
+        }
+        continue;
+      }
+      if (!targetColumns.has(sourceColumn) && !targetColumns.has(`${sourceColumn}_id`)) unmapped.push(sourceColumn);
+    }
+    if (unmapped.length > 0) unmappedSourceColumns.push({ table: entry.source, columns: unmapped });
+  });
 
   return {
-    complete: unclassifiedSources.length === 0 && absentSources.length === 0 && missingTargets.length === 0,
+    complete:
+      unclassifiedSources.length === 0 &&
+      absentSources.length === 0 &&
+      missingTargets.length === 0 &&
+      unmappedSourceColumns.length === 0 &&
+      missingRepresentationColumns.length === 0,
     counts: {
       source: sourceTables.length,
       manifest: manifestSources.length,
@@ -128,5 +211,7 @@ export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
     absent_sources: absentSources,
     missing_targets: missingTargets,
     unexpected_targets: unexpectedTargets,
+    unmapped_source_columns: unmappedSourceColumns,
+    missing_representation_columns: missingRepresentationColumns,
   };
 }
