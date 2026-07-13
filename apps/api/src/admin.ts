@@ -31,7 +31,7 @@ import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { operationalStatus } from "#api/operations/status";
 import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/indexer/ledger-cutover";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
-import { backfillCoreTransactions } from "#api/indexer/core-backfill";
+import { backfillCoreBlocks, backfillCoreTransactions } from "#api/indexer/core-backfill";
 import { auditCoreTransactions } from "#api/indexer/core-readiness";
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -119,6 +119,11 @@ admin.post("/admin/backfill-ledger", async (c) => {
 admin.post("/admin/backfill-core/transactions", async (c) => {
   const rows = boundedInteger(c.req.query("rows"), { defaultValue: 250, min: 1, max: 500 });
   return c.json(await backfillCoreTransactions(c.env, rows));
+});
+
+admin.post("/admin/backfill-core/blocks", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 250, min: 1, max: 500 });
+  return c.json(await backfillCoreBlocks(c.env, rows));
 });
 
 admin.get("/admin/core-readiness/transactions", async (c) => {
