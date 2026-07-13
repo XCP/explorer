@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "#api/env";
-import { syncEvents, backfillLedger } from "#api/indexer/sync";
+import { syncEvents, syncCompactEvents, backfillLedger } from "#api/indexer/sync";
 import { runSignalsStep, runSignalsCascade, verifySignals } from "#api/indexer/signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
@@ -121,6 +121,13 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
 admin.post("/admin/sync", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncEvents(c.env, { maxEvents: events }));
+});
+
+// Advance the compact database from its immutable seed frontier using its own cursor. This never writes the
+// current source mirror and remains available before forward dual-writes are enabled.
+admin.post("/admin/core-replay", async (c) => {
+  const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
+  return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
 });
 
 // Backfill the historical credits/debits ledger (migration 0038) — isolated & non-destructive: inserts only

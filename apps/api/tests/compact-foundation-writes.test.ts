@@ -6,6 +6,7 @@ import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionari
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
+import { syncCompactEvents } from "#api/indexer/sync";
 
 const CORE_DDL = [
   "migrations-core/0001_core.sql",
@@ -31,6 +32,9 @@ class PreparedStatement {
   }
   async all<T>() {
     return { results: this.database.prepare(this.sql).all(...this.binds) as T[] };
+  }
+  async first<T>() {
+    return (this.database.prepare(this.sql).get(...this.binds) as T | undefined) ?? null;
   }
 }
 
@@ -1161,4 +1165,84 @@ test("compact bet and RPS state machines preserve composite match identities", a
     unknown
   >;
   assert.deepEqual({ ...rpsMatch }, { tx0_index: 80, tx1_index: 81, status: "resolved and pending" });
+});
+
+test("compact replay advances its own seed cursor without writing the source mirror", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`
+    INSERT INTO core_state(key,value) VALUES
+      ('build_complete','1'),
+      ('import_complete','1'),
+      ('seed_event_index','0'),
+      ('last_event_index','0'),
+      ('last_block_index','100'),
+      ('seed_reconciled','0');
+  `);
+  const txHash = "d1".repeat(32);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) {
+      return new Response(JSON.stringify({ result_count: 2 }), { status: 200 });
+    }
+    if (url.includes("/events?cursor=")) {
+      return new Response(
+        JSON.stringify({
+          result: [
+            {
+              event: "NEW_TRANSACTION",
+              event_index: 1,
+              block_index: 101,
+              tx_hash: txHash,
+              params: { tx_index: 1, tx_hash: txHash, block_index: 101, source: "alice" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    throw new Error(`unexpected Counterparty request: ${url}`);
+  };
+  try {
+    const result = await syncCompactEvents(
+      { CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" },
+      { maxEvents: 10 },
+    );
+    assert.deepEqual(result, {
+      applied: 1,
+      seed_event_index: 0,
+      last_event_index: 1,
+      last_block: 101,
+      tip: 1,
+      caught_up: true,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const transaction = database
+    .prepare(
+      `SELECT t.tx_index,lower(hex(t.tx_hash)) tx_hash,a.address source
+       FROM transactions t JOIN address_dictionary a ON a.address_id=t.source_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual({ ...transaction }, { tx_index: 1, tx_hash: txHash, source: "alice" });
+  const state = Object.fromEntries(
+    (
+      database
+        .prepare(
+          `SELECT key,value FROM core_state
+         WHERE key IN ('seed_event_index','last_event_index','last_block_index','seed_reconciled','reconciled_event_index')`,
+        )
+        .all() as { key: string; value: string }[]
+    ).map((row) => [row.key, row.value]),
+  );
+  assert.deepEqual(state, {
+    seed_event_index: "0",
+    last_event_index: "1",
+    last_block_index: "101",
+    seed_reconciled: "1",
+    reconciled_event_index: "1",
+  });
 });

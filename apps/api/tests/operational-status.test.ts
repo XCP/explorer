@@ -35,9 +35,14 @@ test("operational status aggregates durable frontiers without counting recovery 
   const core = new Database(() => [
     { key: "build_complete", value: "1" },
     { key: "import_complete", value: "1" },
-    { key: "snapshot_consistent", value: "1" },
+    { key: "snapshot_consistent", value: "0" },
     { key: "snapshot_mode", value: "d1_export" },
     { key: "snapshot_expected_tables", value: "55" },
+    { key: "seed_event_index", value: "100" },
+    { key: "last_event_index", value: "120" },
+    { key: "seed_reconciled", value: "1" },
+    { key: "parity_verified", value: "1" },
+    { key: "forward_write_ready", value: "1" },
   ]);
   const ledger = new Database(() => [
     { key: "backfill_active", value: "1" },
@@ -72,7 +77,10 @@ test("operational status aggregates durable frontiers without counting recovery 
   assert.deepEqual(result.core, {
     build_complete: true,
     import_complete: true,
-    snapshot: { mode: "d1_export", consistent: true, expected_tables: 55 },
+    snapshot: { mode: "d1_export", consistent: false, expected_tables: 55 },
+    replay: { seed_event_index: 100, last_event_index: 120, reconciled: true },
+    parity_verified: true,
+    forward_write_ready: true,
     read_ready: true,
   });
   assert.deepEqual(result.ledger.debit, { cursor: "200", complete: false });

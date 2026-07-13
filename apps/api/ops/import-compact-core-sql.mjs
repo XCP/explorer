@@ -90,11 +90,16 @@ for (const file of manifest.files) {
 
 const readiness = Object.fromEntries(
   remoteRows(
-    "SELECT key,value FROM core_state WHERE key IN ('build_complete','import_complete','snapshot_consistent')",
+    "SELECT key,value FROM core_state WHERE key IN ('build_complete','import_complete','seed_event_index','last_event_index')",
   ).map((row) => [row.key, row.value]),
 );
-if (readiness.build_complete !== "1" || readiness.import_complete !== "1" || readiness.snapshot_consistent !== "1") {
-  throw new Error("remote core database did not pass the final readiness gate");
+if (
+  readiness.build_complete !== "1" ||
+  readiness.import_complete !== "1" ||
+  readiness.seed_event_index == null ||
+  readiness.last_event_index == null
+) {
+  throw new Error("remote core database did not complete the seed import");
 }
 process.stdout.write(
   `${JSON.stringify({ complete: true, database, files: manifest.files.length, manifest_sha256: manifestSha256 })}\n`,

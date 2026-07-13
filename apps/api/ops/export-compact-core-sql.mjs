@@ -40,8 +40,8 @@ const coreState = Object.fromEntries(
     .all()
     .map((row) => [row.key, row.value]),
 );
-if (coreState.build_complete !== "1" || coreState.snapshot_consistent !== "1") {
-  throw new Error("compact database has not passed a consistent full-build parity check");
+if (coreState.build_complete !== "1" || coreState.seed_event_index == null || coreState.last_event_index == null) {
+  throw new Error("compact database has not completed its seed build");
 }
 if (coreState.import_complete != null) throw new Error("compact build artifact already contains an import marker");
 

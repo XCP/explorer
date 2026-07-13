@@ -41,13 +41,25 @@ async function getState(db: D1Database, k: string): Promise<string | null> {
 }
 
 async function compactWritesEnabled(db: D1Database): Promise<boolean> {
-  const required = ["build_complete", "snapshot_consistent", "import_complete", "forward_write_ready"];
+  const required = ["build_complete", "import_complete", "seed_reconciled", "parity_verified", "forward_write_ready"];
   const rows = await db
-    .prepare(`SELECT key,value FROM core_state WHERE key IN (?,?,?,?)`)
+    .prepare(`SELECT key,value FROM core_state WHERE key IN (?,?,?,?,?)`)
     .bind(...required)
     .all<{ key: string; value: string }>();
   const state = Object.fromEntries(rows.results.map((row) => [row.key, row.value]));
   return required.every((key) => state[key] === "1");
+}
+
+async function getCoreState(db: D1Database, key: string): Promise<string | null> {
+  return (
+    (await db.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null
+  );
+}
+
+function setCoreStateStmt(db: D1Database, key: string, value: string): D1PreparedStatement {
+  return db
+    .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+    .bind(key, value);
 }
 function setStateStmt(db: D1Database, k: string, v: string): D1PreparedStatement {
   return db
@@ -412,6 +424,92 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
     return { applied, last_event_index: lastIdx, last_block: lastBlock, tip, caught_up: lastIdx >= tip };
   } finally {
     await env.DB.prepare(`DELETE FROM indexer_state WHERE key='sync_lock'`).run();
+  }
+}
+
+/** Replay the post-seed event delta directly into the compact database. This cursor is intentionally independent
+ * of the current source mirror: a current source cursor cannot prove that a newly imported compact seed received
+ * the events that arrived while its tables were copied. Source-mirror statements are dispatched but ignored. */
+export async function syncCompactEvents(
+  env: Pick<Env, "CORE_DB" | "COUNTERPARTY_API_BASE">,
+  opts: { maxEvents?: number } = {},
+): Promise<Record<string, unknown>> {
+  const now = Math.floor(Date.now() / 1000);
+  const lockValue = String(now);
+  const lock = await env.CORE_DB.prepare(
+    `INSERT INTO core_state(key,value) VALUES('replay_lock',?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE CAST(value AS INTEGER) < ?`,
+  )
+    .bind(lockValue, now - LOCK_TTL)
+    .run();
+  if (lock.meta.changes === 0) return { skipped: "locked" };
+
+  try {
+    const [buildComplete, importComplete, seedValue, cursorValue, blockValue] = await Promise.all([
+      getCoreState(env.CORE_DB, "build_complete"),
+      getCoreState(env.CORE_DB, "import_complete"),
+      getCoreState(env.CORE_DB, "seed_event_index"),
+      getCoreState(env.CORE_DB, "last_event_index"),
+      getCoreState(env.CORE_DB, "last_block_index"),
+    ]);
+    if (buildComplete !== "1" || importComplete !== "1") {
+      return { skipped: "compact import is incomplete" };
+    }
+    if (seedValue == null) throw new Error("compact seed_event_index is missing");
+    const seedIndex = Number.parseInt(seedValue, 10);
+    let lastIndex = Number.parseInt(cursorValue ?? seedValue, 10);
+    let lastBlock = Number.parseInt(blockValue ?? "0", 10);
+    if (!Number.isSafeInteger(seedIndex) || !Number.isSafeInteger(lastIndex) || lastIndex < seedIndex) {
+      throw new Error("compact replay cursor is invalid");
+    }
+
+    const tip = await tipEventIndex(env.COUNTERPARTY_API_BASE);
+    const cap = Math.min(opts.maxEvents ?? MAX_EVENTS_PER_RUN, MAX_EVENTS_PER_RUN);
+    let applied = 0;
+    while (lastIndex < tip && applied < cap) {
+      const events = await fetchAsc(env.COUNTERPARTY_API_BASE, lastIndex + 1);
+      if (events.length === 0) break;
+      const ctx: Ctx = {
+        stmts: [],
+        ledgerStmts: [],
+        identities: createIdentitySet(),
+        compact: { stmts: [], identities: createIdentitySet() },
+        balDelta: new Map(),
+        maxBlock: lastBlock,
+        supplyDirty: new Set(),
+      };
+      for (const event of events) dispatch(event, ctx);
+      const compact = ctx.compact;
+      if (!compact) throw new Error("compact replay context is missing");
+      await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
+      await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
+
+      lastIndex = events[events.length - 1].event_index;
+      lastBlock = Math.max(lastBlock, ctx.maxBlock);
+      applied += events.length;
+      await env.CORE_DB.batch([
+        setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),
+        setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+      ]);
+    }
+
+    const caughtUp = lastIndex >= tip;
+    if (caughtUp) {
+      await env.CORE_DB.batch([
+        setCoreStateStmt(env.CORE_DB, "seed_reconciled", "1"),
+        setCoreStateStmt(env.CORE_DB, "reconciled_event_index", String(lastIndex)),
+      ]);
+    }
+    return {
+      applied,
+      seed_event_index: seedIndex,
+      last_event_index: lastIndex,
+      last_block: lastBlock,
+      tip,
+      caught_up: caughtUp,
+    };
+  } finally {
+    await env.CORE_DB.prepare(`DELETE FROM core_state WHERE key='replay_lock' AND value=?`).bind(lockValue).run();
   }
 }
 

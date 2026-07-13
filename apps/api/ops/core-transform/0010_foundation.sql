@@ -188,4 +188,26 @@ SELECT 'source_indexer:'||key,value FROM source.indexer_state
 WHERE true
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;
 
+INSERT INTO core_state(key,value)
+SELECT 'seed_event_index',value FROM source.snapshot_meta WHERE key='source_last_event_index'
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+
+INSERT INTO core_state(key,value)
+SELECT 'last_event_index',value FROM source.snapshot_meta WHERE key='source_last_event_index'
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+
+INSERT INTO core_state(key,value)
+SELECT 'seed_block_index',value FROM source.snapshot_meta WHERE key='source_last_block_index'
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+
+INSERT INTO core_state(key,value)
+SELECT 'last_block_index',value FROM source.snapshot_meta WHERE key='source_last_block_index'
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+
+INSERT INTO core_state(key,value) VALUES
+  ('seed_reconciled','0'),
+  ('parity_verified','0'),
+  ('forward_write_ready','0')
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+
 COMMIT;
