@@ -52,6 +52,7 @@ import {
   auditCoreTransactions,
 } from "#api/indexer/core-readiness";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
+import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -66,6 +67,19 @@ admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
 // Fail-closed schema inventory: every live source table must have one explicit compact/rebuild/preserve rule,
 // and every resulting target relation must exist before the compact database can be considered complete.
 admin.get("/admin/core-coverage", async (c) => c.json(await auditCoreTableCoverage(c.env)));
+
+// Read-only source snapshot stream for the offline compact builder. Table names are a closed manifest and
+// rowid keysets keep large history reads indexed; the one WITHOUT ROWID projection is tiny and offset-paged.
+admin.get("/admin/core-snapshot/schema", async (c) => c.json(await coreSnapshotSchema(c.env.DB)));
+admin.get("/admin/core-snapshot/:table", async (c) => {
+  const after = boundedInteger(c.req.query("after"), { defaultValue: 0, min: 0 });
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 1_000, min: 1, max: 2_000 });
+  try {
+    return c.json(await coreSnapshotPage(c.env.DB, c.req.param("table"), after, rows));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "snapshot failed" }, 400);
+  }
+});
 
 // Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).

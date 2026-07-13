@@ -77,6 +77,10 @@ export const CORE_TABLE_MANIFEST = [
 
 export const GENERATED_CORE_TABLES = ["address_dictionary", "asset_dictionary", "entity_dictionary"] as const;
 
+export const CORE_SNAPSHOT_TABLES = CORE_TABLE_MANIFEST.filter(
+  (entry) => entry.disposition !== "platform" && entry.disposition !== "discard",
+).map((entry) => entry.source);
+
 interface SchemaTable {
   name: string;
 }
