@@ -150,7 +150,7 @@ export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
       compactEntries.map((entry) => env.DB.prepare(`PRAGMA table_info("${entry.source}")`).all<SchemaColumn>()),
     ),
     Promise.all(
-      compactEntries.map((entry) => env.CORE_DB.prepare(`PRAGMA table_info("${entry.target}")`).all<SchemaColumn>()),
+      compactEntries.map((entry) => env.CORE_DB.prepare(`PRAGMA table_xinfo("${entry.target}")`).all<SchemaColumn>()),
     ),
   ]);
   const sourceTables = sorted(sourceResult.results.map((row) => row.name));
@@ -173,6 +173,7 @@ export async function auditCoreTableCoverage(env: Pick<Env, "DB" | "CORE_DB">) {
   const unmappedSourceColumns: { table: string; columns: string[] }[] = [];
   const missingRepresentationColumns: { table: string; source_column: string; targets: readonly string[] }[] = [];
   compactEntries.forEach((entry, index) => {
+    if (entry.target == null || !targetSet.has(entry.target)) return;
     const sourceColumns = sourceColumnResults[index].results.map((column) => column.name);
     const targetColumns = new Set(targetColumnResults[index].results.map((column) => column.name));
     const unmapped: string[] = [];
