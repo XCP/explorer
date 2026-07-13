@@ -30,6 +30,7 @@
     "snapshot:core:import": "node ops/import-core-export.mjs",
     "build:core": "node ops/build-compact-core.mjs",
     "build:core:sql": "node ops/export-compact-core-sql.mjs",
+    "build:core:sql:verify": "node ops/verify-compact-core-sql.mjs",
     "migrate:recovery:local": "wrangler d1 migrations apply xcpio-btc --local",
     "migrate:recovery:remote": "wrangler d1 migrations apply xcpio-btc --remote"
   },

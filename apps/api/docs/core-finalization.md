@@ -94,7 +94,9 @@ explorer captures. In particular:
      verified local build with `npm run build:core:sql -w xcp-api`.
    - The generator caps statements at 90 KB and files at 256 MB, preserves exact TEXT/BLOB values, emits a
      SHA-256 manifest, and refuses tables without a primary/unique identity or rows that cannot fit D1's
-     statement limit. Chunks use convergent upserts and are safe to retry in manifest order.
+     statement limit. Verify every size, hash, statement boundary, and limit with
+     `npm run build:core:sql:verify -w xcp-api` before upload. Chunks use convergent upserts and are safe to
+     retry in manifest order.
    - Historical data is loaded in bulk; it is not written through thousands of tiny Worker transactions.
    - Record the source snapshot tip and apply later events with chronological, idempotent upserts.
 

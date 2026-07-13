@@ -1,6 +1,7 @@
-import { createReadStream, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { readSqlStatements } from "./lib/sql-statements.mjs";
 
 const exportPath = process.env.CORE_EXPORT_PATH;
 const outputPath = process.env.CORE_SNAPSHOT_PATH;
@@ -9,89 +10,12 @@ if (!outputPath) throw new Error("CORE_SNAPSHOT_PATH is required");
 if (!existsSync(exportPath)) throw new Error(`D1 export does not exist: ${exportPath}`);
 if (existsSync(outputPath)) throw new Error(`snapshot output already exists: ${outputPath}`);
 
-async function* statements(path) {
-  const stream = createReadStream(path, { encoding: "utf8" });
-  let statement = "";
-  let quote = null;
-  let lineComment = false;
-  let blockComment = false;
-  let previous = "";
-  let carry = "";
-
-  for await (const sourceChunk of stream) {
-    const chunk = carry + sourceChunk;
-    let index = 0;
-    while (index < chunk.length - 1) {
-      const character = chunk[index];
-      const next = chunk[index + 1];
-      statement += character;
-
-      if (lineComment) {
-        if (character === "\n") lineComment = false;
-        previous = character;
-        index++;
-        continue;
-      }
-      if (blockComment) {
-        if (previous === "*" && character === "/") blockComment = false;
-        previous = character;
-        index++;
-        continue;
-      }
-      if (quote) {
-        if (character === quote) {
-          if (next === quote) {
-            statement += next;
-            index += 2;
-          } else {
-            quote = null;
-            index++;
-          }
-        } else index++;
-        previous = character;
-        continue;
-      }
-      if (character === "-" && next === "-") {
-        statement += next;
-        index += 2;
-        lineComment = true;
-      } else if (character === "/" && next === "*") {
-        statement += next;
-        index += 2;
-        blockComment = true;
-      } else if (character === "'" || character === '"' || character === "`") {
-        quote = character;
-        index++;
-      } else if (character === ";") {
-        if (statement.trim()) yield statement;
-        statement = "";
-        index++;
-      } else index++;
-      previous = character;
-    }
-    carry = chunk.slice(index);
-  }
-  if (carry) {
-    statement += carry;
-    if (lineComment && carry === "\n") lineComment = false;
-    else if (blockComment && previous === "*" && carry === "/") blockComment = false;
-    else if (quote && carry === quote) quote = null;
-    else if (!lineComment && !blockComment && !quote && carry === ";") {
-      if (statement.trim()) yield statement;
-      statement = "";
-    } else if (!lineComment && !blockComment && !quote && (carry === "'" || carry === '"' || carry === "`"))
-      quote = carry;
-  }
-  if (quote || blockComment) throw new Error("D1 export ended inside a SQL literal or comment");
-  if (statement.trim()) yield statement;
-}
-
 const db = new DatabaseSync(resolve(outputPath));
 db.exec("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
 let imported = 0;
 const started = performance.now();
 try {
-  for await (const statement of statements(resolve(exportPath))) {
+  for await (const statement of readSqlStatements(resolve(exportPath))) {
     db.exec(statement);
     imported++;
     if (imported % 100_000 === 0) {
