@@ -19,6 +19,78 @@ type TransactionSample = {
   utxos_info: string | null;
 };
 
+type AssetMeta = {
+  rows: number;
+  first_asset: string | null;
+  last_asset: string | null;
+};
+
+type AssetSample = {
+  asset: string;
+  asset_longname: string | null;
+  numeric_asset_id: string | null;
+  type: string;
+  issuer: string | null;
+  owner: string | null;
+  divisible: number;
+  locked: number;
+  description_locked: number;
+  supply: string | null;
+  supply_normalized: string | null;
+  description: string | null;
+  mime_type: string | null;
+  first_issuance_block_index: number | null;
+  last_issuance_block_index: number | null;
+  first_issuance_block_time: number | null;
+  last_issuance_block_time: number | null;
+  updated_at: number;
+};
+
+type BlockSample = {
+  block_index: number;
+  block_hash: string | null;
+  block_time: number | null;
+  previous_block_hash: string | null;
+  difficulty: string | null;
+  ledger_hash: string | null;
+  txlist_hash: string | null;
+  messages_hash: string | null;
+  transaction_count: number | null;
+};
+
+type IssuanceMeta = {
+  rows: number;
+  first_index: number | null;
+  last_index: number | null;
+};
+
+type IssuanceSample = {
+  event_index: number;
+  tx_index: number;
+  tx_hash: string;
+  msg_index: number;
+  block_index: number;
+  block_time: number | null;
+  asset: string | null;
+  asset_longname: string | null;
+  quantity: string | null;
+  quantity_normalized: string | null;
+  source: string | null;
+  issuer: string | null;
+  transfer: number;
+  divisible: number;
+  locked: number;
+  description: string | null;
+  fee_paid: string | null;
+  status: string | null;
+  asset_events: string | null;
+  mime_type: string | null;
+  reset: number | null;
+  callable: number | null;
+  call_date: number | null;
+  call_price: string | null;
+};
+
 export type CoreTransactionReadiness = {
   ready: boolean;
   read_only: true;
@@ -30,6 +102,48 @@ export type CoreTransactionReadiness = {
     match: boolean;
   };
   samples: Array<{ tx_index: number; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreAssetReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: string | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  extrema: {
+    source: { first: string | null; last: string | null };
+    core: { first: string | null; last: string | null };
+    match: boolean;
+  };
+  samples: Array<{ asset: string; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreBlockReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: number | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  extrema: {
+    source: { first: number | null; last: number | null };
+    core: { first: number | null; last: number | null };
+    match: boolean;
+  };
+  samples: Array<{ block_index: number; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreIssuanceReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: number | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  extrema: {
+    source: { first: number | null; last: number | null };
+    core: { first: number | null; last: number | null };
+    match: boolean;
+  };
+  samples: Array<{ event_index: number; match: boolean }>;
   failures: string[];
 };
 
@@ -52,6 +166,72 @@ export function coreTransactionReadinessFailures(input: {
     failures.push("transaction index extrema differ");
   }
   if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded transaction samples differ");
+  return failures;
+}
+
+export function coreAssetReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFirst: string | null;
+  sourceLast: string | null;
+  coreFirst: string | null;
+  coreLast: string | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source assets are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core assets are empty or unreadable");
+  if (!input.done) failures.push("asset backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("asset row counts differ");
+  if (input.sourceFirst !== input.coreFirst || input.sourceLast !== input.coreLast) {
+    failures.push("asset name extrema differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded asset samples differ");
+  return failures;
+}
+
+export function coreBlockReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFirst: number | null;
+  sourceLast: number | null;
+  coreFirst: number | null;
+  coreLast: number | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source blocks are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core blocks are empty or unreadable");
+  if (!input.done) failures.push("block backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("block row counts differ");
+  if (input.sourceFirst !== input.coreFirst || input.sourceLast !== input.coreLast) {
+    failures.push("block index extrema differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded block samples differ");
+  return failures;
+}
+
+export function coreIssuanceReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFirst: number | null;
+  sourceLast: number | null;
+  coreFirst: number | null;
+  coreLast: number | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source issuances are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core issuances are empty or unreadable");
+  if (!input.done) failures.push("issuance backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("issuance row counts differ");
+  if (input.sourceFirst !== input.coreFirst || input.sourceLast !== input.coreLast) {
+    failures.push("issuance event extrema differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded issuance samples differ");
   return failures;
 }
 
@@ -119,6 +299,253 @@ export async function auditCoreTransactions(env: Pick<Env, "DB" | "CORE_DB">): P
     read_only: true,
     state: {
       cursor: state.has("transactions_cursor") ? Number(state.get("transactions_cursor")) : null,
+      done,
+    },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    extrema: {
+      source: { first: source.first_index, last: source.last_index },
+      core: { first: core.first_index, last: core.last_index },
+      match: source.first_index === core.first_index && source.last_index === core.last_index,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, frontier, and decoded-row parity evidence for the current asset projection. */
+export async function auditCoreAssets(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreAssetReadiness> {
+  const [sourceMeta, coreMeta, stateRows] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) rows,MIN(asset) first_asset,MAX(asset) last_asset FROM assets`).first<AssetMeta>(),
+    env.CORE_DB.prepare(
+      `SELECT COUNT(*) rows,MIN(d.asset) first_asset,MAX(d.asset) last_asset
+         FROM assets a JOIN asset_dictionary d ON d.asset_id=a.asset_id`,
+    ).first<AssetMeta>(),
+    env.CORE_DB.prepare(`SELECT key,value FROM core_state WHERE key IN ('assets_cursor','assets_done')`).all<{
+      key: string;
+      value: string;
+    }>(),
+  ]);
+  const source = sourceMeta ?? { rows: 0, first_asset: null, last_asset: null };
+  const core = coreMeta ?? { rows: 0, first_asset: null, last_asset: null };
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const middle =
+    source.rows > 0
+      ? await env.DB.prepare(`SELECT asset FROM assets ORDER BY asset LIMIT 1 OFFSET ?`)
+          .bind(Math.floor(Number(source.rows) / 2))
+          .first<{ asset: string }>()
+      : null;
+  const anchors = [source.first_asset, middle?.asset, source.last_asset].filter(
+    (asset, index, values): asset is string => asset != null && values.indexOf(asset) === index,
+  );
+  const samples = await Promise.all(
+    anchors.map(async (asset) => {
+      const [sourceRow, coreRow] = await Promise.all([
+        env.DB.prepare(
+          `SELECT asset,asset_longname,asset_id numeric_asset_id,type,issuer,owner,divisible,locked,
+                  description_locked,supply,supply_normalized,description,mime_type,first_issuance_block_index,
+                  last_issuance_block_index,first_issuance_block_time,last_issuance_block_time,updated_at
+             FROM assets WHERE asset=?`,
+        )
+          .bind(asset)
+          .first<AssetSample>(),
+        env.CORE_DB.prepare(
+          `SELECT d.asset,a.asset_longname,a.numeric_asset_id,a.type,issuer.address issuer,owner.address owner,
+                  a.divisible,a.locked,a.description_locked,a.supply,a.supply_normalized,a.description,a.mime_type,
+                  a.first_issuance_block_index,a.last_issuance_block_index,a.first_issuance_block_time,
+                  a.last_issuance_block_time,a.updated_at
+             FROM assets a
+             JOIN asset_dictionary d ON d.asset_id=a.asset_id
+             LEFT JOIN address_dictionary issuer ON issuer.address_id=a.issuer_id
+             LEFT JOIN address_dictionary owner ON owner.address_id=a.owner_id
+            WHERE d.asset=?`,
+        )
+          .bind(asset)
+          .first<AssetSample>(),
+      ]);
+      return { asset, match: JSON.stringify(sourceRow) === JSON.stringify(coreRow) };
+    }),
+  );
+  const sourceRows = Number(source.rows);
+  const coreRows = Number(core.rows);
+  const done = state.get("assets_done") === "1";
+  const failures = coreAssetReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFirst: source.first_asset,
+    sourceLast: source.last_asset,
+    coreFirst: core.first_asset,
+    coreLast: core.last_asset,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: { cursor: state.get("assets_cursor") ?? null, done },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    extrema: {
+      source: { first: source.first_asset, last: source.last_asset },
+      core: { first: core.first_asset, last: core.last_asset },
+      match: source.first_asset === core.first_asset && source.last_asset === core.last_asset,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, frontier, and decoded-row parity evidence for compact block headers. */
+export async function auditCoreBlocks(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreBlockReadiness> {
+  const [sourceMeta, coreMeta, stateRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT COUNT(*) rows,MIN(block_index) first_index,MAX(block_index) last_index FROM blocks`,
+    ).first<TransactionMeta>(),
+    env.CORE_DB.prepare(
+      `SELECT COUNT(*) rows,MIN(block_index) first_index,MAX(block_index) last_index FROM blocks`,
+    ).first<TransactionMeta>(),
+    env.CORE_DB.prepare(`SELECT key,value FROM core_state WHERE key IN ('blocks_cursor','blocks_done')`).all<{
+      key: string;
+      value: string;
+    }>(),
+  ]);
+  const source = sourceMeta ?? { rows: 0, first_index: null, last_index: null };
+  const core = coreMeta ?? { rows: 0, first_index: null, last_index: null };
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const samples = await Promise.all(
+    sampleIndexes(core).map(async (blockIndex) => {
+      const [sourceRow, coreRow] = await Promise.all([
+        env.DB.prepare(
+          `SELECT block_index,LOWER(block_hash) block_hash,block_time,
+                  LOWER(previous_block_hash) previous_block_hash,difficulty,LOWER(ledger_hash) ledger_hash,
+                  LOWER(txlist_hash) txlist_hash,LOWER(messages_hash) messages_hash,transaction_count
+             FROM blocks WHERE block_index=?`,
+        )
+          .bind(blockIndex)
+          .first<BlockSample>(),
+        env.CORE_DB.prepare(
+          `SELECT block_index,
+                  CASE WHEN block_hash IS NULL THEN NULL ELSE LOWER(HEX(block_hash)) END block_hash,
+                  block_time,
+                  CASE WHEN previous_block_hash IS NULL THEN NULL ELSE LOWER(HEX(previous_block_hash)) END previous_block_hash,
+                  difficulty,
+                  CASE WHEN ledger_hash IS NULL THEN NULL ELSE LOWER(HEX(ledger_hash)) END ledger_hash,
+                  CASE WHEN txlist_hash IS NULL THEN NULL ELSE LOWER(HEX(txlist_hash)) END txlist_hash,
+                  CASE WHEN messages_hash IS NULL THEN NULL ELSE LOWER(HEX(messages_hash)) END messages_hash,
+                  transaction_count
+             FROM blocks WHERE block_index=?`,
+        )
+          .bind(blockIndex)
+          .first<BlockSample>(),
+      ]);
+      return { block_index: blockIndex, match: JSON.stringify(sourceRow) === JSON.stringify(coreRow) };
+    }),
+  );
+  const sourceRows = Number(source.rows);
+  const coreRows = Number(core.rows);
+  const done = state.get("blocks_done") === "1";
+  const failures = coreBlockReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFirst: source.first_index,
+    sourceLast: source.last_index,
+    coreFirst: core.first_index,
+    coreLast: core.last_index,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: {
+      cursor: state.has("blocks_cursor") ? Number(state.get("blocks_cursor")) : null,
+      done,
+    },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    extrema: {
+      source: { first: source.first_index, last: source.last_index },
+      core: { first: core.first_index, last: core.last_index },
+      match: source.first_index === core.first_index && source.last_index === core.last_index,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, event frontier, and decoded-row parity evidence for canonical issuances. */
+export async function auditCoreIssuances(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreIssuanceReadiness> {
+  const [sourceMeta, coreMeta, stateRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT COUNT(*) rows,MIN(event_index) first_index,MAX(event_index) last_index FROM issuances`,
+    ).first<IssuanceMeta>(),
+    env.CORE_DB.prepare(
+      `SELECT COUNT(*) rows,MIN(event_index) first_index,MAX(event_index) last_index FROM issuances`,
+    ).first<IssuanceMeta>(),
+    env.CORE_DB.prepare(`SELECT key,value FROM core_state WHERE key IN ('issuances_cursor','issuances_done')`).all<{
+      key: string;
+      value: string;
+    }>(),
+  ]);
+  const source = sourceMeta ?? { rows: 0, first_index: null, last_index: null };
+  const core = coreMeta ?? { rows: 0, first_index: null, last_index: null };
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const samples = await Promise.all(
+    sampleIndexes(core).map(async (eventIndex) => {
+      const [sourceRow, coreRow] = await Promise.all([
+        env.DB.prepare(
+          `SELECT event_index,tx_index,LOWER(tx_hash) tx_hash,COALESCE(msg_index,0) msg_index,
+                  block_index,block_time,asset,asset_longname,quantity,quantity_normalized,source,issuer,
+                  transfer,divisible,locked,description,fee_paid,status,asset_events,mime_type,reset,
+                  callable,call_date,call_price
+             FROM issuances WHERE event_index=?`,
+        )
+          .bind(eventIndex)
+          .first<IssuanceSample>(),
+        env.CORE_DB.prepare(
+          `SELECT i.event_index,i.tx_index,LOWER(HEX(i.tx_hash)) tx_hash,i.msg_index,i.block_index,i.block_time,
+                  asset.asset,i.asset_longname,i.quantity,i.quantity_normalized,source.address source,
+                  issuer.address issuer,i.transfer,i.divisible,i.locked,i.description,i.fee_paid,i.status,
+                  i.asset_events,i.mime_type,i.reset,i.callable,i.call_date,i.call_price
+             FROM issuances i
+             LEFT JOIN asset_dictionary asset ON asset.asset_id=i.asset_id
+             LEFT JOIN address_dictionary source ON source.address_id=i.source_id
+             LEFT JOIN address_dictionary issuer ON issuer.address_id=i.issuer_id
+            WHERE i.event_index=?`,
+        )
+          .bind(eventIndex)
+          .first<IssuanceSample>(),
+      ]);
+      return { event_index: eventIndex, match: JSON.stringify(sourceRow) === JSON.stringify(coreRow) };
+    }),
+  );
+  const sourceRows = Number(source.rows);
+  const coreRows = Number(core.rows);
+  const done = state.get("issuances_done") === "1";
+  const failures = coreIssuanceReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFirst: source.first_index,
+    sourceLast: source.last_index,
+    coreFirst: core.first_index,
+    coreLast: core.last_index,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: {
+      cursor: state.has("issuances_cursor") ? Number(state.get("issuances_cursor")) : null,
       done,
     },
     progress: {

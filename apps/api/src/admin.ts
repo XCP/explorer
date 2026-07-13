@@ -31,8 +31,18 @@ import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { operationalStatus } from "#api/operations/status";
 import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/indexer/ledger-cutover";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
-import { backfillCoreBlocks, backfillCoreTransactions } from "#api/indexer/core-backfill";
-import { auditCoreTransactions } from "#api/indexer/core-readiness";
+import {
+  backfillCoreAssets,
+  backfillCoreBlocks,
+  backfillCoreIssuances,
+  backfillCoreTransactions,
+} from "#api/indexer/core-backfill";
+import {
+  auditCoreAssets,
+  auditCoreBlocks,
+  auditCoreIssuances,
+  auditCoreTransactions,
+} from "#api/indexer/core-readiness";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -126,8 +136,30 @@ admin.post("/admin/backfill-core/blocks", async (c) => {
   return c.json(await backfillCoreBlocks(c.env, rows));
 });
 
+admin.post("/admin/backfill-core/assets", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
+  return c.json(await backfillCoreAssets(c.env, rows));
+});
+
+admin.post("/admin/backfill-core/issuances", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
+  return c.json(await backfillCoreIssuances(c.env, rows));
+});
+
 admin.get("/admin/core-readiness/transactions", async (c) => {
   return c.json(await auditCoreTransactions(c.env));
+});
+
+admin.get("/admin/core-readiness/assets", async (c) => {
+  return c.json(await auditCoreAssets(c.env));
+});
+
+admin.get("/admin/core-readiness/blocks", async (c) => {
+  return c.json(await auditCoreBlocks(c.env));
+});
+
+admin.get("/admin/core-readiness/issuances", async (c) => {
+  return c.json(await auditCoreIssuances(c.env));
 });
 
 // Read-only safety audit. This reports readiness but deliberately cannot change `read_cutover`.

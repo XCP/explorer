@@ -32,6 +32,17 @@ class Database {
 }
 
 test("operational status aggregates durable frontiers without counting recovery outputs", async () => {
+  const core = new Database(() => [
+    { key: "backfill_active", value: "1" },
+    { key: "transactions_cursor", value: "3146459" },
+    { key: "transactions_done", value: "1" },
+    { key: "blocks_cursor", value: "957852" },
+    { key: "blocks_done", value: "1" },
+    { key: "assets_cursor", value: "RAREPEPE" },
+    { key: "assets_done", value: "0" },
+    { key: "shadow_reads", value: "0" },
+    { key: "read_cutover", value: "0" },
+  ]);
   const ledger = new Database(() => [
     { key: "backfill_active", value: "1" },
     { key: "ledger_credit_cursor", value: "100" },
@@ -56,9 +67,14 @@ test("operational status aggregates durable frontiers without counting recovery 
     return [];
   });
 
-  const result = await operationalStatus({ LEDGER_DB: ledger, RECOVERY_DB: recovery } as unknown as Env, 123);
+  const result = await operationalStatus(
+    { CORE_DB: core, LEDGER_DB: ledger, RECOVERY_DB: recovery } as unknown as Env,
+    123,
+  );
 
   assert.equal(result.generated_at, 123);
+  assert.deepEqual(result.core.assets, { cursor: "RAREPEPE", complete: false });
+  assert.deepEqual(result.core.issuances, { cursor: null, complete: false });
   assert.deepEqual(result.ledger.debit, { cursor: "200", complete: false });
   assert.equal(result.recovery.import.rows_seen, 12_000);
   assert.equal(result.recovery.verification.complete, false);
@@ -76,6 +92,7 @@ test("operational status aggregates durable frontiers without counting recovery 
 });
 
 test("verification is complete only after all imports complete and the indexed frontier is empty", async () => {
+  const core = new Database(() => []);
   const ledger = new Database(() => []);
   const recovery = new Database((sql) => {
     if (sql.includes("FROM recovery_imports"))
@@ -84,7 +101,10 @@ test("verification is complete only after all imports complete and the indexed f
     return [];
   });
 
-  const result = await operationalStatus({ LEDGER_DB: ledger, RECOVERY_DB: recovery } as unknown as Env, 1);
+  const result = await operationalStatus(
+    { CORE_DB: core, LEDGER_DB: ledger, RECOVERY_DB: recovery } as unknown as Env,
+    1,
+  );
   assert.equal(result.recovery.verification.complete, true);
   assert.equal(result.recovery.verification.has_unchecked_outputs, false);
 });

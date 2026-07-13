@@ -40,8 +40,14 @@ function stateMap(rows: StateRow[]): Record<string, string> {
  * import journal rather than recounting recovery outputs on every request.
  */
 export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 1000)) {
-  const [ledgerRows, recoveryRows, imports, firstUnchecked, lastChecked, verificationFailures, attempts] =
+  const [coreRows, ledgerRows, recoveryRows, imports, firstUnchecked, lastChecked, verificationFailures, attempts] =
     await Promise.all([
+      env.CORE_DB.prepare(
+        `SELECT key,value FROM core_state
+       WHERE key IN ('backfill_active','transactions_cursor','transactions_done',
+                     'blocks_cursor','blocks_done','assets_cursor','assets_done',
+                     'issuances_cursor','issuances_done','shadow_reads','read_cutover')`,
+      ).all<StateRow>(),
       env.LEDGER_DB.prepare(
         `SELECT key,value FROM ledger_state
        WHERE key IN ('backfill_active','ledger_credit_cursor','ledger_credit_done',
@@ -85,6 +91,7 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
       ).first<AttemptSummary>(),
     ]);
 
+  const core = stateMap(coreRows.results);
   const ledger = stateMap(ledgerRows.results);
   const recovery = stateMap(recoveryRows.results);
   const importCount = Number(imports?.imports ?? 0);
@@ -94,6 +101,15 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
 
   return {
     generated_at: now,
+    core: {
+      backfill_active: core.backfill_active === "1",
+      transactions: { cursor: core.transactions_cursor ?? null, complete: core.transactions_done === "1" },
+      blocks: { cursor: core.blocks_cursor ?? null, complete: core.blocks_done === "1" },
+      assets: { cursor: core.assets_cursor ?? null, complete: core.assets_done === "1" },
+      issuances: { cursor: core.issuances_cursor ?? null, complete: core.issuances_done === "1" },
+      shadow_reads: core.shadow_reads === "1",
+      read_ready: core.read_cutover === "1",
+    },
     ledger: {
       backfill_active: ledger.backfill_active === "1",
       credit: { cursor: ledger.ledger_credit_cursor ?? null, complete: ledger.ledger_credit_done === "1" },
