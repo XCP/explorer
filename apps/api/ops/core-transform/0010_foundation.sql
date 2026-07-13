@@ -68,6 +68,25 @@ ON CONFLICT DO UPDATE SET
   updated_block_index=excluded.updated_block_index,updated_event_index=excluded.updated_event_index,
   utxo_address_id=excluded.utxo_address_id;
 
+INSERT INTO balance_snapshots(
+  address_id,utxo_tx_hash,utxo_vout,asset_id,block_index,quantity,updated_event_index
+)
+SELECT CASE WHEN is_utxo=0 THEN h.address_id END,
+       CASE WHEN is_utxo=1 THEN unhex(substr(x.holder,1,64)) END,
+       CASE WHEN is_utxo=1 THEN CAST(substr(x.holder,66) AS INTEGER) END,
+       a.asset_id,x.block_index,x.quantity,coalesce(x.updated_event_index,0)
+FROM (
+  SELECT s.*,
+    CASE WHEN instr(s.holder,':')=65 AND length(substr(s.holder,1,64))=64
+      AND lower(substr(s.holder,1,64)) NOT GLOB '*[^0-9a-f]*' THEN 1 ELSE 0 END is_utxo
+  FROM source.balance_snapshots s
+) x
+JOIN asset_dictionary a ON a.asset=x.asset
+LEFT JOIN address_dictionary h ON h.address=x.holder AND x.is_utxo=0
+WHERE true
+ON CONFLICT DO UPDATE SET
+  quantity=excluded.quantity,updated_event_index=excluded.updated_event_index;
+
 INSERT INTO sends(
   event_index,tx_index,tx_hash,block_index,block_time,source_id,destination_id,source_address_id,
   destination_address_id,asset_id,quantity,quantity_normalized,memo,memo_hex,send_type,status,fee_paid,msg_index
@@ -161,6 +180,11 @@ ON CONFLICT(tx0_index,tx1_index) DO UPDATE SET
 
 INSERT INTO core_state(key,value)
 SELECT replace(key,'source_','snapshot_'),value FROM source.snapshot_meta
+WHERE true
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+
+INSERT INTO core_state(key,value)
+SELECT 'source_indexer:'||key,value FROM source.indexer_state
 WHERE true
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;
 

@@ -131,9 +131,9 @@ CREATE TABLE graph_edges (
   source_id INTEGER NOT NULL,
   destination_id INTEGER NOT NULL,
   weight REAL NOT NULL,
-  edge_block INTEGER
+  edge_block INTEGER,
+  UNIQUE(source_id, destination_id)
 );
-CREATE INDEX idx_graph_edges_source ON graph_edges(source_id, destination_id);
 CREATE INDEX idx_graph_edges_destination ON graph_edges(destination_id, source_id);
 
 CREATE TABLE graph_node (
@@ -171,9 +171,10 @@ CREATE TABLE graph_baseline (
 
 CREATE TABLE pr_edges (
   source_id INTEGER NOT NULL,
-  destination_id INTEGER NOT NULL
+  destination_id INTEGER NOT NULL,
+  multiplicity INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY(source_id, destination_id)
 );
-CREATE INDEX idx_pr_edges_source ON pr_edges(source_id);
 CREATE INDEX idx_pr_edges_destination ON pr_edges(destination_id);
 
 CREATE TABLE trades (

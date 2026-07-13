@@ -20,10 +20,12 @@ if (!allowIncomplete && incomplete.length > 0) {
 }
 
 const hasSchema = db.prepare(`SELECT 1 FROM sqlite_schema WHERE type='table' AND name='core_state'`).get();
+const migrationSql = ["0001_core.sql", "0002_protocol.sql", "0003_projections.sql"].map((migration) =>
+  readFileSync(new URL(`../migrations-core/${migration}`, import.meta.url), "utf8"),
+);
+const secondaryIndexes = migrationSql.flatMap((sql) => sql.match(/\bCREATE INDEX\b[\s\S]*?;/g) ?? []);
 if (!hasSchema) {
-  for (const migration of ["0001_core.sql", "0002_protocol.sql", "0003_projections.sql"]) {
-    db.exec(readFileSync(new URL(`../migrations-core/${migration}`, import.meta.url), "utf8"));
-  }
+  for (const sql of migrationSql) db.exec(sql.replaceAll(/\bCREATE INDEX\b[\s\S]*?;/g, ""));
 }
 
 const transformDirectory = new URL("./core-transform/", import.meta.url);
@@ -35,37 +37,39 @@ for (const file of readdirSync(transformDirectory)
   process.stdout.write(`${JSON.stringify({ transform: file, ms: Math.round(performance.now() - started) })}\n`);
 }
 
+const indexStarted = performance.now();
+for (const sql of secondaryIndexes) db.exec(sql.replace("CREATE INDEX", "CREATE INDEX IF NOT EXISTS"));
+process.stdout.write(`${JSON.stringify({ indexes_ms: Math.round(performance.now() - indexStarted) })}\n`);
+
 db.exec("PRAGMA main.optimize;");
 const page = db.prepare("PRAGMA page_count").get();
 const size = db.prepare("PRAGMA page_size").get();
-const counts = db
-  .prepare(
-    `SELECT
-       (SELECT COUNT(*) FROM transactions) transactions,
-       (SELECT COUNT(*) FROM balances) balances,
-       (SELECT COUNT(*) FROM sends) sends,
-       (SELECT COUNT(*) FROM issuances) issuances,
-       (SELECT COUNT(*) FROM orders) orders,
-       (SELECT COUNT(*) FROM order_matches) order_matches`,
-  )
-  .get();
-const sourceCounts = db
-  .prepare(
-    `SELECT
-       (SELECT COUNT(*) FROM source.transactions) transactions,
-       (SELECT COUNT(*) FROM source.balances) balances,
-       (SELECT COUNT(*) FROM source.sends) sends,
-       (SELECT COUNT(*) FROM source.issuances) issuances,
-       (SELECT COUNT(*) FROM source.orders) orders,
-       (SELECT COUNT(*) FROM source.order_matches) order_matches`,
-  )
-  .get();
+const quoteIdentifier = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
+const snapshotTables = db
+  .prepare(`SELECT table_name FROM source.snapshot_state ORDER BY table_name`)
+  .all()
+  .map((row) => row.table_name);
+const remappedSources = new Set(["credits", "debits", "indexer_state", "pr_edges"]);
+const directTables = snapshotTables.filter((table) => !remappedSources.has(table));
+const count = (relation) => Number(db.prepare(`SELECT COUNT(*) count FROM ${relation}`).get().count);
+const counts = Object.fromEntries(directTables.map((table) => [table, count(quoteIdentifier(table))]));
+const sourceCounts = Object.fromEntries(
+  directTables.map((table) => [table, count(`source.${quoteIdentifier(table)}`)]),
+);
+sourceCounts.ledger_events = count("source.credits") + count("source.debits");
+counts.ledger_events = count("ledger_events");
+sourceCounts.indexer_state = count("source.indexer_state");
+counts.indexer_state = Number(
+  db.prepare(`SELECT COUNT(*) count FROM core_state WHERE key LIKE 'source_indexer:%'`).get().count,
+);
+sourceCounts.pr_edges = count("source.pr_edges");
+counts.pr_edges = Number(db.prepare(`SELECT coalesce(sum(multiplicity),0) count FROM pr_edges`).get().count);
 const complete = incomplete.length === 0;
 if (complete) {
   const mismatches = Object.keys(sourceCounts).filter((table) => Number(sourceCounts[table]) !== Number(counts[table]));
   if (mismatches.length > 0) {
     throw new Error(
-      `foundational count parity failed: ${mismatches
+      `core count parity failed: ${mismatches
         .map((table) => `${table} ${sourceCounts[table]}!=${counts[table]}`)
         .join(", ")}`,
     );

@@ -4,6 +4,7 @@ INSERT INTO asset_dictionary(asset)
 SELECT asset FROM (
   SELECT asset FROM source.assets
   UNION SELECT asset FROM source.balances
+  UNION SELECT asset FROM source.balance_snapshots
   UNION SELECT asset FROM source.sends
   UNION SELECT asset FROM source.issuances
   UNION SELECT give_asset FROM source.orders
@@ -33,7 +34,7 @@ SELECT asset FROM (
   UNION SELECT claimed_asset FROM source.emblem_vaults
   UNION SELECT asset FROM source.emblem_listings
   UNION SELECT asset FROM source.scarce_city_sales
-) WHERE asset IS NOT NULL AND asset<>''
+) WHERE asset IS NOT NULL
 ON CONFLICT(asset) DO NOTHING;
 
 INSERT INTO address_dictionary(address)
@@ -41,6 +42,11 @@ SELECT address FROM (
   SELECT source address FROM source.transactions UNION SELECT destination FROM source.transactions
   UNION SELECT CASE WHEN holder_type='address' THEN holder END FROM source.balances
   UNION SELECT utxo_address FROM source.balances
+  UNION SELECT CASE
+    WHEN instr(holder,':')=65 AND length(substr(holder,1,64))=64
+      AND lower(substr(holder,1,64)) NOT GLOB '*[^0-9a-f]*' THEN NULL
+    ELSE holder
+  END FROM source.balance_snapshots
   UNION SELECT source FROM source.sends UNION SELECT destination FROM source.sends
   UNION SELECT source_address FROM source.sends UNION SELECT destination_address FROM source.sends
   UNION SELECT source FROM source.issuances UNION SELECT issuer FROM source.issuances
@@ -62,6 +68,8 @@ SELECT address FROM (
   UNION SELECT source FROM source.dispenser_refills UNION SELECT destination FROM source.dispenser_refills
   UNION SELECT source FROM source.fairminters UNION SELECT source FROM source.fairmints
   UNION SELECT source FROM source.pool_matches UNION SELECT source FROM source.pool_liquidity
+  UNION SELECT address FROM source.credits UNION SELECT utxo_address FROM source.credits
+  UNION SELECT address FROM source.debits UNION SELECT utxo_address FROM source.debits
   UNION SELECT address FROM source.address_signals UNION SELECT issuer FROM source.asset_signals
   UNION SELECT addr FROM source.btc_signals
   UNION SELECT src FROM source.graph_edges UNION SELECT dst FROM source.graph_edges
@@ -75,13 +83,13 @@ SELECT address FROM (
   UNION SELECT buyer FROM source.emblem_sales UNION SELECT seller FROM source.emblem_sales
   UNION SELECT contract FROM source.emblem_listings UNION SELECT currency FROM source.emblem_listings
   UNION SELECT seller FROM source.emblem_scam_sellers
-) WHERE address IS NOT NULL AND address<>''
+) WHERE address IS NOT NULL
 ON CONFLICT(address) DO NOTHING;
 
 INSERT INTO entity_dictionary(entity_type,entity_key)
-SELECT entity_type,entity_id FROM source.tags WHERE entity_id<>''
+SELECT entity_type,entity_id FROM source.tags WHERE true
 UNION
-SELECT CASE kind WHEN 'addr' THEN 'address' ELSE kind END,id FROM source.graph_baseline WHERE id<>''
+SELECT CASE kind WHEN 'addr' THEN 'address' ELSE kind END,id FROM source.graph_baseline WHERE true
 ON CONFLICT(entity_type,entity_key) DO NOTHING;
 
 COMMIT;
