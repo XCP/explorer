@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 const base = process.env.CORE_SNAPSHOT_BASE ?? "http://127.0.0.1:8793";
 const output = process.env.CORE_SNAPSHOT_PATH;
 const pageRows = Math.max(1, Math.min(Number(process.env.CORE_SNAPSHOT_ROWS ?? 1_000), 2_000));
+const maxPages = Math.max(0, Number(process.env.CORE_SNAPSHOT_MAX_PAGES ?? 0));
 const tableFilter = new Set(
   (process.env.CORE_SNAPSHOT_TABLES ?? "")
     .split(",")
@@ -62,6 +63,7 @@ for (const table of tables) {
   const placeholders = columns.map(() => "?").join(",");
   const insert = db.prepare(`INSERT INTO "${table.name}" (${quoted}) VALUES (${placeholders})`);
 
+  let pages = 0;
   for (;;) {
     const page = await get(
       `/admin/core-snapshot/${encodeURIComponent(table.name)}?after=${state.cursor}&rows=${pageRows}`,
@@ -84,12 +86,16 @@ for (const table of tables) {
       complete: page.caught_up ? 1 : 0,
       rows_copied: state.rows_copied + page.rows.length,
     };
+    pages++;
     if (page.caught_up) break;
+    if (maxPages > 0 && pages >= maxPages) break;
     if (state.rows_copied % (pageRows * 100) === 0) {
       process.stdout.write(`${JSON.stringify({ table: table.name, rows: state.rows_copied, cursor: state.cursor })}\n`);
     }
   }
-  process.stdout.write(`${JSON.stringify({ table: table.name, rows: state.rows_copied, complete: true })}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ table: table.name, rows: state.rows_copied, complete: state.complete === 1 })}\n`,
+  );
 }
 
 db.close();
