@@ -997,3 +997,168 @@ test("compact pool lifecycle preserves pair, swap, and liquidity identities", as
     ],
   );
 });
+
+test("compact bet and RPS state machines preserve composite match identities", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const bet0Hash = "a1".repeat(32);
+  const bet1Hash = "a2".repeat(32);
+  const betMatchId = `${bet0Hash}_${bet1Hash}`;
+  const rps0Hash = "b1".repeat(32);
+  const rps1Hash = "b2".repeat(32);
+  const rpsMatchId = `${rps0Hash}_${rps1Hash}`;
+  const ctx = context();
+
+  dispatch(event("NEW_TRANSACTION", { tx_index: 70, tx_hash: bet0Hash, source: "bull" }, 70), ctx);
+  dispatch(event("NEW_TRANSACTION", { tx_index: 71, tx_hash: bet1Hash, source: "bear" }, 71), ctx);
+  dispatch(
+    event(
+      "OPEN_BET",
+      {
+        tx_index: 70,
+        tx_hash: bet0Hash,
+        source: "bull",
+        feed_address: "oracle",
+        bet_type: 0,
+        deadline: 500,
+        wager_quantity: "100",
+        wager_remaining: "100",
+        counterwager_quantity: "120",
+        counterwager_remaining: "120",
+        target_value: "10",
+        leverage: 5040,
+        expiration: 10,
+        expire_index: 110,
+        fee_fraction_int: "100",
+        status: "open",
+      },
+      72,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "BET_MATCH",
+      {
+        id: betMatchId,
+        tx0_hash: bet0Hash,
+        tx1_hash: bet1Hash,
+        tx0_address: "bull",
+        tx1_address: "bear",
+        feed_address: "oracle",
+        forward_quantity: "100",
+        backward_quantity: "120",
+        deadline: 500,
+        target_value: "10",
+        leverage: 5040,
+        initial_value: "9",
+        status: "pending",
+      },
+      73,
+    ),
+    ctx,
+  );
+  dispatch(event("BET_UPDATE", { tx_hash: bet0Hash, wager_remaining: "0", status: "filled" }, 74), ctx);
+  dispatch(event("BET_MATCH_UPDATE", { id: betMatchId, status: "settled" }, 75), ctx);
+  dispatch(
+    event(
+      "BET_MATCH_RESOLUTION",
+      {
+        tx_hash: "a3".repeat(32),
+        bet_match_id: betMatchId,
+        bet_match_type_id: 1,
+        winner: "bull",
+        settled: true,
+        bull_credit: "220",
+        bear_credit: "0",
+        escrow_less_fee: "220",
+        fee: "0",
+        status: "valid",
+      },
+      76,
+    ),
+    ctx,
+  );
+
+  dispatch(event("NEW_TRANSACTION", { tx_index: 80, tx_hash: rps0Hash, source: "rock" }, 80), ctx);
+  dispatch(event("NEW_TRANSACTION", { tx_index: 81, tx_hash: rps1Hash, source: "paper" }, 81), ctx);
+  dispatch(
+    event(
+      "OPEN_RPS",
+      {
+        tx_index: 80,
+        tx_hash: rps0Hash,
+        source: "rock",
+        possible_moves: 3,
+        wager: "50",
+        move_random_hash: "c1".repeat(32),
+        expiration: 10,
+        expire_index: 110,
+        status: "open",
+      },
+      82,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "RPS_MATCH",
+      {
+        id: rpsMatchId,
+        tx0_hash: rps0Hash,
+        tx1_hash: rps1Hash,
+        tx0_address: "rock",
+        tx1_address: "paper",
+        possible_moves: 3,
+        wager: "50",
+        status: "pending",
+      },
+      83,
+    ),
+    ctx,
+  );
+  dispatch(event("RPS_UPDATE", { tx_hash: rps0Hash, status: "matched" }, 84), ctx);
+  dispatch(event("RPS_MATCH_UPDATE", { id: rpsMatchId, status: "resolved and pending" }, 85), ctx);
+  dispatch(event("RPS_RESOLVE", { rps_match_id: rpsMatchId, status: "valid" }, 86), ctx);
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  const bet = database.prepare(`SELECT tx_index,wager_remaining,status FROM bets`).get() as Record<string, unknown>;
+  assert.deepEqual({ ...bet }, { tx_index: 70, wager_remaining: "0", status: "filled" });
+  const betMatch = database.prepare(`SELECT tx0_index,tx1_index,status FROM bet_matches`).get() as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual({ ...betMatch }, { tx0_index: 70, tx1_index: 71, status: "settled" });
+  const resolution = database
+    .prepare(
+      `SELECT r.event_index,r.bet_match_tx0_index,r.bet_match_tx1_index,w.address winner,r.settled,
+              r.bull_credit,r.bear_credit,r.status
+       FROM bet_match_resolutions r
+       JOIN address_dictionary w ON w.address_id=r.winner_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...resolution },
+    {
+      event_index: 76,
+      bet_match_tx0_index: 70,
+      bet_match_tx1_index: 71,
+      winner: "bull",
+      settled: 1,
+      bull_credit: "220",
+      bear_credit: "0",
+      status: "valid",
+    },
+  );
+  const rps = database
+    .prepare(`SELECT tx_index,lower(hex(move_random_hash)) move_random_hash,status FROM rps`)
+    .get() as Record<string, unknown>;
+  assert.deepEqual({ ...rps }, { tx_index: 80, move_random_hash: "c1".repeat(32), status: "matched" });
+  const rpsMatch = database.prepare(`SELECT tx0_index,tx1_index,status FROM rps_matches`).get() as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual({ ...rpsMatch }, { tx0_index: 80, tx1_index: 81, status: "resolved and pending" });
+});
