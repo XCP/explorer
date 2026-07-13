@@ -91,8 +91,9 @@ These relationships were checked against Counterparty Core commit `ca2496d`—pa
 `ledger/migration_data/compact_hash_tables.py`, `ledger/balances.py`, `ledger/events.py`,
 `ledger/supplies.py`, and `api/queries.py`. Source semantics win over inferred normalization.
 
-The executable DDL and index-plan tests live in `src/indexer/compact-primary-prototype.ts` and
-`tests/compact-primary-prototype.test.ts`. They are intentionally not a production migration.
+The canonical first-wave DDL now lives in `migrations-core/0001_core.sql`; candidate read plans live in
+`src/queries/core.ts`, with schema and index-plan coverage in `tests/core-schema.test.ts`.
+The schema is production migration material, but it cannot serve reads until the documented parity gates pass.
 
 Values that may point outside the mirrored transaction set remain raw BLOB hashes rather than forced
 foreign keys. Small tables are normalized only when their indexes or repeated columns produce measurable

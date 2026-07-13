@@ -1,49 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import {
-  COMPACT_PRIMARY_DDL,
-  COMPACT_SENDS_BY_ADDRESS_SQL,
-  COMPACT_BALANCES_BY_ADDRESS_SQL,
-  COMPACT_TOTAL_BY_ASSET_SQL,
+  CORE_SENDS_BY_ADDRESS_SQL,
+  CORE_BALANCES_BY_ADDRESS_SQL,
+  CORE_TOTAL_BY_ASSET_SQL,
   ORDER_MATCH_PUBLIC_ID_SQL,
-} from "#api/indexer/compact-primary-prototype";
+} from "#api/queries/core";
+
+const CORE_DDL = readFileSync("migrations-core/0001_core.sql", "utf8");
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
-  db.exec(COMPACT_PRIMARY_DDL);
+  db.exec(CORE_DDL);
   db.exec(`
     INSERT INTO address_dictionary VALUES(1,'alice'),(2,'bob');
-    INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'RARE');
+    INSERT INTO asset_dictionary(asset) VALUES('RARE');
   `);
-  db.prepare(`INSERT INTO transactions VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
-    7,
-    new Uint8Array(32).fill(0xab),
-    100,
-    1,
-    1,
-    2,
-    "0",
-    "10",
-    null,
-    1,
-    null,
-  );
+  db.prepare(
+    `INSERT INTO transactions(tx_index,tx_hash,block_index,block_time,source_id,destination_id,btc_amount,fee,supported,utxos_info)
+     VALUES(?,?,?,?,?,?,?,?,?,?)`,
+  ).run(7, new Uint8Array(32).fill(0xab), 100, 1, 1, 2, "0", "10", 1, null);
   db.prepare(
     `INSERT INTO sends(event_index,tx_index,tx_hash,block_index,block_time,source_id,destination_id,asset_id,quantity,quantity_normalized,send_type,status,msg_index)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(9, 7, new Uint8Array(32).fill(0xab), 100, 1, 1, 2, 2, "5", "5", "send", "valid", 0);
+  ).run(9, 7, new Uint8Array(32).fill(0xab), 100, 1, 1, 2, 3, "5", "5", "send", "valid", 0);
   db.prepare(`INSERT INTO balances(address_id,asset_id,quantity,quantity_normalized) VALUES(?,?,?,?)`).run(
     1,
-    2,
+    3,
     "5",
     "5",
   );
   return db;
 }
 
-test("compact sends preserve source one-to-many identity and compact hashes", () => {
-  const rows = fixture().prepare(COMPACT_SENDS_BY_ADDRESS_SQL).all(1, 50, 0) as { tx_hash: string; asset: string }[];
+test("core sends preserve source one-to-many identity and compact hashes", () => {
+  const rows = fixture().prepare(CORE_SENDS_BY_ADDRESS_SQL).all(1, 50, 0) as { tx_hash: string; asset: string }[];
   assert.equal(rows[0].tx_hash, "ab".repeat(32));
   assert.equal(rows[0].asset, "RARE");
   let duplicate = "";
@@ -57,9 +50,9 @@ test("compact sends preserve source one-to-many identity and compact hashes", ()
   assert.equal(duplicate.includes("UNIQUE constraint failed"), true);
 });
 
-test("compact primary address reads search ids before decoding", () => {
+test("core address reads search ids before decoding", () => {
   const db = fixture();
-  const sendPlan = db.prepare(`EXPLAIN QUERY PLAN ${COMPACT_SENDS_BY_ADDRESS_SQL}`).all(1, 50, 0) as {
+  const sendPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_SENDS_BY_ADDRESS_SQL}`).all(1, 50, 0) as {
     detail: string;
   }[];
   assert.equal(
@@ -74,7 +67,7 @@ test("compact primary address reads search ids before decoding", () => {
     sendPlan.some((row) => row.detail === "SCAN sends"),
     false,
   );
-  const balancePlan = db.prepare(`EXPLAIN QUERY PLAN ${COMPACT_BALANCES_BY_ADDRESS_SQL}`).all(1, 50, 0) as {
+  const balancePlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_BALANCES_BY_ADDRESS_SQL}`).all(1, 50, 0) as {
     detail: string;
   }[];
   assert.equal(
@@ -87,7 +80,7 @@ test("compact primary address reads search ids before decoding", () => {
   );
 });
 
-test("compact balances split UTXOs and enforce exactly one holder representation", () => {
+test("core balances split UTXOs and enforce exactly one holder representation", () => {
   const db = fixture();
   let invalid = "";
   try {
@@ -109,8 +102,8 @@ test("one balance table sums address and UTXO holders without a union", () => {
   db.prepare(
     `INSERT INTO balances(utxo_tx_hash,utxo_vout,utxo_address_id,asset_id,quantity,quantity_normalized)
     VALUES(?,?,?,?,?,?)`,
-  ).run(new Uint8Array(32).fill(0xcd), 2, 1, 2, "7", "7");
-  const total = db.prepare(COMPACT_TOTAL_BY_ASSET_SQL).get(2) as { total: number };
+  ).run(new Uint8Array(32).fill(0xcd), 2, 1, 3, "7", "7");
+  const total = db.prepare(CORE_TOTAL_BY_ASSET_SQL).get(3) as { total: number };
   assert.equal(total.total, 12);
   const kinds = db.prepare(`SELECT holder_type FROM balances ORDER BY holder_type`).all() as { holder_type: string }[];
   assert.deepEqual(
@@ -126,7 +119,7 @@ test("orders and matches use source transaction identities and reconstruct publi
   db.prepare(
     `INSERT INTO orders(tx_index,tx_hash,block_index,source_id,give_asset_id,get_asset_id,status)
     VALUES(?,?,?,?,?,?,?)`,
-  ).run(8, h0, 100, 1, 1, 2, "open");
+  ).run(8, h0, 100, 1, 2, 3, "open");
   db.prepare(
     `INSERT INTO order_matches(tx0_index,tx1_index,tx0_hash,tx1_hash,block_index,status)
     VALUES(?,?,?,?,?,?)`,
@@ -154,11 +147,11 @@ test("issuances retain one-to-many transaction message identity", () => {
   db.prepare(
     `INSERT INTO issuances(event_index,tx_index,tx_hash,msg_index,block_index,asset_id,status)
     VALUES(?,?,?,?,?,?,?)`,
-  ).run(20, 12, hash, 0, 100, 2, "valid");
+  ).run(20, 12, hash, 0, 100, 3, "valid");
   db.prepare(
     `INSERT INTO issuances(event_index,tx_index,tx_hash,msg_index,block_index,asset_id,status)
     VALUES(?,?,?,?,?,?,?)`,
-  ).run(21, 12, hash, 1, 100, 2, "valid");
+  ).run(21, 12, hash, 1, 100, 3, "valid");
   const count = db.prepare(`SELECT COUNT(*) n FROM issuances WHERE tx_index=12`).get() as { n: number };
   assert.equal(count.n, 2);
 });

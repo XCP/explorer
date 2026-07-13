@@ -23,6 +23,13 @@ database_name = "xcpio-ledger"
 database_id = "a4924205-264b-42ce-b900-0c9c03f1c28a"
 migrations_dir = "migrations-ledger"
 
+# Blue-green canonical Counterparty mirror. It remains read-gated until backfill and parity complete.
+[[d1_databases]]
+binding = "CORE_DB"
+database_name = "xcpio-core"
+database_id = "300b798a-5910-40aa-bece-599a79cb08aa"
+migrations_dir = "migrations-core"
+
 # Counterparty bare-multisig recovery index. Isolated because its source is the
 # Bitcoin chain, it is independently rebuildable, and the main D1 is near its cap.
 [[d1_databases]]

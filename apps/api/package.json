@@ -17,12 +17,14 @@
   },
   "scripts": {
     "dev": "wrangler dev",
-    "test": "node ops/check-sql-conventions.mjs && npm run test:migrations:recovery && tsc -p tsconfig.test.json && node --test \".test-dist/tests/**/*.test.js\"",
+    "test": "node ops/check-sql-conventions.mjs && npm run test:migrations:recovery && node ops/clean-test-build.mjs && tsc -p tsconfig.test.json && node --test \".test-dist/tests/**/*.test.js\"",
     "test:migrations:recovery": "node ops/rehearse-recovery-migrations.mjs",
     "test:contract": "tsc -p tsconfig.test.json && node tests/contract-runner.mjs",
     "deploy": "wrangler deploy && npm run test:contract",
     "migrate:local": "wrangler d1 migrations apply xcpio --local",
     "migrate:remote": "wrangler d1 migrations apply xcpio --remote",
+    "migrate:core:local": "wrangler d1 migrations apply xcpio-core --local",
+    "migrate:core:remote": "wrangler d1 migrations apply xcpio-core --remote",
     "migrate:recovery:local": "wrangler d1 migrations apply xcpio-btc --local",
     "migrate:recovery:remote": "wrangler d1 migrations apply xcpio-btc --remote"
   },
