@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 const sourcePath = process.env.CORE_SNAPSHOT_PATH;
 const outputPath = process.env.CORE_COMPACT_PATH;
 const allowIncomplete = process.env.CORE_BUILD_ALLOW_INCOMPLETE === "1";
+const allowInconsistent = process.env.CORE_BUILD_ALLOW_INCONSISTENT === "1";
 if (!sourcePath) throw new Error("CORE_SNAPSHOT_PATH is required");
 if (!outputPath) throw new Error("CORE_COMPACT_PATH is required");
 
@@ -17,6 +18,10 @@ const incomplete = db
   .all();
 if (!allowIncomplete && incomplete.length > 0) {
   throw new Error(`source snapshot is incomplete: ${incomplete.map((row) => row.table_name).join(", ")}`);
+}
+const consistency = db.prepare(`SELECT value FROM source.snapshot_meta WHERE key='snapshot_consistent'`).get();
+if (incomplete.length === 0 && !allowInconsistent && consistency?.value !== "1") {
+  throw new Error("source snapshot is not a consistent D1 export");
 }
 
 const hasSchema = db.prepare(`SELECT 1 FROM sqlite_schema WHERE type='table' AND name='core_state'`).get();

@@ -81,7 +81,9 @@ explorer captures. In particular:
      and live data.
 
 3. **Local compact build**
-   - Stream a consistent source snapshot with large indexed keyset pages into local SQLite.
+   - Use Cloudflare's native D1 SQL export for the canonical source snapshot and stream-import it into local
+     SQLite. D1 blocks other requests while producing an export, so run this only in an announced maintenance
+     window; the HTTP keyset copier is a non-blocking sizing baseline, not a consistency boundary.
    - Transform locally with `INSERT ... SELECT` into the complete compact schema.
    - Load base rows before secondary indexes, then build and analyze indexes once.
    - Measure the actual complete size, per-table/index size, and projected growth before provisioning the remote

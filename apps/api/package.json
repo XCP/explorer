@@ -26,6 +26,7 @@
     "migrate:core:local": "wrangler d1 migrations apply xcpio-core --local",
     "migrate:core:remote": "wrangler d1 migrations apply xcpio-core --remote",
     "snapshot:core": "node ops/build-core-snapshot.mjs",
+    "snapshot:core:import": "node ops/import-core-export.mjs",
     "build:core": "node ops/build-compact-core.mjs",
     "migrate:recovery:local": "wrangler d1 migrations apply xcpio-btc --local",
     "migrate:recovery:remote": "wrangler d1 migrations apply xcpio-btc --remote"

@@ -41,6 +41,14 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS snapshot_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `);
+db.prepare(
+  `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_mode','http_live_baseline')
+  ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+).run();
+db.prepare(
+  `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_consistent','0')
+  ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+).run();
 for (const [key, value] of Object.entries(schema.source_state)) {
   db.prepare(`INSERT INTO snapshot_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`).run(
     `source_${key}`,
