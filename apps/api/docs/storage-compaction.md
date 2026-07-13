@@ -41,6 +41,12 @@ Completion gates:
 8. Verify D1 reports reclaimed storage. If dropped pages are not physically reclaimed by the platform,
    use the Phase 2 blue-green rebuild rather than relying on an in-place file compaction.
 
+`GET /admin/ledger-readiness` (admin-token protected) automates the read-only portion of these gates. It
+checks completion state, exact total counts and first/last event indexes, then compares row count plus event,
+block-index, and credit-direction sums over bounded beginning, middle, and ending ranges. `sample_radius` is capped at 10,000
+to keep range scans bounded. A `ready: true` response is evidence for a deliberate cutover; the endpoint and
+scheduled backfill never update `read_cutover` themselves.
+
 ## Phase 2: blue-green compact primary
 
 Do not rewrite the 7.66 GB primary in place. Create `xcpio-core`, apply the canonical schema, replay the

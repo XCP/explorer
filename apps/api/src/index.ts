@@ -11,7 +11,8 @@ import { Hono } from "hono";
 import type { Env } from "#api/env";
 export type { Env } from "#api/env";
 import { describeHttpError, requestId } from "#api/http/errors";
-import { syncEvents, backfillLedger, verifyLedgerParity } from "#api/indexer/sync";
+import { syncEvents, backfillLedger } from "#api/indexer/sync";
+import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "#api/indexer/signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
@@ -256,10 +257,8 @@ export default {
               const r = await backfillLedger(env, { maxEvents: 50000 });
               if (r.caught_up) {
                 await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
-                const parity = await verifyLedgerParity(env);
-                if (parity.ok)
-                  await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='1' WHERE key='read_cutover'").run();
-                else console.error({ event: "ledger_parity", outcome: "error", parity });
+                const readiness = await auditLedgerReadiness(env);
+                console.info({ event: "ledger_readiness", outcome: readiness.ready ? "ready" : "blocked", readiness });
               }
             }
           });

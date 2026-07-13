@@ -27,6 +27,7 @@ import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated"
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { recoveryAdmin } from "#api/recovery/admin";
+import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -103,6 +104,12 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/backfill-ledger", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await backfillLedger(c.env, { maxEvents: events }));
+});
+
+// Read-only safety audit. This reports readiness but deliberately cannot change `read_cutover`.
+admin.get("/admin/ledger-readiness", async (c) => {
+  const radius = boundedInteger(c.req.query("sample_radius"), { defaultValue: 2_000, min: 1, max: 10_000 });
+  return c.json(await auditLedgerReadiness(c.env, radius));
 });
 
 // Full re-index: reset the event cursor to -1 so the next /admin/sync (or cron) WIPES balances + snapshots
