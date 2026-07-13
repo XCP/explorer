@@ -55,12 +55,12 @@ ON CONFLICT(event_index) DO UPDATE SET
 INSERT INTO burns(
   tx_index,tx_hash,block_index,block_time,source_id,burned,burned_normalized,earned,earned_normalized,status
 )
-SELECT t.tx_index,unhex(b.tx_hash),b.block_index,b.block_time,a.address_id,b.burned,b.burned_normalized,
+SELECT COALESCE(t.tx_index,0),unhex(b.tx_hash),b.block_index,b.block_time,a.address_id,b.burned,b.burned_normalized,
        b.earned,b.earned_normalized,b.status
 FROM source.burns b
-JOIN source.transactions t ON t.tx_hash=b.tx_hash
+LEFT JOIN source.transactions t ON t.tx_hash=b.tx_hash
 LEFT JOIN address_dictionary a ON a.address=b.source
-WHERE true
+WHERE t.tx_index IS NOT NULL OR b.tx_hash='685623401c3f5e9d2eaaf0657a50454e56a270ee7630d409e98d3bc257560098'
 ON CONFLICT(tx_index) DO UPDATE SET
   tx_hash=excluded.tx_hash,block_index=excluded.block_index,block_time=excluded.block_time,
   source_id=excluded.source_id,burned=excluded.burned,burned_normalized=excluded.burned_normalized,
@@ -337,7 +337,7 @@ SELECT f.event_index,t.tx_index,unhex(f.tx_hash),f.block_index,f.block_time,s.ad
        f.earn_quantity,f.paid_quantity,f.commission,f.status
 FROM source.fairmints f
 JOIN source.transactions t ON t.tx_hash=f.tx_hash
-JOIN source.transactions p ON p.tx_hash=f.fairminter_tx_hash
+LEFT JOIN source.transactions p ON p.tx_hash=f.fairminter_tx_hash
 LEFT JOIN address_dictionary s ON s.address=f.source
 LEFT JOIN asset_dictionary a ON a.asset=f.asset
 WHERE true

@@ -24,6 +24,13 @@ const CORE_DDL = readdirSync("migrations-core")
   .sort()
   .map((name) => readFileSync(`migrations-core/${name}`, "utf8"))
   .join("\n");
+const PROTOCOL_TRANSFORM = readFileSync("ops/core-transform/0020_protocol.sql", "utf8");
+
+function protocolTransformFor(table: string): string {
+  const statement = PROTOCOL_TRANSFORM.match(new RegExp(`INSERT INTO ${table}\\([\\s\\S]*?;`))?.[0];
+  if (statement == null) throw new Error(`missing ${table} transform`);
+  return statement;
+}
 
 test("core manifest classifies the complete live source schema exactly once", () => {
   assert.equal(CORE_TABLE_MANIFEST.length, 60);
@@ -339,5 +346,46 @@ test("latest compact prices seek the currency history", () => {
   assert.equal(
     plan.some((row) => row.detail.includes("idx_prices_currency_day")),
     true,
+  );
+});
+
+test("historical burns and fairmints survive absent transaction relationships", () => {
+  const db = fixture();
+  db.exec(`
+    ATTACH ':memory:' AS source;
+    CREATE TABLE source.transactions(tx_index INTEGER PRIMARY KEY,tx_hash TEXT);
+    CREATE TABLE source.burns(
+      tx_hash TEXT PRIMARY KEY,block_index INTEGER,block_time INTEGER,source TEXT,burned TEXT,
+      burned_normalized TEXT,earned TEXT,earned_normalized TEXT,status TEXT
+    );
+    CREATE TABLE source.fairmints(
+      event_index INTEGER PRIMARY KEY,tx_hash TEXT,block_index INTEGER,block_time INTEGER,source TEXT,
+      fairminter_tx_hash TEXT,asset TEXT,earn_quantity TEXT,paid_quantity TEXT,commission TEXT,status TEXT
+    );
+  `);
+  const genesisBurn = "685623401c3f5e9d2eaaf0657a50454e56a270ee7630d409e98d3bc257560098";
+  const mintHash = "77".repeat(32);
+  db.prepare(
+    `INSERT INTO source.burns VALUES(?,278319,1388701177,'alice','50000','0.00050000','74959091','0.74959091','valid')`,
+  ).run(genesisBurn);
+  db.prepare(`INSERT INTO source.transactions VALUES(5,?)`).run(mintHash);
+  db.prepare(`INSERT INTO source.fairmints VALUES(8,?,100,1,'alice',?,'RARE','1','2','0','valid')`).run(
+    mintHash,
+    "88".repeat(32),
+  );
+
+  db.exec(protocolTransformFor("burns"));
+  db.exec(protocolTransformFor("fairmints"));
+
+  assert.deepEqual(
+    { ...db.prepare(`SELECT tx_index,lower(hex(tx_hash)) tx_hash FROM burns`).get()! },
+    {
+      tx_index: 0,
+      tx_hash: genesisBurn,
+    },
+  );
+  assert.deepEqual(
+    { ...db.prepare(`SELECT event_index,tx_index,fairminter_tx_index FROM fairmints`).get()! },
+    { event_index: 8, tx_index: 5, fairminter_tx_index: null },
   );
 });

@@ -351,7 +351,7 @@ CREATE TABLE fairmints (
   block_index INTEGER NOT NULL,
   block_time INTEGER,
   source_id INTEGER,
-  fairminter_tx_index INTEGER NOT NULL,
+  fairminter_tx_index INTEGER,
   asset_id INTEGER,
   earn_quantity TEXT,
   paid_quantity TEXT,

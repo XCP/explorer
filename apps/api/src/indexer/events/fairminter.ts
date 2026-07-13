@@ -154,7 +154,7 @@ const newFairmint: Handler = ({ ev, p, b, bt }, ctx) => {
           b,
           bt,
           p.source ?? null,
-          hashToBytes(p.fairminter_tx_hash),
+          p.fairminter_tx_hash ? hashToBytes(p.fairminter_tx_hash) : null,
           p.asset ?? null,
           str(p.earn_quantity),
           str(p.paid_quantity),
