@@ -23,13 +23,34 @@ async function saveCheckpoint(checkpoint) {
   await rename(temporaryPath, checkpointPath);
 }
 
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 async function request(path, init = {}) {
-  const response = await fetch(new URL(path, endpoint), {
-    ...init,
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers },
-  });
-  if (!response.ok) throw new Error(`${path} failed (${response.status}): ${await response.text()}`);
-  return response.json();
+  let lastError;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const response = await fetch(new URL(path, endpoint), {
+        ...init,
+        signal: AbortSignal.timeout(60_000),
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers },
+      });
+      if (response.ok) return response.json();
+
+      const error = new Error(`${path} failed (${response.status}): ${await response.text()}`);
+      if (response.status < 500 && response.status !== 429) {
+        error.retryable = false;
+        throw error;
+      }
+      lastError = error;
+    } catch (error) {
+      if (error?.retryable === false) throw error;
+      lastError = error;
+    }
+    const wait = Math.min(30_000, 1_000 * 2 ** attempt);
+    process.stderr.write(`\nR2 audit request failed; retrying in ${wait / 1000}s (${attempt + 1}/8)\n`);
+    await delay(wait);
+  }
+  throw lastError;
 }
 
 const manifest = await request("/admin/recovery/audit/transactions/manifest");

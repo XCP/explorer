@@ -58,3 +58,10 @@ The Forge daemons log to `~/.forge/daemon-<id>.log`. Do not redirect output cont
 world-readable `/tmp` files. Keep the environment file at `0600`; never copy its bearer token into a command,
 unit file, repository, shell history, or cleanup log. The jobs do not intentionally log the token or fee-address
 secret.
+
+The R2 auditor checkpoints after every page and retries timeouts, rate limits, and server errors with bounded
+exponential backoff. Restarting it with the same checkpoint path resumes after the last accepted transaction;
+do not delete the checkpoint to work around a transient failure.
+
+Launch it through `ops/run-recovery-r2-audit.sh`; the wrapper loads the protected environment and fixes the
+working directory so the durable checkpoint cannot accidentally be created somewhere else.
