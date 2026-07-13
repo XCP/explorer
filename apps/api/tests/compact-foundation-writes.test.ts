@@ -578,3 +578,123 @@ test("compact transaction-level protocol records converge on replay", async () =
   const broadcast = database.prepare(`SELECT btns,btns_op,btns_tick FROM broadcasts`).get() as Record<string, unknown>;
   assert.deepEqual({ ...broadcast }, { btns: 1, btns_op: "DEPLOY", btns_tick: "TICK" });
 });
+
+test("compact dispenser lifecycle preserves dispenser transaction relationships", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const dispenserHash = "71".repeat(32);
+  const dispenseHash = "72".repeat(32);
+  const refillHash = "73".repeat(32);
+  const closeHash = "74".repeat(32);
+  const ctx = context();
+
+  dispatch(event("NEW_TRANSACTION", { tx_index: 40, tx_hash: dispenserHash, source: "vendor" }, 40), ctx);
+  dispatch(
+    event(
+      "OPEN_DISPENSER",
+      {
+        tx_index: 40,
+        tx_hash: dispenserHash,
+        source: "vendor",
+        origin: "owner",
+        asset: "XCP",
+        give_quantity: "100",
+        escrow_quantity: "1000",
+        give_remaining: "1000",
+        satoshirate: "500",
+        status: 0,
+      },
+      41,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "DISPENSE",
+      {
+        tx_index: 41,
+        tx_hash: dispenseHash,
+        dispense_index: 0,
+        dispenser_tx_hash: dispenserHash,
+        source: "vendor",
+        destination: "buyer",
+        asset: "XCP",
+        dispense_quantity: "100",
+        btc_amount: "500",
+      },
+      42,
+    ),
+    ctx,
+  );
+  dispatch(
+    event("DISPENSER_UPDATE", { tx_hash: dispenserHash, give_remaining: "900", dispense_count: 1, status: 0 }, 43),
+    ctx,
+  );
+  dispatch(
+    event(
+      "REFILL_DISPENSER",
+      {
+        tx_index: 42,
+        tx_hash: refillHash,
+        dispenser_tx_hash: dispenserHash,
+        source: "owner",
+        destination: "vendor",
+        asset: "XCP",
+        dispense_quantity: "200",
+      },
+      44,
+    ),
+    ctx,
+  );
+  dispatch(
+    event("DISPENSER_UPDATE", { tx_hash: dispenserHash, give_remaining: "1100", dispense_count: 1, status: 0 }, 45),
+    ctx,
+  );
+  dispatch(
+    event(
+      "DISPENSER_UPDATE",
+      { tx_hash: dispenserHash, status: 11, close_block_index: 105, last_status_tx_hash: closeHash },
+      46,
+    ),
+    ctx,
+  );
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  const dispenser = database
+    .prepare(
+      `SELECT d.tx_index,s.address source,o.address origin,a.asset,d.give_remaining,d.dispense_count,d.status,
+              d.closed_block_index,lower(hex(d.last_status_tx_hash)) last_status_tx_hash
+       FROM dispensers d
+       JOIN address_dictionary s ON s.address_id=d.source_id
+       JOIN address_dictionary o ON o.address_id=d.origin_id
+       JOIN asset_dictionary a ON a.asset_id=d.asset_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...dispenser },
+    {
+      tx_index: 40,
+      source: "vendor",
+      origin: "owner",
+      asset: "XCP",
+      give_remaining: "1100",
+      dispense_count: 1,
+      status: 11,
+      closed_block_index: 105,
+      last_status_tx_hash: closeHash,
+    },
+  );
+  const dispense = database
+    .prepare(`SELECT tx_index,dispense_index,dispenser_tx_index,dispense_quantity,btc_amount FROM dispenses`)
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...dispense },
+    { tx_index: 41, dispense_index: 0, dispenser_tx_index: 40, dispense_quantity: "100", btc_amount: "500" },
+  );
+  const refill = database
+    .prepare(`SELECT tx_index,dispenser_tx_index,dispense_quantity FROM dispenser_refills`)
+    .get() as Record<string, unknown>;
+  assert.deepEqual({ ...refill }, { tx_index: 42, dispenser_tx_index: 40, dispense_quantity: "200" });
+});
