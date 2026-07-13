@@ -52,10 +52,17 @@ test("exchange leaderboard counts distinct depositors and publishes generations 
   db.prepare(BUILD_EXCHANGE_TOP_ASSETS_SQL).run(2);
   assert.equal((db.prepare(READ_SQL).get() as { asset: string }).asset, "A");
   db.prepare(`UPDATE indexer_state SET value='2' WHERE key='exchange_top_assets_generation'`).run();
-  assert.deepEqual(db.prepare(READ_SQL).all().slice(0, 2).map((row) => ({ ...row })), [
-    { asset: "A", asset_longname: "A.long", depositors: 2 },
-    { asset: "B", asset_longname: null, depositors: 2 },
-  ]);
+  assert.deepEqual(
+    db
+      .prepare(READ_SQL)
+      .all()
+      .slice(0, 2)
+      .map((row) => ({ ...row })),
+    [
+      { asset: "A", asset_longname: "A.long", depositors: 2 },
+      { asset: "B", asset_longname: null, depositors: 2 },
+    ],
+  );
 });
 
 test("exchange leaderboard read uses only compact indexes", () => {

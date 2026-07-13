@@ -47,6 +47,14 @@ $addressRows = $rows->isEmpty()
 
 $transactions = [];
 foreach ($rows as $row) {
+    // Historical rows occasionally mark an output spent without retaining a valid
+    // transaction id. Treat that value as unknown; Electrs reconciliation is the
+    // authoritative source for spent state and will populate it when resolvable.
+    $spendingTxid = is_string($row->spending_txid)
+        && strlen($row->spending_txid) === 64
+        && ctype_xdigit($row->spending_txid)
+            ? strtolower($row->spending_txid)
+            : null;
     if (!isset($transactions[$row->txid])) {
         $transactions[$row->txid] = [
             'txid' => strtolower($row->txid),
@@ -60,7 +68,7 @@ foreach ($rows as $row) {
         'script_pubkey_hex' => strtolower($row->script_hex),
         'block_height' => $row->block_height === null ? null : (int) $row->block_height,
         'block_time' => $row->created_at_utc === null ? null : strtotime((string) $row->created_at_utc),
-        'spent_by_txid' => $row->is_spent ? $row->spending_txid : null,
+        'spent_by_txid' => $row->is_spent ? $spendingTxid : null,
         'spent_height' => null,
         'source_id' => (int) $row->id,
         'source_recoverable' => (bool) $row->is_recoverable,

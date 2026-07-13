@@ -8,6 +8,8 @@ interface RecoveryOutputIdentity {
 }
 
 type FetchOutspends = typeof fetchTransactionOutspends;
+const ELECTRS_BATCH_SIZE = 10;
+const ELECTRS_BATCH_INTERVAL_MS = 2_000;
 
 export function verificationRetryDelay(attempts: number): number {
   return Math.min(6 * 60 * 60, 30 * 2 ** Math.min(10, Math.max(0, attempts - 1)));
@@ -22,11 +24,12 @@ function chunks<T>(values: T[], size: number): T[][] {
 export async function verifyRecoveryTransactions(
   env: Env,
   transactionLimit = 25,
-  options: { fetchOutspends?: FetchOutspends; now?: number } = {},
+  options: { fetchOutspends?: FetchOutspends; now?: number; batchIntervalMs?: number } = {},
 ): Promise<{ transactions: number; outputs: number; spent: number; failed: number }> {
   const limit = Math.min(100, Math.max(1, Math.trunc(transactionLimit)));
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const fetchOutspends = options.fetchOutspends ?? fetchTransactionOutspends;
+  const batchIntervalMs = options.batchIntervalMs ?? ELECTRS_BATCH_INTERVAL_MS;
   const transactionRows = await env.RECOVERY_DB.prepare(
     `SELECT o.txid FROM recovery_outputs o
       LEFT JOIN recovery_verification_failures f ON f.txid=o.txid
@@ -46,14 +49,17 @@ export async function verifyRecoveryTransactions(
   ).flatMap((result) => result.results as unknown as RecoveryOutputIdentity[]);
   const outspendsByTxid = new Map<string, Awaited<ReturnType<typeof fetchTransactionOutspends>>>();
   const failures = new Map<string, string>();
-  for (let offset = 0; offset < transactionRows.results.length; offset += 10) {
-    const batch = transactionRows.results.slice(offset, offset + 10);
+  for (let offset = 0; offset < transactionRows.results.length; offset += ELECTRS_BATCH_SIZE) {
+    const batch = transactionRows.results.slice(offset, offset + ELECTRS_BATCH_SIZE);
     const results = await Promise.allSettled(batch.map((row) => fetchOutspends(env.ELECTRS_API_BASE, row.txid)));
     batch.forEach((row, index) => {
       const result = results[index];
       if (result.status === "fulfilled") outspendsByTxid.set(row.txid, result.value);
       else failures.set(row.txid, result.reason instanceof Error ? result.reason.message : "Electrs lookup failed");
     });
+    if (offset + ELECTRS_BATCH_SIZE < transactionRows.results.length && batchIntervalMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
+    }
   }
 
   let spent = 0;

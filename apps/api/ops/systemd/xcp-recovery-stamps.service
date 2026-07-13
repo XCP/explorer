@@ -11,10 +11,6 @@ Restart=on-failure
 RestartSec=15
 UMask=0077
 NoNewPrivileges=true
-PrivateDevices=true
-ProtectControlGroups=true
-ProtectKernelModules=true
-ProtectKernelTunables=true
 RestrictSUIDSGID=true
 LockPersonality=true
 
