@@ -1,5 +1,7 @@
 // Indexed read plans for the canonical compact schema.
 import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
+import type { BalanceRow } from "@xcp/shared/assets";
+import type { SendRow } from "@xcp/shared/records";
 import { one, q } from "#api/db";
 
 export const CORE_SENDS_BY_ADDRESS_SQL = `WITH candidates AS (
@@ -62,6 +64,52 @@ FROM transactions t
 LEFT JOIN address_dictionary src ON src.address_id=t.source_id
 LEFT JOIN address_dictionary dst ON dst.address_id=t.destination_id
 WHERE t.tx_hash=unhex(?1)`;
+
+async function dictionaryId(
+  db: D1Database,
+  table: "address_dictionary" | "asset_dictionary",
+  idColumn: "address_id" | "asset_id",
+  valueColumn: "address" | "asset",
+  value: string,
+): Promise<number | null> {
+  const row = await one<{ id: number }>(db, `SELECT ${idColumn} id FROM ${table} WHERE ${valueColumn}=?`, value);
+  return row?.id ?? null;
+}
+
+export function addressId(db: D1Database, address: string): Promise<number | null> {
+  return dictionaryId(db, "address_dictionary", "address_id", "address", address);
+}
+
+export function assetId(db: D1Database, asset: string): Promise<number | null> {
+  return dictionaryId(db, "asset_dictionary", "asset_id", "asset", asset);
+}
+
+export async function listAddressSends(
+  db: D1Database,
+  address: string,
+  limit: number,
+  offset: number,
+): Promise<SendRow[]> {
+  const id = await addressId(db, address);
+  return id == null ? [] : q<SendRow>(db, CORE_SENDS_BY_ADDRESS_SQL, id, limit, offset);
+}
+
+export async function listAddressBalances(
+  db: D1Database,
+  address: string,
+  limit: number,
+  offset: number,
+): Promise<BalanceRow[]> {
+  const id = await addressId(db, address);
+  return id == null ? [] : q<BalanceRow>(db, CORE_BALANCES_BY_ADDRESS_SQL, id, limit, offset);
+}
+
+export async function assetBalanceTotal(db: D1Database, asset: string): Promise<string> {
+  const id = await assetId(db, asset);
+  if (id == null) return "0";
+  const row = await one<{ total: string | number }>(db, CORE_TOTAL_BY_ASSET_SQL, id);
+  return String(row?.total ?? 0);
+}
 
 export function listBlocks(db: D1Database, limit: number, offset: number): Promise<BlockRow[]> {
   return q<BlockRow>(db, CORE_BLOCK_PAGE_SQL, limit, offset);
