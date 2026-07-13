@@ -344,10 +344,11 @@ assets.get("/v2/assets/:asset/pool-matches", async (c) => {
 // union reads (kept under D1's term cap) merged by month.
 assets.get("/v2/assets/:asset/activity", async (c) => {
   const a = c.req.param("asset").toUpperCase();
-  const [venues, flows] = await Promise.all([
-    assetActivityVenues(c.env.DB, a).catch(() => []),
-    assetActivityFlows(c.env.DB, a).catch(() => []),
-  ]);
+  // D1 accounts concurrent statements against one request's database CPU budget.
+  // Run these independently indexed aggregates in sequence: in parallel, a busy
+  // venue scan can reset the cheap flow query and the old fallback cached `[]`.
+  const venues = await assetActivityVenues(c.env.DB, a);
+  const flows = await assetActivityFlows(c.env.DB, a);
   const byMonth = new Map<string, AssetActivityMonth>();
   const row = (m: string) => byMonth.get(m) ?? { month: m, orders: 0, dispensers: 0, sends: 0, supply: 0 };
   for (const v of venues) byMonth.set(v.month, { ...row(v.month), orders: v.orders, dispensers: v.dispensers });
