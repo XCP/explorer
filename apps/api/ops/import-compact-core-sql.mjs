@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const directory = process.env.CORE_SQL_DIRECTORY;
@@ -27,10 +28,10 @@ const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
 const defaultStatePath = join(dirname(resolvedDirectory), `${basename(resolvedDirectory)}-${database}-import.json`);
 const statePath = resolve(process.env.CORE_IMPORT_STATE ?? defaultStatePath);
 const wranglerDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const executable = process.platform === "win32" ? "npx.cmd" : "npx";
+const wranglerCli = createRequire(import.meta.url).resolve("wrangler");
 
 function wrangler(args, options = {}) {
-  const result = spawnSync(executable, ["wrangler", ...args], {
+  const result = spawnSync(process.execPath, [wranglerCli, ...args], {
     cwd: wranglerDirectory,
     encoding: "utf8",
     stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
