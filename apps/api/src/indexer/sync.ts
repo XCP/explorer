@@ -41,9 +41,9 @@ async function getState(db: D1Database, k: string): Promise<string | null> {
 }
 
 async function compactWritesEnabled(db: D1Database): Promise<boolean> {
-  const required = ["build_complete", "import_complete", "seed_reconciled", "parity_verified", "forward_write_ready"];
+  const required = ["build_complete", "import_complete", "seed_reconciled", "forward_write_ready"];
   const rows = await db
-    .prepare(`SELECT key,value FROM core_state WHERE key IN (?,?,?,?,?)`)
+    .prepare(`SELECT key,value FROM core_state WHERE key IN (?,?,?,?)`)
     .bind(...required)
     .all<{ key: string; value: string }>();
   const state = Object.fromEntries(rows.results.map((row) => [row.key, row.value]));
@@ -360,7 +360,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       const stored = await getState(env.DB, "last_block_hash");
       const actual = await blockHash(api, ckBlock);
       if (stored && actual && stored !== actual) {
-        await rollback(env, ckBlock - 1, api);
+        await rollback(env, ckBlock - 1, api, writeCompact);
         lastIdx = parseInt((await getState(env.DB, "last_event_index")) || "-1", 10);
       }
     }
@@ -530,7 +530,7 @@ async function deleteAbove(db: D1Database, table: string, block: number): Promis
 }
 
 /** cascade delete > rollbackTo across all tables; restore balances from snapshots <= rollbackTo. */
-async function rollback(env: Env, rollbackTo: number, api: string): Promise<void> {
+async function rollback(env: Env, rollbackTo: number, api: string, writeCompact: boolean): Promise<void> {
   const tables = [
     "transactions",
     "sends",
@@ -566,6 +566,7 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
   // the main D1 transaction/cascade. Delete its orphaned branch explicitly before replay; otherwise
   // INSERT OR IGNORE on a reused event_index would preserve stale pre-reorg data forever.
   await deleteAbove(env.LEDGER_DB, "ledger_events", rollbackTo);
+  if (writeCompact) await rollbackCompactDatabase(env.CORE_DB, rollbackTo);
   // reopen orders/dispensers closed after rollback
   await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`)
     .bind(rollbackTo)
@@ -607,12 +608,130 @@ async function rollback(env: Env, rollbackTo: number, api: string): Promise<void
     const rows: Ev[] = d.result || [];
     const firstAfter = [...rows].reverse().find((e) => e.block_index > rollbackTo);
     if (firstAfter) {
-      await env.DB.batch([setStateStmt(env.DB, "last_event_index", String(firstAfter.event_index - 1))]);
+      const eventIndex = String(firstAfter.event_index - 1);
+      await env.DB.batch([setStateStmt(env.DB, "last_event_index", eventIndex)]);
+      if (writeCompact) {
+        await env.CORE_DB.batch([setCoreStateStmt(env.CORE_DB, "last_event_index", eventIndex)]);
+      }
       return;
     }
     if (!rows.length) break;
     probe = rows[rows.length - 1].event_index - 1;
   }
+}
+
+interface CompactBalanceIdentity {
+  address_id: number | null;
+  utxo_tx_hash: ArrayBuffer | null;
+  utxo_vout: number | null;
+  asset_id: number;
+}
+
+/** Remove one orphaned compact branch and restore every affected balance to its nearest retained snapshot. */
+export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number): Promise<void> {
+  const tables = [
+    "transactions",
+    "sends",
+    "issuances",
+    "destructions",
+    "dispensers",
+    "dispenses",
+    "dispenser_refills",
+    "cancels",
+    "orders",
+    "order_matches",
+    "btcpays",
+    "sweeps",
+    "burns",
+    "dividends",
+    "broadcasts",
+    "fairminters",
+    "fairmints",
+    "pools",
+    "pool_matches",
+    "pool_liquidity",
+    "bets",
+    "bet_matches",
+    "bet_match_resolutions",
+    "rps",
+    "rps_matches",
+    "ledger_events",
+    "blocks",
+  ];
+  for (const table of tables) await deleteAbove(db, table, rollbackTo);
+  await db
+    .prepare(`UPDATE orders SET status='open',closed_block_index=NULL WHERE closed_block_index>?`)
+    .bind(rollbackTo)
+    .run();
+  await db.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index>?`).bind(rollbackTo).run();
+
+  const changed = await db
+    .prepare(
+      `SELECT DISTINCT address_id,utxo_tx_hash,utxo_vout,asset_id
+       FROM balance_snapshots WHERE block_index>?`,
+    )
+    .bind(rollbackTo)
+    .all<CompactBalanceIdentity>();
+  const statements: Stmt[] = [];
+  for (const identity of changed.results) {
+    const snapshot = await db
+      .prepare(
+        `SELECT s.quantity,s.updated_event_index,
+                CASE WHEN d.asset IN ('BTC','XCP') THEN 1 ELSE coalesce(a.divisible,0) END divisible
+         FROM balance_snapshots s
+         JOIN asset_dictionary d ON d.asset_id=s.asset_id
+         LEFT JOIN assets a ON a.asset_id=s.asset_id
+         WHERE s.asset_id=?
+           AND ((? IS NOT NULL AND s.address_id=?) OR
+                (? IS NULL AND s.utxo_tx_hash=? AND s.utxo_vout=?))
+           AND s.block_index<=?
+         ORDER BY s.block_index DESC LIMIT 1`,
+      )
+      .bind(
+        identity.asset_id,
+        identity.address_id,
+        identity.address_id,
+        identity.address_id,
+        identity.utxo_tx_hash,
+        identity.utxo_vout,
+        rollbackTo,
+      )
+      .first<{ quantity: string; updated_event_index: number; divisible: number }>();
+    const identityPredicate =
+      identity.address_id == null
+        ? `address_id IS NULL AND utxo_tx_hash=? AND utxo_vout=? AND asset_id=?`
+        : `address_id=? AND asset_id=?`;
+    const identityBinds =
+      identity.address_id == null
+        ? [identity.utxo_tx_hash, identity.utxo_vout, identity.asset_id]
+        : [identity.address_id, identity.asset_id];
+    if (snapshot) {
+      statements.push((target) =>
+        target
+          .prepare(
+            `UPDATE balances SET quantity=?,quantity_normalized=?,updated_block_index=?,updated_event_index=?
+             WHERE ${identityPredicate}`,
+          )
+          .bind(
+            snapshot.quantity,
+            normalize(snapshot.quantity, snapshot.divisible === 1),
+            rollbackTo,
+            snapshot.updated_event_index,
+            ...identityBinds,
+          ),
+      );
+    } else {
+      statements.push((target) =>
+        target.prepare(`DELETE FROM balances WHERE ${identityPredicate}`).bind(...identityBinds),
+      );
+    }
+  }
+  statements.push((target) => target.prepare(`DELETE FROM balance_snapshots WHERE block_index>?`).bind(rollbackTo));
+  await batchAll(db, statements);
+  await db.batch([
+    setCoreStateStmt(db, "last_block_index", String(rollbackTo)),
+    setCoreStateStmt(db, "parity_verified", "0"),
+  ]);
 }
 
 async function pruneSnapshots(env: Env, cutoff: number): Promise<void> {

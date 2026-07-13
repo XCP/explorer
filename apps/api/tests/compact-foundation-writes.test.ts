@@ -6,7 +6,7 @@ import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionari
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
-import { syncCompactEvents } from "#api/indexer/sync";
+import { rollbackCompactDatabase, syncCompactEvents } from "#api/indexer/sync";
 
 const CORE_DDL = [
   "migrations-core/0001_core.sql",
@@ -1245,4 +1245,72 @@ test("compact replay advances its own seed cursor without writing the source mir
     seed_reconciled: "1",
     reconciled_event_index: "1",
   });
+});
+
+test("compact rollback removes orphan rows and restores balance quantity and high-water", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const addressId = Number(
+    database.prepare(`INSERT INTO address_dictionary(address) VALUES ('alice') RETURNING address_id`).get()?.address_id,
+  );
+  const assetId = Number(
+    database.prepare(`INSERT INTO asset_dictionary(asset) VALUES ('RARE') RETURNING asset_id`).get()?.asset_id,
+  );
+  database.prepare(`INSERT INTO assets(asset_id,divisible) VALUES (?,1)`).run(assetId);
+  database
+    .prepare(
+      `INSERT INTO balances(address_id,asset_id,quantity,quantity_normalized,updated_block_index,updated_event_index)
+       VALUES (?,?,'20','0.00000020',102,10)`,
+    )
+    .run(addressId, assetId);
+  database
+    .prepare(
+      `INSERT INTO balance_snapshots(address_id,asset_id,block_index,quantity,updated_event_index)
+       VALUES (?, ?,100,'10',5),(?, ?,102,'20',10)`,
+    )
+    .run(addressId, assetId, addressId, assetId);
+  database.exec(`
+    INSERT INTO blocks(block_index) VALUES (100),(102);
+    INSERT INTO transactions(tx_index,tx_hash,block_index) VALUES
+      (1,X'${"e1".repeat(32)}',100),
+      (2,X'${"e2".repeat(32)}',102);
+    INSERT INTO ledger_events(event_index,direction,block_index,address_id,asset_id,quantity)
+      VALUES (10,1,102,${addressId},${assetId},'10');
+    INSERT INTO orders(tx_index,tx_hash,block_index,status,closed_block_index)
+      VALUES (1,X'${"e1".repeat(32)}',100,'filled',102);
+    INSERT INTO dispensers(tx_index,tx_hash,block_index,source_id,asset_id,status,closed_block_index)
+      VALUES (3,X'${"e3".repeat(32)}',100,${addressId},${assetId},11,102);
+    INSERT INTO core_state(key,value) VALUES
+      ('last_block_index','102'),
+      ('parity_verified','1');
+  `);
+
+  await rollbackCompactDatabase(d1(database), 101);
+
+  const balance = database
+    .prepare(`SELECT quantity,quantity_normalized,updated_block_index,updated_event_index FROM balances`)
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...balance },
+    { quantity: "10", quantity_normalized: "0.00000010", updated_block_index: 101, updated_event_index: 5 },
+  );
+  assert.equal(database.prepare(`SELECT COUNT(*) count FROM balance_snapshots`).get()?.count, 1);
+  assert.equal(database.prepare(`SELECT COUNT(*) count FROM transactions`).get()?.count, 1);
+  assert.equal(database.prepare(`SELECT COUNT(*) count FROM ledger_events`).get()?.count, 0);
+  assert.deepEqual(
+    { ...(database.prepare(`SELECT status,closed_block_index FROM orders`).get() as Record<string, unknown>) },
+    { status: "open", closed_block_index: null },
+  );
+  assert.deepEqual(
+    { ...(database.prepare(`SELECT status,closed_block_index FROM dispensers`).get() as Record<string, unknown>) },
+    { status: 11, closed_block_index: null },
+  );
+  const state = Object.fromEntries(
+    (database.prepare(`SELECT key,value FROM core_state`).all() as { key: string; value: string }[]).map((row) => [
+      row.key,
+      row.value,
+    ]),
+  );
+  assert.equal(state.last_block_index, "101");
+  assert.equal(state.parity_verified, "0");
 });
