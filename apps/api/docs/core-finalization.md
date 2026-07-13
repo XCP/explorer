@@ -76,3 +76,12 @@ blocks, assets, and balance snapshots required for a functioning and rollback-sa
 4. Add per-table readiness reports and response parity fixtures.
 5. Extend import in dependency order: assets/issuances, sends, orders/matches, balances/snapshots.
 6. Complete the mirror-to-derived join inventory before selecting the production cutover unit.
+
+For an operator-driven transaction catch-up, run one remote Worker process and one importer process from
+`apps/api`. The importer reads `ADMIN_TOKEN` from the gitignored `.dev.vars`, logs only progress, and retries
+transient failures without advancing the destination cursor:
+
+```sh
+wrangler dev --remote --port 8790
+node ops/run-core-backfill.mjs
+```
