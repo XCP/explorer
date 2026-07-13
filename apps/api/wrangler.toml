@@ -27,7 +27,7 @@ migrations_dir = "migrations-ledger"
 [[d1_databases]]
 binding = "CORE_DB"
 database_name = "xcpio-core"
-database_id = "300b798a-5910-40aa-bece-599a79cb08aa"
+database_id = "17b7d589-7076-4ea1-851a-0de10964ab16"
 migrations_dir = "migrations-core"
 
 # Counterparty bare-multisig recovery index. Isolated because its source is the
