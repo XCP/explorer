@@ -42,7 +42,15 @@ function chunks<T>(values: T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
 }
 
+async function recoveryReadsReady(env: Env): Promise<boolean> {
+  const state = await env.RECOVERY_DB.prepare(
+    `SELECT value FROM recovery_state WHERE key='read_ready'`,
+  ).first<{ value: string }>();
+  return state?.value === "1";
+}
+
 recoveryRead.get("/addresses/:address/recovery", async (c) => {
+  if (!(await recoveryReadsReady(c.env))) return c.json({ error: "recovery index is still being verified" }, 503);
   const address = c.req.param("address");
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
   const page = boundedInteger(c.req.query("page"), { defaultValue: 1, min: 1 });
@@ -114,6 +122,7 @@ interface RecoveryReportBody {
 }
 
 recoveryRead.post("/addresses/:address/recoveries", async (c) => {
+  if (!(await recoveryReadsReady(c.env))) return c.json({ error: "recovery index is still being verified" }, 503);
   const address = c.req.param("address");
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
   const body = await c.req.json<RecoveryReportBody>().catch(() => null);
@@ -191,6 +200,7 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
 });
 
 recoveryRead.get("/addresses/:address/recoveries", async (c) => {
+  if (!(await recoveryReadsReady(c.env))) return c.json({ error: "recovery index is still being verified" }, 503);
   const address = c.req.param("address");
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 50, min: 1, max: 100 });

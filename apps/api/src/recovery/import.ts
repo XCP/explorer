@@ -34,14 +34,15 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
   const upsert = env.RECOVERY_DB.prepare(
     `INSERT INTO recovery_outputs
        (txid,vout,value_sats,script_pubkey_hex,layout,recovery_key_hex,recovery_key_position,recovery_address,
-        classification,reason,block_height,block_time,spent_by_txid,spent_height,verified_at,classifier_version)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        classification,reason,block_height,block_time,spent_by_txid,spent_height,verified_at,classifier_version,chain_checked_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
      ON CONFLICT(txid,vout) DO UPDATE SET
        value_sats=excluded.value_sats,script_pubkey_hex=excluded.script_pubkey_hex,layout=excluded.layout,
        recovery_key_hex=excluded.recovery_key_hex,recovery_key_position=excluded.recovery_key_position,
        recovery_address=excluded.recovery_address,classification=excluded.classification,reason=excluded.reason,
        block_height=excluded.block_height,block_time=excluded.block_time,spent_by_txid=excluded.spent_by_txid,
-       spent_height=excluded.spent_height,verified_at=excluded.verified_at,classifier_version=excluded.classifier_version`,
+       spent_height=excluded.spent_height,verified_at=excluded.verified_at,classifier_version=excluded.classifier_version,
+       chain_checked_at=NULL`,
   );
 
   for (const row of rows) {

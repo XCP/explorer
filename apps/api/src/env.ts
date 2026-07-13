@@ -7,6 +7,7 @@ export interface Env {
   RECOVERY_FEE_ADDRESSES: string;
   RECOVERY_FEE_PERCENT: string;
   RECOVERY_FEE_EXEMPTION_SATS: string;
+  ELECTRS_API_BASE: string;
   XCPDEX: Fetcher;
   COUNTERPARTY_API_BASE: string;
   XCPDEX_API: string;

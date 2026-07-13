@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { Env } from "#api/env";
 import { importRecoveryTransactions, type RecoveryImportTransaction } from "#api/recovery/import";
+import { verifyRecoveryTransactions } from "#api/recovery/verify";
+import { boundedInteger } from "#api/http/numbers";
 
 export const recoveryAdmin = new Hono<{ Bindings: Env }>();
 
@@ -50,4 +52,33 @@ recoveryAdmin.get("/admin/recovery/imports/:id", async (c) => {
     `SELECT id,source,cursor,rows_seen,rows_written,started_at,completed_at,error FROM recovery_imports WHERE id=?`,
   ).bind(c.req.param("id")).first();
   return row ? c.json(row) : c.json({ error: "import not found" }, 404);
+});
+
+recoveryAdmin.post("/admin/recovery/verify", async (c) => {
+  const limit = boundedInteger(c.req.query("transactions"), { defaultValue: 25, min: 1, max: 100 });
+  return c.json(await verifyRecoveryTransactions(c.env, limit));
+});
+
+recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
+  const [imports, unchecked] = await Promise.all([
+    c.env.RECOVERY_DB.prepare(
+      `SELECT COUNT(*) total, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) completed FROM recovery_imports`,
+    ).first<{ total: number; completed: number }>(),
+    c.env.RECOVERY_DB.prepare(
+      `SELECT COUNT(*) count FROM recovery_outputs WHERE chain_checked_at IS NULL`,
+    ).first<{ count: number }>(),
+  ]);
+  const totalImports = Number(imports?.total ?? 0);
+  const completedImports = Number(imports?.completed ?? 0);
+  const uncheckedOutputs = Number(unchecked?.count ?? 0);
+  if (totalImports === 0 || completedImports !== totalImports || uncheckedOutputs !== 0) {
+    return c.json({ error: "recovery index is not ready", total_imports: totalImports,
+      completed_imports: completedImports, unchecked_outputs: uncheckedOutputs }, 409);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_state (key,value,updated_at) VALUES ('read_ready','1',?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+  ).bind(now).run();
+  return c.json({ ok: true, read_ready: true });
 });
