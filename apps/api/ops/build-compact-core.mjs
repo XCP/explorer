@@ -49,6 +49,33 @@ process.stdout.write(`${JSON.stringify({ indexes_ms: Math.round(performance.now(
 db.exec("PRAGMA main.optimize;");
 const page = db.prepare("PRAGMA page_count").get();
 const size = db.prepare("PRAGMA page_size").get();
+const allocatedBytes = Number(page.page_count) * Number(size.page_size);
+const storageObjects = db
+  .prepare(
+    `SELECT d.name,coalesce(s.tbl_name,d.name) table_name,
+            CASE WHEN s.type='index' THEN 'index' ELSE 'table' END kind,d.bytes
+       FROM (SELECT name,sum(pgsize) bytes FROM dbstat GROUP BY name) d
+       LEFT JOIN sqlite_schema s ON s.name=d.name
+      ORDER BY d.bytes DESC,d.name`,
+  )
+  .all()
+  .map((row) => ({ ...row, bytes: Number(row.bytes) }));
+const tableStorage = new Map();
+for (const object of storageObjects) {
+  tableStorage.set(object.table_name, (tableStorage.get(object.table_name) ?? 0) + object.bytes);
+}
+const storage = {
+  allocated_bytes: allocatedBytes,
+  used_object_bytes: storageObjects.reduce((sum, object) => sum + object.bytes, 0),
+  index_bytes: storageObjects
+    .filter((object) => object.kind === "index")
+    .reduce((sum, object) => sum + object.bytes, 0),
+  top_tables: [...tableStorage]
+    .map(([table, bytes]) => ({ table, bytes }))
+    .sort((left, right) => right.bytes - left.bytes)
+    .slice(0, 20),
+  top_objects: storageObjects.slice(0, 20),
+};
 const quoteIdentifier = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
 const snapshotTables = db
   .prepare(`SELECT table_name FROM source.snapshot_state ORDER BY table_name`)
@@ -90,6 +117,6 @@ if (complete) {
   if (Number(hashMismatch.mismatches) !== 0) throw new Error("transaction hash decoding parity failed");
 }
 process.stdout.write(
-  `${JSON.stringify({ complete, bytes: Number(page.page_count) * Number(size.page_size), counts, source_counts: sourceCounts })}\n`,
+  `${JSON.stringify({ complete, bytes: allocatedBytes, storage, counts, source_counts: sourceCounts })}\n`,
 );
 db.close();
