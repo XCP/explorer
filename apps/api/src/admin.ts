@@ -33,6 +33,7 @@ import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/index
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
+import { auditCoreDataParity } from "#api/indexer/core-parity";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -128,6 +129,13 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/core-replay", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
+});
+
+// Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;
+// success records the checked frontier for the later forward-write and read cutovers.
+admin.post("/admin/core-parity", async (c) => {
+  const result = await auditCoreDataParity(c.env, { accept: true });
+  return c.json(result, result.ok ? 200 : 409);
 });
 
 // Backfill the historical credits/debits ledger (migration 0038) — isolated & non-destructive: inserts only
