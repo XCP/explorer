@@ -27,7 +27,7 @@ export interface RecoveryImportTransaction {
 const hashPattern = /^[0-9a-f]{64}$/i;
 
 export async function importRecoveryTransactions(env: Env, rows: RecoveryImportTransaction[]): Promise<number> {
-  if (rows.length === 0 || rows.length > 25) throw new Error("expected 1 to 25 transactions");
+  if (rows.length === 0 || rows.length > 100) throw new Error("expected 1 to 100 transactions");
   const now = Math.floor(Date.now() / 1000);
   const statements: D1PreparedStatement[] = [];
   const blobs: Promise<unknown>[] = [];
