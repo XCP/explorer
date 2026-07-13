@@ -8,11 +8,46 @@ interface RecoveryOutputIdentity {
 }
 
 type FetchOutspends = typeof fetchTransactionOutspends;
-const ELECTRS_BATCH_SIZE = 10;
+// Smooth requests as well as limiting their average rate. Bursts of ten still
+// produced occasional 429s even when followed by a three-second pause.
+const ELECTRS_BATCH_SIZE = 3;
 // The public Electrs allowance replenishes at roughly four requests/second.
 // Stay below that sustained rate so a long reconciliation does not create a
 // growing 429 retry queue after its initial burst allowance is consumed.
-const ELECTRS_BATCH_INTERVAL_MS = 3_000;
+const ELECTRS_BATCH_INTERVAL_MS = 1_000;
+const RETRY_SHARE = 0.1;
+
+export const RECOVERY_VERIFICATION_QUEUE_SQL = `
+  WITH due_retries AS (
+    SELECT f.txid,f.next_retry_at
+      FROM recovery_verification_failures f
+     WHERE f.next_retry_at<=?
+       AND EXISTS (
+         SELECT 1 FROM recovery_outputs o
+          WHERE o.txid=f.txid AND o.chain_checked_at IS NULL
+       )
+     ORDER BY f.next_retry_at,f.txid
+     LIMIT ?
+  ), fresh AS (
+    SELECT o.txid
+      FROM recovery_outputs o
+      LEFT JOIN recovery_verification_failures f ON f.txid=o.txid
+     WHERE o.chain_checked_at IS NULL AND f.txid IS NULL
+     GROUP BY o.txid
+     ORDER BY o.txid
+     LIMIT ?
+  )
+  SELECT txid FROM (
+    SELECT txid,0 AS pool_order,next_retry_at AS sort_at FROM due_retries
+    UNION ALL
+    SELECT txid,1 AS pool_order,0 AS sort_at FROM fresh
+  )
+  ORDER BY pool_order,sort_at,txid
+  LIMIT ?`;
+
+export function verificationRetryQuota(limit: number): number {
+  return Math.max(1, Math.floor(limit * RETRY_SHARE));
+}
 
 export function verificationRetryDelay(attempts: number): number {
   return Math.min(6 * 60 * 60, 30 * 2 ** Math.min(10, Math.max(0, attempts - 1)));
@@ -33,13 +68,8 @@ export async function verifyRecoveryTransactions(
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const fetchOutspends = options.fetchOutspends ?? fetchTransactionOutspends;
   const batchIntervalMs = options.batchIntervalMs ?? ELECTRS_BATCH_INTERVAL_MS;
-  const transactionRows = await env.RECOVERY_DB.prepare(
-    `SELECT o.txid FROM recovery_outputs o
-      LEFT JOIN recovery_verification_failures f ON f.txid=o.txid
-      WHERE o.chain_checked_at IS NULL AND (f.next_retry_at IS NULL OR f.next_retry_at<=?)
-      GROUP BY o.txid ORDER BY COALESCE(f.next_retry_at,0),o.txid LIMIT ?`,
-  )
-    .bind(now, limit)
+  const transactionRows = await env.RECOVERY_DB.prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
+    .bind(now, verificationRetryQuota(limit), limit, limit)
     .all<{ txid: string }>();
   if (transactionRows.results.length === 0) return { transactions: 0, outputs: 0, spent: 0, failed: 0 };
 
