@@ -10,26 +10,39 @@ if (!endpoint || !token) throw new Error("RECOVERY_API_URL and RECOVERY_ADMIN_TO
 if (!Number.isInteger(transactionLimit) || transactionLimit < 1 || transactionLimit > 100)
   throw new Error("RECOVERY_VERIFY_TRANSACTIONS must be an integer from 1 to 100");
 
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function request(path, init = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const response = await fetch(`${endpoint}${path}`, {
+        ...init,
+        headers: { Authorization: `Bearer ${token}`, ...init.headers },
+      });
+      const result = await response.json();
+      if (response.ok || (response.status >= 400 && response.status < 500)) return { response, result };
+      lastError = new Error(`${path} failed: ${JSON.stringify(result)}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(Math.min(30_000, 1_000 * 2 ** attempt));
+  }
+  throw lastError;
+}
+
 async function post(path) {
-  const response = await fetch(`${endpoint}${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const result = await response.json();
+  const { response, result } = await request(path, { method: "POST" });
   if (!response.ok) throw new Error(`${path} failed: ${JSON.stringify(result)}`);
   return result;
 }
 
 async function importComplete() {
-  const response = await fetch(`${endpoint}/admin/recovery/imports/${importId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const { response, result } = await request(`/admin/recovery/imports/${importId}`);
   if (response.status === 404) return false;
   if (!response.ok) throw new Error(`failed to read import state: ${response.status}`);
-  return (await response.json()).completed_at != null;
+  return result.completed_at != null;
 }
-
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 let batches = 0;
 let transactions = 0;

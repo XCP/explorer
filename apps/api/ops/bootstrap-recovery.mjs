@@ -10,10 +10,28 @@ const localSource = process.env.RECOVERY_SOURCE_LOCAL === "1";
 const maxPages = Number(process.env.RECOVERY_MAX_PAGES || 0);
 if (!endpoint || !token) throw new Error("RECOVERY_API_URL and RECOVERY_ADMIN_TOKEN are required");
 
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function request(path, init = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const response = await fetch(`${endpoint}${path}`, {
+        ...init,
+        headers: { Authorization: `Bearer ${token}`, ...init.headers },
+      });
+      if (response.ok || response.status === 404 || (response.status >= 400 && response.status < 500)) return response;
+      lastError = new Error(`${path} failed with ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(Math.min(30_000, 1_000 * 2 ** attempt));
+  }
+  throw lastError;
+}
+
 async function state() {
-  const response = await fetch(`${endpoint}/admin/recovery/imports/${importId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const response = await request(`/admin/recovery/imports/${importId}`);
   if (response.status === 404) return { cursor: "0" };
   if (!response.ok) throw new Error(`failed to read import state: ${response.status}`);
   return response.json();
@@ -52,9 +70,9 @@ while (!maxPages || pages < maxPages) {
       }) => output,
     ),
   }));
-  const response = await fetch(`${endpoint}/admin/recovery/import`, {
+  const response = await request("/admin/recovery/import", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ import_id: importId, cursor, next_cursor: page.next_id, transactions }),
   });
   const result = await response.json();
