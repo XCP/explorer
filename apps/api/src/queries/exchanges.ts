@@ -22,7 +22,12 @@ export function exchangeWallets(db: D1Database): Promise<ExchangeWalletRow[]> {
 export function exchangeTopAssets(db: D1Database): Promise<ExchangeTopAsset[]> {
   return q<ExchangeTopAsset>(
     db,
-    `SELECT s.asset, a.asset_longname, COUNT(DISTINCT s.source) depositors FROM sends s JOIN address_signals e ON e.address=s.destination AND e.is_exchange=1 LEFT JOIN assets a ON a.asset=s.asset GROUP BY s.asset ORDER BY depositors DESC LIMIT 15`,
+    `SELECT asset, asset_longname, depositors
+       FROM exchange_top_assets
+      WHERE generation=COALESCE(
+        (SELECT CAST(value AS INTEGER) FROM indexer_state WHERE key='exchange_top_assets_generation'), 0
+      )
+      ORDER BY depositors DESC, asset ASC`,
   );
 }
 

@@ -36,6 +36,7 @@ import { verify } from "#api/verify";
 import { legacy } from "#api/legacy";
 import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
+import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
@@ -272,6 +273,8 @@ export default {
           // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra
           // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
           await runScheduledJob("runSignalsStep", () => runSignalsStep(env, 2));
+          // Publish the expensive exchange depositor aggregate off the request path (~daily).
+          await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
           // Rebuild the polymorphic tags (categorical layer) for JUST the entities the cascade touched — the
           // dirty-scoped equivalent of buildTags (no 430k-row global DELETE+reinsert every tick).
           if (cascade?.dirty) {

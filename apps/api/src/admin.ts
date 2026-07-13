@@ -30,6 +30,7 @@ import { recoveryAdmin } from "#api/recovery/admin";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { operationalStatus } from "#api/operations/status";
 import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/indexer/ledger-cutover";
+import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -151,6 +152,11 @@ admin.post("/admin/reindex", async (c) => {
 admin.post("/admin/refresh-signals", async (c) => {
   const steps = boundedInteger(c.req.query("steps"), { defaultValue: 3, min: 1, max: 6 });
   return c.json(await runSignalsStep(c.env, steps));
+});
+
+// Force an atomic rebuild of the tiny exchange leaderboard. Normally maintained daily by cron.
+admin.post("/admin/refresh-exchange-top-assets", async (c) => {
+  return c.json(await refreshExchangeTopAssets(c.env));
 });
 
 // Per-block dirty CASCADE (Layer B): recompute only the entities touched since the cascade cursor. Loop until
