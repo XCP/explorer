@@ -19,6 +19,7 @@ import { tags } from "#api/read/tags";
 import { graph } from "#api/read/graph";
 import { radar } from "#api/read/radar";
 import { candidates } from "#api/read/candidates";
+import { markets } from "#api/read/markets";
 
 export const read = router();
 
@@ -67,3 +68,4 @@ read.route("/", tags);
 read.route("/", graph);
 read.route("/", radar);
 read.route("/", candidates);
+read.route("/", markets);
