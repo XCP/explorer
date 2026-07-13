@@ -467,3 +467,114 @@ test("compact orders preserve match pairs and lifecycle updates", async () => {
   >;
   assert.deepEqual({ ...cancel }, { tx_index: 23, offer_tx_index: 20, status: "valid" });
 });
+
+test("compact transaction-level protocol records converge on replay", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  const hash = (byte: string) => byte.repeat(32);
+
+  dispatch(
+    event(
+      "BURN",
+      { tx_index: 30, tx_hash: hash("10"), source: "alice", burned: "100", earned: "200", status: "valid" },
+      30,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "ASSET_DESTRUCTION",
+      {
+        tx_index: 31,
+        tx_hash: hash("20"),
+        source: "alice",
+        asset: "RARE",
+        quantity: "3",
+        tag: "cleanup",
+        status: "valid",
+      },
+      31,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "SWEEP",
+      {
+        tx_index: 32,
+        tx_hash: hash("30"),
+        source: "alice",
+        destination: "bob",
+        flags: 3,
+        memo: "move",
+        fee_paid: "5",
+        status: "valid",
+      },
+      32,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "ASSET_DIVIDEND",
+      {
+        tx_index: 33,
+        tx_hash: hash("40"),
+        source: "alice",
+        asset: "RARE",
+        dividend_asset: "XCP",
+        quantity_per_unit: "7",
+        fee_paid: "2",
+        status: "valid",
+      },
+      33,
+    ),
+    ctx,
+  );
+  dispatch(
+    event(
+      "BROADCAST",
+      {
+        tx_index: 34,
+        tx_hash: hash("50"),
+        source: "alice",
+        timestamp: 123,
+        value: "1.5",
+        fee_fraction_int: "10",
+        text: "bt:DEPLOY|TICK",
+        status: "valid",
+      },
+      34,
+    ),
+    ctx,
+  );
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  for (const table of ["burns", "destructions", "sweeps", "dividends", "broadcasts"]) {
+    const row = database.prepare(`SELECT COUNT(*) count FROM ${table}`).get() as { count: number };
+    assert.equal(row.count, 1, table);
+  }
+  const destruction = database
+    .prepare(
+      `SELECT a.address,d.asset,x.quantity,x.tag
+       FROM destructions x
+       JOIN address_dictionary a ON a.address_id=x.source_id
+       JOIN asset_dictionary d ON d.asset_id=x.asset_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual({ ...destruction }, { address: "alice", asset: "RARE", quantity: "3", tag: "cleanup" });
+  const sweep = database
+    .prepare(
+      `SELECT s.address source,d.address destination,x.flags,x.memo
+       FROM sweeps x
+       JOIN address_dictionary s ON s.address_id=x.source_id
+       JOIN address_dictionary d ON d.address_id=x.destination_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual({ ...sweep }, { source: "alice", destination: "bob", flags: 3, memo: "move" });
+  const broadcast = database.prepare(`SELECT btns,btns_op,btns_tick FROM broadcasts`).get() as Record<string, unknown>;
+  assert.deepEqual({ ...broadcast }, { btns: 1, btns_op: "DEPLOY", btns_tick: "TICK" });
+});
