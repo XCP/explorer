@@ -59,10 +59,20 @@ db.exec(`
     table_name TEXT PRIMARY KEY,
     cursor INTEGER NOT NULL DEFAULT 0,
     complete INTEGER NOT NULL DEFAULT 0,
-    rows_copied INTEGER NOT NULL DEFAULT 0
+    rows_copied INTEGER NOT NULL DEFAULT 0,
+    high_water INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS snapshot_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `);
+const stateColumns = new Set(
+  db
+    .prepare(`PRAGMA table_info(snapshot_state)`)
+    .all()
+    .map((column) => column.name),
+);
+if (!stateColumns.has("high_water")) {
+  db.exec(`ALTER TABLE snapshot_state ADD COLUMN high_water INTEGER NOT NULL DEFAULT 0`);
+}
 db.prepare(
   `INSERT INTO snapshot_meta(key,value) VALUES('snapshot_mode','http_live_baseline')
   ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
@@ -89,7 +99,9 @@ for (const table of tables) {
 }
 
 for (const table of tables) {
-  let state = db.prepare(`SELECT cursor,complete,rows_copied FROM snapshot_state WHERE table_name=?`).get(table.name);
+  let state = db
+    .prepare(`SELECT cursor,complete,rows_copied,high_water FROM snapshot_state WHERE table_name=?`)
+    .get(table.name);
   if (state.complete === 1) continue;
   const columns = db
     .prepare(`PRAGMA table_xinfo(${JSON.stringify(table.name)})`)
@@ -111,9 +123,9 @@ for (const table of tables) {
       for (const row of page.rows) insert.run(...columns.map((column) => row[column] ?? null));
       db.prepare(
         `UPDATE snapshot_state
-            SET cursor=?,complete=?,rows_copied=rows_copied+?
+            SET cursor=?,complete=?,rows_copied=rows_copied+?,high_water=?
           WHERE table_name=?`,
-      ).run(page.cursor, page.caught_up ? 1 : 0, page.rows.length, table.name);
+      ).run(page.cursor, page.caught_up ? 1 : 0, page.rows.length, page.high_water, table.name);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -123,6 +135,7 @@ for (const table of tables) {
       cursor: page.cursor,
       complete: page.caught_up ? 1 : 0,
       rows_copied: state.rows_copied + page.rows.length,
+      high_water: page.high_water,
     };
     pages++;
     if (page.caught_up) break;

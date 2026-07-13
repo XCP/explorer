@@ -10,6 +10,7 @@ interface SchemaRow {
 
 interface SnapshotRow extends Record<string, unknown> {
   _snapshot_rowid?: number;
+  _snapshot_high_water?: number;
 }
 
 export async function coreSnapshotSchema(db: D1Database) {
@@ -47,13 +48,18 @@ export async function coreSnapshotPage(db: D1Database, table: string, after: num
       table,
       rows: result.results,
       cursor: after + result.results.length,
+      high_water: after + result.results.length,
       caught_up: result.results.length < rows,
     };
   }
   const result = await db
-    .prepare(`SELECT rowid AS _snapshot_rowid,* FROM ${table} WHERE rowid>? ORDER BY rowid LIMIT ?`)
+    .prepare(
+      `SELECT rowid AS _snapshot_rowid,(SELECT max(rowid) FROM ${table}) AS _snapshot_high_water,*
+         FROM ${table} WHERE rowid>? ORDER BY rowid LIMIT ?`,
+    )
     .bind(after, rows)
     .all<SnapshotRow>();
   const cursor = Number(result.results.at(-1)?._snapshot_rowid ?? after);
-  return { table, rows: result.results, cursor, caught_up: result.results.length < rows };
+  const highWater = Number(result.results.at(0)?._snapshot_high_water ?? cursor);
+  return { table, rows: result.results, cursor, high_water: highWater, caught_up: cursor >= highWater };
 }

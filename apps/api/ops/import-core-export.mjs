@@ -36,7 +36,8 @@ db.exec(`
     table_name TEXT PRIMARY KEY,
     cursor INTEGER NOT NULL DEFAULT 0,
     complete INTEGER NOT NULL DEFAULT 1,
-    rows_copied INTEGER NOT NULL DEFAULT 0
+    rows_copied INTEGER NOT NULL DEFAULT 0,
+    high_water INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE snapshot_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `);
