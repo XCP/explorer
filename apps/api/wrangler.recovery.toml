@@ -1,0 +1,21 @@
+name = "xcp-recovery-bootstrap"
+main = "src/recovery/bootstrap-worker.ts"
+compatibility_date = "2025-01-01"
+workers_dev = true
+preview_urls = false
+
+[limits]
+cpu_ms = 300000
+
+[[d1_databases]]
+binding = "RECOVERY_DB"
+database_name = "xcpio-btc"
+database_id = "9bc7626d-df95-49d2-a118-274cd1b34b2f"
+migrations_dir = "migrations-recovery"
+
+[[r2_buckets]]
+binding = "RECOVERY_TRANSACTIONS"
+bucket_name = "xcpio-bitcoin-transactions"
+
+[vars]
+ELECTRS_API_BASE = "https://api.counterparty.io:3000"
