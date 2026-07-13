@@ -63,6 +63,12 @@ async function execute(database: DatabaseSync, statements: Stmt[]) {
   for (const statement of statements) await statement(target).run();
 }
 
+async function executeCompact(database: DatabaseSync, ctx: Ctx) {
+  if (!ctx.compact) throw new Error("compact test context missing");
+  await execute(database, dictionaryStatements(ctx.compact.identities));
+  await execute(database, ctx.compact.stmts);
+}
+
 function event(event: string, params: Record<string, unknown>, eventIndex: number): Ev {
   return {
     event,
@@ -193,4 +199,132 @@ test("compact foundational writes preserve identities and converge on replay", a
   );
   const snapshot = database.prepare(`SELECT COUNT(*) count FROM balance_snapshots`).get() as { count: number };
   assert.equal(snapshot.count, 2);
+});
+
+test("compact asset creation, issuances, and MPMA sends preserve canonical identities", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const hash = "ef".repeat(32);
+  const asset = "A123";
+  const ctx = context();
+
+  dispatch(event("ASSET_CREATION", { asset_name: asset, asset_id: "123", asset_longname: "PARENT.SUB" }, 1), ctx);
+  dispatch(
+    event(
+      "ASSET_ISSUANCE",
+      {
+        tx_index: 8,
+        tx_hash: hash,
+        asset,
+        asset_longname: "PARENT.SUB",
+        source: "issuer",
+        issuer: "issuer",
+        quantity: "100",
+        divisible: true,
+        description: "first",
+        mime_type: "text/plain",
+        status: "valid",
+      },
+      2,
+    ),
+    ctx,
+  );
+  for (const [eventIndex, destination, msgIndex] of [
+    [3, "alice", 0],
+    [4, "bob", 1],
+  ] as const) {
+    dispatch(
+      event(
+        "MPMA_SEND",
+        {
+          tx_index: 9,
+          tx_hash: hash,
+          source: "issuer",
+          destination,
+          asset,
+          quantity: "10",
+          msg_index: msgIndex,
+          memo: "batch",
+          status: "valid",
+        },
+        eventIndex,
+      ),
+      ctx,
+    );
+  }
+  dispatch(
+    event(
+      "RESET_ISSUANCE",
+      {
+        tx_index: 10,
+        tx_hash: "12".repeat(32),
+        asset,
+        asset_longname: "PARENT.SUB",
+        source: "issuer",
+        issuer: "issuer",
+        quantity: "0",
+        divisible: false,
+        reset: true,
+        description: "reset",
+        status: "valid",
+      },
+      5,
+    ),
+    ctx,
+  );
+
+  await executeCompact(database, ctx);
+  await executeCompact(database, ctx);
+
+  const assetRow = database
+    .prepare(
+      `SELECT d.asset,a.asset_longname,a.numeric_asset_id,a.type,i.address issuer,o.address owner,
+              a.divisible,a.description,a.first_issuance_block_index,a.last_issuance_block_index
+       FROM assets a
+       JOIN asset_dictionary d ON d.asset_id=a.asset_id
+       LEFT JOIN address_dictionary i ON i.address_id=a.issuer_id
+       LEFT JOIN address_dictionary o ON o.address_id=a.owner_id`,
+    )
+    .get() as Record<string, unknown>;
+  assert.deepEqual(
+    { ...assetRow },
+    {
+      asset,
+      asset_longname: "PARENT.SUB",
+      numeric_asset_id: "123",
+      type: "subasset",
+      issuer: "issuer",
+      owner: "issuer",
+      divisible: 0,
+      description: "reset",
+      first_issuance_block_index: 100,
+      last_issuance_block_index: 100,
+    },
+  );
+  const issuances = database
+    .prepare(`SELECT event_index,tx_index,msg_index,divisible,reset FROM issuances ORDER BY event_index`)
+    .all() as Record<string, unknown>[];
+  assert.deepEqual(
+    issuances.map((row) => ({ ...row })),
+    [
+      { event_index: 2, tx_index: 8, msg_index: 0, divisible: 1, reset: 0 },
+      { event_index: 5, tx_index: 10, msg_index: 0, divisible: 0, reset: 1 },
+    ],
+  );
+  const sends = database
+    .prepare(
+      `SELECT s.event_index,s.tx_index,s.msg_index,a.address destination,d.asset,s.send_type
+       FROM sends s
+       JOIN address_dictionary a ON a.address_id=s.destination_id
+       JOIN asset_dictionary d ON d.asset_id=s.asset_id
+       ORDER BY s.msg_index`,
+    )
+    .all() as Record<string, unknown>[];
+  assert.deepEqual(
+    sends.map((row) => ({ ...row })),
+    [
+      { event_index: 3, tx_index: 9, msg_index: 0, destination: "alice", asset, send_type: "mpma" },
+      { event_index: 4, tx_index: 9, msg_index: 1, destination: "bob", asset, send_type: "mpma" },
+    ],
+  );
 });
