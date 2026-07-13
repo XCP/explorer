@@ -22,8 +22,15 @@ $wranglerDirectory = Split-Path $PSScriptRoot
 function Invoke-Wrangler([string[]]$Arguments) {
   Push-Location $wranglerDirectory
   try {
-    & npx.cmd wrangler @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "wrangler exited with status $LASTEXITCODE" }
+    $maxAttempts = 8
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+      & npx.cmd wrangler @Arguments
+      if ($LASTEXITCODE -eq 0) { return }
+      if ($attempt -eq $maxAttempts) { throw "wrangler exited with status $LASTEXITCODE after $attempt attempts" }
+      $delay = [Math]::Min(300, 60 * $attempt)
+      Write-Warning "wrangler attempt $attempt failed with status $LASTEXITCODE; retrying in $delay seconds"
+      Start-Sleep -Seconds $delay
+    }
   } finally {
     Pop-Location
   }
