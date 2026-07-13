@@ -24,6 +24,8 @@ $rows = DB::table('utxos')
         'block_height',
         'created_at_utc',
         'is_spent',
+        'is_recoverable',
+        'sign_type',
         'spending_txid',
     ])
     ->where('id', '>', $afterId)
@@ -33,6 +35,15 @@ $rows = DB::table('utxos')
     ->orderBy('id')
     ->limit($limit)
     ->get();
+
+$addressRows = $rows->isEmpty()
+    ? collect()
+    : DB::table('utxo_pubkey_address as relation')
+        ->join('pubkey_addresses as address', 'address.id', '=', 'relation.pubkey_address_id')
+        ->whereIn('relation.utxo_id', $rows->pluck('id'))
+        ->select(['relation.utxo_id', 'relation.position', 'address.address'])
+        ->get()
+        ->groupBy('utxo_id');
 
 $transactions = [];
 foreach ($rows as $row) {
@@ -52,6 +63,15 @@ foreach ($rows as $row) {
         'spent_by_txid' => $row->is_spent ? $row->spending_txid : null,
         'spent_height' => null,
         'source_id' => (int) $row->id,
+        'source_recoverable' => (bool) $row->is_recoverable,
+        'source_sign_type' => $row->sign_type,
+        'source_addresses' => ($addressRows->get($row->id) ?? collect())
+            ->map(fn ($relation) => [
+                'address' => $relation->address,
+                'position' => (int) $relation->position,
+            ])
+            ->values()
+            ->all(),
     ];
 }
 

@@ -11,6 +11,7 @@ let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const page = JSON.parse(input);
 const counts = { recoverable: 0, spent: 0, unverified: 0, invalid: 0 };
+const parity = { source_recoverable: 0, source_not_recoverable: 0, address_match: 0, address_missing: 0 };
 const failures = [];
 
 for (const row of page.transactions ?? []) {
@@ -41,11 +42,15 @@ for (const row of page.transactions ?? []) {
       if (decision.classification === "recoverable" || decision.classification === "spent")
         counts[decision.classification]++;
       else counts.invalid++;
+      if (candidate.source_recoverable) parity.source_recoverable++;
+      else parity.source_not_recoverable++;
+      if ((candidate.source_addresses ?? []).some((entry) => entry.address === address)) parity.address_match++;
+      else parity.address_missing++;
     }
   } catch (error) {
     failures.push({ txid: row.txid, error: error instanceof Error ? error.message : String(error) });
   }
 }
 
-console.log(JSON.stringify({ rows: page.rows, next_id: page.next_id, counts, failures }, null, 2));
+console.log(JSON.stringify({ rows: page.rows, next_id: page.next_id, counts, parity, failures }, null, 2));
 if (failures.length > 0) process.exitCode = 1;
