@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { auditCoreDataParity, CORE_PARITY_RELATIONS } from "#api/indexer/core-parity";
+import {
+  activateCoreForwardWrites,
+  auditCoreDataParity,
+  CORE_PARITY_RELATIONS,
+  rollbackCoreForwardWrites,
+} from "#api/indexer/core-parity";
 
 class Statement {
   private binds: unknown[] = [];
@@ -26,7 +31,13 @@ class Statement {
     if (count != null) return { results: [{ count }], success: true };
     const key = /VALUES\('([^']+)',\?\)/.exec(this.sql)?.[1];
     if (key) this.database.state.set(key, String(this.binds[0]));
+    const literal = /VALUES\('([^']+)','([^']+)'\)/.exec(this.sql);
+    if (literal) this.database.state.set(literal[1], literal[2]);
     return { results: [], success: true };
+  }
+
+  async run() {
+    return this.execute();
   }
 }
 
@@ -94,4 +105,26 @@ test("core parity records acceptance only at an equal cursor with equal relation
   assert.equal(compact.state.get("parity_verified"), "1");
   assert.equal(compact.state.get("parity_event_index"), "100");
   assert.equal(compact.state.get("parity_checked_at"), "51");
+});
+
+test("forward writes can only activate through a fresh successful parity audit", async () => {
+  const { source, compact } = databases();
+  compact.state.set("last_event_index", "99");
+  const failed = await activateCoreForwardWrites({
+    DB: source as unknown as D1Database,
+    CORE_DB: compact as unknown as D1Database,
+  });
+  assert.equal(failed.ok, false);
+  assert.notEqual(compact.state.get("forward_write_ready"), "1");
+
+  compact.state.set("last_event_index", "100");
+  const passed = await activateCoreForwardWrites({
+    DB: source as unknown as D1Database,
+    CORE_DB: compact as unknown as D1Database,
+  });
+  assert.equal(passed.ok, true);
+  assert.equal(compact.state.get("forward_write_ready"), "1");
+
+  await rollbackCoreForwardWrites(compact as unknown as D1Database);
+  assert.equal(compact.state.get("forward_write_ready"), "0");
 });

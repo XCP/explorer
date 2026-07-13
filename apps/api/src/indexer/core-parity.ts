@@ -115,3 +115,25 @@ export async function auditCoreDataParity(
     mismatches: relations.filter((relation) => !relation.matches),
   };
 }
+
+/** Open forward dual-writes only from a freshly successful parity audit. */
+export async function activateCoreForwardWrites(env: Pick<Env, "DB" | "CORE_DB">) {
+  const parity = await auditCoreDataParity(env, { accept: true });
+  if (!parity.ok) return { ok: false, forward_write_ready: false, parity };
+  await env.CORE_DB.prepare(
+    `INSERT INTO core_state(key,value) VALUES('forward_write_ready','1')
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+  ).run();
+  return { ok: true, forward_write_ready: true, parity };
+}
+
+/** Close forward dual-writes without changing imported data or verification evidence. */
+export async function rollbackCoreForwardWrites(db: D1Database) {
+  await db
+    .prepare(
+      `INSERT INTO core_state(key,value) VALUES('forward_write_ready','0')
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    )
+    .run();
+  return { ok: true, forward_write_ready: false };
+}

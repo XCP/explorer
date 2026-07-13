@@ -33,7 +33,7 @@ import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/index
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
-import { auditCoreDataParity } from "#api/indexer/core-parity";
+import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -136,6 +136,15 @@ admin.post("/admin/core-replay", async (c) => {
 admin.post("/admin/core-parity", async (c) => {
   const result = await auditCoreDataParity(c.env, { accept: true });
   return c.json(result, result.ok ? 200 : 409);
+});
+
+admin.post("/admin/core-forward-writes/activate", async (c) => {
+  const result = await activateCoreForwardWrites(c.env);
+  return c.json(result, result.ok ? 200 : 409);
+});
+
+admin.post("/admin/core-forward-writes/rollback", async (c) => {
+  return c.json(await rollbackCoreForwardWrites(c.env.CORE_DB));
 });
 
 // Backfill the historical credits/debits ledger (migration 0038) — isolated & non-destructive: inserts only
