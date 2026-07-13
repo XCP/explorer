@@ -28,6 +28,7 @@ import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { recoveryAdmin } from "#api/recovery/admin";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
+import { operationalStatus } from "#api/operations/status";
 import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/indexer/ledger-cutover";
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -35,6 +36,10 @@ export const admin = new Hono<{ Bindings: Env }>();
 // every route is gated by the shared admin token (Bearer header, or deprecated ?token=).
 admin.use("/admin/*", requireAdmin);
 admin.route("/", recoveryAdmin);
+
+// Cheap, read-only snapshot for operators. Large tables are probed by indexed
+// frontier lookups rather than repeatedly counted in full.
+admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
 
 // Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).
