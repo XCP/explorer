@@ -44,11 +44,8 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
     await Promise.all([
       env.CORE_DB.prepare(
         `SELECT key,value FROM core_state
-       WHERE key IN ('backfill_active','transactions_cursor','transactions_done',
-                     'blocks_cursor','blocks_done','assets_cursor','assets_done',
-                     'issuances_cursor','issuances_done','balances_holder_cursor','balances_asset_cursor',
-                     'balances_done','sends_cursor','sends_done','orders_cursor','orders_done',
-                     'order_matches_cursor','order_matches_done','shadow_reads','read_cutover')`,
+       WHERE key IN ('build_complete','import_complete','snapshot_consistent',
+                     'snapshot_mode','snapshot_expected_tables')`,
       ).all<StateRow>(),
       env.LEDGER_DB.prepare(
         `SELECT key,value FROM ledger_state
@@ -104,26 +101,14 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
   return {
     generated_at: now,
     core: {
-      backfill_active: core.backfill_active === "1",
-      transactions: { cursor: core.transactions_cursor ?? null, complete: core.transactions_done === "1" },
-      blocks: { cursor: core.blocks_cursor ?? null, complete: core.blocks_done === "1" },
-      assets: { cursor: core.assets_cursor ?? null, complete: core.assets_done === "1" },
-      issuances: { cursor: core.issuances_cursor ?? null, complete: core.issuances_done === "1" },
-      balances: {
-        cursor:
-          core.balances_holder_cursor == null
-            ? null
-            : { holder: core.balances_holder_cursor, asset: core.balances_asset_cursor ?? "" },
-        complete: core.balances_done === "1",
+      build_complete: core.build_complete === "1",
+      import_complete: core.import_complete === "1",
+      snapshot: {
+        mode: core.snapshot_mode ?? null,
+        consistent: core.snapshot_consistent === "1",
+        expected_tables: core.snapshot_expected_tables == null ? null : Number(core.snapshot_expected_tables),
       },
-      sends: { cursor: core.sends_cursor ?? null, complete: core.sends_done === "1" },
-      orders: { cursor: core.orders_cursor ?? null, complete: core.orders_done === "1" },
-      order_matches: {
-        cursor: core.order_matches_cursor ?? null,
-        complete: core.order_matches_done === "1",
-      },
-      shadow_reads: core.shadow_reads === "1",
-      read_ready: core.read_cutover === "1",
+      read_ready: core.build_complete === "1" && core.import_complete === "1" && core.snapshot_consistent === "1",
     },
     ledger: {
       backfill_active: ledger.backfill_active === "1",

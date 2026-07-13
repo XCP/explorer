@@ -23,7 +23,7 @@ database_name = "xcpio-ledger"
 database_id = "a4924205-264b-42ce-b900-0c9c03f1c28a"
 migrations_dir = "migrations-ledger"
 
-# Blue-green canonical Counterparty mirror. It remains read-gated until backfill and parity complete.
+# Canonical compact Counterparty mirror. It remains read-gated until the complete snapshot passes parity and imports.
 [[d1_databases]]
 binding = "CORE_DB"
 database_name = "xcpio-core"

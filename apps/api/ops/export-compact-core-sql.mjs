@@ -34,6 +34,16 @@ const sqlLiteral = (value) => {
 const database = new DatabaseSync(resolve(compactPath), { readOnly: true });
 const integrity = database.prepare("PRAGMA quick_check").get();
 if (integrity.quick_check !== "ok") throw new Error(`compact database failed quick_check: ${integrity.quick_check}`);
+const coreState = Object.fromEntries(
+  database
+    .prepare(`SELECT key,value FROM core_state`)
+    .all()
+    .map((row) => [row.key, row.value]),
+);
+if (coreState.build_complete !== "1" || coreState.snapshot_consistent !== "1") {
+  throw new Error("compact database has not passed a consistent full-build parity check");
+}
+if (coreState.import_complete != null) throw new Error("compact build artifact already contains an import marker");
 
 const tables = database
   .prepare(
@@ -144,12 +154,19 @@ try {
     process.stdout.write(`${JSON.stringify({ table, rows })}\n`);
   }
   closeFile();
+  openFile();
+  writeToFile(
+    "INSERT INTO core_state(key,value) VALUES('import_complete','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
+    0,
+  );
+  closeFile();
   const manifest = {
     format: 1,
     source: basename(compactPath),
     max_statement_bytes: maxStatementBytes,
     max_file_bytes: maxFileBytes,
     tables: tableRows,
+    finalization: "import_complete",
     files,
   };
   const temporaryManifest = join(outputDirectory, "manifest.json.tmp");

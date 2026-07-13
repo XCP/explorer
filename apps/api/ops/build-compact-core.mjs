@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -8,6 +8,7 @@ const allowIncomplete = process.env.CORE_BUILD_ALLOW_INCOMPLETE === "1";
 const allowInconsistent = process.env.CORE_BUILD_ALLOW_INCONSISTENT === "1";
 if (!sourcePath) throw new Error("CORE_SNAPSHOT_PATH is required");
 if (!outputPath) throw new Error("CORE_COMPACT_PATH is required");
+if (existsSync(outputPath)) throw new Error(`compact output already exists: ${outputPath}`);
 
 const db = new DatabaseSync(outputPath);
 db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=OFF;");
@@ -24,14 +25,15 @@ if (incomplete.length === 0 && !allowInconsistent && consistency?.value !== "1")
   throw new Error("source snapshot is not a consistent D1 export");
 }
 
-const hasSchema = db.prepare(`SELECT 1 FROM sqlite_schema WHERE type='table' AND name='core_state'`).get();
 const migrationSql = ["0001_core.sql", "0002_protocol.sql", "0003_projections.sql"].map((migration) =>
   readFileSync(new URL(`../migrations-core/${migration}`, import.meta.url), "utf8"),
 );
 const secondaryIndexes = migrationSql.flatMap((sql) => sql.match(/\bCREATE INDEX\b[\s\S]*?;/g) ?? []);
-if (!hasSchema) {
-  for (const sql of migrationSql) db.exec(sql.replaceAll(/\bCREATE INDEX\b[\s\S]*?;/g, ""));
-}
+for (const sql of migrationSql) db.exec(sql.replaceAll(/\bCREATE INDEX\b[\s\S]*?;/g, ""));
+db.prepare(
+  `INSERT INTO core_state(key,value) VALUES('build_complete','0')
+   ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+).run();
 
 const transformDirectory = new URL("./core-transform/", import.meta.url);
 const quoteIdentifier = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
@@ -132,6 +134,10 @@ if (complete) {
     );
   }
   if (hashMismatches !== 0) throw new Error("transaction hash decoding parity failed");
+  db.prepare(
+    `INSERT INTO core_state(key,value) VALUES('build_complete','1')
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+  ).run();
 }
 process.stdout.write(
   `${JSON.stringify({ complete, bytes: allocatedBytes, storage, counts, source_counts: sourceCounts })}\n`,

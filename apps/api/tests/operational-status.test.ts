@@ -33,15 +33,11 @@ class Database {
 
 test("operational status aggregates durable frontiers without counting recovery outputs", async () => {
   const core = new Database(() => [
-    { key: "backfill_active", value: "1" },
-    { key: "transactions_cursor", value: "3146459" },
-    { key: "transactions_done", value: "1" },
-    { key: "blocks_cursor", value: "957852" },
-    { key: "blocks_done", value: "1" },
-    { key: "assets_cursor", value: "RAREPEPE" },
-    { key: "assets_done", value: "0" },
-    { key: "shadow_reads", value: "0" },
-    { key: "read_cutover", value: "0" },
+    { key: "build_complete", value: "1" },
+    { key: "import_complete", value: "1" },
+    { key: "snapshot_consistent", value: "1" },
+    { key: "snapshot_mode", value: "d1_export" },
+    { key: "snapshot_expected_tables", value: "55" },
   ]);
   const ledger = new Database(() => [
     { key: "backfill_active", value: "1" },
@@ -73,8 +69,12 @@ test("operational status aggregates durable frontiers without counting recovery 
   );
 
   assert.equal(result.generated_at, 123);
-  assert.deepEqual(result.core.assets, { cursor: "RAREPEPE", complete: false });
-  assert.deepEqual(result.core.issuances, { cursor: null, complete: false });
+  assert.deepEqual(result.core, {
+    build_complete: true,
+    import_complete: true,
+    snapshot: { mode: "d1_export", consistent: true, expected_tables: 55 },
+    read_ready: true,
+  });
   assert.deepEqual(result.ledger.debit, { cursor: "200", complete: false });
   assert.equal(result.recovery.import.rows_seen, 12_000);
   assert.equal(result.recovery.verification.complete, false);

@@ -11,6 +11,7 @@ if (!existsSync(manifestPath)) throw new Error(`SQL manifest does not exist: ${m
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 if (manifest.format !== 1 || !Array.isArray(manifest.files)) throw new Error("unsupported compact SQL manifest");
+if (manifest.finalization !== "import_complete") throw new Error("compact SQL manifest has no final import gate");
 const expectedFiles = manifest.files.map((file) => file.file);
 const actualFiles = readdirSync(resolvedDirectory)
   .filter((file) => file.endsWith(".sql"))

@@ -19,11 +19,6 @@ CREATE TABLE core_state (
   value TEXT NOT NULL
 );
 
-INSERT INTO core_state(key, value) VALUES
-  ('backfill_active', '1'),
-  ('shadow_reads', '0'),
-  ('read_cutover', '0');
-
 CREATE TABLE blocks (
   block_index INTEGER PRIMARY KEY,
   block_hash BLOB,

@@ -31,26 +31,6 @@ import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { operationalStatus } from "#api/operations/status";
 import { activateLedgerReadCutover, rollbackLedgerReadCutover } from "#api/indexer/ledger-cutover";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
-import {
-  backfillCoreAssets,
-  backfillCoreBalances,
-  backfillCoreBlocks,
-  backfillCoreIssuances,
-  backfillCoreOrderMatches,
-  backfillCoreOrders,
-  backfillCoreSends,
-  backfillCoreTransactions,
-} from "#api/indexer/core-backfill";
-import {
-  auditCoreAssets,
-  auditCoreBalances,
-  auditCoreBlocks,
-  auditCoreIssuances,
-  auditCoreOrderMatches,
-  auditCoreOrders,
-  auditCoreSends,
-  auditCoreTransactions,
-} from "#api/indexer/core-readiness";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 
@@ -150,79 +130,6 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/backfill-ledger", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await backfillLedger(c.env, { maxEvents: events }));
-});
-
-// First bounded phase of the blue-green canonical mirror build. It changes only CORE_DB and is safe to retry.
-admin.post("/admin/backfill-core/transactions", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 250, min: 1, max: 500 });
-  return c.json(await backfillCoreTransactions(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/blocks", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 250, min: 1, max: 500 });
-  return c.json(await backfillCoreBlocks(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/assets", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
-  return c.json(await backfillCoreAssets(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/issuances", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
-  return c.json(await backfillCoreIssuances(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/balances", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
-  return c.json(await backfillCoreBalances(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/sends", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
-  return c.json(await backfillCoreSends(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/orders", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
-  return c.json(await backfillCoreOrders(c.env, rows));
-});
-
-admin.post("/admin/backfill-core/order-matches", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
-  return c.json(await backfillCoreOrderMatches(c.env, rows));
-});
-
-admin.get("/admin/core-readiness/transactions", async (c) => {
-  return c.json(await auditCoreTransactions(c.env));
-});
-
-admin.get("/admin/core-readiness/assets", async (c) => {
-  return c.json(await auditCoreAssets(c.env));
-});
-
-admin.get("/admin/core-readiness/blocks", async (c) => {
-  return c.json(await auditCoreBlocks(c.env));
-});
-
-admin.get("/admin/core-readiness/issuances", async (c) => {
-  return c.json(await auditCoreIssuances(c.env));
-});
-
-admin.get("/admin/core-readiness/balances", async (c) => {
-  return c.json(await auditCoreBalances(c.env));
-});
-
-admin.get("/admin/core-readiness/sends", async (c) => {
-  return c.json(await auditCoreSends(c.env));
-});
-
-admin.get("/admin/core-readiness/orders", async (c) => {
-  return c.json(await auditCoreOrders(c.env));
-});
-
-admin.get("/admin/core-readiness/order-matches", async (c) => {
-  return c.json(await auditCoreOrderMatches(c.env));
 });
 
 // Read-only safety audit. This reports readiness but deliberately cannot change `read_cutover`.
