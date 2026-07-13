@@ -6,6 +6,7 @@ import { boundedInteger } from "#api/http/numbers";
 import { advanceImportFrontier, type ImportReceipt } from "#api/recovery/import-receipts";
 import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
 import { stampProtectionSourcePage, type StampProtectionSource } from "#api/recovery/stamp-source";
+import { auditRecoveryR2Page } from "#api/recovery/r2-audit";
 
 export const recoveryAdmin = new Hono<{ Bindings: Env }>();
 
@@ -198,6 +199,13 @@ recoveryAdmin.post("/admin/recovery/verify", async (c) => {
 recoveryAdmin.post("/admin/recovery/reconcile-attempts", async (c) => {
   const limit = boundedInteger(c.req.query("attempts"), { defaultValue: 25, min: 1, max: 100 });
   return c.json(await reconcileRecoveryAttempts(c.env, limit));
+});
+
+recoveryAdmin.get("/admin/recovery/audit/transactions", async (c) => {
+  const cursor = c.req.query("cursor") ?? "";
+  if (cursor && !/^[0-9a-f]{64}$/.test(cursor)) return c.json({ error: "invalid cursor" }, 400);
+  const limit = boundedInteger(c.req.query("limit"), { defaultValue: 25, min: 1, max: 100 });
+  return c.json(await auditRecoveryR2Page(c.env, cursor, limit));
 });
 
 recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
