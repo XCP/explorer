@@ -90,9 +90,12 @@ explorer captures. In particular:
      target. Do not extrapolate from a partial first wave.
 
 4. **Remote bulk load**
-   - Generate bounded SQL import files from the verified compact build and import them into an empty staging D1.
-   - Split files below Cloudflare's import limit. Historical data is loaded in bulk; it is not written through
-     thousands of tiny Worker transactions.
+   - Apply the compact migrations to a new empty staging D1, then generate data-only SQL chunks from the
+     verified local build with `npm run build:core:sql -w xcp-api`.
+   - The generator caps statements at 90 KB and files at 256 MB, preserves exact TEXT/BLOB values, emits a
+     SHA-256 manifest, and refuses tables without a primary/unique identity or rows that cannot fit D1's
+     statement limit. Chunks use convergent upserts and are safe to retry in manifest order.
+   - Historical data is loaded in bulk; it is not written through thousands of tiny Worker transactions.
    - Record the source snapshot tip and apply later events with chronological, idempotent upserts.
 
 5. **Parity and operational gates**
