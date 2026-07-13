@@ -12,6 +12,8 @@ const ASSET_GROUP = 5;
 const ISSUANCE_GROUP = 4;
 const BALANCE_GROUP = 10;
 const SEND_GROUP = 5;
+const ORDER_GROUP = 5;
+const ORDER_MATCH_GROUP = 4;
 
 type SourceTransaction = {
   tx_index: number;
@@ -118,6 +120,51 @@ type SourceSend = {
   msg_index: number;
 };
 
+type SourceOrder = {
+  tx_index: number;
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  give_asset: string | null;
+  give_quantity: string | null;
+  give_remaining: string | null;
+  get_asset: string | null;
+  get_quantity: string | null;
+  get_remaining: string | null;
+  expiration: number | null;
+  expire_index: number | null;
+  fee_required: string | null;
+  fee_required_remaining: string | null;
+  fee_provided: string | null;
+  fee_provided_remaining: string | null;
+  status: string | null;
+  closed_block_index: number | null;
+};
+
+type SourceOrderMatch = {
+  id: string;
+  tx0_index: number;
+  tx1_index: number;
+  tx0_hash: string;
+  tx1_hash: string;
+  tx0_address: string | null;
+  tx1_address: string | null;
+  forward_asset: string | null;
+  forward_quantity: string | null;
+  backward_asset: string | null;
+  backward_quantity: string | null;
+  block_index: number;
+  block_time: number | null;
+  status: string | null;
+  match_expire_index: number | null;
+  fee_paid: string | null;
+  tx0_block_index: number | null;
+  tx1_block_index: number | null;
+  tx0_expiration: number | null;
+  tx1_expiration: number | null;
+};
+
 export type CoreTransactionBackfillResult = {
   table: "transactions";
   cursor: number;
@@ -156,6 +203,20 @@ export type CoreBalanceBackfillResult = {
 export type CoreSendBackfillResult = {
   table: "sends";
   cursor: number;
+  processed: number;
+  caught_up: boolean;
+};
+
+export type CoreOrderBackfillResult = {
+  table: "orders";
+  cursor: number;
+  processed: number;
+  caught_up: boolean;
+};
+
+export type CoreOrderMatchBackfillResult = {
+  table: "order_matches";
+  cursor: string | null;
   processed: number;
   caught_up: boolean;
 };
@@ -849,4 +910,210 @@ export async function backfillCoreSends(
   if (rows.length < limit) statements.push(coreStateUpsert(env.CORE_DB, "sends_done", "1"));
   await env.CORE_DB.batch(statements);
   return { table: "sends", cursor: nextCursor, processed: rows.length, caught_up: rows.length < limit };
+}
+
+/** Copy current orders by their canonical Counterparty transaction index. */
+export async function backfillCoreOrders(
+  env: Pick<Env, "DB" | "CORE_DB">,
+  requestedRows = DEFAULT_ROWS,
+): Promise<CoreOrderBackfillResult> {
+  const limit = Math.max(1, Math.min(Math.trunc(requestedRows), 100));
+  const cursor = Number((await coreState(env.CORE_DB, "orders_cursor")) ?? -1);
+  const source = await env.DB.prepare(
+    `SELECT t.tx_index,o.tx_hash,o.block_index,o.block_time,o.source,o.give_asset,o.give_quantity,
+            o.give_remaining,o.get_asset,o.get_quantity,o.get_remaining,o.expiration,o.expire_index,
+            o.fee_required,o.fee_required_remaining,o.fee_provided,o.fee_provided_remaining,o.status,
+            o.closed_block_index
+       FROM transactions t JOIN orders o ON o.tx_hash=t.tx_hash
+      WHERE t.tx_index>? ORDER BY t.tx_index LIMIT ?`,
+  )
+    .bind(cursor, limit)
+    .all<SourceOrder>();
+  const rows = source.results;
+  if (rows.length === 0) {
+    await coreStateUpsert(env.CORE_DB, "orders_done", "1").run();
+    return { table: "orders", cursor, processed: 0, caught_up: true };
+  }
+  const assets = [
+    ...new Set(
+      rows.flatMap((row) => [row.give_asset, row.get_asset]).filter((value): value is string => value != null),
+    ),
+  ];
+  const addresses = [...new Set(rows.map((row) => row.source).filter((value): value is string => value != null))];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "orders_done", "0")];
+  for (const group of groups(assets, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO asset_dictionary(asset) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(asset) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(addresses, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO address_dictionary(address) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(address) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(rows, ORDER_GROUP)) {
+    const values = group
+      .map(
+        () =>
+          `(?,?,?,?,(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,` +
+          `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .join(",");
+    const binds = group.flatMap((row) => [
+      row.tx_index,
+      hashToBytes(row.tx_hash),
+      row.block_index,
+      row.block_time,
+      row.source,
+      row.give_asset,
+      row.give_quantity,
+      row.give_remaining,
+      row.get_asset,
+      row.get_quantity,
+      row.get_remaining,
+      row.expiration,
+      row.expire_index,
+      row.fee_required,
+      row.fee_required_remaining,
+      row.fee_provided,
+      row.fee_provided_remaining,
+      row.status,
+      row.closed_block_index,
+    ]);
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO orders
+           (tx_index,tx_hash,block_index,block_time,source_id,give_asset_id,give_quantity,give_remaining,
+            get_asset_id,get_quantity,get_remaining,expiration,expire_index,fee_required,fee_required_remaining,
+            fee_provided,fee_provided_remaining,status,closed_block_index)
+         VALUES ${values}
+         ON CONFLICT(tx_index) DO UPDATE SET
+           tx_hash=excluded.tx_hash,block_index=excluded.block_index,block_time=excluded.block_time,
+           source_id=excluded.source_id,give_asset_id=excluded.give_asset_id,give_quantity=excluded.give_quantity,
+           give_remaining=excluded.give_remaining,get_asset_id=excluded.get_asset_id,
+           get_quantity=excluded.get_quantity,get_remaining=excluded.get_remaining,
+           expiration=excluded.expiration,expire_index=excluded.expire_index,fee_required=excluded.fee_required,
+           fee_required_remaining=excluded.fee_required_remaining,fee_provided=excluded.fee_provided,
+           fee_provided_remaining=excluded.fee_provided_remaining,status=excluded.status,
+           closed_block_index=excluded.closed_block_index`,
+      ).bind(...binds),
+    );
+  }
+  const nextCursor = rows.at(-1)?.tx_index ?? cursor;
+  statements.push(coreStateUpsert(env.CORE_DB, "orders_cursor", String(nextCursor)));
+  if (rows.length < limit) statements.push(coreStateUpsert(env.CORE_DB, "orders_done", "1"));
+  await env.CORE_DB.batch(statements);
+  return { table: "orders", cursor: nextCursor, processed: rows.length, caught_up: rows.length < limit };
+}
+
+/** Copy order matches by their indexed public hash-pair identity and preserve the canonical index-pair key. */
+export async function backfillCoreOrderMatches(
+  env: Pick<Env, "DB" | "CORE_DB">,
+  requestedRows = DEFAULT_ROWS,
+): Promise<CoreOrderMatchBackfillResult> {
+  const limit = Math.max(1, Math.min(Math.trunc(requestedRows), 100));
+  const cursor = await coreState(env.CORE_DB, "order_matches_cursor");
+  const source = await env.DB.prepare(
+    `SELECT id,tx0_index,tx1_index,tx0_hash,tx1_hash,tx0_address,tx1_address,forward_asset,
+            forward_quantity,backward_asset,backward_quantity,block_index,block_time,status,match_expire_index,
+            fee_paid,tx0_block_index,tx1_block_index,tx0_expiration,tx1_expiration
+       FROM order_matches WHERE id>? ORDER BY id LIMIT ?`,
+  )
+    .bind(cursor ?? "", limit)
+    .all<SourceOrderMatch>();
+  const rows = source.results;
+  if (rows.length === 0) {
+    await coreStateUpsert(env.CORE_DB, "order_matches_done", "1").run();
+    return { table: "order_matches", cursor, processed: 0, caught_up: true };
+  }
+  const assets = [
+    ...new Set(
+      rows.flatMap((row) => [row.forward_asset, row.backward_asset]).filter((value): value is string => value != null),
+    ),
+  ];
+  const addresses = [
+    ...new Set(
+      rows.flatMap((row) => [row.tx0_address, row.tx1_address]).filter((value): value is string => value != null),
+    ),
+  ];
+  const statements: D1PreparedStatement[] = [coreStateUpsert(env.CORE_DB, "order_matches_done", "0")];
+  for (const group of groups(assets, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO asset_dictionary(asset) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(asset) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(addresses, DICTIONARY_GROUP)) {
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO address_dictionary(address) VALUES ${group.map(() => "(?)").join(",")}
+         ON CONFLICT(address) DO NOTHING`,
+      ).bind(...group),
+    );
+  }
+  for (const group of groups(rows, ORDER_MATCH_GROUP)) {
+    const values = group
+      .map(
+        () =>
+          `(?,?,?,?,` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT address_id FROM address_dictionary WHERE address=?),` +
+          `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,` +
+          `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .join(",");
+    const binds = group.flatMap((row) => [
+      row.tx0_index,
+      row.tx1_index,
+      hashToBytes(row.tx0_hash),
+      hashToBytes(row.tx1_hash),
+      row.tx0_address,
+      row.tx1_address,
+      row.forward_asset,
+      row.forward_quantity,
+      row.backward_asset,
+      row.backward_quantity,
+      row.block_index,
+      row.block_time,
+      row.status,
+      row.match_expire_index,
+      row.fee_paid,
+      row.tx0_block_index,
+      row.tx1_block_index,
+      row.tx0_expiration,
+      row.tx1_expiration,
+    ]);
+    statements.push(
+      env.CORE_DB.prepare(
+        `INSERT INTO order_matches
+           (tx0_index,tx1_index,tx0_hash,tx1_hash,tx0_address_id,tx1_address_id,forward_asset_id,
+            forward_quantity,backward_asset_id,backward_quantity,block_index,block_time,status,
+            match_expire_index,fee_paid,tx0_block_index,tx1_block_index,tx0_expiration,tx1_expiration)
+         VALUES ${values}
+         ON CONFLICT(tx0_index,tx1_index) DO UPDATE SET
+           tx0_hash=excluded.tx0_hash,tx1_hash=excluded.tx1_hash,tx0_address_id=excluded.tx0_address_id,
+           tx1_address_id=excluded.tx1_address_id,forward_asset_id=excluded.forward_asset_id,
+           forward_quantity=excluded.forward_quantity,backward_asset_id=excluded.backward_asset_id,
+           backward_quantity=excluded.backward_quantity,block_index=excluded.block_index,
+           block_time=excluded.block_time,status=excluded.status,match_expire_index=excluded.match_expire_index,
+           fee_paid=excluded.fee_paid,tx0_block_index=excluded.tx0_block_index,
+           tx1_block_index=excluded.tx1_block_index,tx0_expiration=excluded.tx0_expiration,
+           tx1_expiration=excluded.tx1_expiration`,
+      ).bind(...binds),
+    );
+  }
+  const nextCursor = rows.at(-1)?.id ?? cursor;
+  statements.push(coreStateUpsert(env.CORE_DB, "order_matches_cursor", nextCursor ?? ""));
+  if (rows.length < limit) statements.push(coreStateUpsert(env.CORE_DB, "order_matches_done", "1"));
+  await env.CORE_DB.batch(statements);
+  return { table: "order_matches", cursor: nextCursor, processed: rows.length, caught_up: rows.length < limit };
 }

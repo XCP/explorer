@@ -5,6 +5,8 @@ import {
   coreBalanceReadinessFailures,
   coreBlockReadinessFailures,
   coreIssuanceReadinessFailures,
+  coreOrderMatchReadinessFailures,
+  coreOrderReadinessFailures,
   coreSendReadinessFailures,
   coreTransactionReadinessFailures,
 } from "#api/indexer/core-readiness";
@@ -192,4 +194,38 @@ test("core send readiness requires a complete matching event projection", () => 
     sampleMatches: [false],
   });
   assert.equal(failures.length, 4);
+});
+
+test("core order readiness requires canonical transaction extrema", () => {
+  assert.deepEqual(
+    coreOrderReadinessFailures({
+      sourceRows: 564_225,
+      coreRows: 564_225,
+      sourceFirst: 848,
+      sourceLast: 3_146_466,
+      coreFirst: 848,
+      coreLast: 3_146_466,
+      done: true,
+      sampleMatches: [true, true, true],
+    }),
+    [],
+  );
+});
+
+test("core order-match readiness requires reconstructed public-id parity", () => {
+  const first = `${"00".repeat(32)}_${"11".repeat(32)}`;
+  const last = `${"ff".repeat(32)}_${"ee".repeat(32)}`;
+  assert.deepEqual(
+    coreOrderMatchReadinessFailures({
+      sourceRows: 216_394,
+      coreRows: 216_394,
+      sourceFirst: first,
+      sourceLast: last,
+      coreFirst: first,
+      coreLast: last,
+      done: true,
+      sampleMatches: [true, true],
+    }),
+    [],
+  );
 });

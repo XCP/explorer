@@ -124,6 +124,53 @@ type SendSample = {
   msg_index: number;
 };
 
+type OrderSample = {
+  tx_index: number;
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  give_asset: string | null;
+  give_quantity: string | null;
+  give_remaining: string | null;
+  get_asset: string | null;
+  get_quantity: string | null;
+  get_remaining: string | null;
+  expiration: number | null;
+  expire_index: number | null;
+  fee_required: string | null;
+  fee_required_remaining: string | null;
+  fee_provided: string | null;
+  fee_provided_remaining: string | null;
+  status: string | null;
+  closed_block_index: number | null;
+};
+
+type OrderMatchMeta = { rows: number; first_id: string | null; last_id: string | null };
+
+type OrderMatchSample = {
+  id: string;
+  tx0_index: number;
+  tx1_index: number;
+  tx0_hash: string;
+  tx1_hash: string;
+  tx0_address: string | null;
+  tx1_address: string | null;
+  forward_asset: string | null;
+  forward_quantity: string | null;
+  backward_asset: string | null;
+  backward_quantity: string | null;
+  block_index: number;
+  block_time: number | null;
+  status: string | null;
+  match_expire_index: number | null;
+  fee_paid: string | null;
+  tx0_block_index: number | null;
+  tx1_block_index: number | null;
+  tx0_expiration: number | null;
+  tx1_expiration: number | null;
+};
+
 export type CoreTransactionReadiness = {
   ready: boolean;
   read_only: true;
@@ -205,6 +252,34 @@ export type CoreSendReadiness = {
     match: boolean;
   };
   samples: Array<{ event_index: number; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreOrderReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: number | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  extrema: {
+    source: { first: number | null; last: number | null };
+    core: { first: number | null; last: number | null };
+    match: boolean;
+  };
+  samples: Array<{ tx_index: number; match: boolean }>;
+  failures: string[];
+};
+
+export type CoreOrderMatchReadiness = {
+  ready: boolean;
+  read_only: true;
+  state: { cursor: string | null; done: boolean };
+  progress: { source: number; core: number; percent: number };
+  extrema: {
+    source: { first: string | null; last: string | null };
+    core: { first: string | null; last: string | null };
+    match: boolean;
+  };
+  samples: Array<{ id: string; match: boolean }>;
   failures: string[];
 };
 
@@ -335,6 +410,50 @@ export function coreSendReadinessFailures(input: {
     failures.push("send event extrema differ");
   }
   if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded send samples differ");
+  return failures;
+}
+
+export function coreOrderReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFirst: number | null;
+  sourceLast: number | null;
+  coreFirst: number | null;
+  coreLast: number | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source orders are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core orders are empty or unreadable");
+  if (!input.done) failures.push("order backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("order row counts differ");
+  if (input.sourceFirst !== input.coreFirst || input.sourceLast !== input.coreLast) {
+    failures.push("order transaction extrema differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded order samples differ");
+  return failures;
+}
+
+export function coreOrderMatchReadinessFailures(input: {
+  sourceRows: number;
+  coreRows: number;
+  sourceFirst: string | null;
+  sourceLast: string | null;
+  coreFirst: string | null;
+  coreLast: string | null;
+  done: boolean;
+  sampleMatches: boolean[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.sourceRows <= 0) failures.push("source order matches are empty or unreadable");
+  if (input.coreRows <= 0) failures.push("core order matches are empty or unreadable");
+  if (!input.done) failures.push("order match backfill is incomplete");
+  if (input.sourceRows !== input.coreRows) failures.push("order match row counts differ");
+  if (input.sourceFirst !== input.coreFirst || input.sourceLast !== input.coreLast) {
+    failures.push("order match id extrema differ");
+  }
+  if (input.sampleMatches.some((match) => !match)) failures.push("one or more decoded order match samples differ");
   return failures;
 }
 
@@ -838,6 +957,162 @@ export async function auditCoreSends(env: Pick<Env, "DB" | "CORE_DB">): Promise<
       source: { first: source.first_index, last: source.last_index },
       core: { first: core.first_index, last: core.last_index },
       match: source.first_index === core.first_index && source.last_index === core.last_index,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, canonical transaction frontier, and decoded parity evidence for current orders. */
+export async function auditCoreOrders(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreOrderReadiness> {
+  const [sourceMeta, coreMeta, stateRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT COUNT(*) rows,MIN(t.tx_index) first_index,MAX(t.tx_index) last_index
+         FROM transactions t JOIN orders o ON o.tx_hash=t.tx_hash`,
+    ).first<IssuanceMeta>(),
+    env.CORE_DB.prepare(
+      `SELECT COUNT(*) rows,MIN(tx_index) first_index,MAX(tx_index) last_index FROM orders`,
+    ).first<IssuanceMeta>(),
+    env.CORE_DB.prepare(`SELECT key,value FROM core_state WHERE key IN ('orders_cursor','orders_done')`).all<{
+      key: string;
+      value: string;
+    }>(),
+  ]);
+  const source = sourceMeta ?? { rows: 0, first_index: null, last_index: null };
+  const core = coreMeta ?? { rows: 0, first_index: null, last_index: null };
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const samples = await Promise.all(
+    sampleIndexes(core).map(async (txIndex) => {
+      const [sourceRow, coreRow] = await Promise.all([
+        env.DB.prepare(
+          `SELECT t.tx_index,LOWER(o.tx_hash) tx_hash,o.block_index,o.block_time,o.source,o.give_asset,
+                  o.give_quantity,o.give_remaining,o.get_asset,o.get_quantity,o.get_remaining,o.expiration,
+                  o.expire_index,o.fee_required,o.fee_required_remaining,o.fee_provided,
+                  o.fee_provided_remaining,o.status,o.closed_block_index
+             FROM transactions t JOIN orders o ON o.tx_hash=t.tx_hash WHERE t.tx_index=?`,
+        )
+          .bind(txIndex)
+          .first<OrderSample>(),
+        env.CORE_DB.prepare(
+          `SELECT o.tx_index,LOWER(HEX(o.tx_hash)) tx_hash,o.block_index,o.block_time,source.address source,
+                  give_asset.asset give_asset,o.give_quantity,o.give_remaining,get_asset.asset get_asset,
+                  o.get_quantity,o.get_remaining,o.expiration,o.expire_index,o.fee_required,
+                  o.fee_required_remaining,o.fee_provided,o.fee_provided_remaining,o.status,o.closed_block_index
+             FROM orders o
+             LEFT JOIN address_dictionary source ON source.address_id=o.source_id
+             LEFT JOIN asset_dictionary give_asset ON give_asset.asset_id=o.give_asset_id
+             LEFT JOIN asset_dictionary get_asset ON get_asset.asset_id=o.get_asset_id
+            WHERE o.tx_index=?`,
+        )
+          .bind(txIndex)
+          .first<OrderSample>(),
+      ]);
+      return { tx_index: txIndex, match: JSON.stringify(sourceRow) === JSON.stringify(coreRow) };
+    }),
+  );
+  const sourceRows = Number(source.rows);
+  const coreRows = Number(core.rows);
+  const done = state.get("orders_done") === "1";
+  const failures = coreOrderReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFirst: source.first_index,
+    sourceLast: source.last_index,
+    coreFirst: core.first_index,
+    coreLast: core.last_index,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: { cursor: state.has("orders_cursor") ? Number(state.get("orders_cursor")) : null, done },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    extrema: {
+      source: { first: source.first_index, last: source.last_index },
+      core: { first: core.first_index, last: core.last_index },
+      match: source.first_index === core.first_index && source.last_index === core.last_index,
+    },
+    samples,
+    failures,
+  };
+}
+
+/** Read-only count, reconstructed public-id frontier, and decoded parity evidence for order matches. */
+export async function auditCoreOrderMatches(env: Pick<Env, "DB" | "CORE_DB">): Promise<CoreOrderMatchReadiness> {
+  const publicId = `LOWER(HEX(tx0_hash))||'_'||LOWER(HEX(tx1_hash))`;
+  const sourceSampleSql = `SELECT id,tx0_index,tx1_index,LOWER(tx0_hash) tx0_hash,LOWER(tx1_hash) tx1_hash,
+                                  tx0_address,tx1_address,forward_asset,forward_quantity,backward_asset,
+                                  backward_quantity,block_index,block_time,status,match_expire_index,fee_paid,
+                                  tx0_block_index,tx1_block_index,tx0_expiration,tx1_expiration FROM order_matches`;
+  const [sourceMeta, coreMeta, firstSource, lastSource, stateRows] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) rows,MIN(id) first_id,MAX(id) last_id FROM order_matches`).first<OrderMatchMeta>(),
+    env.CORE_DB.prepare(
+      `SELECT COUNT(*) rows,MIN(${publicId}) first_id,MAX(${publicId}) last_id FROM order_matches`,
+    ).first<OrderMatchMeta>(),
+    env.DB.prepare(`${sourceSampleSql} ORDER BY id LIMIT 1`).first<OrderMatchSample>(),
+    env.DB.prepare(`${sourceSampleSql} ORDER BY id DESC LIMIT 1`).first<OrderMatchSample>(),
+    env.CORE_DB.prepare(
+      `SELECT key,value FROM core_state WHERE key IN ('order_matches_cursor','order_matches_done')`,
+    ).all<{ key: string; value: string }>(),
+  ]);
+  const source = sourceMeta ?? { rows: 0, first_id: null, last_id: null };
+  const core = coreMeta ?? { rows: 0, first_id: null, last_id: null };
+  const sampleRows = [firstSource, lastSource].filter(
+    (row, index, rows): row is OrderMatchSample =>
+      row != null && rows.findIndex((value) => value?.id === row.id) === index,
+  );
+  const samples = await Promise.all(
+    sampleRows.map(async (sourceRow) => {
+      const coreRow = await env.CORE_DB.prepare(
+        `SELECT ${publicId} id,m.tx0_index,m.tx1_index,LOWER(HEX(m.tx0_hash)) tx0_hash,
+                LOWER(HEX(m.tx1_hash)) tx1_hash,tx0.address tx0_address,tx1.address tx1_address,
+                forward_asset.asset forward_asset,m.forward_quantity,backward_asset.asset backward_asset,
+                m.backward_quantity,m.block_index,m.block_time,m.status,m.match_expire_index,m.fee_paid,
+                m.tx0_block_index,m.tx1_block_index,m.tx0_expiration,m.tx1_expiration
+           FROM order_matches m
+           LEFT JOIN address_dictionary tx0 ON tx0.address_id=m.tx0_address_id
+           LEFT JOIN address_dictionary tx1 ON tx1.address_id=m.tx1_address_id
+           LEFT JOIN asset_dictionary forward_asset ON forward_asset.asset_id=m.forward_asset_id
+           LEFT JOIN asset_dictionary backward_asset ON backward_asset.asset_id=m.backward_asset_id
+          WHERE m.tx0_index=? AND m.tx1_index=?`,
+      )
+        .bind(sourceRow.tx0_index, sourceRow.tx1_index)
+        .first<OrderMatchSample>();
+      return { id: sourceRow.id, match: JSON.stringify(sourceRow) === JSON.stringify(coreRow) };
+    }),
+  );
+  const state = new Map(stateRows.results.map((row) => [row.key, row.value]));
+  const sourceRows = Number(source.rows);
+  const coreRows = Number(core.rows);
+  const done = state.get("order_matches_done") === "1";
+  const failures = coreOrderMatchReadinessFailures({
+    sourceRows,
+    coreRows,
+    sourceFirst: source.first_id,
+    sourceLast: source.last_id,
+    coreFirst: core.first_id,
+    coreLast: core.last_id,
+    done,
+    sampleMatches: samples.map((sample) => sample.match),
+  });
+  return {
+    ready: failures.length === 0,
+    read_only: true,
+    state: { cursor: state.get("order_matches_cursor") ?? null, done },
+    progress: {
+      source: sourceRows,
+      core: coreRows,
+      percent: sourceRows > 0 ? Math.round((coreRows / sourceRows) * 10000) / 100 : 0,
+    },
+    extrema: {
+      source: { first: source.first_id, last: source.last_id },
+      core: { first: core.first_id, last: core.last_id },
+      match: source.first_id === core.first_id && source.last_id === core.last_id,
     },
     samples,
     failures,

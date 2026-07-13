@@ -3,9 +3,11 @@ import { setTimeout as wait } from "node:timers/promises";
 
 const base = process.env.CORE_BACKFILL_BASE ?? "http://127.0.0.1:8790";
 const table = process.env.CORE_BACKFILL_TABLE ?? "transactions";
-if (!new Set(["transactions", "blocks", "assets", "issuances", "balances", "sends"]).has(table))
+if (
+  !new Set(["transactions", "blocks", "assets", "issuances", "balances", "sends", "orders", "order-matches"]).has(table)
+)
   throw new Error(`unsupported core table: ${table}`);
-const maxRows = new Set(["assets", "issuances", "balances", "sends"]).has(table) ? 100 : 500;
+const maxRows = new Set(["assets", "issuances", "balances", "sends", "orders", "order-matches"]).has(table) ? 100 : 500;
 const rows = Math.max(1, Math.min(Number(process.env.CORE_BACKFILL_ROWS ?? maxRows), maxRows));
 const vars = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8");
 const tokenLine = vars.split(/\r?\n/).find((line) => line.startsWith("ADMIN_TOKEN="));

@@ -36,6 +36,8 @@ import {
   backfillCoreBalances,
   backfillCoreBlocks,
   backfillCoreIssuances,
+  backfillCoreOrderMatches,
+  backfillCoreOrders,
   backfillCoreSends,
   backfillCoreTransactions,
 } from "#api/indexer/core-backfill";
@@ -44,6 +46,8 @@ import {
   auditCoreBalances,
   auditCoreBlocks,
   auditCoreIssuances,
+  auditCoreOrderMatches,
+  auditCoreOrders,
   auditCoreSends,
   auditCoreTransactions,
 } from "#api/indexer/core-readiness";
@@ -160,6 +164,16 @@ admin.post("/admin/backfill-core/sends", async (c) => {
   return c.json(await backfillCoreSends(c.env, rows));
 });
 
+admin.post("/admin/backfill-core/orders", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
+  return c.json(await backfillCoreOrders(c.env, rows));
+});
+
+admin.post("/admin/backfill-core/order-matches", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 100 });
+  return c.json(await backfillCoreOrderMatches(c.env, rows));
+});
+
 admin.get("/admin/core-readiness/transactions", async (c) => {
   return c.json(await auditCoreTransactions(c.env));
 });
@@ -182,6 +196,14 @@ admin.get("/admin/core-readiness/balances", async (c) => {
 
 admin.get("/admin/core-readiness/sends", async (c) => {
   return c.json(await auditCoreSends(c.env));
+});
+
+admin.get("/admin/core-readiness/orders", async (c) => {
+  return c.json(await auditCoreOrders(c.env));
+});
+
+admin.get("/admin/core-readiness/order-matches", async (c) => {
+  return c.json(await auditCoreOrderMatches(c.env));
 });
 
 // Read-only safety audit. This reports readiness but deliberately cannot change `read_cutover`.
