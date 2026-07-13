@@ -41,7 +41,13 @@ test("operational status aggregates durable frontiers without counting recovery 
     { key: "read_cutover", value: "0" },
   ]);
   const recovery = new Database((sql) => {
-    if (sql.includes("FROM recovery_state")) return [{ key: "read_ready", value: "0", updated_at: 10 }];
+    if (sql.includes("FROM recovery_state"))
+      return [
+        { key: "read_ready", value: "0", updated_at: 10 },
+        { key: "stamp_protection_ready", value: "1", updated_at: 10 },
+        { key: "official_stamp_protection_ready", value: "1", updated_at: 10 },
+        { key: "r2_audit_ready", value: "0", updated_at: 10 },
+      ];
     if (sql.includes("FROM recovery_imports"))
       return [{ imports: 1, completed: 0, rows_seen: 12_000, rows_written: 11_900, started_at: 5, errors: 0 }];
     if (sql.includes("chain_checked_at IS NULL ORDER")) return [{ txid: "a".repeat(64), vout: 2 }];
@@ -58,6 +64,11 @@ test("operational status aggregates durable frontiers without counting recovery 
   assert.equal(result.recovery.verification.complete, false);
   assert.equal(result.recovery.verification.next_output?.vout, 2);
   assert.equal(result.recovery.attempts.pending, 2);
+  assert.deepEqual(result.recovery.readiness, {
+    stamp_protection: true,
+    official_stamp_protection: true,
+    r2_audit: false,
+  });
   assert.equal(
     recovery.queries.some((sql) => /COUNT\(\*\).*FROM recovery_outputs/is.test(sql)),
     false,

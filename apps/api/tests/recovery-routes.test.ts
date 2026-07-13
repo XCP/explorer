@@ -25,7 +25,7 @@ class Statement {
   }
   run() {
     this.db.run(this.sql, this.values);
-    return Promise.resolve({ success: true });
+    return Promise.resolve({ success: true, meta: { changes: 1 } });
   }
 }
 
@@ -33,6 +33,8 @@ class FakeRecoveryDb {
   readReady = false;
   stampProtectionReady = false;
   officialStampProtectionReady = false;
+  r2AuditReady = false;
+  r2AuditGeneration = 0;
   imports: Array<{ completed: boolean }> = [];
   uncheckedOutputs = 0;
   outputs: Row[] = [];
@@ -59,16 +61,31 @@ class FakeRecoveryDb {
   }
   first(sql: string, values: unknown[]): Row | null {
     if (sql.includes("FROM recovery_state")) {
+      if (sql.includes("r2_audit_generation")) return { value: String(this.r2AuditGeneration) };
+      if (sql.includes("r2_audit_ready")) return this.r2AuditReady ? { value: "1" } : null;
       if (sql.includes("official_stamp_protection_ready"))
         return this.officialStampProtectionReady ? { value: "1" } : null;
       if (sql.includes("stamp_protection_ready")) return this.stampProtectionReady ? { value: "1" } : null;
       return this.readReady ? { value: "1" } : null;
     }
+    if (sql.includes("COUNT(*) total_imports") && sql.includes("recovery_imports"))
+      return {
+        total_imports: this.imports.length,
+        completed_imports: this.imports.filter((row) => row.completed).length,
+      };
     if (sql.includes("COUNT(*) total") && sql.includes("recovery_imports"))
       return {
         total: this.imports.length,
         completed: this.imports.filter((row) => row.completed).length,
       };
+    if (sql.includes("COUNT(*) transactions") && sql.includes("MIN(txid)")) {
+      const txids = [...new Set(this.outputs.map((row) => String(row.txid)))].sort();
+      return {
+        transactions: txids.length,
+        first_txid: txids.at(0) ?? null,
+        last_txid: txids.at(-1) ?? null,
+      };
+    }
     if (sql.includes("chain_checked_at IS NULL")) return { count: this.uncheckedOutputs };
     if (sql.includes("COUNT(*) output_count")) {
       const address = values[0];
@@ -120,7 +137,9 @@ class FakeRecoveryDb {
     return [];
   }
   run(sql: string, values: unknown[] = []) {
-    if (sql.includes("recovery_state") && sql.includes("read_ready")) this.readReady = true;
+    if (sql.includes("recovery_state") && sql.includes("read_ready")) this.readReady = sql.includes("'1'");
+    if (sql.includes("recovery_state") && sql.includes("r2_audit_ready")) this.r2AuditReady = sql.includes("'1'");
+    if (sql.includes("recovery_state") && sql.includes("r2_audit_generation")) this.r2AuditGeneration++;
     if (sql.includes("recovery_state") && sql.includes("stamp_protection_ready")) this.stampProtectionReady = true;
     if (sql.includes("INSERT INTO recovery_imports")) {
       const [id, cursor] = values as [string, number];
@@ -213,6 +232,7 @@ test("finalization refuses absent, incomplete, and unchecked imports before open
     failed_transactions: 0,
     stamp_protection_ready: false,
     official_stamp_protection_ready: false,
+    r2_audit_ready: false,
   });
   assert.equal(db.readReady, false);
 });
@@ -224,11 +244,55 @@ test("finalization opens reads only after every import and output is complete", 
   db.imports = [{ completed: true }, { completed: true }];
   db.stampProtectionReady = true;
   db.officialStampProtectionReady = true;
+  db.r2AuditReady = true;
 
   const response = await app.request("/admin/recovery/finalize", { method: "POST" }, env(db));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, read_ready: true });
   assert.equal(db.readReady, true);
+});
+
+test("R2 audit acceptance is bound to the completed import manifest", async () => {
+  const app = new Hono<{ Bindings: Env }>();
+  app.route("/", recoveryAdmin);
+  const db = new FakeRecoveryDb();
+  const first = "11".repeat(32);
+  const last = "22".repeat(32);
+  db.imports = [{ completed: true }];
+  db.outputs = [{ txid: first }, { txid: last }, { txid: last }];
+  const manifest = {
+    transactions: 2,
+    first_txid: first,
+    last_txid: last,
+    total_imports: 1,
+    completed_imports: 1,
+    imports_complete: true,
+    generation: 0,
+  };
+
+  let response = await app.request(
+    "/admin/recovery/audit/transactions/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ manifest, checked: 2, last_cursor: last, missing: 1, corrupt: 0 }),
+    },
+    env(db),
+  );
+  assert.equal(response.status, 409);
+  assert.equal(db.r2AuditReady, false);
+
+  response = await app.request(
+    "/admin/recovery/audit/transactions/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ manifest, checked: 2, last_cursor: last, missing: 0, corrupt: 0 }),
+    },
+    env(db),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(db.r2AuditReady, true);
 });
 
 test("replaying an identical terminal import page reuses its receipt without inflating progress", async () => {
@@ -244,6 +308,8 @@ test("replaying an identical terminal import page reuses its receipt without inf
 
   let response = await app.request("/admin/recovery/import", request, bindings);
   assert.equal(response.status, 200);
+  assert.equal(db.readReady, false);
+  assert.equal(db.r2AuditReady, false);
   assert.deepEqual(await response.json(), {
     ok: true,
     upserted: 0,
@@ -252,6 +318,8 @@ test("replaying an identical terminal import page reuses its receipt without inf
     complete: true,
   });
 
+  db.readReady = true;
+  db.r2AuditReady = true;
   response = await app.request("/admin/recovery/import", request, bindings);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
@@ -261,6 +329,8 @@ test("replaying an identical terminal import page reuses its receipt without inf
     next_cursor: null,
     complete: true,
   });
+  assert.equal(db.readReady, true);
+  assert.equal(db.r2AuditReady, true);
   assert.equal(db.receipts.size, 1);
   assert.equal(db.importRows.get("bootstrap")?.rowsSeen, 0);
 });

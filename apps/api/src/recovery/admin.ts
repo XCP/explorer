@@ -6,7 +6,8 @@ import { boundedInteger } from "#api/http/numbers";
 import { advanceImportFrontier, type ImportReceipt } from "#api/recovery/import-receipts";
 import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
 import { stampProtectionSourcePage, type StampProtectionSource } from "#api/recovery/stamp-source";
-import { auditRecoveryR2Page } from "#api/recovery/r2-audit";
+import { auditRecoveryR2Page, recoveryR2AuditManifest, type RecoveryR2AuditManifest } from "#api/recovery/r2-audit";
+import { completeStampReceiptChain, type StampImportReceipt } from "#api/recovery/stamp-receipts";
 
 export const recoveryAdmin = new Hono<{ Bindings: Env }>();
 
@@ -63,8 +64,8 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
     return c.json({ error: "valid snapshot_sha256 is required" }, 400);
   if (!Number.isSafeInteger(body.next_cursor) || Number(body.next_cursor) <= Number(body.cursor))
     return c.json({ error: "valid next_cursor is required" }, 400);
-  if (!Array.isArray(body.transactions) || body.transactions.length > 500)
-    return c.json({ error: "transactions must be an array of at most 500 entries" }, 400);
+  if (!Array.isArray(body.transactions) || body.transactions.length < 1 || body.transactions.length > 500)
+    return c.json({ error: "transactions must be an array of 1 to 500 entries" }, 400);
   const entries = body.transactions.map((entry) => ({
     txid: String(entry.txid ?? "").toLowerCase(),
     source_reference: String(entry.source_reference ?? ""),
@@ -78,6 +79,14 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
 
   const cursor = Number(body.cursor);
   const nextCursor = Number(body.next_cursor);
+  const stampNumbers = entries.map(({ source_reference }) => Number(source_reference.slice("stamp:".length)));
+  if (
+    stampNumbers.some(
+      (stamp, index) => !Number.isSafeInteger(stamp) || stamp <= (index === 0 ? cursor : stampNumbers[index - 1]),
+    ) ||
+    stampNumbers.at(-1) !== nextCursor
+  )
+    return c.json({ error: "Stamp references must increase from cursor through next_cursor" }, 400);
   const now = Math.floor(Date.now() / 1000);
   const existing = await c.env.RECOVERY_DB.prepare(
     `SELECT next_cursor,rows_seen,snapshot_sha256 FROM recovery_stamp_import_receipts WHERE page_cursor=?`,
@@ -100,13 +109,20 @@ recoveryAdmin.post("/admin/recovery/protections/stamps/official", async (c) => {
   )
     .bind(cursor, nextCursor, entries.length, body.snapshot_sha256, now)
     .run();
-  if (body.complete === true)
+  if (body.complete === true) {
+    const receipts = await c.env.RECOVERY_DB.prepare(
+      `SELECT page_cursor,next_cursor,snapshot_sha256
+         FROM recovery_stamp_import_receipts ORDER BY page_cursor`,
+    ).all<StampImportReceipt>();
+    if (!completeStampReceiptChain(receipts.results, cursor, nextCursor, body.snapshot_sha256!))
+      return c.json({ error: "official Stamp receipt chain is incomplete or inconsistent" }, 409);
     await c.env.RECOVERY_DB.prepare(
       `INSERT INTO recovery_state (key,value,updated_at) VALUES ('official_stamp_protection_ready','1',?)
        ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
     )
       .bind(now)
       .run();
+  }
   return c.json({
     ok: true,
     replay: Boolean(existing),
@@ -218,8 +234,24 @@ recoveryAdmin.post("/admin/recovery/import", async (c) => {
     ) {
       return c.json({ error: "replayed recovery import page does not match its receipt" }, 409);
     }
-    const upserted = rows.length === 0 ? 0 : await importRecoveryTransactions(c.env, rows);
     const now = Math.floor(Date.now() / 1000);
+    if (!existingReceipt)
+      await c.env.RECOVERY_DB.batch([
+        c.env.RECOVERY_DB.prepare(
+          `INSERT INTO recovery_state (key,value,updated_at) VALUES ('r2_audit_ready','0',?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+        ).bind(now),
+        c.env.RECOVERY_DB.prepare(
+          `INSERT INTO recovery_state (key,value,updated_at) VALUES ('read_ready','0',?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+        ).bind(now),
+        c.env.RECOVERY_DB.prepare(
+          `INSERT INTO recovery_state (key,value,updated_at) VALUES ('r2_audit_generation','1',?)
+           ON CONFLICT(key) DO UPDATE SET value=CAST(recovery_state.value AS INTEGER)+1,
+             updated_at=excluded.updated_at`,
+        ).bind(now),
+      ]);
+    const upserted = rows.length === 0 ? 0 : await importRecoveryTransactions(c.env, rows);
     await c.env.RECOVERY_DB.batch([
       c.env.RECOVERY_DB.prepare(
         `INSERT INTO recovery_imports
@@ -306,35 +338,113 @@ recoveryAdmin.get("/admin/recovery/audit/transactions", async (c) => {
   return c.json(await auditRecoveryR2Page(c.env, cursor, limit));
 });
 
+recoveryAdmin.get("/admin/recovery/audit/transactions/manifest", async (c) =>
+  c.json(await recoveryR2AuditManifest(c.env.RECOVERY_DB)),
+);
+
+interface RecoveryR2AuditAcceptance {
+  manifest?: RecoveryR2AuditManifest;
+  checked?: number;
+  last_cursor?: string | null;
+  missing?: number;
+  corrupt?: number;
+}
+
+recoveryAdmin.post("/admin/recovery/audit/transactions/accept", async (c) => {
+  const body = await c.req.json<RecoveryR2AuditAcceptance>().catch(() => null);
+  if (!body || !body.manifest || !Number.isSafeInteger(body.checked) || body.checked! < 0)
+    return c.json({ error: "valid R2 audit report is required" }, 400);
+  if (
+    !Number.isSafeInteger(body.missing) ||
+    body.missing! < 0 ||
+    !Number.isSafeInteger(body.corrupt) ||
+    body.corrupt! < 0
+  )
+    return c.json({ error: "valid R2 audit result counts are required" }, 400);
+  if (body.last_cursor !== null && !/^[0-9a-f]{64}$/.test(String(body.last_cursor ?? "")))
+    return c.json({ error: "valid last_cursor is required" }, 400);
+
+  const current = await recoveryR2AuditManifest(c.env.RECOVERY_DB);
+  const stableManifest = JSON.stringify(body.manifest) === JSON.stringify(current);
+  const complete =
+    stableManifest &&
+    current.imports_complete &&
+    body.checked === current.transactions &&
+    body.last_cursor === current.last_txid &&
+    body.missing === 0 &&
+    body.corrupt === 0;
+  if (!complete)
+    return c.json(
+      {
+        error: "R2 audit is not complete for the current recovery import",
+        stable_manifest: stableManifest,
+        current_manifest: current,
+        checked: body.checked,
+        last_cursor: body.last_cursor,
+        missing: body.missing,
+        corrupt: body.corrupt,
+      },
+      409,
+    );
+
+  const now = Math.floor(Date.now() / 1000);
+  const accepted = await c.env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_state (key,value,updated_at)
+       SELECT 'r2_audit_ready','1',?
+        WHERE (SELECT value FROM recovery_state WHERE key='r2_audit_generation')=?
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+  )
+    .bind(now, String(current.generation))
+    .run();
+  if (Number(accepted.meta.changes) !== 1)
+    return c.json({ error: "recovery import changed while accepting the R2 audit" }, 409);
+  await c.env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_state (key,value,updated_at) VALUES ('r2_audit_manifest',?,?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+  )
+    .bind(JSON.stringify(current), now)
+    .run();
+  return c.json({ ok: true, r2_audit_ready: true, manifest: current });
+});
+
 recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
-  const [imports, unchecked, verificationFailures, stampProtection, officialStampProtection] = await Promise.all([
-    c.env.RECOVERY_DB.prepare(
-      `SELECT COUNT(*) total, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) completed FROM recovery_imports`,
-    ).first<{ total: number; completed: number }>(),
-    c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) count FROM recovery_outputs WHERE chain_checked_at IS NULL`).first<{
-      count: number;
-    }>(),
-    c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) count FROM recovery_verification_failures`).first<{ count: number }>(),
-    c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='stamp_protection_ready'`).first<{
-      value: string;
-    }>(),
-    c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='official_stamp_protection_ready'`).first<{
-      value: string;
-    }>(),
-  ]);
+  const [imports, unchecked, verificationFailures, stampProtection, officialStampProtection, r2Audit, r2Generation] =
+    await Promise.all([
+      c.env.RECOVERY_DB.prepare(
+        `SELECT COUNT(*) total, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) completed FROM recovery_imports`,
+      ).first<{ total: number; completed: number }>(),
+      c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) count FROM recovery_outputs WHERE chain_checked_at IS NULL`).first<{
+        count: number;
+      }>(),
+      c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) count FROM recovery_verification_failures`).first<{ count: number }>(),
+      c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='stamp_protection_ready'`).first<{
+        value: string;
+      }>(),
+      c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='official_stamp_protection_ready'`).first<{
+        value: string;
+      }>(),
+      c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='r2_audit_ready'`).first<{
+        value: string;
+      }>(),
+      c.env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='r2_audit_generation'`).first<{
+        value: string;
+      }>(),
+    ]);
   const totalImports = Number(imports?.total ?? 0);
   const completedImports = Number(imports?.completed ?? 0);
   const uncheckedOutputs = Number(unchecked?.count ?? 0);
   const failedTransactions = Number(verificationFailures?.count ?? 0);
   const stampProtectionReady = stampProtection?.value === "1";
   const officialStampProtectionReady = officialStampProtection?.value === "1";
+  const r2AuditReady = r2Audit?.value === "1";
   if (
     totalImports === 0 ||
     completedImports !== totalImports ||
     uncheckedOutputs !== 0 ||
     failedTransactions !== 0 ||
     !stampProtectionReady ||
-    !officialStampProtectionReady
+    !officialStampProtectionReady ||
+    !r2AuditReady
   ) {
     return c.json(
       {
@@ -345,16 +455,21 @@ recoveryAdmin.post("/admin/recovery/finalize", async (c) => {
         failed_transactions: failedTransactions,
         stamp_protection_ready: stampProtectionReady,
         official_stamp_protection_ready: officialStampProtectionReady,
+        r2_audit_ready: r2AuditReady,
       },
       409,
     );
   }
   const now = Math.floor(Date.now() / 1000);
-  await c.env.RECOVERY_DB.prepare(
-    `INSERT INTO recovery_state (key,value,updated_at) VALUES ('read_ready','1',?)
+  const finalized = await c.env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_state (key,value,updated_at)
+       SELECT 'read_ready','1',?
+        WHERE (SELECT value FROM recovery_state WHERE key='r2_audit_generation')=?
+          AND (SELECT value FROM recovery_state WHERE key='r2_audit_ready')='1'
      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
   )
-    .bind(now)
+    .bind(now, String(Number(r2Generation?.value ?? 0)))
     .run();
+  if (Number(finalized.meta.changes) !== 1) return c.json({ error: "recovery import changed while finalizing" }, 409);
   return c.json({ ok: true, read_ready: true });
 });

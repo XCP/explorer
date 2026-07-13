@@ -47,7 +47,10 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
        WHERE key IN ('backfill_active','ledger_credit_cursor','ledger_credit_done',
                      'ledger_debit_cursor','ledger_debit_done','read_cutover')`,
       ).all<StateRow>(),
-      env.RECOVERY_DB.prepare(`SELECT key,value,updated_at FROM recovery_state WHERE key='read_ready'`).all<StateRow>(),
+      env.RECOVERY_DB.prepare(
+        `SELECT key,value,updated_at FROM recovery_state
+          WHERE key IN ('read_ready','stamp_protection_ready','official_stamp_protection_ready','r2_audit_ready')`,
+      ).all<StateRow>(),
       env.RECOVERY_DB.prepare(
         `SELECT COUNT(*) imports,
               COALESCE(SUM(completed_at IS NOT NULL),0) completed,
@@ -123,6 +126,11 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
         pending: Number(attempts?.pending ?? 0),
         never_checked: Number(attempts?.unchecked ?? 0),
         oldest_check_at: attempts?.oldest_check_at ?? null,
+      },
+      readiness: {
+        stamp_protection: recovery.stamp_protection_ready === "1",
+        official_stamp_protection: recovery.official_stamp_protection_ready === "1",
+        r2_audit: recovery.r2_audit_ready === "1",
       },
       read_ready: recovery.read_ready === "1",
     },

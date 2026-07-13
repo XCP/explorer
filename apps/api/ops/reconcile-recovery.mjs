@@ -5,6 +5,7 @@ const token = process.env.RECOVERY_ADMIN_TOKEN;
 const transactionLimit = Number(process.env.RECOVERY_VERIFY_TRANSACTIONS || 100);
 const maxBatches = Number(process.env.RECOVERY_MAX_BATCHES || 0);
 const followImport = process.env.RECOVERY_FOLLOW_IMPORT === "1";
+const autoFinalize = process.env.RECOVERY_AUTO_FINALIZE === "1";
 const importId = process.env.RECOVERY_IMPORT_ID || "api-xcp-io";
 if (!endpoint || !token) throw new Error("RECOVERY_API_URL and RECOVERY_ADMIN_TOKEN are required");
 if (!Number.isInteger(transactionLimit) || transactionLimit < 1 || transactionLimit > 100)
@@ -63,7 +64,9 @@ while (!maxBatches || batches < maxBatches) {
 
 if (maxBatches && batches >= maxBatches) {
   console.log(JSON.stringify({ complete: false, batches, transactions, outputs }));
-} else {
+} else if (autoFinalize) {
   const result = await post("/admin/recovery/finalize");
   console.log(JSON.stringify({ complete: true, batches, transactions, outputs, ...result }));
+} else {
+  console.log(JSON.stringify({ complete: true, finalized: false, batches, transactions, outputs }));
 }

@@ -23,10 +23,15 @@ All of these must pass before host cleanup:
 1. The source import has a non-null completion timestamp and its final receipt is contiguous.
 2. Electrs reconciliation reports no rows with a null `chain_checked_at`.
 3. Stamp protection is ready and its source/parity audit has been accepted.
-4. The full R2 audit finishes from a fresh checkpoint with zero missing, malformed, or mismatched objects.
+4. After the source import completes, the full R2 audit finishes from a fresh checkpoint with zero missing,
+   malformed, or mismatched objects. Its starting manifest must still match the completed import when the
+   server accepts the audit; acceptance sets the durable `r2_audit_ready` finalization gate.
 5. Recovery finalization succeeds and canonical production reads have passed live contract tests.
 6. The production API contains every admin/read capability still needed; no job targets the private Worker.
 7. A soak period has passed with no need to resume import or reconciliation.
+
+The reconciler does not finalize automatically by default because R2 and Stamp acceptance are independent gates.
+Set `RECOVERY_AUTO_FINALIZE=1` only for a controlled one-shot run after every other readiness check has passed.
 
 Then run the host cleanup first in dry-run mode:
 
