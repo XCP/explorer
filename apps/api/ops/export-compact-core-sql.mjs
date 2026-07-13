@@ -5,10 +5,14 @@ import { DatabaseSync } from "node:sqlite";
 
 const compactPath = process.env.CORE_COMPACT_PATH;
 const outputDirectory = process.env.CORE_SQL_DIRECTORY;
-const maxStatementBytes = Math.min(95_000, Math.max(10_000, Number(process.env.CORE_SQL_STATEMENT_BYTES ?? 90_000)));
+const targetStatementBytes = Math.min(
+  90_000,
+  Math.max(10_000, Number(process.env.CORE_SQL_STATEMENT_BYTES ?? 90_000)),
+);
+const maxStatementBytes = 90_000;
 const maxFileBytes = Math.min(
   4_500_000_000,
-  Math.max(maxStatementBytes, Number(process.env.CORE_SQL_FILE_BYTES ?? 256 * 1024 * 1024)),
+  Math.max(targetStatementBytes, Number(process.env.CORE_SQL_FILE_BYTES ?? 256 * 1024 * 1024)),
 );
 if (!compactPath) throw new Error("CORE_COMPACT_PATH is required");
 if (!outputDirectory) throw new Error("CORE_SQL_DIRECTORY is required");
@@ -159,12 +163,13 @@ try {
       const separatorBytes = tuples.length === 0 ? 0 : 1;
       if (
         Buffer.byteLength(prefix) + tupleBytes + separatorBytes + bytes + Buffer.byteLength(suffix) >
-        maxStatementBytes
+        targetStatementBytes
       )
         flush();
       tuples.push(tuple);
       tupleBytes += separatorBytes + bytes;
       rows++;
+      if (Buffer.byteLength(prefix) + tupleBytes + Buffer.byteLength(suffix) > targetStatementBytes) flush();
     }
     flush();
     tableRows[table] = rows;
@@ -181,6 +186,7 @@ try {
     format: 2,
     source: basename(compactPath),
     max_statement_bytes: maxStatementBytes,
+    target_statement_bytes: targetStatementBytes,
     max_file_bytes: maxFileBytes,
     tables: tableRows,
     schema,
