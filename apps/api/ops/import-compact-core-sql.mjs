@@ -29,10 +29,26 @@ const defaultStatePath = join(dirname(resolvedDirectory), `${basename(resolvedDi
 const statePath = resolve(process.env.CORE_IMPORT_STATE ?? defaultStatePath);
 const wranglerDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const wranglerCli = createRequire(import.meta.url).resolve("wrangler");
+const windowsWranglerLauncher = resolve(dirname(fileURLToPath(import.meta.url)), "run-wrangler.ps1");
 
 function wrangler(args, options = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [wranglerCli, ...args], {
+    const windows = process.platform === "win32";
+    const executable = windows ? "powershell.exe" : process.execPath;
+    const childArgs = windows
+      ? [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          windowsWranglerLauncher,
+          wranglerCli,
+          ...args,
+        ]
+      : [wranglerCli, ...args];
+    const child = spawn(executable, childArgs, {
       cwd: wranglerDirectory,
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     });
