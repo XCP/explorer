@@ -75,7 +75,7 @@ export const CORE_TABLE_MANIFEST = [
   { source: "xcp_btc_daily", target: "xcp_btc_daily", disposition: "preserve" },
 ] as const satisfies readonly CoreTableManifestEntry[];
 
-export const GENERATED_CORE_TABLES = ["address_dictionary", "asset_dictionary", "entity_dictionary"] as const;
+export const GENERATED_CORE_TABLES = ["address_dictionary", "asset_dictionary", "cache", "entity_dictionary"] as const;
 
 interface CoreColumnRule {
   targets: readonly string[];
