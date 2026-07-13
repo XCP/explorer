@@ -53,6 +53,23 @@ const tables = database
   )
   .all()
   .map((row) => row.name);
+const schema = Object.fromEntries(
+  tables.map((table) => [
+    table,
+    database
+      .prepare(`PRAGMA table_xinfo(${quoteIdentifier(table)})`)
+      .all()
+      .map((column) => ({
+        cid: Number(column.cid),
+        name: column.name,
+        type: column.type,
+        notnull: Number(column.notnull),
+        dflt_value: column.dflt_value,
+        pk: Number(column.pk),
+        hidden: Number(column.hidden),
+      })),
+  ]),
+);
 
 mkdirSync(outputDirectory, { recursive: false });
 let fileNumber = 0;
@@ -161,11 +178,12 @@ try {
   );
   closeFile();
   const manifest = {
-    format: 1,
+    format: 2,
     source: basename(compactPath),
     max_statement_bytes: maxStatementBytes,
     max_file_bytes: maxFileBytes,
     tables: tableRows,
+    schema,
     finalization: "import_complete",
     files,
   };

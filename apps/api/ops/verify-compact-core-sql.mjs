@@ -10,7 +10,9 @@ const manifestPath = join(resolvedDirectory, "manifest.json");
 if (!existsSync(manifestPath)) throw new Error(`SQL manifest does not exist: ${manifestPath}`);
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-if (manifest.format !== 1 || !Array.isArray(manifest.files)) throw new Error("unsupported compact SQL manifest");
+if (manifest.format !== 2 || !Array.isArray(manifest.files) || typeof manifest.schema !== "object") {
+  throw new Error("unsupported compact SQL manifest");
+}
 if (manifest.finalization !== "import_complete") throw new Error("compact SQL manifest has no final import gate");
 const expectedFiles = manifest.files.map((file) => file.file);
 const actualFiles = readdirSync(resolvedDirectory)

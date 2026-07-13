@@ -14,7 +14,12 @@ const manifestPath = join(resolvedDirectory, "manifest.json");
 if (!existsSync(manifestPath)) throw new Error(`SQL manifest does not exist: ${manifestPath}`);
 const manifestBytes = readFileSync(manifestPath);
 const manifest = JSON.parse(manifestBytes.toString("utf8"));
-if (manifest.format !== 1 || manifest.finalization !== "import_complete" || !Array.isArray(manifest.files)) {
+if (
+  manifest.format !== 2 ||
+  manifest.finalization !== "import_complete" ||
+  !Array.isArray(manifest.files) ||
+  typeof manifest.schema !== "object"
+) {
   throw new Error("unsupported or incomplete compact SQL manifest");
 }
 
@@ -72,6 +77,28 @@ if (JSON.stringify(remoteTables) !== JSON.stringify(expectedTables)) {
   throw new Error(
     `remote compact schema does not match the artifact (missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"})`,
   );
+}
+const schemaSql = expectedTables
+  .map(
+    (table) =>
+      `SELECT '${table.replaceAll("'", "''")}' table_name,cid,name,type,"notnull",dflt_value,pk,hidden FROM pragma_table_xinfo('${table.replaceAll("'", "''")}')`,
+  )
+  .join(" UNION ALL ");
+const remoteSchemaRows = remoteRows(`${schemaSql} ORDER BY table_name,cid`);
+const remoteSchema = Object.fromEntries(expectedTables.map((table) => [table, []]));
+for (const row of remoteSchemaRows) {
+  remoteSchema[row.table_name].push({
+    cid: Number(row.cid),
+    name: row.name,
+    type: row.type,
+    notnull: Number(row.notnull),
+    dflt_value: row.dflt_value,
+    pk: Number(row.pk),
+    hidden: Number(row.hidden),
+  });
+}
+if (JSON.stringify(remoteSchema) !== JSON.stringify(manifest.schema)) {
+  throw new Error("remote compact columns or identities do not match the artifact");
 }
 
 let state;
