@@ -227,7 +227,11 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_e: ScheduledController, env: Env, ctx: ExecutionContext) {
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    if (event.cron === "1-59/2 * * * *") {
+      ctx.waitUntil(runScheduledJob("maybeBuildGraph", () => maybeBuildGraph(env)));
+      return;
+    }
     ctx.waitUntil(
       (async () => {
         // BOOTSTRAP PAUSE: while a full reindex/bootstrap is driven manually, set indexer_state 'cron_paused'='1'
@@ -316,9 +320,6 @@ export default {
           await runScheduledJob("crawlEmblemMeta", () => crawlEmblemMeta(env));
           // Attribute Emblem empty-shell scams to BTC identities (creator bridge → address_signals.shell_scams). Daily-gated.
           await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
-          // Keep the graph-reputation trait fresh: advance an in-progress Min-k-PPR rebuild a couple units/tick,
-          // and kick a fresh weekly rebuild when idle (trust/distrust tiers + scam seeds stay current, no staleness).
-          await runScheduledJob("maybeBuildGraph", () => maybeBuildGraph(env));
           // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
           await runScheduledJob("buildTrades", () => buildTrades(env));
           // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).

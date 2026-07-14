@@ -7,7 +7,7 @@ minify = true
 cpu_ms = 300000
 
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["*/2 * * * *", "1-59/2 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
