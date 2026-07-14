@@ -4,7 +4,7 @@
  * btc_address) map; Emblem is never trusted for contents.
  */
 import type { EmblemStats, EmblemAssetRow, EmblemVaultRow } from "@xcp/shared/emblem";
-import { q, one } from "#api/db";
+import { q } from "#api/db";
 
 export interface Page {
   limit: number;
@@ -16,27 +16,23 @@ export type EmblemStatsRow = Omit<EmblemStats, "empty">;
 
 /** Segmentation counts: vaults + funded/cracked/revaulted/depositor splits + holder/real-user totals. */
 export function emblemStats(db: D1Database): Promise<EmblemStatsRow | null> {
-  return one<EmblemStatsRow>(
-    db,
-    `SELECT
-       (SELECT COUNT(*) FROM emblem_vaults WHERE btc_address IS NOT NULL) vaults,
-       (SELECT COUNT(DISTINCT e.btc_address) FROM emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND CAST(b.quantity AS INTEGER)>0) funded,
-       (SELECT COUNT(DISTINCT s.destination) FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source
-          WHERE s.destination IS NOT NULL AND NOT EXISTS (SELECT 1 FROM emblem_vaults v WHERE v.btc_address=s.destination)) cracked_to_user,
-       (SELECT COUNT(DISTINCT s.destination) FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source
-          WHERE EXISTS (SELECT 1 FROM emblem_vaults v WHERE v.btc_address=s.destination)) revaulted,
-       (SELECT COUNT(DISTINCT s.source) FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination) depositors,
-       (SELECT COUNT(*) FROM address_signals WHERE assets_held>0) all_holders,
-       (SELECT COUNT(*) FROM address_signals WHERE assets_held>0 AND is_emblem_vault=0 AND is_exchange=0 AND is_burn=0 AND is_deposit=0 AND likely_service=0) real_users`,
-  );
+  return db
+    .prepare(
+      `SELECT vaults,funded,cracked_to_user,revaulted,depositors,all_holders,real_users
+       FROM emblem_stats WHERE id=1`,
+    )
+    .first<EmblemStatsRow>();
 }
 
 /** Assets currently locked inside Emblem vaults (held by a vault BTC address), by vault count. */
 export function emblemAssets(db: D1Database, p: Page): Promise<EmblemAssetRow[]> {
   return q<EmblemAssetRow>(
     db,
-    `SELECT b.asset, COUNT(*) vaults FROM balances b JOIN emblem_vaults e ON e.btc_address=b.holder
-     WHERE CAST(b.quantity AS INTEGER)>0 GROUP BY b.asset ORDER BY vaults DESC LIMIT ? OFFSET ?`,
+    `SELECT asset.asset,COUNT(*) vaults FROM balances balance
+     JOIN emblem_vaults vault ON vault.btc_address_id=balance.address_id
+     JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id
+     WHERE CAST(balance.quantity AS INTEGER)>0 GROUP BY balance.asset_id
+     ORDER BY vaults DESC,asset.asset ASC LIMIT ? OFFSET ?`,
     p.limit,
     p.offset,
   );
@@ -46,9 +42,13 @@ export function emblemAssets(db: D1Database, p: Page): Promise<EmblemAssetRow[]>
 export function emblemVaults(db: D1Database, p: Page): Promise<EmblemVaultRow[]> {
   return q<EmblemVaultRow>(
     db,
-    `SELECT e.token_id, e.contract, e.btc_address,
-            (SELECT COUNT(*) FROM balances b WHERE b.holder=e.btc_address AND CAST(b.quantity AS INTEGER)>0) held_assets
-     FROM emblem_vaults e WHERE e.btc_address IS NOT NULL ORDER BY e.first_seen DESC LIMIT ? OFFSET ?`,
+    `SELECT vault.token_id,contract.address contract,btc.address btc_address,
+            (SELECT COUNT(*) FROM balances balance
+              WHERE balance.address_id=vault.btc_address_id AND CAST(balance.quantity AS INTEGER)>0) held_assets
+     FROM emblem_vaults vault
+     LEFT JOIN address_dictionary contract ON contract.address_id=vault.contract_id
+     JOIN address_dictionary btc ON btc.address_id=vault.btc_address_id
+     ORDER BY vault.first_seen DESC,vault.token_id DESC LIMIT ? OFFSET ?`,
     p.limit,
     p.offset,
   );

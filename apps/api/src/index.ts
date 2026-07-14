@@ -14,7 +14,7 @@ import { describeHttpError, requestId } from "#api/http/errors";
 import { syncEvents, backfillLedger } from "#api/indexer/sync";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "#api/indexer/signals";
-import { crawlEmblemStep } from "#api/indexer/emblem";
+import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { buildTags, buildTagsScoped } from "#api/indexer/tags";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
@@ -290,6 +290,7 @@ export default {
           await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
           // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).
           await runScheduledJob("crawlEmblem", () => crawlEmblemStep(env));
+          await runScheduledJob("refreshEmblemStats", () => maybeRefreshEmblemStats(env));
           // Maintain authoritative asset supply (+asset_id/mime_type): backfill all assets once, then
           // refetch only assets touched by a supply-changing event, plus XCP every tick (fee-burn drift).
           await runScheduledJob("crawlAssetSupply", () => crawlAssetSupply(env));

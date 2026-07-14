@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { reconcileCoreProjection } from "#api/indexer/core-projections";
+import { reconcileCoreProjection, upsertCoreEmblemVaultIdentities } from "#api/indexer/core-projections";
 
 class PreparedStatement {
   private binds: unknown[] = [];
@@ -71,6 +71,9 @@ function databases() {
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,token_address_id INTEGER,
       marketplace TEXT,buyer_id INTEGER,seller_id INTEGER,block_number INTEGER,PRIMARY KEY(tx_hash,log_index)
     );
+    CREATE TABLE emblem_vaults(
+      token_id TEXT PRIMARY KEY,contract_id INTEGER,btc_address_id INTEGER,resolved INTEGER DEFAULT 0,first_seen INTEGER
+    );
     CREATE TABLE emblem_listings(
       generation INTEGER NOT NULL,contract_id INTEGER NOT NULL,token_id TEXT NOT NULL,asset_id INTEGER,
       order_id TEXT,marketplace TEXT,price_usd REAL,price_amount TEXT,currency_id INTEGER,url TEXT,
@@ -94,6 +97,27 @@ function databases() {
   `);
   return { source, compact, env: { DB: d1(source), CORE_DB: d1(compact) } };
 }
+
+test("compact Emblem identity writes converge without erasing resolved fields", async () => {
+  const { compact } = databases();
+  await upsertCoreEmblemVaultIdentities(d1(compact), [
+    { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 100 },
+  ]);
+  await upsertCoreEmblemVaultIdentities(d1(compact), [
+    { tokenId: "7", contract: null, btcAddress: "btc", resolved: 1, firstSeen: null },
+  ]);
+  await upsertCoreEmblemVaultIdentities(d1(compact), [
+    { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 200 },
+  ]);
+  assert.deepEqual(
+    { ...compact.prepare(
+      `SELECT vault.token_id,contract.address contract,btc.address btc_address,vault.resolved,vault.first_seen
+       FROM emblem_vaults vault LEFT JOIN address_dictionary contract ON contract.address_id=vault.contract_id
+       LEFT JOIN address_dictionary btc ON btc.address_id=vault.btc_address_id`,
+    ).get() },
+    { token_id: "7", contract: "contract", btc_address: "btc", resolved: 1, first_seen: 100 },
+  );
+});
 
 test("incremental projection reconciliation upserts bounded pages and dictionary identities", async () => {
   const { source, compact, env } = databases();

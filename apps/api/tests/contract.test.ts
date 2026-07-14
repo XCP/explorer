@@ -420,6 +420,44 @@ test("contract: GET /v2/vaults — VaultsPayload", async (t) => {
   assertRows(p.sales_activity, { t: "number", v: "number" }, "vaults.sales_activity");
 });
 
+test("contract: GET /v2/emblem/stats - compact EmblemStats projection", async (t) => {
+  if (skipUnlessLive(t)) return;
+  assertShape(
+    (await getJson("/v2/emblem/stats")).result,
+    {
+      vaults: "number",
+      funded: "number",
+      cracked_to_user: "number",
+      revaulted: "number",
+      depositors: "number",
+      all_holders: "number",
+      real_users: "number",
+      empty: "number",
+    },
+    "emblem/stats.result.",
+  );
+});
+
+test("contract: GET /v2/emblem/assets?limit=2 - EmblemAssetRow list", async (t) => {
+  if (skipUnlessLive(t)) return;
+  assertListEnvelope(
+    await getJson("/v2/emblem/assets?limit=2"),
+    { asset: "string", vaults: "number" },
+    2,
+    "emblem/assets",
+  );
+});
+
+test("contract: GET /v2/emblem/vaults?limit=2 - EmblemVaultRow list", async (t) => {
+  if (skipUnlessLive(t)) return;
+  assertListEnvelope(
+    await getJson("/v2/emblem/vaults?limit=2"),
+    { token_id: "string", contract: "string|null", btc_address: "string|null", held_assets: "number" },
+    2,
+    "emblem/vaults",
+  );
+});
+
 test("contract: GET /v2/mempool — MempoolActionRow envelope (may be empty)", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/mempool");

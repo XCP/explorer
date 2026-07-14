@@ -81,6 +81,7 @@ export const GENERATED_CORE_TABLES = [
   "cache",
   "daily_metrics",
   "entity_dictionary",
+  "emblem_stats",
   "network_stats_snapshot",
 ] as const;
 

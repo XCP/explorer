@@ -17,6 +17,7 @@ import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
 import { fetchEtherscanMintLogs } from "#api/integrations/etherscan-logs";
 import { fetchEmblemCuratedCollections } from "#api/integrations/emblem-curated";
 import { fetchEmblemMetadata } from "#api/integrations/emblem-metadata";
+import { upsertCoreEmblemVaultIdentities } from "#api/indexer/core-projections";
 import {
   getIndexerState as getState,
   getIndexerStateStringArray,
@@ -29,6 +30,7 @@ const ZERO_TOPIC = "0x" + "0".repeat(64);
 const ETHERSCAN_PAGE = 1000;
 const RESOLVE_PER_STEP = 200;
 const META_CONCURRENCY = 16;
+const STATS_REFRESH_SECONDS = 24 * 60 * 60;
 
 export const EMBLEM_DDL = `CREATE TABLE IF NOT EXISTS emblem_vaults (token_id TEXT PRIMARY KEY, contract TEXT, btc_address TEXT, resolved INTEGER DEFAULT 0, first_seen INTEGER)`;
 export const EMBLEM_IDX = `CREATE INDEX IF NOT EXISTS idx_emblem_btc ON emblem_vaults(btc_address)`;
@@ -165,13 +167,18 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
         // contracts whose Alchemy metadata lacks addresses, or etherscan-fallback) -> resolved=0 so the
         // /meta pass fills it. Never mark resolved without an address.
         for (let i = 0; i < r.rows.length; i += 50) {
+          const page = r.rows.slice(i, i + 50);
           await env.DB.batch(
-            r.rows.slice(i, i + 50).map((x) =>
+            page.map((x) =>
               env.DB.prepare(
                 `INSERT INTO emblem_vaults (token_id,contract,btc_address,resolved,first_seen) VALUES (?,?,?,?,?)
                             ON CONFLICT(token_id) DO UPDATE SET btc_address=COALESCE(excluded.btc_address,emblem_vaults.btc_address), resolved=MAX(emblem_vaults.resolved,excluded.resolved)`,
               ).bind(x.id, contract, x.btc, x.btc ? 1 : 0, now),
             ),
+          );
+          await upsertCoreEmblemVaultIdentities(
+            env.CORE_DB,
+            page.map((x) => ({ tokenId: x.id, contract, btcAddress: x.btc, resolved: x.btc ? 1 : 0, firstSeen: now })),
           );
         }
         out.enumerated = r.rows.length;
@@ -180,14 +187,17 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
         const es = await enumEtherscan(ek, contract, parseInt(cursor.slice(3) || "0", 10));
         out.provider = "etherscan";
         for (let i = 0; i < es.ids.length; i += 50) {
+          const ids = es.ids.slice(i, i + 50);
           await env.DB.batch(
-            es.ids
-              .slice(i, i + 50)
-              .map((id) =>
+            ids.map((id) =>
                 env.DB.prepare(
                   `INSERT INTO emblem_vaults (token_id,contract,resolved,first_seen) VALUES (?,?,0,?) ON CONFLICT(token_id) DO NOTHING`,
                 ).bind(id, contract, now),
               ),
+          );
+          await upsertCoreEmblemVaultIdentities(
+            env.CORE_DB,
+            ids.map((id) => ({ tokenId: id, contract, btcAddress: null, resolved: 0, firstSeen: now })),
           );
         }
         out.enumerated = es.ids.length;
@@ -216,14 +226,66 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
     const slice = rows.slice(i, i + META_CONCURRENCY);
     const res = await Promise.all(slice.map(async (r) => ({ id: r.token_id, ...(await resolveBtc(r.token_id)) })));
     const done = res.filter((r) => r.ok);
-    if (done.length)
+    if (done.length) {
       await env.DB.batch(
         done.map((r) =>
           env.DB.prepare(`UPDATE emblem_vaults SET btc_address=?, resolved=1 WHERE token_id=?`).bind(r.btc, r.id),
         ),
       );
+      await upsertCoreEmblemVaultIdentities(
+        env.CORE_DB,
+        done.map((r) => ({ tokenId: r.id, contract: null, btcAddress: r.btc, resolved: 1, firstSeen: null })),
+      );
+    }
     resolved += done.length;
   }
   out.resolved = resolved;
   return out;
+}
+
+/** Refresh the lifetime Emblem segmentation off the request path at most once per day. */
+export async function maybeRefreshEmblemStats(env: Env): Promise<Record<string, unknown>> {
+  const now = Math.floor(Date.now() / 1000);
+  const last = Number((await getState(env.CORE_DB, "emblem_stats_updated_at")) || 0);
+  if (now - last < STATS_REFRESH_SECONDS) return { skipped: true, updated_at: last };
+
+  const vaultAddresses = `SELECT DISTINCT btc_address_id FROM emblem_vaults WHERE btc_address_id IS NOT NULL`;
+  const statements = [
+    `SELECT COUNT(*) value FROM emblem_vaults WHERE btc_address_id IS NOT NULL`,
+    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(*) value FROM vault_addresses vault
+       WHERE EXISTS (SELECT 1 FROM balances balance WHERE balance.address_id=vault.btc_address_id
+         AND CAST(balance.quantity AS INTEGER)>0)`,
+    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(DISTINCT send.destination_id) value
+       FROM vault_addresses vault JOIN sends send ON send.source_id=vault.btc_address_id
+       LEFT JOIN vault_addresses destination ON destination.btc_address_id=send.destination_id
+       WHERE send.destination_id IS NOT NULL AND destination.btc_address_id IS NULL`,
+    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(DISTINCT send.destination_id) value
+       FROM vault_addresses vault JOIN sends send ON send.source_id=vault.btc_address_id
+       JOIN vault_addresses destination ON destination.btc_address_id=send.destination_id`,
+    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(DISTINCT send.source_id) value
+       FROM vault_addresses vault JOIN sends send ON send.destination_id=vault.btc_address_id`,
+    `SELECT COUNT(*) value FROM address_signals WHERE assets_held>0`,
+    `SELECT COUNT(*) value FROM address_signals WHERE assets_held>0 AND is_emblem_vault=0
+       AND is_exchange=0 AND is_burn=0 AND is_deposit=0 AND likely_service=0`,
+  ];
+  const results = await env.CORE_DB.batch<{ value: number }>(
+    statements.map((statement) => env.CORE_DB.prepare(statement)),
+  );
+  const values = results.map((result) => Number(result.results?.[0]?.value ?? 0));
+  await env.CORE_DB.batch([
+    env.CORE_DB.prepare(
+      `INSERT INTO emblem_stats
+       (id,vaults,funded,cracked_to_user,revaulted,depositors,all_holders,real_users,updated_at)
+       VALUES(1,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET vaults=excluded.vaults,funded=excluded.funded,
+       cracked_to_user=excluded.cracked_to_user,revaulted=excluded.revaulted,
+       depositors=excluded.depositors,all_holders=excluded.all_holders,
+       real_users=excluded.real_users,updated_at=excluded.updated_at`,
+    ).bind(...values, now),
+    env.CORE_DB.prepare(
+      `INSERT INTO core_state(key,value) VALUES('emblem_stats_updated_at',?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).bind(String(now)),
+  ]);
+  return { refreshed: true, updated_at: now };
 }
