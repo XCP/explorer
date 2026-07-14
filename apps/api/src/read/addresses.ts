@@ -324,13 +324,13 @@ addresses.get("/v2/addresses/:address/issued", async (c) => {
 // exchange's "connections" but ~0% of a real user's), so they bury genuine relationships. is_exchange
 // counterparties are KEPT (a real "uses this exchange" signal) and flagged so the UI can badge them.
 addresses.get("/v2/addresses/:address/connections", async (c) => {
-  const result = await addressConnections(c.env.DB, c.req.param("address"), lim(c, 12, 24));
+  const result = await addressConnections(c.env.CORE_DB, c.req.param("address"), lim(c, 12, 24));
   return J(c, { result }, 120);
 });
 
 // Identity lineage via sweeps — a SWEEP moves all assets+ownership to another address (strongest
 // "same person" signal on chain). Returns swept-to / swept-from links to chain identity clusters.
 addresses.get("/v2/addresses/:address/lineage", async (c) => {
-  const result = await addressLineage(c.env.DB, c.req.param("address"));
+  const result = await addressLineage(c.env.CORE_DB, c.req.param("address"));
   return J(c, { result }, 300);
 });

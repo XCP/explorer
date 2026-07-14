@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { listDispensers, listDispenses, listIssuances, listIssued } from "#api/queries/addresses";
+import {
+  addressConnections,
+  addressLineage,
+  listDispensers,
+  listDispenses,
+  listIssuances,
+  listIssued,
+} from "#api/queries/addresses";
 
 class Statement {
   private values: unknown[] = [];
@@ -40,4 +47,30 @@ test("compact address tabs deduplicate both-sided relationships and restore iden
   const issued = await listIssued(binding, "alice", { limit: 10, offset: 0 });
   assert.equal(issued.length, 1);
   assert.equal(issued[0].issuer, "alice");
+});
+
+test("compact address relationships merge protocol interactions and preserve sweep direction", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
+    CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY,is_exchange INTEGER,is_deposit INTEGER);
+    CREATE TABLE sends(source_id INTEGER,destination_id INTEGER);
+    CREATE TABLE dispenses(source_id INTEGER,destination_id INTEGER);
+    CREATE TABLE order_matches(tx0_address_id INTEGER,tx1_address_id INTEGER);
+    CREATE TABLE sweeps(source_id INTEGER,destination_id INTEGER,block_index INTEGER,block_time INTEGER);
+    INSERT INTO address_dictionary VALUES(1,'alice'),(2,'bob'),(3,'deposit');
+    INSERT INTO address_signals VALUES(2,1,0),(3,0,1);
+    INSERT INTO sends VALUES(1,2),(2,1),(1,3);
+    INSERT INTO dispenses VALUES(1,2);
+    INSERT INTO order_matches VALUES(2,1);
+    INSERT INTO sweeps VALUES(1,2,10,100),(2,1,11,101);
+  `);
+  const binding = d1(db);
+  assert.deepEqual({ ...(await addressConnections(binding, "alice", 12))[0] }, {
+    cp: "bob",interactions: 4,is_exchange: 1,
+  });
+  assert.deepEqual((await addressLineage(binding, "alice")).map((row) => ({ ...row })), [
+    { direction: "out",counterparty: "bob",block_index: 10,block_time: 100 },
+    { direction: "in",counterparty: "bob",block_index: 11,block_time: 101 },
+  ]);
 });

@@ -192,28 +192,33 @@ export function addressReputationRow(db: D1Database, address: string): Promise<A
 export function addressConnections(db: D1Database, address: string, limit: number): Promise<AddressConnectionRow[]> {
   return q<AddressConnectionRow>(
     db,
-    `SELECT g.cp, g.interactions, COALESCE(sg.is_exchange,0) is_exchange FROM (
-        SELECT cp, SUM(n) interactions FROM (
-          SELECT CASE WHEN source=? THEN destination ELSE source END cp, COUNT(*) n
-            FROM sends WHERE (source=? OR destination=?) AND destination IS NOT NULL GROUP BY cp
-          UNION ALL
-          SELECT CASE WHEN source=? THEN destination ELSE source END cp, COUNT(*) n
-            FROM dispenses WHERE source=? OR destination=? GROUP BY cp
-          UNION ALL
-          SELECT CASE WHEN tx0_address=? THEN tx1_address ELSE tx0_address END cp, COUNT(*) n
-            FROM order_matches WHERE tx0_address=? OR tx1_address=? GROUP BY cp
-        ) WHERE cp IS NOT NULL AND cp<>? GROUP BY cp
-     ) g LEFT JOIN address_signals sg ON sg.address=g.cp
-     WHERE COALESCE(sg.is_deposit,0)=0 ORDER BY g.interactions DESC LIMIT ?`,
-    address,
-    address,
-    address,
-    address,
-    address,
-    address,
-    address,
-    address,
-    address,
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1), edges AS (
+       SELECT destination_id cp,COUNT(*) n FROM sends
+        WHERE source_id=(SELECT address_id FROM identity) AND destination_id IS NOT NULL GROUP BY destination_id
+       UNION ALL
+       SELECT source_id cp,COUNT(*) n FROM sends
+        WHERE destination_id=(SELECT address_id FROM identity) AND source_id IS NOT NULL GROUP BY source_id
+       UNION ALL
+       SELECT destination_id cp,COUNT(*) n FROM dispenses
+        WHERE source_id=(SELECT address_id FROM identity) GROUP BY destination_id
+       UNION ALL
+       SELECT source_id cp,COUNT(*) n FROM dispenses
+        WHERE destination_id=(SELECT address_id FROM identity) GROUP BY source_id
+       UNION ALL
+       SELECT tx1_address_id cp,COUNT(*) n FROM order_matches
+        WHERE tx0_address_id=(SELECT address_id FROM identity) GROUP BY tx1_address_id
+       UNION ALL
+       SELECT tx0_address_id cp,COUNT(*) n FROM order_matches
+        WHERE tx1_address_id=(SELECT address_id FROM identity) GROUP BY tx0_address_id
+     ), grouped AS (
+       SELECT cp,SUM(n) interactions FROM edges
+        WHERE cp IS NOT NULL AND cp<>(SELECT address_id FROM identity) GROUP BY cp
+     )
+     SELECT dictionary.address cp,grouped.interactions,COALESCE(signal.is_exchange,0) is_exchange
+       FROM grouped JOIN address_dictionary dictionary ON dictionary.address_id=grouped.cp
+       LEFT JOIN address_signals signal ON signal.address_id=grouped.cp
+      WHERE COALESCE(signal.is_deposit,0)=0
+      ORDER BY grouped.interactions DESC,grouped.cp LIMIT ?2`,
     address,
     limit,
   );
@@ -223,11 +228,15 @@ export function addressConnections(db: D1Database, address: string, limit: numbe
 export function addressLineage(db: D1Database, address: string): Promise<AddressLineageRow[]> {
   return q<AddressLineageRow>(
     db,
-    `SELECT 'out' direction, destination counterparty, block_index, block_time FROM sweeps WHERE source=?
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1)
+     SELECT 'out' direction,destination.address counterparty,sweep.block_index,sweep.block_time
+       FROM sweeps sweep LEFT JOIN address_dictionary destination ON destination.address_id=sweep.destination_id
+      WHERE sweep.source_id=(SELECT address_id FROM identity)
      UNION ALL
-     SELECT 'in' direction, source counterparty, block_index, block_time FROM sweeps WHERE destination=?
+     SELECT 'in' direction,source.address counterparty,sweep.block_index,sweep.block_time
+       FROM sweeps sweep LEFT JOIN address_dictionary source ON source.address_id=sweep.source_id
+      WHERE sweep.destination_id=(SELECT address_id FROM identity)
      ORDER BY block_index`,
-    address,
     address,
   );
 }
