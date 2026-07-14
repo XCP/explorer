@@ -35,6 +35,7 @@ import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
 import { reconcileCoreProjection } from "#api/indexer/core-projections";
+import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -291,6 +292,10 @@ admin.post("/admin/crawl-supply", async (c) => {
 // after the signals refresh; manual trigger here.
 admin.post("/admin/build-tags", async (c) => {
   return c.json(await buildTags(c.env));
+});
+
+admin.post("/admin/build-issuer-collections", async (c) => {
+  return c.json(await buildIssuerCollections(c.env));
 });
 
 // Refresh collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf. Cron runs it ~daily;

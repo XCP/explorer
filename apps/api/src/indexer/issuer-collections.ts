@@ -15,7 +15,7 @@ interface IssuerCollection {
   site?: string;
 }
 
-const ISSUER_COLLECTIONS: IssuerCollection[] = [
+export const ISSUER_COLLECTIONS: readonly IssuerCollection[] = [
   {
     issuer: "bc1qv9zuv6ycly3gvnt2qrrw7ve9f3vlyjapmefrym",
     tag: "corruptionaires",
@@ -30,15 +30,28 @@ const ISSUER_COLLECTIONS: IssuerCollection[] = [
   },
 ];
 
+export function issuerCollection(issuer: unknown): IssuerCollection | null {
+  if (typeof issuer !== "string") return null;
+  return ISSUER_COLLECTIONS.find((collection) => collection.issuer === issuer) ?? null;
+}
+
+export function issuerCollectionMeta(collection: IssuerCollection): string {
+  return JSON.stringify({
+    collection: collection.name,
+    ...(collection.site ? { site: collection.site } : {}),
+  });
+}
+
 export async function buildIssuerCollections(env: Env): Promise<Record<string, unknown>> {
   // Upsert + per-tag reconcile (no blanket wipe): add current members, then drop only tags for assets that
   // no longer belong to the issuer. The tag set is never emptied mid-run.
   let tagged = 0;
   for (const c of ISSUER_COLLECTIONS) {
-    const meta = JSON.stringify({ collection: c.name, ...(c.site ? { site: c.site } : {}) });
+    const meta = issuerCollectionMeta(c);
     const res = await env.DB.prepare(
-      `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta)
-       SELECT 'asset', asset, ?, 'issuer', ? FROM assets WHERE issuer=?`,
+      `INSERT INTO tags (entity_type,entity_id,tag,source,meta)
+       SELECT 'asset', asset, ?, 'issuer', ? FROM assets WHERE issuer=?
+       ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
     )
       .bind(c.tag, meta, c.issuer)
       .run();

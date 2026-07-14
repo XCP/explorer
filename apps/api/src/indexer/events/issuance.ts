@@ -7,6 +7,7 @@ import { type Handler, cap } from "#api/indexer/events/context";
 import { normalize } from "#api/indexer/codec";
 import { classifyStamp } from "#api/indexer/events/stamp";
 import { hashToBytes } from "#api/indexer/compact-codec";
+import { issuerCollection, issuerCollectionMeta } from "#api/indexer/issuer-collections";
 
 function assetType(asset: string, longname: unknown): string {
   if (asset === "BTC" || asset === "XCP") return "native";
@@ -158,6 +159,17 @@ const issuance: Handler = ({ ev, p, b, bt }, ctx) => {
           bt,
         ),
     );
+    const collection = issuerCollection(p.issuer);
+    if (collection) {
+      ctx.stmts.push((db) =>
+        db
+          .prepare(
+            `INSERT INTO tags(entity_type,entity_id,tag,source,meta) VALUES('asset',?,?,'issuer',?)
+             ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+          )
+          .bind(p.asset, collection.tag, issuerCollectionMeta(collection)),
+      );
+    }
     if (ctx.compact) {
       const asset = String(p.asset);
       ctx.compact.stmts.push((db) =>
