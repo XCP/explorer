@@ -13,9 +13,6 @@ export type CandidateRow = Omit<CollectionCandidate, "samples"> & { samples: str
 
 // An asset is a candidate only if it has media AND isn't already accounted for by a collection source or a
 // protocol family (stamps/src20 carry their own layer and would swamp the art signal).
-const UNCOLLECTED = `a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND source IN ('collection','tokenscan','digirare','discovered'))
-   AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag IN ('stamp','src20','src721'))`;
-
 export function collectionCandidates(
   db: D1Database,
   minAssets = 6,
@@ -24,12 +21,24 @@ export function collectionCandidates(
 ): Promise<CandidateRow[]> {
   return q<CandidateRow>(
     db,
-    `WITH cand AS (
-       SELECT a.issuer, a.asset, s.holders h, s.pct_creator_holders cpct, s.avg_holder_dex hdex,
+    `WITH excluded_entities AS MATERIALIZED (
+       SELECT entity_id FROM tags WHERE source IN ('collection','tokenscan','digirare','discovered')
+       UNION
+       SELECT entity_id FROM tags WHERE tag IN ('stamp','src20','src721')
+     ), excluded AS MATERIALIZED (
+       SELECT dictionary.asset_id
+         FROM excluded_entities excluded_entity
+         JOIN entity_dictionary entity ON entity.entity_id=excluded_entity.entity_id
+         JOIN asset_dictionary dictionary ON dictionary.asset=entity.entity_key
+        WHERE entity.entity_type='asset'
+     ), cand AS (
+       SELECT issuer.address issuer,asset.asset,s.holders h,s.pct_creator_holders cpct,s.avg_holder_dex hdex,
               COALESCE(s.max_realized_usd,0) usd,
-              ROW_NUMBER() OVER (PARTITION BY a.issuer ORDER BY s.holders DESC) rn
-         FROM assets a JOIN asset_signals s ON s.asset=a.asset
-        WHERE a.mime_type IS NOT NULL AND a.issuer IS NOT NULL AND ${UNCOLLECTED}
+              ROW_NUMBER() OVER (PARTITION BY state.issuer_id ORDER BY s.holders DESC) rn
+         FROM assets state JOIN asset_signals s ON s.asset_id=state.asset_id
+         JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
+         JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+        WHERE state.mime_type IS NOT NULL AND state.asset_id NOT IN (SELECT asset_id FROM excluded)
      )
      SELECT issuer, COUNT(*) assets, ROUND(AVG(h),1) avg_holders, ROUND(AVG(hdex)) holder_dex,
             ROUND(AVG(cpct)) creator_pct, ROUND(SUM(usd)) realized_usd,

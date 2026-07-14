@@ -292,6 +292,13 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
   );
 });
 
+test("contract: GET /v2/collections/candidates — compact discovery projection", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson(`/v2/collections/candidates?contract=${Date.now()}`);
+  assert.ok(Array.isArray(j.result?.candidates) && j.result.candidates.length > 0, "candidates must not be empty");
+  assert.ok(Array.isArray(j.result.candidates[0].samples), "candidate samples must be an array");
+});
+
 test("contract: GET /v2/assets?limit=2 — AssetIndexRow list", async (t) => {
   if (skipUnlessLive(t)) return;
   assertListEnvelope(await getJson("/v2/assets?limit=2"), ASSET_INDEX_ROW, 2, "assets");

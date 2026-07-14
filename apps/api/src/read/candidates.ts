@@ -13,10 +13,10 @@ export const candidates = router();
 candidates.get("/v2/collections/candidates", (c) =>
   cached(
     c,
-    "collection-candidates",
+    "collection-candidates:core:2",
     { ttl: 1800, edge: 300 },
     async (): Promise<Envelope<CollectionCandidatesPayload>> => {
-      const rows = await collectionCandidates(c.env.DB).catch(() => []);
+      const rows = await collectionCandidates(c.env.CORE_DB).catch(() => []);
       return {
         result: { candidates: rows.map((r) => ({ ...r, samples: r.samples ? r.samples.split(",").slice(0, 6) : [] })) },
       };
