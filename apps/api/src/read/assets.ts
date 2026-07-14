@@ -255,12 +255,16 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
 
 // Asset-quality calibration view (parallel to /v2/reputation/review for addresses): the population quality
 // distribution + top/bottom for face-validity after a weight change.
-assets.get("/v2/reputation/asset-review", async (c) => {
-  const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-  const dist = await assetReviewDistribution(c.env.CORE_DB, expr);
-  const top = await assetReviewTop(c.env.CORE_DB, expr);
-  return J(c, { result: { distribution: dist, top } }, 60);
-});
+assets.get("/v2/reputation/asset-review", (c) =>
+  cached(c, "asset-review:quality", { ttl: 600, edge: 60 }, async () => {
+    const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
+    const [distribution, top] = await Promise.all([
+      assetReviewDistribution(c.env.CORE_DB, expr),
+      assetReviewTop(c.env.CORE_DB, expr),
+    ]);
+    return { result: { distribution, top } };
+  }),
+);
 
 // Live convergent-validity guard for the asset-quality weights: vaulted-tagged assets should keep scoring far
 // above non-vaulted market assets (H4). `lift` = vaulted mean ÷ non-vaulted mean; watch it stays >2.5 and
