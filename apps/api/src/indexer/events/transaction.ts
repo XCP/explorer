@@ -32,4 +32,22 @@ const newTransaction: Handler = ({ p, b, bt }, ctx) => {
       ),
   );
 };
-export const transaction: Record<string, Handler> = { NEW_TRANSACTION: newTransaction };
+
+const newTransactionOutput: Handler = ({ p, b }, ctx) => {
+  if (p.destination) ctx.identities.addresses.add(String(p.destination));
+  ctx.stmts.push((db) =>
+    db
+      .prepare(
+        `INSERT INTO transaction_outputs(tx_index,out_index,block_index,destination_id,btc_amount)
+         VALUES (?,?,?,(SELECT address_id FROM address_dictionary WHERE address=?),?)
+         ON CONFLICT(tx_index,out_index) DO UPDATE SET
+           block_index=excluded.block_index,destination_id=excluded.destination_id,btc_amount=excluded.btc_amount`,
+      )
+      .bind(p.tx_index, p.out_index, b, p.destination ?? null, String(p.btc_amount)),
+  );
+};
+
+export const transaction: Record<string, Handler> = {
+  NEW_TRANSACTION: newTransaction,
+  NEW_TRANSACTION_OUTPUT: newTransactionOutput,
+};

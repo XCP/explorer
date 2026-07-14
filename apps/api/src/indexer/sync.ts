@@ -233,6 +233,7 @@ interface CompactBalanceIdentity {
 export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number): Promise<void> {
   const tables = [
     "transactions",
+    "transaction_outputs",
     "sends",
     "issuances",
     "destructions",

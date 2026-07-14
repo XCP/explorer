@@ -105,7 +105,15 @@ test("compact foundational writes preserve identities and converge on replay", a
     ctx,
   );
   dispatch(
-    event("CREDIT", { address: "alice", asset: "RARE", quantity: "5", block_index: 100, tx_hash: hash }, 4),
+    event(
+      "NEW_TRANSACTION_OUTPUT",
+      { tx_index: 7, tx_hash: hash, block_index: 100, out_index: 2, destination: "market", btc_amount: "58000" },
+      4,
+    ),
+    ctx,
+  );
+  dispatch(
+    event("CREDIT", { address: "alice", asset: "RARE", quantity: "5", block_index: 100, tx_hash: hash }, 5),
     ctx,
   );
   dispatch(
@@ -119,7 +127,7 @@ test("compact foundational writes preserve identities and converge on replay", a
         block_index: 100,
         tx_hash: hash,
       },
-      5,
+      6,
     ),
     ctx,
   );
@@ -139,6 +147,14 @@ test("compact foundational writes preserve identities and converge on replay", a
     )
     .get() as { tx_hash: string; source: string; destination: string };
   assert.deepEqual({ ...transaction }, { tx_hash: hash, source: "alice", destination: "bob" });
+  const output = database
+    .prepare(
+      `SELECT output.tx_index,output.out_index,address.address destination,output.btc_amount
+       FROM transaction_outputs output
+       JOIN address_dictionary address ON address.address_id=output.destination_id`,
+    )
+    .get();
+  assert.deepEqual({ ...output }, { tx_index: 7, out_index: 2, destination: "market", btc_amount: "58000" });
   const block = database.prepare(`SELECT lower(hex(previous_block_hash)) previous_hash FROM blocks`).get() as {
     previous_hash: string;
   };
@@ -163,8 +179,8 @@ test("compact foundational writes preserve identities and converge on replay", a
   assert.deepEqual(
     ledger.map((row) => ({ ...row })),
     [
-      { event_index: 4, direction: 1, quantity: "5", address: "alice", asset: "RARE", utxo_address: null },
-      { event_index: 5, direction: 1, quantity: "7", address: utxo, asset: "RARE", utxo_address: "alice" },
+      { event_index: 5, direction: 1, quantity: "5", address: "alice", asset: "RARE", utxo_address: null },
+      { event_index: 6, direction: 1, quantity: "7", address: utxo, asset: "RARE", utxo_address: "alice" },
     ],
   );
   const balances = database
@@ -188,8 +204,8 @@ test("compact foundational writes preserve identities and converge on replay", a
   assert.deepEqual(
     balances.map((row) => ({ ...row })),
     [
-      { holder: "alice", utxo_address: null, asset: "RARE", quantity: "5", updated_event_index: 4 },
-      { holder: utxo, utxo_address: "alice", asset: "RARE", quantity: "7", updated_event_index: 5 },
+      { holder: "alice", utxo_address: null, asset: "RARE", quantity: "5", updated_event_index: 5 },
+      { holder: utxo, utxo_address: "alice", asset: "RARE", quantity: "7", updated_event_index: 6 },
     ],
   );
   const snapshot = database.prepare(`SELECT COUNT(*) count FROM balance_snapshots`).get() as { count: number };
