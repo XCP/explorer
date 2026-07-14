@@ -36,6 +36,7 @@ import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot
 import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
 import {
   CORE_RECENT_PROJECTIONS,
+  reconcileBalanceSnapshotPage,
   reconcileCoreProjection,
   reconcileRecentCoreProjection,
 } from "#api/indexer/core-projections";
@@ -151,6 +152,12 @@ admin.post("/admin/core-projections/reconcile-recent/:table", async (c) => {
   const table = c.req.param("table");
   if (!CORE_RECENT_PROJECTIONS.some((candidate) => candidate === table)) return c.json({ error: "unknown table" }, 400);
   return c.json(await reconcileRecentCoreProjection(c.env, table as (typeof CORE_RECENT_PROJECTIONS)[number]));
+});
+
+admin.post("/admin/core-projections/reconcile-balance-snapshots", async (c) => {
+  const offset = Math.max(0, Number.parseInt(c.req.query("offset") ?? "0", 10) || 0);
+  const rows = Math.min(100, Math.max(1, Number.parseInt(c.req.query("rows") ?? "100", 10) || 100));
+  return c.json(await reconcileBalanceSnapshotPage(c.env, offset, rows));
 });
 
 // Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;

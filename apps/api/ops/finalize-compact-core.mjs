@@ -56,7 +56,8 @@ async function request(path, method = "GET") {
       }
       if (response.ok) return body;
       const d1Reset = text.includes("D1 DB exceeded its CPU time limit") || text.includes("D1_ERROR");
-      if (response.status < 500 && response.status !== 409 && response.status !== 429 && !d1Reset) {
+      // A newly rotated Worker secret can reach Cloudflare points of presence at slightly different times.
+      if (response.status < 500 && ![403, 409, 429].includes(response.status) && !d1Reset) {
         throw Object.assign(new Error(`${path} failed with ${response.status}: ${text}`), { retryable: false });
       }
       if (response.status === 409) return body;
@@ -100,6 +101,18 @@ for (const table of incrementalProjections) {
   }
   if (!projection?.caught_up)
     throw new Error(`${table} reconciliation did not catch up within ${maxReplaySteps} steps`);
+}
+
+let snapshotOffset = 0;
+for (let step = 1; step <= maxReplaySteps; step += 1) {
+  const snapshot = await request(
+    `/admin/core-projections/reconcile-balance-snapshots?offset=${snapshotOffset}&rows=${projectionRows}`,
+    "POST",
+  );
+  report("balance_snapshots", { step, ...snapshot });
+  snapshotOffset = snapshot.next_offset;
+  if (snapshot.caught_up) break;
+  if (step === maxReplaySteps) throw new Error("balance snapshot reconciliation did not catch up");
 }
 
 for (const table of ["address_signals", "asset_signals", "asset_feed_counts", "exchange_top_assets"]) {
