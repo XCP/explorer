@@ -9,7 +9,7 @@ const maxReplaySteps = boundedInteger(
   "CORE_REPLAY_MAX_STEPS",
 );
 const maxAttempts = boundedInteger(process.env.CORE_FINALIZE_MAX_ATTEMPTS ?? "8", 1, 20, "CORE_FINALIZE_MAX_ATTEMPTS");
-const projectionRows = boundedInteger(process.env.CORE_PROJECTION_ROWS ?? "500", 1, 500, "CORE_PROJECTION_ROWS");
+const projectionRows = boundedInteger(process.env.CORE_PROJECTION_ROWS ?? "100", 1, 500, "CORE_PROJECTION_ROWS");
 const incrementalProjections = [
   "emblem_listings",
   "emblem_sales",
@@ -55,7 +55,8 @@ async function request(path, method = "GET") {
         body = { detail: text };
       }
       if (response.ok) return body;
-      if (response.status < 500 && response.status !== 409 && response.status !== 429) {
+      const d1Reset = text.includes("D1 DB exceeded its CPU time limit") || text.includes("D1_ERROR");
+      if (response.status < 500 && response.status !== 409 && response.status !== 429 && !d1Reset) {
         throw Object.assign(new Error(`${path} failed with ${response.status}: ${text}`), { retryable: false });
       }
       if (response.status === 409) return body;
@@ -100,6 +101,17 @@ for (const table of incrementalProjections) {
   if (!projection?.caught_up)
     throw new Error(`${table} reconciliation did not catch up within ${maxReplaySteps} steps`);
 }
+
+// Reconciliation can take long enough for new Counterparty events to arrive. Close that interval before parity;
+// the replay is idempotent and normally applies zero or only a handful of events.
+for (let step = 1; step <= maxReplaySteps; step += 1) {
+  replay = await request(`/admin/core-replay?events=${replayEvents}`, "POST");
+  report("replay_stabilization", { step, ...replay });
+  if (replay.caught_up) break;
+  if (replay.skipped) throw new Error(`Compact stabilization replay did not advance: ${replay.skipped}`);
+}
+if (!replay?.caught_up)
+  throw new Error(`Compact stabilization replay did not catch up within ${maxReplaySteps} steps`);
 
 const parity = await request("/admin/core-parity", "POST");
 report("parity", parity);
