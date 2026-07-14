@@ -34,7 +34,11 @@ import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
-import { reconcileCoreProjection, reconcileRecentCoreProjections } from "#api/indexer/core-projections";
+import {
+  CORE_RECENT_PROJECTIONS,
+  reconcileCoreProjection,
+  reconcileRecentCoreProjection,
+} from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -143,8 +147,10 @@ admin.post("/admin/core-projections/reconcile/:table", async (c) => {
   }
 });
 
-admin.post("/admin/core-projections/reconcile-recent", async (c) => {
-  return c.json(await reconcileRecentCoreProjections(c.env));
+admin.post("/admin/core-projections/reconcile-recent/:table", async (c) => {
+  const table = c.req.param("table");
+  if (!CORE_RECENT_PROJECTIONS.some((candidate) => candidate === table)) return c.json({ error: "unknown table" }, 400);
+  return c.json(await reconcileRecentCoreProjection(c.env, table as (typeof CORE_RECENT_PROJECTIONS)[number]));
 });
 
 // Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;

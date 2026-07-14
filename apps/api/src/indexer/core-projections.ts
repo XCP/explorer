@@ -10,6 +10,13 @@ export const CORE_INCREMENTAL_PROJECTIONS = [
   "xcp_btc_daily",
 ] as const;
 export type CoreIncrementalProjection = (typeof CORE_INCREMENTAL_PROJECTIONS)[number];
+export const CORE_RECENT_PROJECTIONS = [
+  "address_signals",
+  "asset_signals",
+  "asset_feed_counts",
+  "exchange_top_assets",
+] as const;
+export type CoreRecentProjection = (typeof CORE_RECENT_PROJECTIONS)[number];
 
 interface SourceRow {
   rowid: number;
@@ -444,26 +451,34 @@ async function relationCount(db: D1Database, table: string): Promise<number> {
  * append-only by identity, so the compact count is also the first unimported source rowid. Existing identities
  * continue to be maintained by event replay; this closes only the snapshot's moving-tail interval.
  */
-export async function reconcileRecentCoreProjections(env: Pick<Env, "DB" | "CORE_DB">) {
+export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_DB">, scope: CoreRecentProjection) {
   const seedBlock = Number.parseInt((await state(env.CORE_DB, "seed_block_index")) ?? "0", 10);
   if (!Number.isSafeInteger(seedBlock) || seedBlock <= 0) throw new Error("compact seed block is missing");
-  const [addressCount, assetCount, feedCount] = await Promise.all([
-    relationCount(env.CORE_DB, "address_signals"),
-    relationCount(env.CORE_DB, "asset_signals"),
-    relationCount(env.CORE_DB, "asset_feed_counts"),
-  ]);
-  const addresses = await env.DB.prepare(`SELECT rowid,* FROM address_signals WHERE rowid>? ORDER BY rowid`)
-    .bind(addressCount)
-    .all<SourceRow>();
-  const assets = await env.DB.prepare(`SELECT rowid,* FROM asset_signals WHERE rowid>? ORDER BY rowid`)
-    .bind(assetCount)
-    .all<SourceRow>();
-  const feeds = await env.DB.prepare(`SELECT rowid,* FROM asset_feed_counts WHERE rowid>? ORDER BY rowid`)
-    .bind(feedCount)
-    .all<SourceRow>();
-  const exchange = await env.DB.prepare(
-    `SELECT generation,asset,depositors FROM exchange_top_assets ORDER BY generation,asset`,
-  ).all<SourceRow>();
+  const empty = { results: [] as SourceRow[] };
+  const addresses =
+    scope === "address_signals"
+      ? await env.DB.prepare(`SELECT rowid,* FROM address_signals WHERE rowid>? ORDER BY rowid`)
+          .bind(await relationCount(env.CORE_DB, "address_signals"))
+          .all<SourceRow>()
+      : empty;
+  const assets =
+    scope === "asset_signals"
+      ? await env.DB.prepare(`SELECT rowid,* FROM asset_signals WHERE rowid>? ORDER BY rowid`)
+          .bind(await relationCount(env.CORE_DB, "asset_signals"))
+          .all<SourceRow>()
+      : empty;
+  const feeds =
+    scope === "asset_feed_counts"
+      ? await env.DB.prepare(`SELECT rowid,* FROM asset_feed_counts WHERE rowid>? ORDER BY rowid`)
+          .bind(await relationCount(env.CORE_DB, "asset_feed_counts"))
+          .all<SourceRow>()
+      : empty;
+  const exchange =
+    scope === "exchange_top_assets"
+      ? await env.DB.prepare(
+          `SELECT generation,asset,depositors FROM exchange_top_assets ORDER BY generation,asset`,
+        ).all<SourceRow>()
+      : empty;
   const assetNames = assets.results.map((row) => String(row.asset));
 
   const addressNames = new Set<string>();
@@ -543,10 +558,8 @@ export async function reconcileRecentCoreProjections(env: Pick<Env, "DB" | "CORE
     );
 
   return {
+    scope,
     seed_block: seedBlock,
-    address_signals: addresses.results.length,
-    asset_signals: assets.results.length,
-    asset_feed_counts: feeds.results.length,
-    exchange_top_assets: exchange.results.length,
+    processed: addresses.results.length + assets.results.length + feeds.results.length + exchange.results.length,
   };
 }

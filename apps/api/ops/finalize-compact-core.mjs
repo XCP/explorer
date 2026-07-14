@@ -102,7 +102,9 @@ for (const table of incrementalProjections) {
     throw new Error(`${table} reconciliation did not catch up within ${maxReplaySteps} steps`);
 }
 
-report("recent_projections", await request("/admin/core-projections/reconcile-recent", "POST"));
+for (const table of ["address_signals", "asset_signals", "asset_feed_counts", "exchange_top_assets"]) {
+  report("recent_projection", await request(`/admin/core-projections/reconcile-recent/${table}`, "POST"));
+}
 
 // Reconciliation can take long enough for new Counterparty events to arrive. Close that interval before parity;
 // the replay is idempotent and normally applies zero or only a handful of events.
