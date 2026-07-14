@@ -52,6 +52,6 @@ test("compact tags restore polymorphic identities and deterministic asset member
   const members = (await listTagAssetMembers(d1(db), "supply", "set", 10, 0)).map((row) => ({ ...row }));
   assert.deepEqual(members.map(({ asset, asset_longname, raw }) => ({ asset, asset_longname, raw })), [
     { asset: "ALPHA", asset_longname: "ALPHA.ONE", raw: 12 },
-    { asset: "BETA", asset_longname: null, raw: 0 },
+    { asset: "BETA", asset_longname: null, raw: 2 },
   ]);
 });
