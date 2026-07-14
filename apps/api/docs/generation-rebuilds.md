@@ -4,8 +4,8 @@ The repository does not use delete-first refreshes for published provider data. 
 issuer collections, Emblem listings, and scam-seller rollups validate or derive the fresh set, upsert it, and
 only then reconcile stale owned rows.
 
-Three large derived models still need generation-aware storage. Their current rebuild mechanics should not be
-expanded or copied while the compact-ledger backfill is active.
+Three large derived models remain candidates for generation-aware storage. Their current rebuild mechanics
+must not be expanded or copied without first proving that a generation switch improves correctness or availability.
 
 ## Graph model
 
@@ -28,6 +28,5 @@ rates, then switch it into service. This avoids both an empty interval and a sec
 
 ## Cutover rules
 
-These schema changes are deferred until the ledger backfill reaches parity and read cutover is stable. Each
-cutover must preserve the existing public table names, avoid legacy/version suffixes, include rollback to the
+Each cutover must preserve the existing public table names, avoid version suffixes, include rollback to the
 prior generation, and prove parity before old-generation cleanup begins.

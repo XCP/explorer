@@ -25,7 +25,7 @@ by the same replay transaction flow, and serves address ledger history through a
 ## Event replay
 
 `indexer/sync.ts` walks Counterparty's global event stream chronologically. Each event is dispatched once;
-only compact statements are committed. The replay cursor advances after every required write succeeds.
+only normalized canonical statements are committed. The replay cursor advances after every required write succeeds.
 All event writes are idempotent, so an interrupted page is safe to repeat.
 
 A D1 lock serializes cron and manual replay. Near the chain tip, the worker compares its checkpoint block hash
@@ -36,12 +36,12 @@ rewinds the event cursor, and replays the replacement branch.
 
 Explorer features live beside the canonical mirror and are rebuildable from it:
 
-- `asset_signals` and `address_signals` are maintained by compact-native convergent upserts. Event-touched
+- `asset_signals` and `address_signals` are maintained by convergent upserts. Event-touched
   identities refresh immediately; bounded cursor passes repair the whole population.
 - `tags` is a polymorphic categorical projection over canonical entity identities. Protocol and issuer facts
   are written during ingest; computed behavior receives a periodic full self-heal.
 - `trades`, graph relations, collection metadata, prices, Emblem data, BTC summaries, and feed counts each
-  have one owning builder and one compact storage shape.
+  have one owning builder and one normalized storage shape.
 
 Scoring remains a pure read-time policy over signal rows. Weight changes do not rewrite stored history.
 

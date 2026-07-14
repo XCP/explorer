@@ -106,17 +106,12 @@ and `balances` even has an **expression index** `idx_bal_asset_qty ON balances(a
 DESC)` that serves the richest-holder sorts. The DESC list feeds (`/v2/sends?…`) seek via the block index and
 short-circuit on LIMIT — fine for shallow pages.
 
-### Pending index — see `migrations/0020_read_perf_indexes.sql` (apply AFTER reindex)
-- `assets(type, first_issuance_block_index)` — the only remaining firsts scan (subasset/numeric, filtered by
-  `type` over 252k assets). Do not build during the reindex (write contention).
+### Current operating checklist
 
-### Post-reindex checklist
-1. Apply `0020`: `wrangler d1 migrations apply xcpio --remote`.
-2. `ANALYZE;` (the planner's table-size stats are stale after a full rebuild — this fixes driving-table choices,
-   e.g. the Emblem-vault overview should drive from the 59k `emblem_vaults` set and seek `balances(holder)`,
-   not scan all balances). The cron already runs ANALYZE periodically; a manual one right after is good hygiene.
-3. Re-run `wrangler d1 insights xcpio --sort-by reads --sort-type avg` and spot-check the vault/cohort queries
-   with `EXPLAIN QUERY PLAN`; add covering indexes only where a real endpoint still SCANs a large table.
+Schema and read indexes are owned by `migrations-core/` and applied only to `xcpio-core`. The scheduled
+`maybeAnalyze` job refreshes optimizer statistics after meaningful chain growth. Use
+`wrangler d1 insights xcpio-core` to identify measured hot queries, then confirm their plans with
+`EXPLAIN QUERY PLAN`; add an index only when the production workload demonstrates that it is needed.
 
 ## Layer 2 — caching
 
