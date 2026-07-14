@@ -125,28 +125,43 @@ export function emblemTradesSql(rowFilter: string): string {
     THEN 1663224162+(sale.block_number-15537394)*12
     ELSE CAST(1438269973+sale.block_number*13.15 AS INTEGER) END)`;
   const isReal = `vault.vault_kind='single' AND (vault.cracked_at IS NULL OR ${saleTime}<vault.cracked_at)`;
-  return `INSERT INTO trades(
-      venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,
-      buyer_id,seller_id,external_tx_hash,sale_class
-    )
-    SELECT 'emblem',sale.tx_hash || '_' || sale.log_index || '_' || contract.address || '_' || sale.token_id,
-      CASE WHEN ${isReal} THEN vault.contents_asset_id END,${saleTime},sale.block_number,
-      CASE WHEN ${isReal} THEN COALESCE(vault.contents_qty,1.0) ELSE 1.0 END,
-      CASE WHEN ${isUsdc} THEN 'USDC' ELSE 'ETH' END,
-      CAST(sale.price_raw AS REAL)/CASE WHEN ${isUsdc} THEN 1e6 ELSE 1e18 END,
-      CASE WHEN ${isUsdc} THEN CAST(sale.price_raw AS REAL)/1e6 END,
-      sale.buyer_id,sale.seller_id,sale.tx_hash,
+  return `WITH desired AS (
+    SELECT sale.tx_hash || '_' || sale.log_index || '_' || contract.address || '_' || sale.token_id ref,
+      CASE WHEN ${isReal} THEN vault.contents_asset_id END asset_id,${saleTime} block_time,
+      sale.block_number block_index,
+      CASE WHEN ${isReal} THEN COALESCE(vault.contents_qty,1.0) ELSE 1.0 END quantity,
+      CASE WHEN ${isUsdc} THEN 'USDC' ELSE 'ETH' END currency,
+      CAST(sale.price_raw AS REAL)/CASE WHEN ${isUsdc} THEN 1e6 ELSE 1e18 END total,
+      CASE WHEN ${isUsdc} THEN CAST(sale.price_raw AS REAL)/1e6 END usd_value,
+      sale.buyer_id,sale.seller_id,sale.tx_hash external_tx_hash,
       CASE WHEN ${isReal} THEN 'real'
            WHEN vault.vault_kind='multi' THEN 'bundle'
            WHEN vault.vault_kind='single' THEN 'scam_cracked'
            WHEN vault.is_scam_shell=1 THEN 'scam_empty'
-           ELSE 'non_counterparty' END
+           ELSE 'non_counterparty' END sale_class
     FROM emblem_sales sale
     JOIN address_dictionary contract ON contract.address_id=sale.contract_id
     JOIN address_dictionary payment ON payment.address_id=sale.token_address_id
     JOIN emblem_vaults vault ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
     WHERE vault.btc_address_id IS NOT NULL AND CAST(sale.price_raw AS REAL)>0
       AND payment.address IN (${acceptedTokens},'${USDC}') ${rowFilter}
+  )
+    INSERT INTO trades(
+      venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,
+      buyer_id,seller_id,external_tx_hash,sale_class
+    )
+    SELECT 'emblem',desired.ref,desired.asset_id,desired.block_time,desired.block_index,desired.quantity,
+      desired.currency,desired.total,desired.usd_value,desired.buyer_id,desired.seller_id,
+      desired.external_tx_hash,desired.sale_class
+    FROM desired LEFT JOIN trades existing ON existing.venue='emblem' AND existing.ref=desired.ref
+    WHERE existing.ref IS NULL OR existing.asset_id IS NOT desired.asset_id
+      OR existing.block_time IS NOT desired.block_time OR existing.block_index IS NOT desired.block_index
+      OR existing.quantity IS NOT desired.quantity OR existing.currency IS NOT desired.currency
+      OR existing.total IS NOT desired.total
+      OR (desired.currency='USDC' AND existing.usd_value IS NOT desired.usd_value)
+      OR existing.buyer_id IS NOT desired.buyer_id OR existing.seller_id IS NOT desired.seller_id
+      OR existing.external_tx_hash IS NOT desired.external_tx_hash
+      OR existing.sale_class IS NOT desired.sale_class
     ON CONFLICT(venue,ref) DO UPDATE SET
       asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
       quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
