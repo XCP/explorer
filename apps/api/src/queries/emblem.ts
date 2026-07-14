@@ -28,8 +28,9 @@ export function emblemStats(db: D1Database): Promise<EmblemStatsRow | null> {
 export function emblemAssets(db: D1Database, p: Page): Promise<EmblemAssetRow[]> {
   return q<EmblemAssetRow>(
     db,
-    `SELECT asset.asset,COUNT(*) vaults FROM balances balance
-     JOIN emblem_vaults vault ON vault.btc_address_id=balance.address_id
+    `SELECT asset.asset,COUNT(*) vaults FROM emblem_vaults vault
+     CROSS JOIN balances balance INDEXED BY idx_balances_address_asset
+       ON balance.address_id=vault.btc_address_id
      JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id
      WHERE CAST(balance.quantity AS INTEGER)>0 GROUP BY balance.asset_id
      ORDER BY vaults DESC,asset.asset ASC LIMIT ? OFFSET ?`,
