@@ -23,7 +23,6 @@ const oldDatabaseBudget = new Map([
   ["indexer/core-manifest.ts", 2],
   ["indexer/core-parity.ts", 3],
   ["indexer/core-projections.ts", 7],
-  ["indexer/emblem.ts", 17],
   ["indexer/emblem-listings.ts", 8],
   ["indexer/emblem-meta.ts", 3],
   ["indexer/emblem-sales.ts", 9],

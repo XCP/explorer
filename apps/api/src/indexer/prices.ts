@@ -9,6 +9,7 @@
  */
 import type { Env } from "#api/env";
 import { fetchCoinbaseCandles } from "#api/integrations/coinbase";
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 // Coinbase product + first-listed day (unix sec) per currency.
 const COINS: Record<string, { product: string; start: number }> = {
@@ -69,18 +70,6 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
     observed_day=excluded.observed_day,fidelity=excluded.fidelity
   WHERE prices.fidelity<=excluded.fidelity`;
 
-async function getState(db: D1Database, key: string): Promise<number> {
-  const row = await db.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>();
-  return Number.parseInt(row?.value ?? "0", 10) || 0;
-}
-
-async function setState(db: D1Database, key: string, value: number): Promise<void> {
-  await db
-    .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
-    .bind(key, String(value))
-    .run();
-}
-
 async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
   for (let i = 0; i < rows.length; i += 100) {
     await db.batch(
@@ -109,7 +98,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
 
   for (const [cur, cfg] of Object.entries(COINS)) {
-    let cursor = (await getState(env.CORE_DB, `prices_cur_${cur}`)) || cfg.start;
+    let cursor = (await getCoreStateInt(env.CORE_DB, `prices_cur_${cur}`)) || cfg.start;
     let filled = 0;
     for (let w = 0; w < WINDOWS_PER_CALL && cursor < now; w++) {
       const end = Math.min(cursor + WIN, now);
@@ -135,7 +124,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
       cursor = end;
     }
     // don't pin the cursor at `now` while backfilling incompletely; leave a 2-day lip so the tail refreshes
-    await setState(env.CORE_DB, `prices_cur_${cur}`, Math.min(cursor, now - 2 * DAY));
+    await setCoreState(env.CORE_DB, `prices_cur_${cur}`, Math.min(cursor, now - 2 * DAY));
     out[cur] = filled;
   }
 
@@ -166,12 +155,12 @@ export const APPLY_TRADE_USD_SQL = `UPDATE trades SET usd_value=total*(
 /** Reconcile each derived trade value against the admitted price calendar in bounded rowid windows. */
 export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
   const tip = Number((await env.CORE_DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
-  let cur = await getState(env.CORE_DB, "usd_cur");
+  let cur = await getCoreStateInt(env.CORE_DB, "usd_cur");
   if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs
   const hi = Math.min(cur + USD_WINDOW, tip);
   const result = await env.CORE_DB.prepare(APPLY_TRADE_USD_SQL)
     .bind(cur, hi)
     .run();
-  await setState(env.CORE_DB, "usd_cur", hi);
+  await setCoreState(env.CORE_DB, "usd_cur", hi);
   return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip };
 }

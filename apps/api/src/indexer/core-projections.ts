@@ -20,45 +20,6 @@ interface SourceRow {
   [column: string]: unknown;
 }
 
-export interface CoreEmblemVaultIdentity {
-  tokenId: string;
-  contract: string | null;
-  btcAddress: string | null;
-  resolved: number;
-  firstSeen: number | null;
-}
-
-export async function upsertCoreEmblemVaultIdentities(
-  db: D1Database,
-  rows: CoreEmblemVaultIdentity[],
-): Promise<void> {
-  if (rows.length === 0) return;
-  const addresses = [
-    ...new Set(rows.flatMap((row) => [row.contract, row.btcAddress]).filter((value): value is string => value != null)),
-  ];
-  for (let index = 0; index < addresses.length; index += 80)
-    await db.batch(
-      addresses.slice(index, index + 80).map((address) =>
-        db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address),
-      ),
-    );
-  for (let index = 0; index < rows.length; index += 80)
-    await db.batch(
-      rows.slice(index, index + 80).map((row) =>
-        db.prepare(
-          `INSERT INTO emblem_vaults(token_id,contract_id,btc_address_id,resolved,first_seen)
-           VALUES(?,(SELECT address_id FROM address_dictionary WHERE address=?),
-             (SELECT address_id FROM address_dictionary WHERE address=?),?,?)
-           ON CONFLICT(token_id) DO UPDATE SET
-             contract_id=COALESCE(excluded.contract_id,emblem_vaults.contract_id),
-             btc_address_id=COALESCE(excluded.btc_address_id,emblem_vaults.btc_address_id),
-             resolved=MAX(emblem_vaults.resolved,excluded.resolved),
-             first_seen=COALESCE(emblem_vaults.first_seen,excluded.first_seen)`,
-        ).bind(row.tokenId, row.contract, row.btcAddress, row.resolved, row.firstSeen),
-      ),
-    );
-}
-
 const isProjection = (value: string): value is CoreIncrementalProjection =>
   CORE_INCREMENTAL_PROJECTIONS.some((table) => table === value);
 

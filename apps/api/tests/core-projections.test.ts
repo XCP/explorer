@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { reconcileCoreProjection, upsertCoreEmblemVaultIdentities } from "#api/indexer/core-projections";
+import { reconcileCoreProjection } from "#api/indexer/core-projections";
+import { upsertEmblemVaultIdentities } from "#api/indexer/emblem";
 
 class PreparedStatement {
   private binds: unknown[] = [];
@@ -100,13 +101,13 @@ function databases() {
 
 test("compact Emblem identity writes converge without erasing resolved fields", async () => {
   const { compact } = databases();
-  await upsertCoreEmblemVaultIdentities(d1(compact), [
+  await upsertEmblemVaultIdentities(d1(compact), [
     { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 100 },
   ]);
-  await upsertCoreEmblemVaultIdentities(d1(compact), [
+  await upsertEmblemVaultIdentities(d1(compact), [
     { tokenId: "7", contract: null, btcAddress: "btc", resolved: 1, firstSeen: null },
   ]);
-  await upsertCoreEmblemVaultIdentities(d1(compact), [
+  await upsertEmblemVaultIdentities(d1(compact), [
     { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 200 },
   ]);
   assert.deepEqual(

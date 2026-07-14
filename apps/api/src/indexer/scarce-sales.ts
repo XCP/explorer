@@ -8,6 +8,7 @@
  */
 import type { Env } from "#api/env";
 import { fetchScarceCitySales } from "#api/integrations/scarce-city";
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const ASSETS_PER_RUN = 90; // bounded per cron tick (stays well under the Worker subrequest/CPU budget)
 const CONCURRENCY = 5;
@@ -20,25 +21,10 @@ export function nextScarceCursor(rows: Array<{ asset_id: number }>, firstFailedA
   return firstFailedAssetId === null ? rows[rows.length - 1].asset_id : firstFailedAssetId - 1;
 }
 
-async function getCursor(db: D1Database): Promise<number> {
-  const row = await db.prepare(`SELECT value FROM core_state WHERE key='scarce_cursor'`).first<{ value: string }>();
-  return Number.parseInt(row?.value ?? "0", 10) || 0;
-}
-
-async function setCursor(db: D1Database, value: number): Promise<void> {
-  await db
-    .prepare(
-      `INSERT INTO core_state(key,value) VALUES('scarce_cursor',?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    .bind(String(value))
-    .run();
-}
-
 /** One bounded, resumable step: sweep the next ASSETS_PER_RUN assets by rowid, query scarce.city for
  *  each, upsert any sales. Wraps the cursor at the end of the universe to re-sweep for new sales. */
 export async function crawlScarceSales(env: Env): Promise<Record<string, unknown>> {
-  const cursor = await getCursor(env.CORE_DB);
+  const cursor = await getCoreStateInt(env.CORE_DB, "scarce_cursor");
   const rows =
     (
       await env.CORE_DB.prepare(`SELECT asset_id,asset FROM asset_dictionary WHERE asset_id>? ORDER BY asset_id LIMIT ?`)
@@ -55,7 +41,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   };
   if (!rows.length) {
     // past the end — wrap to re-sweep for new sales next tick
-    await setCursor(env.CORE_DB, 0);
+    await setCoreState(env.CORE_DB, "scarce_cursor", 0);
     out.wrapped = true;
     return out;
   }
@@ -99,7 +85,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   }
 
   const last = nextScarceCursor(rows, firstFailedAssetId);
-  await setCursor(env.CORE_DB, last);
+  await setCoreState(env.CORE_DB, "scarce_cursor", last);
   out.to = last;
   return out;
 }

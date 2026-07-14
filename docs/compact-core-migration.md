@@ -64,6 +64,11 @@ Convert the Emblem and Scarce City crawlers as complete vertical slices: provide
 resolution, upsert/reconciliation, cursor state, admin trigger, cron trigger, and tests all move together.
 Do not retain a second write or projection-copy step.
 
+Implementation commits may prepare producers and consumers separately, but deployment is atomic across the
+dependency cut: no compact-only producer deploys while a live consumer still reads its old table, and no
+compact-only consumer deploys before its compact input is current. This is enforced by the deployment checklist,
+not by dual writes or runtime database switches.
+
 Order: vault enumeration/resolution -> sales/transfers/listings -> vault metadata/classification/scam attribution
 -> Scarce City sales.
 

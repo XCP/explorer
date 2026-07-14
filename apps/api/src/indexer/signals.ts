@@ -26,7 +26,6 @@
 import type { Env } from "#api/env";
 import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
 import { CURATED_LOWQ_SQL, EXCHANGES_SQL, CURATED_BURNS_SQL } from "#api/indexer/curated";
-import { EMBLEM_DDL } from "#api/indexer/emblem";
 import {
   ASSET_FEED_COUNT_SOURCES,
   FEED_COUNT_COLUMNS,
@@ -35,6 +34,7 @@ import {
   type FeedCountColumn,
 } from "#api/indexer/asset-feed-counts";
 
+const EMBLEM_DDL = `CREATE TABLE IF NOT EXISTS emblem_vaults (token_id TEXT PRIMARY KEY, contract TEXT, btc_address TEXT, resolved INTEGER DEFAULT 0, first_seen INTEGER)`;
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
   address TEXT PRIMARY KEY, first_block INTEGER, last_block INTEGER DEFAULT 0, out_peers INTEGER DEFAULT 0,
   in_peers INTEGER DEFAULT 0, dispense_btc REAL DEFAULT 0, dispenses INTEGER DEFAULT 0,
