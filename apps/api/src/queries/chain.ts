@@ -4,15 +4,8 @@
  * the result in the envelope; the row shapes are the wire contract (@xcp/shared/chain). The generic
  * recent-first record feeds live next door in queries/records.ts.
  */
-import type { BlockRow, BlockDetail, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
+import type { BlockDetail, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
 import { q, one } from "#api/db";
-
-const BLOCK_COLS = `block_index, block_hash, block_time, transaction_count`;
-
-/** Recent blocks, newest first. */
-export function listBlocks(db: D1Database, limit: number, offset: number): Promise<BlockRow[]> {
-  return q<BlockRow>(db, `SELECT ${BLOCK_COLS} FROM blocks ORDER BY block_index DESC LIMIT ? OFFSET ?`, limit, offset);
-}
 
 /** One block's full row — the handler composes the embedded transactions in. */
 export function getBlock(db: D1Database, n: number): Promise<Omit<BlockDetail, "transactions"> | null> {

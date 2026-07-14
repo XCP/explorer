@@ -4,12 +4,8 @@ import { RECORD_KINDS } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
-import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
-import {
-  listBlocks as listCoreBlocks,
-  getBlock as getCoreBlock,
-  blockTransactions as coreBlockTransactions,
-} from "#api/queries/core";
+import { getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
+import { listBlocks, getBlock as getCoreBlock, blockTransactions as coreBlockTransactions } from "#api/queries/core";
 import { coreReadsEnabled } from "#api/read/core-read-gate";
 import {
   listRecords,
@@ -30,9 +26,7 @@ export const chain = router();
 chain.get("/v2/blocks", async (c) => {
   const l = lim(c),
     o = off(c);
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreBlocks(c.env.CORE_DB, l, o)
-    : await listBlocks(c.env.DB, l, o);
+  const rows = await listBlocks(c.env.CORE_DB, l, o);
   return J(c, { result: rows, next_offset: rows.length === l ? o + l : null }, 15);
 });
 
