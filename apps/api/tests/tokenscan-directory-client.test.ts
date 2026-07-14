@@ -25,21 +25,23 @@ test("Tokenscan directory parsing rejects destructive provider drift", () => {
 
 test("Tokenscan upserts refresh owned tags without stealing another source", () => {
   const db = new DatabaseSync(":memory:");
-  db.exec(`CREATE TABLE tags(entity_type TEXT,entity_id TEXT,tag TEXT,source TEXT,meta TEXT,
-    PRIMARY KEY(entity_type,entity_id,tag));
-    INSERT INTO tags VALUES('asset','A','one','tokenscan','old');
-    INSERT INTO tags VALUES('asset','B','two','collection','curated');`);
+  db.exec(`CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,
+      UNIQUE(entity_type,entity_key));
+    CREATE TABLE tags(entity_id INTEGER,tag TEXT,source TEXT,meta TEXT,PRIMARY KEY(entity_id,tag));
+    INSERT INTO entity_dictionary VALUES(1,'asset','A'),(2,'asset','B');
+    INSERT INTO tags VALUES(1,'one','tokenscan','old');
+    INSERT INTO tags VALUES(2,'two','collection','curated');`);
   db.prepare(TOKENSCAN_TAG_UPSERT_SQL).run("A", "one", "fresh");
   db.prepare(TOKENSCAN_TAG_UPSERT_SQL).run("B", "two", "provider");
   assert.deepEqual(
-    { ...db.prepare(`SELECT source,meta FROM tags WHERE entity_id='A'`).get() },
+    { ...db.prepare(`SELECT source,meta FROM tags WHERE entity_id=1`).get() },
     {
       source: "tokenscan",
       meta: "fresh",
     },
   );
   assert.deepEqual(
-    { ...db.prepare(`SELECT source,meta FROM tags WHERE entity_id='B'`).get() },
+    { ...db.prepare(`SELECT source,meta FROM tags WHERE entity_id=2`).get() },
     {
       source: "collection",
       meta: "curated",

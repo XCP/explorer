@@ -18,9 +18,10 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 const assetOf = (card: string) => card.replace(/\.[^.]+$/, "").trim(); // "RAREPIGEON.png" -> "RAREPIGEON"
-export const TOKENSCAN_TAG_UPSERT_SQL = `INSERT INTO tags (entity_type,entity_id,tag,source,meta)
-  VALUES ('asset',?,?,'tokenscan',?)
-  ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET
+export const TOKENSCAN_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,meta)
+  SELECT entity_id,?2,'tokenscan',?3 FROM entity_dictionary
+  WHERE entity_type='asset' AND entity_key=?1
+  ON CONFLICT(entity_id,tag) DO UPDATE SET
     meta=CASE WHEN tags.source='tokenscan' THEN excluded.meta ELSE tags.meta END`;
 
 async function fetchNftData(): Promise<TokenscanCollection[]> {
@@ -37,8 +38,12 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
   }
   if (!data.length) return { skipped: "empty(kept prior)" }; // transient-safe: never wipe on a blip
 
-  const prior = await env.DB.prepare(`SELECT entity_id,tag FROM tags WHERE source='tokenscan'`).all<{
-    entity_id: string;
+  const prior = await env.CORE_DB.prepare(
+    `SELECT entity.entity_key asset,tag.tag FROM tags tag
+     JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
+     WHERE tag.source='tokenscan'`,
+  ).all<{
+    asset: string;
     tag: string;
   }>();
   const fresh = new Set<string>();
@@ -53,25 +58,30 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
     const assets = [...new Set(c.cards.map(assetOf).filter(Boolean))];
     for (const asset of assets) {
       fresh.add(`${tag}\0${asset}`);
-      upserts.push(env.DB.prepare(TOKENSCAN_TAG_UPSERT_SQL).bind(asset, tag, meta));
+      upserts.push(
+        env.CORE_DB.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`).bind(
+          asset,
+        ),
+        env.CORE_DB.prepare(TOKENSCAN_TAG_UPSERT_SQL).bind(asset, tag, meta),
+      );
     }
     collections++;
     tagged += assets.length;
   }
-  for (let i = 0; i < upserts.length; i += 100) await env.DB.batch(upserts.slice(i, i + 100));
+  for (let i = 0; i < upserts.length; i += 100) await env.CORE_DB.batch(upserts.slice(i, i + 100));
 
   // Reconcile only after every fresh membership is durable. A failed upsert leaves the complete prior
   // generation visible; tags owned by another source are never overwritten or removed.
-  const stale = (prior.results ?? []).filter((row) => !fresh.has(`${row.tag}\0${row.entity_id}`));
+  const stale = (prior.results ?? []).filter((row) => !fresh.has(`${row.tag}\0${row.asset}`));
   for (let i = 0; i < stale.length; i += 100) {
-    await env.DB.batch(
+    await env.CORE_DB.batch(
       stale
         .slice(i, i + 100)
         .map((row) =>
-          env.DB.prepare(`DELETE FROM tags WHERE source='tokenscan' AND tag=? AND entity_id=?`).bind(
-            row.tag,
-            row.entity_id,
-          ),
+          env.CORE_DB.prepare(
+            `DELETE FROM tags WHERE source='tokenscan' AND tag=?
+             AND entity_id=(SELECT entity_id FROM entity_dictionary WHERE entity_type='asset' AND entity_key=?)`,
+          ).bind(row.tag, row.asset),
         ),
     );
   }
