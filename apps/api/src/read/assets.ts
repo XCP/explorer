@@ -35,16 +35,6 @@ import {
   assetReviewDistribution,
   assetReviewTop,
   assetValidation,
-  listAssetBalances,
-  listAssetIssuances,
-  listAssetSends,
-  listAssetDispensers,
-  listAssetOrders,
-  listAssetFairmints,
-  listAssetDividends,
-  listAssetDestructions,
-  listAssetPools,
-  listAssetPoolMatches,
   listSubassets,
   assetCohort,
   assetCollectionCohort,
@@ -67,19 +57,19 @@ import {
   coreXcpSupply,
   coreAssetCollection,
   coreAssetArtist,
-  listCoreAssetBalances,
-  listCoreAssetIssuances,
-  listCoreAssetSends,
-  listCoreAssetDispensers,
+  listAssetBalances,
+  listAssetIssuances,
+  listAssetSends,
+  listAssetDispensers,
   listAssetDispenses,
-  listCoreAssetDividends,
-  listCoreAssetDestructions,
-  listCoreAssetPools,
-  listCoreAssetPoolMatches,
-  listCoreAssetFairmints,
+  listAssetDividends,
+  listAssetDestructions,
+  listAssetPools,
+  listAssetPoolMatches,
+  listAssetFairmints,
 } from "#api/queries/core-assets";
 import { coreReadsEnabled } from "#api/read/core-read-gate";
-import { listCoreAssetOrders } from "#api/queries/core-orders";
+import { listAssetOrders } from "#api/queries/core-orders";
 
 export const assets = router();
 
@@ -329,33 +319,25 @@ assets.get("/v2/reputation/asset-validation", async (c) => {
 
 assets.get("/v2/assets/:asset/balances", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetBalances(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetBalances(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetBalances(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/issuances", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetIssuances(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetIssuances(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetIssuances(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/sends", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetSends(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetSends(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetSends(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/dispensers", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetDispensers(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetDispensers(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetDispensers(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
@@ -367,49 +349,37 @@ assets.get("/v2/assets/:asset/dispenses", async (c) => {
 
 assets.get("/v2/assets/:asset/orders", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetOrders(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetOrders(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetOrders(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/fairmints", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetFairmints(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetFairmints(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetFairmints(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/dividends", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetDividends(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetDividends(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetDividends(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/destructions", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetDestructions(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetDestructions(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetDestructions(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/pools", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetPools(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetPools(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetPools(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/pool-matches", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssetPoolMatches(c.env.CORE_DB, asset, lim(c), off(c))
-    : await listAssetPoolMatches(c.env.DB, asset, lim(c), off(c));
+  const rows = await listAssetPoolMatches(c.env.CORE_DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 

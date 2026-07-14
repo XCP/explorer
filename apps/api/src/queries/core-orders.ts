@@ -24,7 +24,7 @@ export function listCoreOrders(db: D1Database, limit: number, offset: number): P
   );
 }
 
-export function listCoreAssetOrders(db: D1Database, asset: string, limit: number, offset: number): Promise<OrderRow[]> {
+export function listAssetOrders(db: D1Database, asset: string, limit: number, offset: number): Promise<OrderRow[]> {
   return q<OrderRow>(
     db,
     `${ORDER_SELECT}

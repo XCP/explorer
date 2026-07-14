@@ -224,12 +224,7 @@ export async function coreAssetArtist(
   }
 }
 
-export function listCoreAssetBalances(
-  db: D1Database,
-  asset: string,
-  limit: number,
-  offset: number,
-): Promise<BalanceRow[]> {
+export function listAssetBalances(db: D1Database, asset: string, limit: number, offset: number): Promise<BalanceRow[]> {
   return q<BalanceRow>(
     db,
     `SELECT CASE WHEN balance.address_id IS NOT NULL THEN address.address
@@ -251,7 +246,7 @@ export function listCoreAssetBalances(
   );
 }
 
-export function listCoreAssetIssuances(
+export function listAssetIssuances(
   db: D1Database,
   asset: string,
   limit: number,
@@ -273,7 +268,7 @@ export function listCoreAssetIssuances(
   );
 }
 
-export function listCoreAssetSends(db: D1Database, asset: string, limit: number, offset: number): Promise<SendRow[]> {
+export function listAssetSends(db: D1Database, asset: string, limit: number, offset: number): Promise<SendRow[]> {
   return q<SendRow>(
     db,
     `SELECT lower(hex(send.tx_hash)) tx_hash,send.block_index,send.block_time,source.address source,
@@ -290,7 +285,7 @@ export function listCoreAssetSends(db: D1Database, asset: string, limit: number,
   );
 }
 
-export function listCoreAssetDispensers(
+export function listAssetDispensers(
   db: D1Database,
   asset: string,
   limit: number,
@@ -340,7 +335,7 @@ export function listAssetDispenses(
   );
 }
 
-export function listCoreAssetDividends(
+export function listAssetDividends(
   db: D1Database,
   asset: string,
   limit: number,
@@ -364,7 +359,7 @@ export function listCoreAssetDividends(
   );
 }
 
-export function listCoreAssetDestructions(
+export function listAssetDestructions(
   db: D1Database,
   asset: string,
   limit: number,
@@ -386,7 +381,7 @@ export function listCoreAssetDestructions(
   );
 }
 
-export function listCoreAssetPools(db: D1Database, asset: string, limit: number, offset: number): Promise<PoolRow[]> {
+export function listAssetPools(db: D1Database, asset: string, limit: number, offset: number): Promise<PoolRow[]> {
   return q<PoolRow>(
     db,
     `SELECT pool.lp_asset,pool.pair,a.asset asset_a,b.asset asset_b,pool.reserve_a,pool.reserve_b,
@@ -404,7 +399,7 @@ export function listCoreAssetPools(db: D1Database, asset: string, limit: number,
   );
 }
 
-export function listCoreAssetPoolMatches(
+export function listAssetPoolMatches(
   db: D1Database,
   asset: string,
   limit: number,
@@ -428,7 +423,7 @@ export function listCoreAssetPoolMatches(
   );
 }
 
-export function listCoreAssetFairmints(
+export function listAssetFairmints(
   db: D1Database,
   asset: string,
   limit: number,
