@@ -82,16 +82,28 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   const fundRows =
     (
       await env.CORE_DB.prepare(
-        `SELECT destination.address,asset.asset,
-           SUM(COALESCE(CAST(send.quantity_normalized AS REAL),CAST(send.quantity AS REAL))) qn
-         FROM emblem_vaults vault
-         JOIN sends send ON send.destination_address_id=vault.btc_address_id
-         JOIN address_dictionary destination ON destination.address_id=send.destination_address_id
-         JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
-         WHERE vault.rowid>? AND vault.rowid<=? AND asset.asset<>'XCP'
-         GROUP BY send.destination_address_id,send.asset_id`,
+        `WITH inbound AS (
+           SELECT send.event_index,vault.btc_address_id address_id,send.asset_id,send.quantity,send.quantity_normalized
+           FROM emblem_vaults vault
+           CROSS JOIN sends send INDEXED BY idx_sends_destination
+             ON send.destination_id=vault.btc_address_id
+           WHERE vault.rowid>? AND vault.rowid<=?
+           UNION
+           SELECT send.event_index,vault.btc_address_id,send.asset_id,send.quantity,send.quantity_normalized
+           FROM emblem_vaults vault
+           CROSS JOIN sends send INDEXED BY idx_sends_destination_address
+             ON send.destination_address_id=vault.btc_address_id
+           WHERE vault.rowid>? AND vault.rowid<=?
+         )
+         SELECT destination.address,asset.asset,
+           SUM(COALESCE(CAST(inbound.quantity_normalized AS REAL),CAST(inbound.quantity AS REAL))) qn
+         FROM inbound
+         JOIN address_dictionary destination ON destination.address_id=inbound.address_id
+         JOIN asset_dictionary asset ON asset.asset_id=inbound.asset_id
+         WHERE asset.asset<>'XCP'
+         GROUP BY inbound.address_id,inbound.asset_id`,
       )
-        .bind(cursor, hi)
+        .bind(cursor, hi, cursor, hi)
         .all<{ address: string; asset: string; qn: number }>()
     ).results || [];
 
@@ -115,16 +127,30 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   const outRows =
     (
       await env.CORE_DB.prepare(
-        `SELECT source.address,send.block_time,destination.address destination
-         FROM emblem_vaults vault
-         JOIN sends send ON send.source_address_id=vault.btc_address_id
-         JOIN address_dictionary source ON source.address_id=send.source_address_id
-         JOIN address_dictionary destination ON destination.address_id=send.destination_address_id
-         JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
-         WHERE vault.rowid>? AND vault.rowid<=? AND asset.asset<>'XCP'
-         ORDER BY send.source_address_id,send.block_time,send.event_index`,
+        `WITH outbound AS (
+           SELECT send.event_index,vault.btc_address_id address_id,
+             COALESCE(send.destination_address_id,send.destination_id) destination_id,
+             send.asset_id,send.block_time
+           FROM emblem_vaults vault
+           CROSS JOIN sends send INDEXED BY idx_sends_source ON send.source_id=vault.btc_address_id
+           WHERE vault.rowid>? AND vault.rowid<=?
+           UNION
+           SELECT send.event_index,vault.btc_address_id,
+             COALESCE(send.destination_address_id,send.destination_id),send.asset_id,send.block_time
+           FROM emblem_vaults vault
+           CROSS JOIN sends send INDEXED BY idx_sends_source_address
+             ON send.source_address_id=vault.btc_address_id
+           WHERE vault.rowid>? AND vault.rowid<=?
+         )
+         SELECT source.address,outbound.block_time,destination.address destination
+         FROM outbound
+         JOIN address_dictionary source ON source.address_id=outbound.address_id
+         JOIN address_dictionary destination ON destination.address_id=outbound.destination_id
+         JOIN asset_dictionary asset ON asset.asset_id=outbound.asset_id
+         WHERE asset.asset<>'XCP'
+         ORDER BY outbound.address_id,outbound.block_time,outbound.event_index`,
       )
-        .bind(cursor, hi)
+        .bind(cursor, hi, cursor, hi)
         .all<{ address: string; block_time: number; destination: string }>()
     ).results || [];
 

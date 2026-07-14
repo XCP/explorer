@@ -42,8 +42,15 @@ test("vault classification derives compact identities, contents, and crack recip
       vault_kind TEXT,funded INTEGER DEFAULT 0,cracked_at INTEGER,cracker_address_id INTEGER,
       classified INTEGER DEFAULT 0,PRIMARY KEY(contract_id,token_id));
     CREATE TABLE sends(
-      event_index INTEGER,source_address_id INTEGER,destination_address_id INTEGER,asset_id INTEGER,
-      quantity TEXT,quantity_normalized TEXT,block_time INTEGER);
+      event_index INTEGER,source_id INTEGER,destination_id INTEGER,source_address_id INTEGER,
+      destination_address_id INTEGER,asset_id INTEGER,quantity TEXT,quantity_normalized TEXT,
+      block_index INTEGER,block_time INTEGER);
+    CREATE INDEX idx_sends_source ON sends(source_id,block_index DESC,event_index DESC);
+    CREATE INDEX idx_sends_destination ON sends(destination_id,block_index DESC,event_index DESC);
+    CREATE INDEX idx_sends_source_address ON sends(source_address_id,block_index DESC,event_index DESC)
+      WHERE source_address_id IS NOT NULL;
+    CREATE INDEX idx_sends_destination_address ON sends(destination_address_id,block_index DESC,event_index DESC)
+      WHERE destination_address_id IS NOT NULL;
     CREATE TABLE balances(address_id INTEGER,asset_id INTEGER,quantity TEXT,quantity_normalized TEXT);
     CREATE TABLE sweeps(source_id INTEGER,destination_id INTEGER,block_time INTEGER);
     INSERT INTO address_dictionary VALUES
@@ -51,10 +58,12 @@ test("vault classification derives compact identities, contents, and crack recip
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CARD'),(3,'OTHER');
     INSERT INTO emblem_vaults(contract_id,token_id,btc_address_id) VALUES(40,'1',10),(40,'2',11),(40,'3',12);
     INSERT INTO sends VALUES
-      (1,20,10,2,'200000000','2',100),
-      (2,10,30,2,'200000000','2',200),
-      (3,20,11,2,'100000000','1',100),
-      (4,20,11,3,'100000000','1',101);
+      (1,20,10,NULL,NULL,2,'200000000','2',1,100),
+      (2,10,30,NULL,NULL,2,'200000000','2',2,200),
+      (3,20,11,NULL,NULL,2,'100000000','1',1,100),
+      (4,20,11,NULL,NULL,3,'100000000','1',1,101),
+      (5,20,99,NULL,10,2,'100000000','1',1,110),
+      (6,99,99,10,30,2,'100000000','1',3,190);
   `);
   const result = await classifyVaults({ CORE_DB: d1(sqlite) } as never);
   assert.equal(result.classified, 3);
@@ -76,8 +85,8 @@ test("vault classification derives compact identities, contents, and crack recip
         vault_kind: "single",
         funded: 1,
         contents_asset: "CARD",
-        contents_qty: 2,
-        cracked_at: 200,
+        contents_qty: 3,
+        cracked_at: 190,
         cracker: "cracker",
       },
       {
