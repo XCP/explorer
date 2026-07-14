@@ -1,7 +1,7 @@
 /**
  * Graph-reputation validation gauntlet (docs/graph-reputation.md, "Validation plan on our data"). This is the
- * ONE test that proves the sybil-resistance claim, so it runs the ACTUAL production SQL — passStatements() /
- * finalize aggregation / SEED_APPLY / node+rank init are imported from src/indexer/graph.ts and executed
+ * ONE test that proves the sybil-resistance claim, so it runs the normalized production SQL builders
+ * imported from graph-core.ts and executes them
  * against an in-memory node:sqlite DB. The only thing synthesized is the graph itself (a hand-built
  * graph_edges), so the math under test is byte-for-byte the code that runs on D1.
  *
