@@ -1,21 +1,12 @@
 import type { Env } from "#api/env";
 import { parseUtxoHolder } from "#api/indexer/compact-codec";
 import { getCoreState } from "#api/indexer/core-state";
-export const CORE_RECENT_PROJECTIONS = [
-  "address_signals",
-  "asset_signals",
-  "asset_feed_counts",
-  "exchange_top_assets",
-] as const;
+export const CORE_RECENT_PROJECTIONS = ["address_signals"] as const;
 export type CoreRecentProjection = (typeof CORE_RECENT_PROJECTIONS)[number];
 
 interface SourceRow {
   rowid: number;
   [column: string]: unknown;
-}
-
-function nullableString(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
 }
 
 const ADDRESS_SIGNAL_COLUMNS = [
@@ -57,56 +48,6 @@ const ADDRESS_SIGNAL_COLUMNS = [
   "dump_scams",
 ] as const;
 
-const ASSET_SIGNAL_COLUMNS = [
-  "divisible",
-  "locked",
-  "holders",
-  "top1_pct",
-  "trades",
-  "self_trade_pct",
-  "first_trade_blk",
-  "last_trade_blk",
-  "dispenses",
-  "dispense_btc",
-  "low_quality",
-  "holder_breadth",
-  "pct_creator_holders",
-  "burned_pct",
-  "distinct_traders",
-  "distinct_dispensers",
-  "age_blocks",
-  "avg_holder_dex",
-  "recent_events",
-  "recency_blocks",
-  "max_dispense_btc",
-  "max_trade_xcp",
-  "supply",
-  "max_realized_usd",
-  "distinct_dispense_buyers",
-  "max_dispense_btc_clean",
-  "emblem_trades",
-  "graph_trust",
-  "graph_distrust",
-  "holder_cohesion",
-  "cohesion_edges",
-  "cohesion_strong",
-] as const;
-
-const FEED_COLUMNS = [
-  "sales",
-  "issuances",
-  "dispensers",
-  "dispenses",
-  "orders",
-  "sends",
-  "fairmints",
-  "dividends",
-  "destructions",
-  "pools",
-  "subassets",
-  "updated_at",
-] as const;
-
 function upsertSet(columns: readonly string[]): string {
   return columns.map((column) => `${column}=excluded.${column}`).join(",");
 }
@@ -117,70 +58,27 @@ function addressSignalValue(row: SourceRow, column: (typeof ADDRESS_SIGNAL_COLUM
   return row[column] ?? 0;
 }
 
-function assetSignalValue(row: SourceRow, column: (typeof ASSET_SIGNAL_COLUMNS)[number]): unknown {
-  if (["divisible", "locked", "holder_cohesion", "cohesion_edges", "cohesion_strong"].includes(column)) {
-    return row[column] ?? null;
-  }
-  return row[column] ?? 0;
-}
-
 async function relationCount(db: D1Database, table: string): Promise<number> {
   return Number((await db.prepare(`SELECT COUNT(*) count FROM ${table}`).first<{ count: number }>())?.count ?? 0);
 }
 
 /**
- * Reconcile rows appended while the source snapshot was being imported. These three source projections are
- * append-only by identity, so the compact count is also the first unimported source rowid. Existing identities
- * continue to be maintained by event replay; this closes only the snapshot's moving-tail interval.
+ * Close the append-only address-signal tail that moved while its source snapshot was imported. Compact-native
+ * owners maintain every other projection directly; they must never be overwritten from the source database.
  */
-export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_DB">, scope: CoreRecentProjection) {
+export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_DB">, _scope: CoreRecentProjection) {
   const seedBlock = Number.parseInt((await getCoreState(env.CORE_DB, "seed_block_index")) ?? "0", 10);
   if (!Number.isSafeInteger(seedBlock) || seedBlock <= 0) throw new Error("compact seed block is missing");
-  const empty = { results: [] as SourceRow[] };
-  const addresses =
-    scope === "address_signals"
-      ? await env.DB.prepare(`SELECT rowid,* FROM address_signals WHERE rowid>? ORDER BY rowid`)
-          .bind(await relationCount(env.CORE_DB, "address_signals"))
-          .all<SourceRow>()
-      : empty;
-  const assets =
-    scope === "asset_signals"
-      ? await env.DB.prepare(`SELECT rowid,* FROM asset_signals WHERE rowid>? ORDER BY rowid`)
-          .bind(await relationCount(env.CORE_DB, "asset_signals"))
-          .all<SourceRow>()
-      : empty;
-  const feeds =
-    scope === "asset_feed_counts"
-      ? await env.DB.prepare(`SELECT rowid,* FROM asset_feed_counts WHERE rowid>? ORDER BY rowid`)
-          .bind(await relationCount(env.CORE_DB, "asset_feed_counts"))
-          .all<SourceRow>()
-      : empty;
-  const exchange =
-    scope === "exchange_top_assets"
-      ? await env.DB.prepare(
-          `SELECT generation,asset,depositors FROM exchange_top_assets ORDER BY generation,asset`,
-        ).all<SourceRow>()
-      : empty;
-  const assetNames = assets.results.map((row) => String(row.asset));
+  const addresses = await env.DB.prepare(`SELECT rowid,* FROM address_signals WHERE rowid>? ORDER BY rowid`)
+    .bind(await relationCount(env.CORE_DB, "address_signals"))
+    .all<SourceRow>();
 
   const addressNames = new Set<string>();
   for (const row of addresses.results) addressNames.add(String(row.address));
-  for (const row of assets.results) if (nullableString(row.issuer)) addressNames.add(String(row.issuer));
-  const allAssets = new Set<string>([
-    ...assetNames,
-    ...feeds.results.map((row) => String(row.asset)),
-    ...exchange.results.map((row) => String(row.asset)),
-  ]);
   if (addressNames.size > 0)
     await env.CORE_DB.batch(
       [...addressNames].map((address) =>
         env.CORE_DB.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address),
-      ),
-    );
-  if (allAssets.size > 0)
-    await env.CORE_DB.batch(
-      [...allAssets].map((asset) =>
-        env.CORE_DB.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES(?)`).bind(asset),
       ),
     );
 
@@ -199,48 +97,10 @@ export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_
         ),
     );
 
-  const assetSql = `INSERT INTO asset_signals(asset_id,issuer_id,${ASSET_SIGNAL_COLUMNS.join(",")})
-    VALUES((SELECT asset_id FROM asset_dictionary WHERE asset=?),
-           (SELECT address_id FROM address_dictionary WHERE address=?),${ASSET_SIGNAL_COLUMNS.map(() => "?").join(",")})
-    ON CONFLICT(asset_id) DO UPDATE SET issuer_id=excluded.issuer_id,${upsertSet(ASSET_SIGNAL_COLUMNS)}`;
-  for (let index = 0; index < assets.results.length; index += 80)
-    await env.CORE_DB.batch(
-      assets.results
-        .slice(index, index + 80)
-        .map((row) =>
-          env.CORE_DB.prepare(assetSql).bind(
-            row.asset,
-            row.issuer ?? null,
-            ...ASSET_SIGNAL_COLUMNS.map((column) => assetSignalValue(row, column)),
-          ),
-        ),
-    );
-
-  const feedSql = `INSERT INTO asset_feed_counts(asset_id,${FEED_COLUMNS.join(",")})
-    VALUES((SELECT asset_id FROM asset_dictionary WHERE asset=?),${FEED_COLUMNS.map(() => "?").join(",")})
-    ON CONFLICT(asset_id) DO UPDATE SET ${upsertSet(FEED_COLUMNS)}`;
-  for (let index = 0; index < feeds.results.length; index += 80)
-    await env.CORE_DB.batch(
-      feeds.results
-        .slice(index, index + 80)
-        .map((row) => env.CORE_DB.prepare(feedSql).bind(row.asset, ...FEED_COLUMNS.map((column) => row[column] ?? 0))),
-    );
-
-  for (let index = 0; index < exchange.results.length; index += 80)
-    await env.CORE_DB.batch(
-      exchange.results.slice(index, index + 80).map((row) =>
-        env.CORE_DB.prepare(
-          `INSERT INTO exchange_top_assets(generation,asset_id,depositors)
-       SELECT ?,asset_id,? FROM asset_dictionary WHERE asset=?
-       ON CONFLICT(generation,asset_id) DO UPDATE SET depositors=excluded.depositors`,
-        ).bind(row.generation, row.depositors, row.asset),
-      ),
-    );
-
   return {
-    scope,
+    scope: "address_signals" as const,
     seed_block: seedBlock,
-    processed: addresses.results.length + assets.results.length + feeds.results.length + exchange.results.length,
+    processed: addresses.results.length,
   };
 }
 
