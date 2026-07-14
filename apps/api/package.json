@@ -33,6 +33,7 @@
     "build:core:sql:rechunk": "node ops/rechunk-compact-core-sql.mjs",
     "build:core:sql:verify": "node ops/verify-compact-core-sql.mjs",
     "import:core:sql": "node ops/import-compact-core-sql.mjs",
+    "finalize:core": "node ops/finalize-compact-core.mjs",
     "migrate:recovery:local": "wrangler d1 migrations apply xcpio-btc --local",
     "migrate:recovery:remote": "wrangler d1 migrations apply xcpio-btc --remote"
   },
