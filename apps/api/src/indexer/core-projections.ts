@@ -435,38 +435,45 @@ function upsertSet(columns: readonly string[]): string {
   return columns.map((column) => `${column}=excluded.${column}`).join(",");
 }
 
-/** Reconcile the bounded post-seed mutable set rather than rescanning hundreds of thousands of stable signals. */
+async function relationCount(db: D1Database, table: string): Promise<number> {
+  return Number((await db.prepare(`SELECT COUNT(*) count FROM ${table}`).first<{ count: number }>())?.count ?? 0);
+}
+
+/**
+ * Reconcile rows appended while the source snapshot was being imported. These three source projections are
+ * append-only by identity, so the compact count is also the first unimported source rowid. Existing identities
+ * continue to be maintained by event replay; this closes only the snapshot's moving-tail interval.
+ */
 export async function reconcileRecentCoreProjections(env: Pick<Env, "DB" | "CORE_DB">) {
   const seedBlock = Number.parseInt((await state(env.CORE_DB, "seed_block_index")) ?? "0", 10);
   if (!Number.isSafeInteger(seedBlock) || seedBlock <= 0) throw new Error("compact seed block is missing");
-  const [addresses, assets, exchange] = await Promise.all([
-    env.DB.prepare(`SELECT * FROM address_signals WHERE last_block>? ORDER BY address`)
-      .bind(seedBlock)
-      .all<SourceRow>(),
-    env.DB.prepare(
-      `SELECT s.* FROM asset_signals s JOIN assets a ON a.asset=s.asset
-        WHERE a.first_issuance_block_index>? ORDER BY s.asset`,
-    )
-      .bind(seedBlock)
-      .all<SourceRow>(),
-    env.DB.prepare(
-      `SELECT generation,asset,depositors FROM exchange_top_assets ORDER BY generation,asset`,
-    ).all<SourceRow>(),
+  const [addressCount, assetCount, feedCount] = await Promise.all([
+    relationCount(env.CORE_DB, "address_signals"),
+    relationCount(env.CORE_DB, "asset_signals"),
+    relationCount(env.CORE_DB, "asset_feed_counts"),
   ]);
+  const addresses = await env.DB.prepare(`SELECT rowid,* FROM address_signals WHERE rowid>? ORDER BY rowid`)
+    .bind(addressCount)
+    .all<SourceRow>();
+  const assets = await env.DB.prepare(`SELECT rowid,* FROM asset_signals WHERE rowid>? ORDER BY rowid`)
+    .bind(assetCount)
+    .all<SourceRow>();
+  const feeds = await env.DB.prepare(`SELECT rowid,* FROM asset_feed_counts WHERE rowid>? ORDER BY rowid`)
+    .bind(feedCount)
+    .all<SourceRow>();
+  const exchange = await env.DB.prepare(
+    `SELECT generation,asset,depositors FROM exchange_top_assets ORDER BY generation,asset`,
+  ).all<SourceRow>();
   const assetNames = assets.results.map((row) => String(row.asset));
-  const feeds =
-    assetNames.length === 0
-      ? { results: [] as SourceRow[] }
-      : await env.DB.prepare(
-          `SELECT * FROM asset_feed_counts WHERE asset IN (${assetNames.map(() => "?").join(",")}) ORDER BY asset`,
-        )
-          .bind(...assetNames)
-          .all<SourceRow>();
 
   const addressNames = new Set<string>();
   for (const row of addresses.results) addressNames.add(String(row.address));
   for (const row of assets.results) if (nullableString(row.issuer)) addressNames.add(String(row.issuer));
-  const allAssets = new Set<string>([...assetNames, ...exchange.results.map((row) => String(row.asset))]);
+  const allAssets = new Set<string>([
+    ...assetNames,
+    ...feeds.results.map((row) => String(row.asset)),
+    ...exchange.results.map((row) => String(row.asset)),
+  ]);
   if (addressNames.size > 0)
     await env.CORE_DB.batch(
       [...addressNames].map((address) =>
