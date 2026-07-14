@@ -6,6 +6,12 @@ import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
 import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
+  listBlocks as listCoreBlocks,
+  getBlock as getCoreBlock,
+  blockTransactions as coreBlockTransactions,
+} from "#api/queries/core";
+import { coreReadsEnabled } from "#api/read/core-read-gate";
+import {
   listRecords,
   classifyTx,
   recordsByTxHash,
@@ -23,15 +29,18 @@ export const chain = router();
 chain.get("/v2/blocks", async (c) => {
   const l = lim(c),
     o = off(c);
-  const rows = await listBlocks(c.env.DB, l, o);
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreBlocks(c.env.CORE_DB, l, o)
+    : await listBlocks(c.env.DB, l, o);
   return J(c, { result: rows, next_offset: rows.length === l ? o + l : null }, 15);
 });
 
 chain.get("/v2/blocks/:n", async (c) => {
   const n = boundedInteger(c.req.param("n"), { defaultValue: -1, min: -1 });
-  const b = await getBlock(c.env.DB, n);
+  const compact = await coreReadsEnabled(c.env);
+  const b = compact ? await getCoreBlock(c.env.CORE_DB, n) : await getBlock(c.env.DB, n);
   if (!b) return c.json({ error: "Block not found" }, 404);
-  const transactions = await blockTransactions(c.env.DB, n);
+  const transactions = compact ? await coreBlockTransactions(c.env.CORE_DB, n) : await blockTransactions(c.env.DB, n);
   return J(c, { result: { ...b, transactions } });
 });
 
