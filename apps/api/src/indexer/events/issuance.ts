@@ -250,23 +250,41 @@ const issuance: Handler = ({ ev, p, b, bt }, ctx) => {
     // protocol's own token registry (e.g. the SRC-20 tick), which is not Counterparty data.
     const st = classifyStamp(p.description);
     if (st) {
-      const tag = (t: string) =>
-        ctx.stmts.push((db) =>
-          db
-            .prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) VALUES ('asset',?,?,'protocol')`)
-            .bind(p.asset, t),
-        );
-      tag("stamp");
-      const proto =
+      const tags = [
+        "stamp",
         st.protocol === "SRC-20"
           ? "src20"
           : st.protocol === "SRC-721"
             ? "src721"
             : st.protocol === "SRC-101"
               ? "src101"
-              : null;
-      if (proto) tag(proto);
-      if (st.protocol === "SRC-20" && st.op === "deploy") tag("src20_deploy");
+              : null,
+        st.protocol === "SRC-20" && st.op === "deploy" ? "src20_deploy" : null,
+      ].filter((tag): tag is string => tag != null);
+      for (const tag of tags)
+        ctx.stmts.push((db) =>
+          db
+            .prepare(`INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) VALUES ('asset',?,?,'protocol')`)
+            .bind(p.asset, tag),
+        );
+      if (ctx.compact) {
+        ctx.compact.stmts.push((db) =>
+          db
+            .prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`)
+            .bind(String(p.asset)),
+        );
+        for (const tag of tags)
+          ctx.compact.stmts.push((db) =>
+            db
+              .prepare(
+                `INSERT INTO tags(entity_id,tag,source)
+                 SELECT entity_id,?,'protocol' FROM entity_dictionary
+                 WHERE entity_type='asset' AND entity_key=?
+                 ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source`,
+              )
+              .bind(tag, String(p.asset)),
+          );
+      }
     }
     // CIP03 reset is the only legal divisibility mutation — apply it explicitly (chronological replay).
     if (p.reset)

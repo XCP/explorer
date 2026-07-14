@@ -252,7 +252,7 @@ test("compact asset creation, issuances, and MPMA sends preserve canonical ident
         issuer: "issuer",
         quantity: "100",
         divisible: true,
-        description: "first",
+        description: "stamp:eyJwIjogInNyYy0yMCIsICJvcCI6ICJkZXBsb3kiLCAidGljayI6ICJLRVZJTiJ9",
         mime_type: "text/plain",
         status: "valid",
       },
@@ -331,6 +331,20 @@ test("compact asset creation, issuances, and MPMA sends preserve canonical ident
       first_issuance_block_index: 100,
       last_issuance_block_index: 100,
     },
+  );
+  assert.deepEqual(
+    database
+      .prepare(
+        `SELECT tag,source FROM tags JOIN entity_dictionary USING(entity_id)
+         WHERE entity_type='asset' AND entity_key=? ORDER BY tag`,
+      )
+      .all(asset)
+      .map((row) => ({ ...row })),
+    [
+      { tag: "src20", source: "protocol" },
+      { tag: "src20_deploy", source: "protocol" },
+      { tag: "stamp", source: "protocol" },
+    ],
   );
   const issuances = database
     .prepare(`SELECT event_index,tx_index,msg_index,divisible,reset FROM issuances ORDER BY event_index`)
