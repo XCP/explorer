@@ -15,7 +15,7 @@ LEFT JOIN asset_dictionary get_asset ON get_asset.asset_id=order_row.get_asset_i
 LEFT JOIN assets give_details ON give_details.asset_id=order_row.give_asset_id
 LEFT JOIN assets get_details ON get_details.asset_id=order_row.get_asset_id`;
 
-export function listCoreOrders(db: D1Database, limit: number, offset: number): Promise<OrderRow[]> {
+export function listOrders(db: D1Database, limit: number, offset: number): Promise<OrderRow[]> {
   return q<OrderRow>(
     db,
     `${ORDER_SELECT} ORDER BY order_row.block_index DESC,order_row.tx_index DESC LIMIT ? OFFSET ?`,
@@ -37,7 +37,7 @@ export function listAssetOrders(db: D1Database, asset: string, limit: number, of
   );
 }
 
-export function listCoreOrderMatches(db: D1Database, limit: number, offset: number): Promise<OrderMatchRow[]> {
+export function listOrderMatches(db: D1Database, limit: number, offset: number): Promise<OrderMatchRow[]> {
   return q<OrderMatchRow>(
     db,
     `SELECT lower(hex(match.tx0_hash))||'_'||lower(hex(match.tx1_hash)) id,

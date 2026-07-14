@@ -4,9 +4,8 @@ import { RECORD_KINDS } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
-import { getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
-import { listBlocks, getBlock as getCoreBlock, blockTransactions as coreBlockTransactions } from "#api/queries/core";
-import { coreReadsEnabled } from "#api/read/core-read-gate";
+import { getTransaction, blockTip } from "#api/queries/chain";
+import { listBlocks, getBlock, blockTransactions } from "#api/queries/core";
 import {
   listRecords,
   classifyTx,
@@ -18,7 +17,7 @@ import {
 import { assetCollection, assetBrief } from "#api/queries/assets";
 import { mempoolTxActions } from "#api/read/mempool";
 import { boundedInteger } from "#api/http/numbers";
-import { listCoreOrderMatches, listCoreOrders } from "#api/queries/core-orders";
+import { listOrderMatches, listOrders } from "#api/queries/core-orders";
 
 export const chain = router();
 
@@ -32,10 +31,9 @@ chain.get("/v2/blocks", async (c) => {
 
 chain.get("/v2/blocks/:n", async (c) => {
   const n = boundedInteger(c.req.param("n"), { defaultValue: -1, min: -1 });
-  const compact = await coreReadsEnabled(c.env);
-  const b = compact ? await getCoreBlock(c.env.CORE_DB, n) : await getBlock(c.env.DB, n);
+  const b = await getBlock(c.env.CORE_DB, n);
   if (!b) return c.json({ error: "Block not found" }, 404);
-  const transactions = compact ? await coreBlockTransactions(c.env.CORE_DB, n) : await blockTransactions(c.env.DB, n);
+  const transactions = await blockTransactions(c.env.CORE_DB, n);
   return J(c, { result: { ...b, transactions } });
 });
 
@@ -320,12 +318,11 @@ for (const kind of RECORD_KINDS) {
   chain.get(`/v2/${kind}`, async (c) => {
     const l = lim(c),
       o = off(c);
-    const compact = await coreReadsEnabled(c.env);
     const rows =
-      compact && kind === "orders"
-        ? await listCoreOrders(c.env.CORE_DB, l, o)
-        : compact && kind === "order_matches"
-          ? await listCoreOrderMatches(c.env.CORE_DB, l, o)
+      kind === "orders"
+        ? await listOrders(c.env.CORE_DB, l, o)
+        : kind === "order_matches"
+          ? await listOrderMatches(c.env.CORE_DB, l, o)
           : await listRecords(c.env.DB, kind, l, o);
     return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
   });
