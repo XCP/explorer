@@ -36,10 +36,7 @@ interface ChangedAsset {
   asset_longname: string | null;
 }
 
-const CHANGED_ASSETS = `SELECT dictionary.asset_id,dictionary.asset,assets.asset_longname
-FROM asset_dictionary dictionary
-LEFT JOIN assets ON assets.asset_id=dictionary.asset_id
-WHERE dictionary.asset_id>? AND dictionary.asset_id IN (
+const CHANGED_ASSETS = `WITH protocol_changes(asset_id) AS (
   SELECT asset_id FROM issuances WHERE block_index>?
   UNION SELECT asset_id FROM dispensers WHERE block_index>?
   UNION SELECT asset_id FROM dispenses WHERE block_index>?
@@ -48,7 +45,8 @@ WHERE dictionary.asset_id>? AND dictionary.asset_id IN (
   UNION SELECT asset_id FROM sends WHERE block_index>?
   UNION SELECT asset_id FROM fairmints WHERE block_index>?
   UNION SELECT asset_id FROM dividends WHERE block_index>?
-  UNION SELECT dividend_asset_id FROM dividends WHERE block_index>?
+), market_changes(asset_id) AS (
+  SELECT dividend_asset_id FROM dividends WHERE block_index>?
   UNION SELECT asset_id FROM destructions WHERE block_index>?
   UNION SELECT asset_a_id FROM pools WHERE updated_block_index>?
   UNION SELECT asset_b_id FROM pools WHERE updated_block_index>?
@@ -57,7 +55,13 @@ WHERE dictionary.asset_id>? AND dictionary.asset_id IN (
     WHERE pools.updated_block_index>?
   UNION SELECT asset_id FROM trades WHERE block_index>?
   UNION SELECT asset_id FROM assets WHERE last_issuance_block_index>?
+), changed(asset_id) AS (
+  SELECT asset_id FROM protocol_changes UNION SELECT asset_id FROM market_changes
 )
+SELECT dictionary.asset_id,dictionary.asset,assets.asset_longname
+FROM asset_dictionary dictionary
+LEFT JOIN assets ON assets.asset_id=dictionary.asset_id
+WHERE dictionary.asset_id>? AND dictionary.asset_id IN (SELECT asset_id FROM changed)
 ORDER BY dictionary.asset_id LIMIT ?`;
 
 function parentAssets(longname: string | null): string[] {
@@ -79,7 +83,7 @@ export async function catchUpCoreAssetFeedCounts(db: D1Database, rowsPerPage = 1
   const limit = Math.max(1, Math.min(rowsPerPage, 250));
   const changed = await db
     .prepare(CHANGED_ASSETS)
-    .bind(cursor, ...Array(15).fill(seedBlock), limit)
+    .bind(...Array(15).fill(seedBlock), cursor, limit)
     .all<ChangedAsset>();
   const assets = changed.results.flatMap((row) => [row.asset, ...parentAssets(row.asset_longname)]);
   await rebuildCoreAssetFeedCounts(db, assets);
