@@ -13,10 +13,9 @@ export type { Env } from "#api/env";
 import { describeHttpError, requestId } from "#api/http/errors";
 import { syncEvents, backfillLedger } from "#api/indexer/sync";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
-import { runSignalsStep, runSignalsCascade, type SignalsCascadeResult } from "#api/indexer/signals";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
-import { buildTags, buildTagsScoped } from "#api/indexer/tags";
+import { buildTags } from "#api/indexer/tags";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { crawlCollections } from "#api/indexer/collections";
 import { crawlEmblemSales } from "#api/indexer/emblem-sales";
@@ -212,16 +211,8 @@ export default {
               }
             }
           });
-          // Layer-B per-block cascade: recompute only the entities touched since the last tick (cheap, fresh).
-          // Returns needs_backfill until the first full rebuild cycle completes and anchors the cursor at tip.
-          // Its return carries the dirty entity sets, which we reuse for the scoped tag rebuild below (one
-          // derivation shared by signals + tags).
-          const cascade: SignalsCascadeResult | null =
-            (await runScheduledJob("runSignalsCascade", () => runSignalsCascade(env))) ?? null;
-          // Layer-C backstop: advance the FULL rebuild a couple bounded passes per tick. It maintains the
-          // periodic/fan-out globals (community avgs, low-quality propagation, recent-window, tip-ages, infra
-          // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
-          await runScheduledJob("runSignalsStep", () => runSignalsStep(env, 2));
+          // Compact-native signal maintenance uses the same convergent writers for event refreshes and
+          // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
           await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
           // Publish the expensive exchange depositor aggregate off the request path (~daily). The first build
@@ -231,11 +222,6 @@ export default {
           ).first<{ value: string }>();
           if (ledgerBackfill?.value !== "1")
             await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
-          // Rebuild the polymorphic tags (categorical layer) for JUST the entities the cascade touched — the
-          // dirty-scoped equivalent of buildTags (no 430k-row global DELETE+reinsert every tick).
-          if (cascade?.dirty) {
-            await runScheduledJob("buildTagsScoped", () => buildTagsScoped(env, cascade.dirty!));
-          }
           // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
           await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
           // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).

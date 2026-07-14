@@ -1,7 +1,8 @@
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const UPSERT = `INSERT INTO asset_signals(
-  asset_id,issuer_id,divisible,locked,holders,top1_pct,burned_pct,trades,self_trade_pct,
+  asset_id,issuer_id,divisible,locked,holders,top1_pct,burned_pct,holder_breadth,
+  pct_creator_holders,avg_holder_dex,trades,self_trade_pct,low_quality,
   first_trade_blk,last_trade_blk,dispenses,dispense_btc,distinct_traders,distinct_dispensers,
   age_blocks,recent_events,recency_blocks,max_dispense_btc,max_trade_xcp,supply,
   max_realized_usd,distinct_dispense_buyers,max_dispense_btc_clean,emblem_trades
@@ -13,7 +14,10 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
       coalesce(max(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END)
         *100.0/nullif(sum(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END),0),0) top1_pct,
       coalesce(sum(CASE WHEN signal.is_burn=1 THEN CAST(balance.quantity AS REAL) ELSE 0 END)
-        *100.0/nullif(sum(CAST(balance.quantity AS REAL)),0),0) burned_pct
+        *100.0/nullif(sum(CAST(balance.quantity AS REAL)),0),0) burned_pct,
+      CASE WHEN count(*)>=3 THEN avg(coalesce(signal.assets_held,0)) ELSE 0 END holder_breadth,
+      CASE WHEN count(*)>=3 THEN avg(CASE WHEN signal.survived_assets>0 THEN 1.0 ELSE 0 END)*100 ELSE 0 END pct_creator_holders,
+      CASE WHEN count(*)>=3 THEN avg(coalesce(signal.dex_trades,0)) ELSE 0 END avg_holder_dex
     FROM balances balance LEFT JOIN address_signals signal ON signal.address_id=balance.address_id
     WHERE balance.asset_id=(SELECT asset_id FROM identity) AND balance.address_id IS NOT NULL
       AND CAST(balance.quantity AS INTEGER)>0
@@ -64,8 +68,14 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
     FROM trades WHERE asset_id=(SELECT asset_id FROM identity)
   )
 SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,
-  holding.holders,holding.top1_pct,holding.burned_pct,
-  market.trades,market.self_trade_pct,market.first_trade_blk,market.last_trade_blk,
+  holding.holders,holding.top1_pct,holding.burned_pct,holding.holder_breadth,
+  holding.pct_creator_holders,holding.avg_holder_dex,
+  market.trades,market.self_trade_pct,
+  CASE WHEN (market.self_trade_pct>=50 AND market.trades>=30) OR EXISTS(
+    SELECT 1 FROM curated item WHERE item.kind='lowq'
+      AND item.key=(SELECT asset FROM asset_dictionary WHERE asset_id=identity.asset_id)
+  ) THEN 1 ELSE 0 END,
+  market.first_trade_blk,market.last_trade_blk,
   dispense.dispenses,dispense.dispense_btc,market.distinct_traders,
   (SELECT count(DISTINCT coalesce(origin_id,source_id)) FROM dispensers
     WHERE asset_id=identity.asset_id),
@@ -79,6 +89,8 @@ WHERE 1
 ON CONFLICT(asset_id) DO UPDATE SET
   issuer_id=excluded.issuer_id,divisible=excluded.divisible,locked=excluded.locked,
   holders=excluded.holders,top1_pct=excluded.top1_pct,burned_pct=excluded.burned_pct,
+  holder_breadth=excluded.holder_breadth,pct_creator_holders=excluded.pct_creator_holders,
+  avg_holder_dex=excluded.avg_holder_dex,low_quality=excluded.low_quality,
   trades=excluded.trades,self_trade_pct=excluded.self_trade_pct,
   first_trade_blk=excluded.first_trade_blk,last_trade_blk=excluded.last_trade_blk,
   dispenses=excluded.dispenses,dispense_btc=excluded.dispense_btc,
@@ -114,6 +126,22 @@ export async function runCoreAssetSignalsStep(
     .bind(cursor, limit)
     .all<{ asset_id: number; asset: string }>();
   if (rows.results.length === 0) {
+    const lowQualityIssuers = await db
+      .prepare(
+        `SELECT issuer_id FROM asset_signals WHERE issuer_id IS NOT NULL
+         GROUP BY issuer_id HAVING sum(low_quality)>=4
+           AND sum(low_quality)*1.0/count(*)>=0.5`,
+      )
+      .all<{ issuer_id: number }>();
+    for (let index = 0; index < lowQualityIssuers.results.length; index += 50) {
+      await db.batch(
+        lowQualityIssuers.results
+          .slice(index, index + 50)
+          .map(({ issuer_id }) =>
+            db.prepare(`UPDATE asset_signals SET low_quality=1 WHERE low_quality=0 AND issuer_id=?`).bind(issuer_id),
+          ),
+      );
+    }
     await setCoreState(db, "asset_signals_cursor", 0);
     await setCoreState(db, "asset_signals_cycles", (await getCoreStateInt(db, "asset_signals_cycles")) + 1);
     return { processed: 0, cursor: 0, cycleComplete: true };

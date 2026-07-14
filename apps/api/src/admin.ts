@@ -5,7 +5,8 @@
 import { Hono } from "hono";
 import type { Env } from "#api/env";
 import { syncEvents, syncCompactEvents, backfillLedger } from "#api/indexer/sync";
-import { runSignalsStep, runSignalsCascade, verifySignals } from "#api/indexer/signals";
+import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
+import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { buildTags } from "#api/indexer/tags";
@@ -191,32 +192,19 @@ admin.post("/admin/reindex", async (c) => {
   return c.json({ ok: true, note: "cursor reset to -1; next sync wipes balances+snapshots and replays from event 0" });
 });
 
-// Rebuild precomputed reputation signal tables (address_signals + asset_signals). Heavy; cron advances
-// it a couple bounded passes per caught-up tick. Manual trigger here for on-demand refresh.
+// Advance both compact-native reputation projections. Cron runs the same bounded repair steps.
 admin.post("/admin/refresh-signals", async (c) => {
-  const steps = boundedInteger(c.req.query("steps"), { defaultValue: 3, min: 1, max: 6 });
-  return c.json(await runSignalsStep(c.env, steps));
+  const limit = boundedInteger(c.req.query("limit"), { defaultValue: 400, min: 1, max: 1000 });
+  const [assets, addresses] = await Promise.all([
+    runCoreAssetSignalsStep(c.env.CORE_DB, limit),
+    runCoreAddressSignalsStep(c.env.CORE_DB, limit),
+  ]);
+  return c.json({ assets, addresses });
 });
 
 // Force an atomic rebuild of the tiny exchange leaderboard. Normally maintained daily by cron.
 admin.post("/admin/refresh-exchange-top-assets", async (c) => {
   return c.json(await refreshExchangeTopAssets(c.env));
-});
-
-// Per-block dirty CASCADE (Layer B): recompute only the entities touched since the cascade cursor. Loop until
-// caught_up. Returns needs_backfill until a full runSignalsStep cycle has anchored the cursor at tip.
-admin.post("/admin/cascade-signals", async (c) => {
-  return c.json(await runSignalsCascade(c.env));
-});
-
-// VERIFIER (safety gate): recompute one entity's non-periodic feature columns via the dirty `.scoped` SQL and
-// diff against the value the full rebuild left. identical:true ⇒ the cascade matches the canonical rebuild.
-//   /admin/verify-signals?scope=asset&id=RAREPEPE   ·   ?scope=address&id=1GQ...
-admin.post("/admin/verify-signals", async (c) => {
-  const scope = c.req.query("scope") === "address" ? "address" : "asset";
-  const id = c.req.query("id");
-  if (!id) return c.json({ error: "need ?id=" }, 400);
-  return c.json(await verifySignals(c.env, scope, id));
 });
 
 // Advance the Emblem Vault crawl one step: enumerate token ids (Alchemy, per-contract pageKey cursor) +

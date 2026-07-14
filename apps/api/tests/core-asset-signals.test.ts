@@ -109,3 +109,33 @@ test("compact asset signal repair walks every identity and durably completes a c
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signals`).get()?.count, assets);
   assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='asset_signals_cycles'`).get()?.value, "1");
 });
+
+test("compact asset signals derive holder community features and propagate issuer quality", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO blocks(block_index,block_hash,block_time) VALUES(200,zeroblob(32),1);
+    INSERT INTO address_dictionary(address_id,address) VALUES(10,'issuer'),(20,'h1'),(21,'h2'),(22,'h3');
+    INSERT INTO address_signals(address_id,assets_held,survived_assets,dex_trades)
+      VALUES(20,3,1,2),(21,6,0,4),(22,9,1,6);
+    INSERT INTO asset_dictionary(asset) VALUES('A'),('B'),('C'),('D'),('E'),('F'),('G'),('H');
+    INSERT INTO assets(asset_id,type,issuer_id,divisible,locked,supply_normalized,first_issuance_block_index)
+      SELECT asset_id,'asset',10,0,0,'100',100 FROM asset_dictionary WHERE asset NOT IN ('BTC','XCP');
+    INSERT INTO balances(balance_id,address_id,asset_id,quantity,updated_event_index)
+      SELECT row_number() OVER (),holder.address_id,asset.asset_id,'1',1
+      FROM asset_dictionary asset CROSS JOIN (SELECT 20 address_id UNION ALL SELECT 21 UNION ALL SELECT 22) holder;
+    INSERT INTO curated(kind,key) VALUES('lowq','A'),('lowq','B'),('lowq','C'),('lowq','D');
+  `);
+
+  const core = d1(db);
+  const assetCount = db.prepare(`SELECT count(*) count FROM assets`).get()?.count;
+  assert.equal((await runCoreAssetSignalsStep(core, 20)).processed, assetCount);
+  assert.equal((await runCoreAssetSignalsStep(core, 20)).cycleComplete, true);
+  const community = db
+    .prepare(`SELECT holder_breadth,pct_creator_holders,avg_holder_dex FROM asset_signals LIMIT 1`)
+    .get() as Record<string, number>;
+  assert.equal(community.holder_breadth, 6);
+  assert.ok(Math.abs(community.pct_creator_holders - 200 / 3) < 1e-9);
+  assert.equal(community.avg_holder_dex, 4);
+  assert.equal(db.prepare(`SELECT sum(low_quality) count FROM asset_signals`).get()?.count, 8);
+});
