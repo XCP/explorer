@@ -261,8 +261,10 @@ export function reputationDistribution(
 export function reputationTop(db: D1Database, expr: string, notInfra: string): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
-    `SELECT address, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
-     FROM address_signals WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`,
+    `SELECT dictionary.address,ROUND((${expr}),2) raw,signal.survived_assets,signal.assets_held,
+       signal.dex_trades,signal.stamps_created,signal.dividends,signal.btc_fees
+     FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+     WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`,
   );
 }
 
@@ -320,8 +322,10 @@ export function reputationTierMembers(
 ): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
-    `SELECT address, ROUND((${expr}),2) raw, survived_assets, assets_held, dex_trades, stamps_created, dividends, btc_fees
-     FROM address_signals WHERE ${notInfra} AND (${expr})>=${minRaw} AND (${expr})<${maxRaw}
+    `SELECT dictionary.address,ROUND((${expr}),2) raw,signal.survived_assets,signal.assets_held,
+       signal.dex_trades,signal.stamps_created,signal.dividends,signal.btc_fees
+     FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+     WHERE ${notInfra} AND (${expr})>=${minRaw} AND (${expr})<${maxRaw}
      ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
     limit,
     offset,

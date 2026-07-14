@@ -202,13 +202,13 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
 // recalibrate the percentile anchors (set pct.p50/p90/p99 to where the population actually lands). Cheap:
 // one GROUP BY (no window sort). Excludes infra (exchange/deposit/burn/vault) — they aren't user scores.
 addresses.get("/v2/reputation/review", async (c) => {
-  const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
+  const tip = Number((await maxBlockIndex(c.env.CORE_DB))?.m) || 0;
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip); // built from the SAME factor config as the read scorer
   const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const distribution = await reputationDistribution(c.env.DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(
+  const distribution = await reputationDistribution(c.env.CORE_DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(
     () => null,
   );
-  const top = await reputationTop(c.env.DB, expr, NOT_INFRA).catch(() => []);
+  const top = await reputationTop(c.env.CORE_DB, expr, NOT_INFRA).catch(() => []);
   return J(
     c,
     {
@@ -232,13 +232,13 @@ addresses.get("/v2/reputation/review", async (c) => {
 // page; each tier deep-links to its membership below.
 addresses.get("/v2/reputation/tiers", (c) =>
   cached(c, "reputation:tiers", { ttl: 3600, edge: 300, swr: 86400 }, async () => {
-    const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
+    const tip = Number((await maxBlockIndex(c.env.CORE_DB))?.m) || 0;
     const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
     const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
     const [d, f, histogram] = await Promise.all([
-      reputationDistribution(c.env.DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(() => null),
-      reputationFunnel(c.env.DB).catch(() => null),
-      reputationHistogram(c.env.DB, expr, NOT_INFRA, 40).catch(() => []),
+      reputationDistribution(c.env.CORE_DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(() => null),
+      reputationFunnel(c.env.CORE_DB).catch(() => null),
+      reputationHistogram(c.env.CORE_DB, expr, NOT_INFRA, 40).catch(() => []),
     ]);
     const counts: Record<string, number> = {
       OG: d?.og ?? 0,
@@ -286,9 +286,9 @@ addresses.get("/v2/reputation/tiers/:tier", async (c) => {
   if (idx < 0) return c.json({ error: "Unknown reputation tier" }, 404);
   const t = ADDRESS_TIERS[idx];
   const maxRaw = idx === 0 ? 1e9 : ADDRESS_TIERS[idx - 1].minRaw; // upper bound = the next-higher tier's cutoff
-  const tip = Number((await maxBlockIndex(c.env.DB))?.m) || 0;
+  const tip = Number((await maxBlockIndex(c.env.CORE_DB))?.m) || 0;
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
-  const members = await reputationTierMembers(c.env.DB, expr, NOT_INFRA, t.minRaw, maxRaw, lim(c), off(c)).catch(
+  const members = await reputationTierMembers(c.env.CORE_DB, expr, NOT_INFRA, t.minRaw, maxRaw, lim(c), off(c)).catch(
     () => [],
   );
   const summary = { tier: t.tier, slug, min_raw: t.minRaw, meaning: t.meaning, count: 0 };
