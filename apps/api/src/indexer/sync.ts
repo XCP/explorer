@@ -388,6 +388,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       await batchAll(env.DB, ctx.stmts);
       await batchAll(env.LEDGER_DB, [...dictionaryStatements(ctx.identities), ...ctx.ledgerStmts]);
       await applyBalances(env, ctx, followingWindow);
+      lastBlock = Math.max(lastBlock, ctx.maxBlock);
       if (ctx.compact) {
         await batchAll(env.CORE_DB, [
           ...dictionaryStatements(ctx.compact.identities),
@@ -401,17 +402,14 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
           env.CORE_DB,
           evs.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
         );
-        await env.CORE_DB.prepare(
-          `INSERT INTO core_state(key,value) VALUES('last_event_index',?)
-           ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-        )
-          .bind(String(evs[evs.length - 1].event_index))
-          .run();
+        await env.CORE_DB.batch([
+          setCoreStateStmt(env.CORE_DB, "last_event_index", String(evs[evs.length - 1].event_index)),
+          setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+        ]);
       }
       if (ctx.supplyDirty.size > 0) await enqueueSupply(env.DB, [...ctx.supplyDirty]);
 
       lastIdx = evs[evs.length - 1].event_index;
-      lastBlock = Math.max(lastBlock, ctx.maxBlock);
       applied += evs.length;
       await env.DB.batch([
         setStateStmt(env.DB, "last_event_index", String(lastIdx)),
