@@ -65,12 +65,12 @@ stats.get("/v2/leaderboards", async (c) => {
   // Fast reads from precomputed signal tables. Low-quality assets (bridge/exchange tokens + wash) are
   // HIDDEN by default — they distort the BTC/dispense boards (?include_hidden=1 to show them).
   const incl = c.req.query("include_hidden") === "1";
-  return cached(c, `lb:${incl ? 1 : 0}`, { ttl: 600, edge: 120, swr: 86400 }, async () => {
+  return cached(c, `leaderboards:signals:${incl ? 1 : 0}`, { ttl: 600, edge: 120, swr: 86400 }, async () => {
     // reputation/quality boards use the composed score (same config as the read scorer). tip ages the terms.
-    const tip = await maxBlock(c.env.DB);
+    const tip = await maxBlock(c.env.CORE_DB);
     const addrExpr = rawSqlExpr(ADDRESS_FACTORS, tip);
     const assetExpr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    const boards = await leaderboards(c.env.DB, { includeHidden: incl, addrExpr, assetExpr });
+    const boards = await leaderboards(c.env.CORE_DB, { includeHidden: incl, addrExpr, assetExpr });
     return { result: { ...boards, include_hidden: incl } };
   });
 });

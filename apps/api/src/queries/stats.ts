@@ -100,62 +100,119 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
     topQuality,
   ] = await Promise.all([
     b(
-      `SELECT address, survived_assets, assets_held FROM address_signals WHERE survived_assets>0 ORDER BY survived_assets DESC LIMIT 12`,
+      `SELECT dictionary.address,signal.survived_assets,signal.assets_held FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.survived_assets>0 ORDER BY signal.survived_assets DESC LIMIT 12`,
     ),
     b(
-      `SELECT address, assets_held, survived_assets FROM address_signals WHERE assets_held>0 ORDER BY assets_held DESC LIMIT 12`,
+      `SELECT dictionary.address,signal.assets_held,signal.survived_assets FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.assets_held>0 ORDER BY signal.assets_held DESC LIMIT 12`,
     ),
     b(
-      `SELECT address, ROUND(${dispCol},3) dispense_btc FROM address_signals WHERE ${dispCol}>0 ORDER BY ${dispCol} DESC LIMIT 12`,
+      `SELECT dictionary.address,ROUND(signal.${dispCol},3) dispense_btc FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.${dispCol}>0 ORDER BY signal.${dispCol} DESC LIMIT 12`,
     ),
     b(
-      `SELECT address, ROUND(${spendCol},3) btc_spent FROM address_signals WHERE ${spendCol}>0 ORDER BY ${spendCol} DESC LIMIT 12`,
+      `SELECT dictionary.address,ROUND(signal.${spendCol},3) btc_spent FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.${spendCol}>0 ORDER BY signal.${spendCol} DESC LIMIT 12`,
     ),
     b(
-      `SELECT holder, quantity_normalized FROM balances WHERE asset='XCP' AND holder_type='address' AND CAST(quantity AS INTEGER)>0 ORDER BY CAST(quantity AS INTEGER) DESC LIMIT 12`,
+      `SELECT address.address holder,balance.quantity_normalized FROM balances balance
+       JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id AND asset.asset='XCP'
+       JOIN address_dictionary address ON address.address_id=balance.address_id
+       WHERE CAST(balance.quantity AS INTEGER)>0 ORDER BY CAST(balance.quantity AS INTEGER) DESC LIMIT 12`,
     ),
     b(
-      `SELECT asset, asset_longname, holders FROM asset_signals WHERE holders>0${lowqF} ORDER BY holders DESC LIMIT 12`,
+      `SELECT dictionary.asset,state.asset_longname,signal.holders FROM asset_signals signal
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       WHERE signal.holders>0${lowqF} ORDER BY signal.holders DESC LIMIT 12`,
     ),
-    b(`SELECT asset, asset_longname, trades FROM asset_signals WHERE trades>0${lowqF} ORDER BY trades DESC LIMIT 12`),
     b(
-      `SELECT asset, asset_longname, ROUND((last_trade_blk-first_trade_blk)/4320.0,1) months_traded FROM asset_signals WHERE trades>=50 AND self_trade_pct<30${lowqF} ORDER BY (last_trade_blk-first_trade_blk) DESC LIMIT 12`,
+      `SELECT dictionary.asset,state.asset_longname,signal.trades FROM asset_signals signal
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       WHERE signal.trades>0${lowqF} ORDER BY signal.trades DESC LIMIT 12`,
     ),
     b(
-      `SELECT asset, asset_longname, ROUND(dispense_btc,3) dispense_btc FROM asset_signals WHERE dispense_btc>0${lowqF} ORDER BY dispense_btc DESC LIMIT 12`,
+      `SELECT dictionary.asset,state.asset_longname,
+       ROUND((signal.last_trade_blk-signal.first_trade_blk)/4320.0,1) months_traded
+       FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       WHERE signal.trades>=50 AND signal.self_trade_pct<30${lowqF}
+       ORDER BY (signal.last_trade_blk-signal.first_trade_blk) DESC LIMIT 12`,
+    ),
+    b(
+      `SELECT dictionary.asset,state.asset_longname,ROUND(signal.dispense_btc,3) dispense_btc
+       FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       WHERE signal.dispense_btc>0${lowqF} ORDER BY signal.dispense_btc DESC LIMIT 12`,
     ),
     // trusted dispenser operators, creator "hits", and two asset-quality lenses
     b(
-      `SELECT address, ROUND(disp_trust,1) disp_trust, dispenses FROM address_signals WHERE disp_trust>0 AND is_exchange=0 ORDER BY disp_trust DESC LIMIT 12`,
+      `SELECT dictionary.address,ROUND(signal.disp_trust,1) disp_trust,signal.dispenses
+       FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.disp_trust>0 AND signal.is_exchange=0 ORDER BY signal.disp_trust DESC LIMIT 12`,
     ),
     b(
-      `SELECT address, assets_hits, survived_assets FROM address_signals WHERE assets_hits>0 ORDER BY assets_hits DESC LIMIT 12`,
+      `SELECT dictionary.address,signal.assets_hits,signal.survived_assets FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.assets_hits>0 ORDER BY signal.assets_hits DESC LIMIT 12`,
     ),
     b(
-      `SELECT asset, asset_longname, ROUND(holder_breadth,0) holder_breadth, holders FROM asset_signals WHERE holders>=25${lowqF} ORDER BY holder_breadth DESC LIMIT 12`,
+      `SELECT dictionary.asset,state.asset_longname,ROUND(signal.holder_breadth,0) holder_breadth,signal.holders
+       FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       WHERE signal.holders>=25${lowqF} ORDER BY signal.holder_breadth DESC LIMIT 12`,
     ),
     b(
-      `SELECT asset, asset_longname, ROUND(pct_creator_holders,1) pct_creator_holders, holders FROM asset_signals WHERE holders>=25${lowqF} ORDER BY pct_creator_holders DESC LIMIT 12`,
+      `SELECT dictionary.asset,state.asset_longname,ROUND(signal.pct_creator_holders,1) pct_creator_holders,
+       signal.holders FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       WHERE signal.holders>=25${lowqF} ORDER BY signal.pct_creator_holders DESC LIMIT 12`,
     ),
     // Bitcoin Stamps / SRC-20 segmentation boards
     b(
-      `SELECT address, stamps_created, src20_deploys FROM address_signals WHERE stamps_created>0 ORDER BY stamps_created DESC LIMIT 12`,
+      `SELECT dictionary.address,signal.stamps_created,signal.src20_deploys FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.stamps_created>0 ORDER BY signal.stamps_created DESC LIMIT 12`,
     ),
     b(
-      `SELECT address, stamps_collected FROM address_signals WHERE stamps_collected>0 ORDER BY stamps_collected DESC LIMIT 12`,
+      `SELECT dictionary.address,signal.stamps_collected FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.stamps_collected>0 ORDER BY signal.stamps_collected DESC LIMIT 12`,
     ),
     b(
-      `SELECT address, src20_deploys, stamps_created FROM address_signals WHERE src20_deploys>0 ORDER BY src20_deploys DESC LIMIT 12`,
+      `SELECT dictionary.address,signal.src20_deploys,signal.stamps_created FROM address_signals signal
+       JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+       WHERE signal.src20_deploys>0 ORDER BY signal.src20_deploys DESC LIMIT 12`,
     ),
     b(
-      `SELECT s.asset, s.asset_longname, s.holders FROM asset_signals s JOIN tags t ON t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='stamp' WHERE s.holders>0 ORDER BY s.holders DESC LIMIT 12`,
+      `SELECT dictionary.asset,state.asset_longname,signal.holders FROM asset_signals signal
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       LEFT JOIN assets state ON state.asset_id=signal.asset_id
+       JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+       JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='stamp'
+       WHERE signal.holders>0 ORDER BY signal.holders DESC LIMIT 12`,
     ),
     // reputation: highest-scoring real users (OG board) and highest-quality assets (Bluechip board)
     b(
-      `SELECT address, ROUND((${addrExpr}),1) score FROM address_signals WHERE is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 ORDER BY (${addrExpr}) DESC LIMIT 12`,
+      `WITH ranked AS (SELECT signal.address_id,(${addrExpr}) score FROM address_signals signal
+       WHERE signal.is_exchange=0 AND signal.is_deposit=0 AND signal.is_burn=0
+         AND COALESCE(signal.is_emblem_vault,0)=0 AND COALESCE(signal.likely_service,0)=0
+       ORDER BY score DESC LIMIT 12)
+       SELECT dictionary.address,ROUND(ranked.score,1) score FROM ranked
+       JOIN address_dictionary dictionary ON dictionary.address_id=ranked.address_id ORDER BY ranked.score DESC`,
     ),
     b(
-      `SELECT asset, asset_longname, ROUND((${assetExpr}),1) score FROM asset_signals WHERE (trades>0 OR dispenses>0)${lowqF} ORDER BY (${assetExpr}) DESC LIMIT 12`,
+      `WITH ranked AS (SELECT signal.asset_id,(${assetExpr}) score FROM asset_signals signal
+       WHERE (signal.trades>0 OR signal.dispenses>0)${lowqF} ORDER BY score DESC LIMIT 12)
+       SELECT dictionary.asset,state.asset_longname,ROUND(ranked.score,1) score FROM ranked
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=ranked.asset_id
+       LEFT JOIN assets state ON state.asset_id=ranked.asset_id ORDER BY ranked.score DESC`,
     ),
   ]);
   return {

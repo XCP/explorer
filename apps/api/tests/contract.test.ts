@@ -545,6 +545,37 @@ test("contract: GET /v2/reputation/asset-validation - compact vaulted lift", asy
   assert.ok(result.lift > 2 && result.median_gap > 20, "vaulted quality separation degraded");
 });
 
+test("contract: GET /v2/leaderboards - all compact signal boards populated", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/leaderboards")).result;
+  const boards = [
+    "top_creators",
+    "top_collectors",
+    "top_merchants",
+    "biggest_spenders",
+    "richest_xcp",
+    "most_held",
+    "most_traded",
+    "most_durable",
+    "top_dispensed",
+    "top_dispensers",
+    "top_hits",
+    "broadest_holders",
+    "most_creator_held",
+    "top_stamp_creators",
+    "top_stamp_collectors",
+    "top_src20_deployers",
+    "most_held_stamps",
+    "top_reputation",
+    "top_quality",
+  ];
+  for (const board of boards)
+    assert.equal(result[board]?.length, 12, `${board} must contain a full compact leaderboard`);
+  assert.equal(result.most_held[0].asset, "XCP", "most-held leader changed");
+  assert.equal(result.top_quality[0].asset, "XCP", "quality leader changed");
+  assert.equal(result.include_hidden, false, "default leaderboards must hide low-quality assets");
+});
+
 test("contract: GET /v2/mempool — MempoolActionRow envelope (may be empty)", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/mempool");
