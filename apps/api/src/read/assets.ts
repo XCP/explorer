@@ -72,6 +72,7 @@ import {
   listCoreAssetIssuances,
   listCoreAssetSends,
   listCoreAssetDispensers,
+  listCoreAssetDispenses,
   listCoreAssetDividends,
   listCoreAssetDestructions,
   listCoreAssetPools,
@@ -360,7 +361,10 @@ assets.get("/v2/assets/:asset/dispensers", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/dispenses", async (c) => {
-  const rows = await listAssetDispenses(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetDispenses(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetDispenses(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 

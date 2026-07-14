@@ -1,6 +1,7 @@
 import type { AssetFeedCounts, AssetIndexRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
 import type {
   DestructionRow,
+  DispenseRow,
   DispenserRow,
   DividendRow,
   FairmintRow,
@@ -307,6 +308,32 @@ export function listCoreAssetDispensers(
        LEFT JOIN address_signals signal ON signal.address_id=dispenser.source_id
       WHERE dispenser.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
       ORDER BY dispenser.block_index DESC,dispenser.tx_index DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetDispenses(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DispenseRow[]> {
+  return q<DispenseRow>(
+    db,
+    `SELECT lower(hex(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
+            source.address source,destination.address destination,dictionary.asset,
+            dispense.dispense_quantity_normalized,lower(hex(parent.tx_hash)) dispenser_tx_hash,
+            dispense.btc_amount,trade.usd_value
+       FROM dispenses dispense
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=dispense.asset_id
+       LEFT JOIN transactions parent ON parent.tx_index=dispense.dispenser_tx_index
+       LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
+       LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
+       LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
+      WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+      ORDER BY dispense.block_index DESC,dispense.event_index DESC LIMIT ? OFFSET ?`,
     asset,
     limit,
     offset,
