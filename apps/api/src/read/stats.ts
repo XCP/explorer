@@ -9,6 +9,7 @@ import {
   coreMetricSeries,
   coreNetworkCounts,
   coreNetworkTotals,
+  coreQualityNetworkStats,
   coreSyncOverview,
 } from "#api/queries/core-stats";
 
@@ -30,12 +31,13 @@ stats.get("/v2/status", async (c) => J(c, { result: await coreSyncOverview(c.env
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
   const days = boundedInteger(c.req.query("days"), { defaultValue: 90, min: 7, max: 365 });
+  const includeHidden = c.req.query("include_hidden") === "1";
   // Daily buckets do not justify full-history regrouping every 30 minutes. Six hours keeps today's partial
   // bucket useful while bounding each low-cardinality days variant to four producers/day.
-  return cached(c, `metrics:${days}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
+  return cached(c, `metrics:${days}:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
     // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
     const series = async (name: MetricName) =>
-      (await coreMetricSeries(c.env.CORE_DB, name, days))
+      (await coreMetricSeries(c.env.CORE_DB, name, days, includeHidden))
         .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 }))
         .reverse();
     const [transactions, issuances, dispenses, trades, sends, btc_fees, xcp_burned] = await Promise.all([
@@ -52,13 +54,15 @@ stats.get("/v2/metrics", async (c) => {
 });
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
-stats.get("/v2/stats", async (c) =>
-  cached(c, "stats", { ttl: 3600, edge: 120, swr: 86400 }, async () => {
+stats.get("/v2/stats", async (c) => {
+  const includeHidden = c.req.query("include_hidden") === "1";
+  return cached(c, `stats:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 120, swr: 86400 }, async () => {
+    if (!includeHidden) return { result: await coreQualityNetworkStats(c.env.CORE_DB) };
     const counts = await coreNetworkCounts(c.env.CORE_DB);
     const totals = await coreNetworkTotals(c.env.CORE_DB);
     return { result: { ...counts, ...totals } };
-  }),
-);
+  });
+});
 
 /* ---------- leaderboards: derived relationships across the whole dataset (cached) ---------- */
 stats.get("/v2/leaderboards", async (c) => {

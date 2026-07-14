@@ -7,6 +7,7 @@ import {
   coreMetricSeries,
   coreNetworkCounts,
   coreNetworkTotals,
+  coreQualityNetworkStats,
   coreSyncOverview,
 } from "#api/queries/core-stats";
 
@@ -123,4 +124,42 @@ test("compact daily metrics preserve day buckets and monetary normalization", as
 
   db.exec(`INSERT INTO sends VALUES(259200); DELETE FROM sends WHERE block_time=172800;`);
   assert.deepEqual(await series("sends"), [{ d: 3, v: 1 }]);
+});
+
+test("quality stats exclude low-quality asset activity without removing unscoped protocol activity", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
+    CREATE TABLE network_stats_snapshot(singleton INTEGER PRIMARY KEY,transactions INTEGER,sweeps INTEGER,broadcasts INTEGER);
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT);
+    CREATE TABLE asset_signals(asset_id INTEGER PRIMARY KEY,low_quality INTEGER);
+    CREATE TABLE assets(asset_id INTEGER); CREATE TABLE transactions(tx_index INTEGER,fee TEXT);
+    CREATE TABLE sends(tx_index INTEGER,asset_id INTEGER); CREATE TABLE issuances(tx_index INTEGER,asset_id INTEGER,status TEXT,fee_paid TEXT);
+    CREATE TABLE dispensers(tx_index INTEGER,asset_id INTEGER); CREATE TABLE dispenses(tx_index INTEGER,asset_id INTEGER);
+    CREATE TABLE orders(tx_index INTEGER,give_asset_id INTEGER,get_asset_id INTEGER);
+    CREATE TABLE order_matches(forward_asset_id INTEGER,backward_asset_id INTEGER);
+    CREATE TABLE sweeps(fee_paid TEXT); CREATE TABLE broadcasts(x INTEGER);
+    CREATE TABLE dividends(tx_index INTEGER,asset_id INTEGER,fee_paid TEXT);
+    CREATE TABLE fairmints(tx_index INTEGER,asset_id INTEGER); CREATE TABLE destructions(tx_index INTEGER,asset_id INTEGER,status TEXT,quantity TEXT);
+    CREATE TABLE balances(asset_id INTEGER,quantity TEXT);
+    INSERT INTO blocks VALUES(100);
+    INSERT INTO network_stats_snapshot VALUES(1,3,1,1);
+    INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CLEAN'),(3,'JUNK');
+    INSERT INTO asset_signals VALUES(2,0),(3,1); INSERT INTO assets VALUES(1),(2),(3);
+    INSERT INTO transactions VALUES(10,'10000000'),(11,'20000000'),(12,'30000000');
+    INSERT INTO sends VALUES(10,2),(11,3); INSERT INTO issuances VALUES(10,2,'valid','100000000'),(11,3,'valid','900000000');
+    INSERT INTO dispensers VALUES(10,2),(11,3); INSERT INTO dispenses VALUES(10,2),(11,3);
+    INSERT INTO orders VALUES(10,2,1),(11,2,3); INSERT INTO order_matches VALUES(2,1),(2,3);
+    INSERT INTO sweeps VALUES('200000000'); INSERT INTO broadcasts VALUES(1);
+    INSERT INTO dividends VALUES(10,2,'300000000'),(11,3,'700000000');
+    INSERT INTO fairmints VALUES(10,2),(11,3);
+    INSERT INTO destructions VALUES(12,1,'valid','400000000'),(11,3,'valid','800000000');
+    INSERT INTO balances VALUES(2,'1'),(3,'1'),(2,'0');
+  `);
+  assert.deepEqual({ ...(await coreQualityNetworkStats(d1(db))) }, {
+    tip: 100, assets: 2, transactions: 3, sends: 1, issuances: 1, dispensers: 1, dispenses: 1,
+    orders: 1, order_matches: 1, sweeps: 1, broadcasts: 1, dividends: 1, fairmints: 1,
+    destructions: 1, holders: 1, btc_fees: 0.4, xcp_destroyed: 10,
+  });
+  db.close();
 });

@@ -16,10 +16,12 @@ const SERIES = [
 ] as const;
 type Key = (typeof SERIES)[number][0];
 
-export function ActivityChart() {
+export function ActivityChart({ includeHidden = false }: { includeHidden?: boolean }) {
   const [s, setS] = useState<Key>("transactions");
   const [cum, setCum] = useState(false);
-  const { data } = useSWR<Envelope<Record<string, { t: number; v: number }[]>>>(apiUrl("/v2/metrics", { days: 90 }));
+  const { data } = useSWR<Envelope<Record<string, { t: number; v: number }[]>>>(
+    apiUrl("/v2/metrics", { days: 90, ...(includeHidden ? { include_hidden: 1 } : {}) }),
+  );
   let series = data?.result?.[s] ?? [];
   if (cum && series.length) {
     let run = 0;

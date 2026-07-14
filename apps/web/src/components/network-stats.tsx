@@ -5,6 +5,7 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card, Stat } from "@/components/ui/card";
 import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";
+import { useState } from "react";
 
 const COUNTS: [keyof NetworkStatsPayload, string][] = [
   ["transactions", "Transactions"],
@@ -26,15 +27,29 @@ const COUNTS: [keyof NetworkStatsPayload, string][] = [
 // Network stats dashboard — live totals + the activity chart. Client island rendered by the thin
 // server page that owns the static metadata.
 export function NetworkStats() {
-  const { data } = useSWR<Envelope<NetworkStatsPayload>>(apiUrl("/v2/stats"));
+  const [showLowQ, setShowLowQ] = useState(false);
+  const { data } = useSWR<Envelope<NetworkStatsPayload>>(
+    apiUrl("/v2/stats", showLowQ ? { include_hidden: 1 } : {}),
+  );
   const s = data?.result;
   return (
     <>
-      <div>
-        <h1 className="text-xl font-semibold text-zinc-100">Network stats</h1>
-        <p className="text-sm text-zinc-400 mt-1">
-          Counterparty totals across the whole chain, including its lifetime deflation.
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-100">Network stats</h1>
+          <p className="text-sm text-zinc-400 mt-1">
+            Counterparty totals across the whole chain, including its lifetime deflation.
+          </p>
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer shrink-0 mt-1">
+          <input
+            type="checkbox"
+            checked={!showLowQ}
+            onChange={(event) => setShowLowQ(!event.target.checked)}
+            className="accent-(--color-accent) w-3.5 h-3.5"
+          />
+          Hide low quality
+        </label>
       </div>
       {/* deflation headline — XCP is destroyed by fees; this is the lifetime burn */}
       <div className="grid sm:grid-cols-3 gap-3">
@@ -45,7 +60,7 @@ export function NetworkStats() {
         <Stat label="BTC fees paid (all-time)" value={s?.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
         <Stat label="Tip block" value={commas(s?.tip)} />
       </div>
-      <ActivityChart />
+      <ActivityChart includeHidden={showLowQ} />
       <Card title="Counterparty totals">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
           {COUNTS.map(([k, label]) => (
