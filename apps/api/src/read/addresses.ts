@@ -90,7 +90,7 @@ addresses.get("/v2/addresses/:address/dispenses", async (c) => {
 // and the EVIDENCE behind it (so it's explainable, not a black box). New/quiet addresses read neutral.
 addresses.get("/v2/addresses/:address/reputation", async (c) => {
   const h = c.req.param("address");
-  const r = await addressReputationRow(c.env.DB, h);
+  const r = await addressReputationRow(c.env.CORE_DB, h);
   if (!r || !r.first_block)
     return J(
       c,

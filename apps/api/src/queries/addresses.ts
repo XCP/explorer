@@ -130,10 +130,14 @@ export function addressSummary(db: D1Database, address: string): Promise<Address
 export function addressReputationRow(db: D1Database, address: string): Promise<AddressReputationRow | null> {
   return one<AddressReputationRow>(
     db,
-    `SELECT sg.*, (SELECT CAST(quantity_normalized AS REAL) FROM balances WHERE holder=? AND asset='XCP') xcp,
-            (SELECT MAX(block_index) FROM blocks) tip
-     FROM address_signals sg WHERE sg.address=?`,
-    address,
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1)
+     SELECT signal.*,
+            (SELECT CAST(balance.quantity_normalized AS REAL) FROM balances balance
+              WHERE balance.address_id=signal.address_id
+                AND balance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')) xcp,
+            (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip
+       FROM address_signals signal
+      WHERE signal.address_id=(SELECT address_id FROM identity)`,
     address,
   );
 }

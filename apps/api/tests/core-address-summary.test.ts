@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { addressSummary } from "#api/queries/addresses";
+import { addressReputationRow, addressSummary } from "#api/queries/addresses";
 
 class Statement {
   private values: unknown[] = [];
@@ -24,6 +24,7 @@ test("compact address summary derives identity counts without scanning string ke
     CREATE TABLE address_signals(
       address_id INTEGER PRIMARY KEY,assets_held INTEGER,first_block INTEGER,last_block INTEGER,disp_trust REAL
     );
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
     INSERT INTO address_dictionary VALUES(1,'holder');
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CARD'),(3,'OTHER');
     INSERT INTO balances VALUES(1,1,'12.50000000');
@@ -31,6 +32,7 @@ test("compact address summary derives identity counts without scanning string ke
     INSERT INTO dispensers VALUES(1,1,0),(2,1,10);
     INSERT INTO orders VALUES(1,1,'open'),(2,1,'filled');
     INSERT INTO address_signals VALUES(1,3,100,200,7.26);
+    INSERT INTO blocks VALUES(199),(200);
   `);
 
   assert.deepEqual({ ...(await addressSummary(d1(db), "holder")) }, {
@@ -41,4 +43,8 @@ test("compact address summary derives identity counts without scanning string ke
     xcp: null,assets: 0,issued: 0,dispensers: 0,open_dispensers: 0,open_orders: 0,
     first_block: null,last_block: null,dispenser_trust: null,
   });
+  assert.deepEqual({ ...(await addressReputationRow(d1(db), "holder")) }, {
+    address_id: 1,assets_held: 3,first_block: 100,last_block: 200,disp_trust: 7.26,xcp: 12.5,tip: 200,
+  });
+  assert.equal(await addressReputationRow(d1(db), "unknown"), null);
 });
