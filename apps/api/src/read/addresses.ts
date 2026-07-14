@@ -308,7 +308,7 @@ addresses.get("/v2/reputation/tiers/:tier", async (c) => {
 });
 
 addresses.get("/v2/addresses/:address/summary", async (c) => {
-  const result = await addressSummary(c.env.DB, c.req.param("address"));
+  const result = await addressSummary(c.env.CORE_DB, c.req.param("address"));
   return J(c, { result }, 30);
 });
 
