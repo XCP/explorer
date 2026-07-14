@@ -20,14 +20,19 @@ class Statement {
   async all<T>() {
     return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
   }
+  isRead() {
+    return /^\s*(SELECT|WITH)\b/i.test(this.sql);
+  }
 }
 
 function d1(db: DatabaseSync): D1Database {
   return {
     prepare: (sql: string) => new Statement(db, sql),
     async batch(statements: Statement[]) {
-      for (const statement of statements) await statement.run();
-      return [];
+      const results = [];
+      for (const statement of statements)
+        results.push(statement.isRead() ? await statement.all() : await statement.run());
+      return results;
     },
   } as unknown as D1Database;
 }
