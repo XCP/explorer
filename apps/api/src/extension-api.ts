@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "#api/env";
+import { requestConsolidation } from "#api/integrations/consolidation";
 
 type Ctx = Context<{ Bindings: Env }>;
 
@@ -138,14 +139,7 @@ extensionApi.get("/api/v1/address/:address/utxos", (c) => proxyConsolidation(c))
 extensionApi.all("/api/v1/address/:address/consolidation", (c) => proxyConsolidation(c));
 extensionApi.all("/api/v1/address/:address/consolidation/:sub", (c) => proxyConsolidation(c));
 async function proxyConsolidation(c: Ctx) {
-  const url = new URL(c.req.url);
-  const target = c.env.CONSOLIDATION_API + url.pathname + url.search;
-  const res = await fetch(target, {
-    method: c.req.method,
-    headers: { accept: "application/json" },
-    body: c.req.method === "GET" || c.req.method === "HEAD" ? undefined : await c.req.raw.clone().arrayBuffer(),
-    signal: AbortSignal.timeout(45000),
-  });
+  const res = await requestConsolidation(c.env.CONSOLIDATION_API, c.req.raw);
   return c.body(await res.text(), res.status as ContentfulStatusCode, {
     "content-type": res.headers.get("content-type") || "application/json",
     "access-control-allow-origin": "*",
