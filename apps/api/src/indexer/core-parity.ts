@@ -5,9 +5,19 @@ interface CountRow {
   count: number | string;
 }
 
+interface FingerprintRow {
+  fingerprint: string;
+}
+
 export interface CoreParityRelation {
   target: string;
   sources: readonly string[];
+  sourceSql: string;
+  targetSql: string;
+}
+
+export interface CoreParityFrontier {
+  target: string;
   sourceSql: string;
   targetSql: string;
 }
@@ -36,6 +46,36 @@ export const CORE_PARITY_RELATIONS: readonly CoreParityRelation[] = [
   },
 ].sort((left, right) => left.target.localeCompare(right.target));
 
+function frontierSql(table: string, identity: string): string {
+  return `SELECT coalesce(CAST(min(${identity}) AS TEXT),'')||':'||coalesce(CAST(max(${identity}) AS TEXT),'')||':'||coalesce(CAST(min(block_index) AS TEXT),'')||':'||coalesce(CAST(max(block_index) AS TEXT),'') fingerprint FROM ${quote(table)}`;
+}
+
+/** Bounded identity checks for the canonical streams that drive replay. Counts alone cannot reveal an equal-sized
+ * hole or shifted range; these checks verify both ends of each identity and block frontier without hashing rows
+ * whose compact physical representation intentionally differs from the source. */
+export const CORE_PARITY_FRONTIERS: readonly CoreParityFrontier[] = [
+  {
+    target: "blocks",
+    sourceSql: frontierSql("blocks", "block_index"),
+    targetSql: frontierSql("blocks", "block_index"),
+  },
+  {
+    target: "transactions",
+    sourceSql: frontierSql("transactions", "tx_index"),
+    targetSql: frontierSql("transactions", "tx_index"),
+  },
+  ...["dispenses", "fairmints", "issuances", "sends"].map((target) => ({
+    target,
+    sourceSql: frontierSql(target, "event_index"),
+    targetSql: frontierSql(target, "event_index"),
+  })),
+  {
+    target: "ledger_events",
+    sourceSql: `SELECT coalesce(CAST(min(event_index) AS TEXT),'')||':'||coalesce(CAST(max(event_index) AS TEXT),'')||':'||coalesce(CAST(min(block_index) AS TEXT),'')||':'||coalesce(CAST(max(block_index) AS TEXT),'') fingerprint FROM (SELECT event_index,block_index FROM credits UNION ALL SELECT event_index,block_index FROM debits)`,
+    targetSql: frontierSql("ledger_events", "event_index"),
+  },
+].sort((left, right) => left.target.localeCompare(right.target));
+
 async function counts(db: D1Database, sql: readonly string[]): Promise<number[]> {
   const output: number[] = [];
   for (let index = 0; index < sql.length; index += 80) {
@@ -43,6 +83,18 @@ async function counts(db: D1Database, sql: readonly string[]): Promise<number[]>
     for (const result of results) {
       const row = result.results?.[0] as CountRow | undefined;
       output.push(Number(row?.count ?? -1));
+    }
+  }
+  return output;
+}
+
+async function fingerprints(db: D1Database, sql: readonly string[]): Promise<string[]> {
+  const output: string[] = [];
+  for (let index = 0; index < sql.length; index += 80) {
+    const results = await db.batch(sql.slice(index, index + 80).map((query) => db.prepare(query)));
+    for (const result of results) {
+      const row = result.results?.[0] as FingerprintRow | undefined;
+      output.push(row?.fingerprint ?? "<missing>");
     }
   }
   return output;
@@ -60,22 +112,39 @@ export async function auditCoreDataParity(
   env: Pick<Env, "DB" | "CORE_DB">,
   options: { accept?: boolean; now?: number } = {},
 ) {
-  const [sourceCounts, targetCounts, sourceEventIndex, compactEventIndex, buildComplete, importComplete, reconciled] =
-    await Promise.all([
-      counts(
-        env.DB,
-        CORE_PARITY_RELATIONS.map((relation) => relation.sourceSql),
-      ),
-      counts(
-        env.CORE_DB,
-        CORE_PARITY_RELATIONS.map((relation) => relation.targetSql),
-      ),
-      state(env.DB, "indexer_state", "last_event_index"),
-      state(env.CORE_DB, "core_state", "last_event_index"),
-      state(env.CORE_DB, "core_state", "build_complete"),
-      state(env.CORE_DB, "core_state", "import_complete"),
-      state(env.CORE_DB, "core_state", "seed_reconciled"),
-    ]);
+  const [
+    sourceCounts,
+    targetCounts,
+    sourceFrontiers,
+    targetFrontiers,
+    sourceEventIndex,
+    compactEventIndex,
+    buildComplete,
+    importComplete,
+    reconciled,
+  ] = await Promise.all([
+    counts(
+      env.DB,
+      CORE_PARITY_RELATIONS.map((relation) => relation.sourceSql),
+    ),
+    counts(
+      env.CORE_DB,
+      CORE_PARITY_RELATIONS.map((relation) => relation.targetSql),
+    ),
+    fingerprints(
+      env.DB,
+      CORE_PARITY_FRONTIERS.map((frontier) => frontier.sourceSql),
+    ),
+    fingerprints(
+      env.CORE_DB,
+      CORE_PARITY_FRONTIERS.map((frontier) => frontier.targetSql),
+    ),
+    state(env.DB, "indexer_state", "last_event_index"),
+    state(env.CORE_DB, "core_state", "last_event_index"),
+    state(env.CORE_DB, "core_state", "build_complete"),
+    state(env.CORE_DB, "core_state", "import_complete"),
+    state(env.CORE_DB, "core_state", "seed_reconciled"),
+  ]);
   const relations = CORE_PARITY_RELATIONS.map((relation, index) => ({
     target: relation.target,
     sources: relation.sources,
@@ -83,9 +152,19 @@ export async function auditCoreDataParity(
     compact: targetCounts[index],
     matches: sourceCounts[index] >= 0 && sourceCounts[index] === targetCounts[index],
   }));
+  const frontiers = CORE_PARITY_FRONTIERS.map((frontier, index) => ({
+    target: frontier.target,
+    source: sourceFrontiers[index],
+    compact: targetFrontiers[index],
+    matches: sourceFrontiers[index] !== "<missing>" && sourceFrontiers[index] === targetFrontiers[index],
+  }));
   const cursorMatches = sourceEventIndex != null && sourceEventIndex === compactEventIndex;
   const prerequisites = buildComplete === "1" && importComplete === "1" && reconciled === "1";
-  const ok = prerequisites && cursorMatches && relations.every((relation) => relation.matches);
+  const ok =
+    prerequisites &&
+    cursorMatches &&
+    relations.every((relation) => relation.matches) &&
+    frontiers.every((frontier) => frontier.matches);
 
   if (options.accept) {
     const now = options.now ?? Math.floor(Date.now() / 1000);
@@ -113,6 +192,8 @@ export async function auditCoreDataParity(
     cursor_matches: cursorMatches,
     checked_relations: relations.length,
     mismatches: relations.filter((relation) => !relation.matches),
+    checked_frontiers: frontiers.length,
+    frontier_mismatches: frontiers.filter((frontier) => !frontier.matches),
   };
 }
 

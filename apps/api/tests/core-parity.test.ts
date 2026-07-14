@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   activateCoreForwardWrites,
   auditCoreDataParity,
+  CORE_PARITY_FRONTIERS,
   CORE_PARITY_RELATIONS,
   rollbackCoreForwardWrites,
 } from "#api/indexer/core-parity";
@@ -29,6 +30,8 @@ class Statement {
   execute() {
     const count = this.database.counts.get(this.sql);
     if (count != null) return { results: [{ count }], success: true };
+    const fingerprint = this.database.fingerprints.get(this.sql);
+    if (fingerprint != null) return { results: [{ fingerprint }], success: true };
     const key = /VALUES\('([^']+)',\?\)/.exec(this.sql)?.[1];
     if (key) this.database.state.set(key, String(this.binds[0]));
     const literal = /VALUES\('([^']+)','([^']+)'\)/.exec(this.sql);
@@ -44,6 +47,7 @@ class Statement {
 class Database {
   constructor(
     readonly counts: Map<string, number>,
+    readonly fingerprints: Map<string, string>,
     readonly state: Map<string, string>,
   ) {}
 
@@ -59,9 +63,12 @@ class Database {
 function databases() {
   const sourceCounts = new Map(CORE_PARITY_RELATIONS.map((relation) => [relation.sourceSql, 0]));
   const compactCounts = new Map(CORE_PARITY_RELATIONS.map((relation) => [relation.targetSql, 0]));
-  const source = new Database(sourceCounts, new Map([["last_event_index", "100"]]));
+  const sourceFingerprints = new Map(CORE_PARITY_FRONTIERS.map((frontier) => [frontier.sourceSql, "1:100:1:10"]));
+  const compactFingerprints = new Map(CORE_PARITY_FRONTIERS.map((frontier) => [frontier.targetSql, "1:100:1:10"]));
+  const source = new Database(sourceCounts, sourceFingerprints, new Map([["last_event_index", "100"]]));
   const compact = new Database(
     compactCounts,
+    compactFingerprints,
     new Map([
       ["last_event_index", "100"],
       ["build_complete", "1"],
@@ -78,6 +85,10 @@ test("core parity covers copied tags, trades, merged ledger rows, and compressed
   assert.deepEqual(byTarget.get("trades")?.sources, ["trades"]);
   assert.deepEqual(byTarget.get("ledger_events")?.sources, ["credits", "debits"]);
   assert.match(byTarget.get("pr_edges")?.targetSql ?? "", /sum\(multiplicity\)/);
+  assert.deepEqual(
+    CORE_PARITY_FRONTIERS.map((frontier) => frontier.target),
+    ["blocks", "dispenses", "fairmints", "issuances", "ledger_events", "sends", "transactions"],
+  );
 });
 
 test("core parity records acceptance only at an equal cursor with equal relation counts", async () => {
@@ -102,9 +113,26 @@ test("core parity records acceptance only at an equal cursor with equal relation
   );
   assert.equal(passed.ok, true);
   assert.equal(passed.checked_relations, CORE_PARITY_RELATIONS.length);
+  assert.equal(passed.checked_frontiers, CORE_PARITY_FRONTIERS.length);
   assert.equal(compact.state.get("parity_verified"), "1");
   assert.equal(compact.state.get("parity_event_index"), "100");
   assert.equal(compact.state.get("parity_checked_at"), "51");
+});
+
+test("core parity rejects an equal-sized stream with a shifted frontier", async () => {
+  const { source, compact } = databases();
+  const sends = CORE_PARITY_FRONTIERS.find((frontier) => frontier.target === "sends");
+  if (!sends) throw new Error("sends frontier is missing");
+  compact.fingerprints.set(sends.targetSql, "2:101:1:10");
+
+  const result = await auditCoreDataParity({
+    DB: source as unknown as D1Database,
+    CORE_DB: compact as unknown as D1Database,
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.frontier_mismatches, [
+    { target: "sends", source: "1:100:1:10", compact: "2:101:1:10", matches: false },
+  ]);
 });
 
 test("forward writes can only activate through a fresh successful parity audit", async () => {
