@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { parseTokenscanDirectoryScript } from "#api/integrations/tokenscan-directory";
 import { TOKENSCAN_TAG_UPSERT_SQL } from "#api/indexer/tokenscan-collections";
+import { ARTIST_TAG_UPSERT_SQL, COLLECTION_TAG_UPSERT_SQL } from "#api/indexer/collections";
 
 test("Tokenscan directory parsing extracts usable collections", () => {
   assert.deepEqual(
@@ -47,4 +48,22 @@ test("Tokenscan upserts refresh owned tags without stealing another source", () 
       meta: "curated",
     },
   );
+});
+
+test("collection and artist upserts resolve one canonical asset entity", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,
+      UNIQUE(entity_type,entity_key));
+    CREATE TABLE tags(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,PRIMARY KEY(entity_id,tag));
+    INSERT INTO entity_dictionary VALUES(1,'asset','CARD');`);
+  db.prepare(COLLECTION_TAG_UPSERT_SQL).run("CARD", "rare-pepe", 1002, '{"series":1,"card":2}');
+  db.prepare(ARTIST_TAG_UPSERT_SQL).run("CARD", "artist-satoshi", '{"name":"Satoshi"}');
+  assert.deepEqual(
+    db.prepare(`SELECT tag,source,value,meta FROM tags ORDER BY tag`).all().map((row) => ({ ...row })),
+    [
+      { tag: "artist-satoshi", source: "artist", value: null, meta: '{"name":"Satoshi"}' },
+      { tag: "rare-pepe", source: "collection", value: 1002, meta: '{"series":1,"card":2}' },
+    ],
+  );
+  db.close();
 });

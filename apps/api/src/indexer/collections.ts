@@ -58,6 +58,18 @@ interface Member {
   artist: { name: string; slug: string } | null;
 }
 
+export const COLLECTION_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,value,meta)
+  SELECT entity_id,?2,'collection',?3,?4 FROM entity_dictionary
+  WHERE entity_type='asset' AND entity_key=?1
+  ON CONFLICT(entity_id,tag) DO UPDATE SET
+    source=excluded.source,value=excluded.value,meta=excluded.meta`;
+
+export const ARTIST_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,meta)
+  SELECT entity_id,?2,'artist',?3 FROM entity_dictionary
+  WHERE entity_type='asset' AND entity_key=?1
+  ON CONFLICT(entity_id,tag) DO UPDATE SET
+    source=excluded.source,value=NULL,meta=excluded.meta`;
+
 async function fetchMembers(slug: string): Promise<Member[]> {
   // NB: the endpoint requires a real user-agent — an unknown/absent one returns []. It's also loose about the
   // slug, so we keep only rows it actually attributes to THIS collection.
@@ -99,10 +111,14 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
     // UPSERT-then-reconcile (never delete-first): the collection is never emptied mid-run, a partial feed
     // can't nuke it, and a crash between steps just leaves the prior set intact. `source='manual'` members
     // are outside this entirely (a different source) — the crawl never sees or touches them.
-    const curRows = await env.DB.prepare(`SELECT entity_id FROM tags WHERE tag=? AND source='collection'`)
+    const curRows = await env.CORE_DB.prepare(
+      `SELECT entity.entity_key asset FROM tags tag
+       JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
+       WHERE tag.tag=? AND tag.source='collection'`,
+    )
       .bind(tag)
-      .all<{ entity_id: string }>();
-    const cur = new Set((curRows.results || []).map((r) => r.entity_id));
+      .all<{ asset: string }>();
+    const cur = new Set((curRows.results || []).map((r) => r.asset));
 
     // 1) upsert the fresh set (membership + serie/card; artist tags spread across collections so are upsert-only).
     const stmts: D1PreparedStatement[] = [];
@@ -110,23 +126,22 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
       const meta = m.series != null || m.card != null ? JSON.stringify({ series: m.series, card: m.card }) : null;
       const value = m.series != null && m.card != null ? m.series * 1000 + m.card : null; // sort key: S1C1=1001, S2C1=2001…
       stmts.push(
-        env.DB.prepare(
-          `INSERT INTO tags (entity_type,entity_id,tag,source,value,meta) VALUES ('asset',?,?,'collection',?,?)
-           ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET
-             source=excluded.source,value=excluded.value,meta=excluded.meta`,
-        ).bind(m.name, tag, value, meta),
+        env.CORE_DB.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`).bind(
+          m.name,
+        ),
+        env.CORE_DB.prepare(COLLECTION_TAG_UPSERT_SQL).bind(m.name, tag, value, meta),
       );
       if (m.artist) {
         stmts.push(
-          env.DB.prepare(
-            `INSERT INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'artist',?)
-             ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET
-               source=excluded.source,value=NULL,meta=excluded.meta`,
-          ).bind(m.name, `artist-${m.artist.slug}`, JSON.stringify({ name: m.artist.name, slug: m.artist.slug })),
+          env.CORE_DB.prepare(ARTIST_TAG_UPSERT_SQL).bind(
+            m.name,
+            `artist-${m.artist.slug}`,
+            JSON.stringify({ name: m.artist.name, slug: m.artist.slug }),
+          ),
         );
       }
     }
-    for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
+    for (let i = 0; i < stmts.length; i += 100) await env.CORE_DB.batch(stmts.slice(i, i + 100));
 
     // 2) reconcile removals: drop feed members that vanished from the fresh set — but only when the pull looks
     //    complete. Cap one run's prune at 20% (min 10); a bigger drop signals a short/partial feed, so we keep
@@ -136,15 +151,18 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
     const cap = Math.max(10, Math.floor(cur.size * 0.2));
     if (stale.length && stale.length <= cap) {
       const del = stale.map((n) =>
-        env.DB.prepare(`DELETE FROM tags WHERE tag=? AND entity_id=? AND source='collection'`).bind(tag, n),
+        env.CORE_DB.prepare(
+          `DELETE FROM tags WHERE tag=? AND source='collection'
+           AND entity_id=(SELECT entity_id FROM entity_dictionary WHERE entity_type='asset' AND entity_key=?)`,
+        ).bind(tag, n),
       );
-      for (let i = 0; i < del.length; i += 100) await env.DB.batch(del.slice(i, i + 100));
+      for (let i = 0; i < del.length; i += 100) await env.CORE_DB.batch(del.slice(i, i + 100));
     }
     out.collections[tag] =
       stale.length > cap ? `${members.length} (+${stale.length} stale kept — feed looked short)` : members.length;
   }
-  const nc = await env.DB.prepare(`SELECT COUNT(*) c FROM tags WHERE source='collection'`).first<{ c: number }>();
-  const na = await env.DB.prepare(`SELECT COUNT(DISTINCT tag) c FROM tags WHERE source='artist'`).first<{
+  const nc = await env.CORE_DB.prepare(`SELECT COUNT(*) c FROM tags WHERE source='collection'`).first<{ c: number }>();
+  const na = await env.CORE_DB.prepare(`SELECT COUNT(DISTINCT tag) c FROM tags WHERE source='artist'`).first<{
     c: number;
   }>();
   out.total_collection_tags = nc?.c ?? 0;
