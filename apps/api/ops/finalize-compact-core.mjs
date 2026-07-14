@@ -110,8 +110,7 @@ for (let step = 1; step <= maxReplaySteps; step += 1) {
   if (replay.caught_up) break;
   if (replay.skipped) throw new Error(`Compact stabilization replay did not advance: ${replay.skipped}`);
 }
-if (!replay?.caught_up)
-  throw new Error(`Compact stabilization replay did not catch up within ${maxReplaySteps} steps`);
+if (!replay?.caught_up) throw new Error(`Compact stabilization replay did not catch up within ${maxReplaySteps} steps`);
 
 const parity = await request("/admin/core-parity", "POST");
 report("parity", parity);
