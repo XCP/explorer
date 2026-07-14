@@ -78,6 +78,7 @@ import {
   listCoreAssetPoolMatches,
 } from "#api/queries/core-assets";
 import { coreReadsEnabled } from "#api/read/core-read-gate";
+import { listCoreAssetOrders } from "#api/queries/core-orders";
 
 export const assets = router();
 
@@ -363,7 +364,10 @@ assets.get("/v2/assets/:asset/dispenses", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/orders", async (c) => {
-  const rows = await listAssetOrders(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetOrders(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetOrders(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 

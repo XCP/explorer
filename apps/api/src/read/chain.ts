@@ -22,6 +22,7 @@ import {
 import { assetCollection, assetBrief } from "#api/queries/assets";
 import { mempoolTxActions } from "#api/read/mempool";
 import { boundedInteger } from "#api/http/numbers";
+import { listCoreOrderMatches, listCoreOrders } from "#api/queries/core-orders";
 
 export const chain = router();
 
@@ -325,7 +326,13 @@ for (const kind of RECORD_KINDS) {
   chain.get(`/v2/${kind}`, async (c) => {
     const l = lim(c),
       o = off(c);
-    const rows = await listRecords(c.env.DB, kind, l, o);
+    const compact = await coreReadsEnabled(c.env);
+    const rows =
+      compact && kind === "orders"
+        ? await listCoreOrders(c.env.CORE_DB, l, o)
+        : compact && kind === "order_matches"
+          ? await listCoreOrderMatches(c.env.CORE_DB, l, o)
+          : await listRecords(c.env.DB, kind, l, o);
     return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
   });
 }
