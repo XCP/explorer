@@ -83,16 +83,20 @@ export function listTagAssetMembers(
 ): Promise<TagMemberQueryRow[]> {
   return q<TagMemberQueryRow>(
     db,
-    `SELECT d.asset, a.asset_longname, s.holders,
+    `WITH s AS (
+       SELECT d.asset, a.asset_longname, signal.*
+       FROM tags t
+       JOIN entity_dictionary e ON e.entity_id=t.entity_id AND e.entity_type='asset'
+       JOIN asset_dictionary d ON d.asset=e.entity_key
+       JOIN assets a ON a.asset_id=d.asset_id
+       JOIN asset_signals signal ON signal.asset_id=d.asset_id
+       WHERE t.tag=?
+     )
+     SELECT s.asset, s.asset_longname, s.holders,
             (COALESCE(s.distinct_traders,0)+COALESCE(s.distinct_dispense_buyers,0)) buyers,
             ROUND(COALESCE(s.max_realized_usd,0), 2) max_realized_usd, ROUND((${expr}), 2) raw,
             s.trades, s.dispenses, COALESCE(s.low_quality,0) low_quality
-     FROM tags t
-     JOIN entity_dictionary e ON e.entity_id=t.entity_id AND e.entity_type='asset'
-     JOIN asset_dictionary d ON d.asset=e.entity_key
-     JOIN assets a ON a.asset_id=d.asset_id
-     JOIN asset_signals s ON s.asset_id=d.asset_id
-     WHERE t.tag=? ORDER BY (${expr}) DESC, d.asset LIMIT ? OFFSET ?`,
+     FROM s ORDER BY (${expr}) DESC, s.asset LIMIT ? OFFSET ?`,
     tag,
     limit,
     offset,
