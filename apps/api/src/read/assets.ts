@@ -77,9 +77,9 @@ assets.get("/v2/assets", async (c) => {
 // "feature only assets with media" curation grid. Default 12 (the leaderboard card design); up to 144 (12x12).
 assets.get("/v2/featured", async (c) => {
   const n = lim(c, 12, 144);
-  return cached(c, `featured:${n}`, { ttl: 600, edge: 120 }, async () => {
+  return cached(c, `featured:quality:${n}`, { ttl: 600, edge: 120 }, async () => {
     const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    return { result: await featuredAssets(c.env.DB, expr, n) };
+    return { result: await featuredAssets(c.env.CORE_DB, expr, n) };
   });
 });
 

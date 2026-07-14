@@ -313,6 +313,14 @@ test("contract: GET /v2/assets?limit=2 — AssetIndexRow list", async (t) => {
   assertListEnvelope(await getJson("/v2/assets?limit=2"), ASSET_INDEX_ROW, 2, "assets");
 });
 
+test("contract: GET /v2/featured - compact quality ranking with media", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/featured?limit=12")).result;
+  assertRows(result, { asset: "string", asset_longname: "string|null", score: "number" }, "featured.result");
+  assert.equal(result.length, 12, "featured should fill the requested page");
+  assert.equal(result[0].asset, "SATOSHICARD", "featured quality leader changed");
+});
+
 test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/assets/RAREPEPE");

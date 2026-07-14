@@ -100,10 +100,20 @@ export function listAssets(db: D1Database, f: AssetListFilter): Promise<AssetInd
 export function featuredAssets(db: D1Database, expr: string, limit: number): Promise<FeaturedAsset[]> {
   return q<FeaturedAsset>(
     db,
-    `SELECT s.asset, s.asset_longname, ROUND((${expr}),1) score
-     FROM asset_signals s JOIN tags t ON t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='has_media'
-     WHERE (s.trades>0 OR s.dispenses>0) AND COALESCE(s.low_quality,0)=0
-     ORDER BY (${expr}) DESC LIMIT ?`,
+    `WITH ranked AS (
+       SELECT signal.asset_id,dictionary.asset,(${expr}) score
+       FROM asset_signals signal
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+       WHERE (signal.trades>0 OR signal.dispenses>0) AND COALESCE(signal.low_quality,0)=0
+         AND EXISTS (
+           SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
+            WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tag.tag='has_media'
+         )
+       ORDER BY score DESC,dictionary.asset ASC LIMIT ?
+     )
+     SELECT ranked.asset,state.asset_longname,ROUND(ranked.score,1) score
+     FROM ranked LEFT JOIN assets state ON state.asset_id=ranked.asset_id
+     ORDER BY ranked.score DESC,ranked.asset ASC`,
     limit,
   );
 }
