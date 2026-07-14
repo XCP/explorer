@@ -168,6 +168,27 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
   );
   assert.equal(compact.prepare(`SELECT count(*) count FROM emblem_listings`).get()?.count, 2);
 
+  source.exec(`
+    DELETE FROM emblem_listings WHERE token_id='live';
+    INSERT INTO emblem_listings VALUES('replacement','contract','RAREPEPE','next','market',12,'12','currency','next-url',999,101);
+  `);
+  assert.equal((await reconcileCoreProjection(env, "emblem_listings")).caught_up, true);
+  assert.equal(
+    compact.prepare(`SELECT value FROM core_state WHERE key='emblem_listings_generation'`).get()?.value,
+    "2",
+  );
+  assert.deepEqual(
+    compact
+      .prepare(
+        `SELECT token_id,price_usd FROM emblem_listings
+          WHERE generation=CAST((SELECT value FROM core_state WHERE key='emblem_listings_generation') AS INTEGER)`,
+      )
+      .all()
+      .map((row) => ({ ...row })),
+    [{ token_id: "replacement", price_usd: 12 }],
+  );
+  assert.equal(compact.prepare(`SELECT count(*) count FROM emblem_listings`).get()?.count, 3);
+
   assert.equal((await reconcileCoreProjection(env, "trades")).caught_up, true);
   assert.deepEqual(
     compact

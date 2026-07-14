@@ -285,13 +285,24 @@ export async function reconcileCoreProjection(
   }
   let generation: number | null = null;
   if (table === "emblem_listings") {
-    const savedGeneration = await state(env.CORE_DB, `${prefix}:generation`);
+    const previouslyComplete = (await state(env.CORE_DB, `${prefix}:complete`)) === "1";
+    if (previouslyComplete) {
+      cursor = 0;
+      highWater = 0;
+    }
+    const savedGeneration = previouslyComplete ? null : await state(env.CORE_DB, `${prefix}:generation`);
     generation =
       savedGeneration == null
         ? Number.parseInt((await state(env.CORE_DB, "emblem_listings_generation")) ?? "0", 10) + 1
         : Number.parseInt(savedGeneration, 10);
     if (!Number.isSafeInteger(generation) || generation < 1) throw new Error("invalid listing generation");
-    if (savedGeneration == null) await env.CORE_DB.batch([setState(env.CORE_DB, `${prefix}:generation`, generation)]);
+    if (savedGeneration == null)
+      await env.CORE_DB.batch([
+        setState(env.CORE_DB, `${prefix}:generation`, generation),
+        setState(env.CORE_DB, `${prefix}:cursor`, 0),
+        setState(env.CORE_DB, `${prefix}:high_water`, 0),
+        setState(env.CORE_DB, `${prefix}:complete`, 0),
+      ]);
   }
   if (highWater === 0 || cursor >= highWater) {
     highWater = Number(
@@ -329,4 +340,206 @@ export async function reconcileCoreProjection(
   if (caughtUp && generation != null) progress.push(setState(env.CORE_DB, "emblem_listings_generation", generation));
   await env.CORE_DB.batch(progress);
   return { table, processed: page.results.length, cursor, high_water: highWater, caught_up: caughtUp };
+}
+
+const ADDRESS_SIGNAL_COLUMNS = [
+  "first_block",
+  "last_block",
+  "out_peers",
+  "in_peers",
+  "dispense_btc",
+  "dispenses",
+  "dividends",
+  "assets_issued",
+  "locked_assets",
+  "btc_spent",
+  "btc_fees",
+  "assets_held",
+  "assets_received",
+  "survived_assets",
+  "assets_distributed",
+  "assets_hits",
+  "rep_score",
+  "clean_dispense_btc",
+  "clean_btc_spent",
+  "is_exchange",
+  "is_deposit",
+  "is_burn",
+  "assets_burned",
+  "disp_trust",
+  "is_emblem_vault",
+  "likely_service",
+  "dex_trades",
+  "stamps_created",
+  "stamps_collected",
+  "src20_deploys",
+  "is_btns_user",
+  "graph_trust",
+  "graph_distrust",
+  "vault_scams",
+  "shell_scams",
+  "dump_scams",
+] as const;
+
+const ASSET_SIGNAL_COLUMNS = [
+  "divisible",
+  "locked",
+  "holders",
+  "top1_pct",
+  "trades",
+  "self_trade_pct",
+  "first_trade_blk",
+  "last_trade_blk",
+  "dispenses",
+  "dispense_btc",
+  "low_quality",
+  "holder_breadth",
+  "pct_creator_holders",
+  "burned_pct",
+  "distinct_traders",
+  "distinct_dispensers",
+  "age_blocks",
+  "avg_holder_dex",
+  "recent_events",
+  "recency_blocks",
+  "max_dispense_btc",
+  "max_trade_xcp",
+  "supply",
+  "max_realized_usd",
+  "distinct_dispense_buyers",
+  "max_dispense_btc_clean",
+  "emblem_trades",
+  "graph_trust",
+  "graph_distrust",
+  "holder_cohesion",
+  "cohesion_edges",
+  "cohesion_strong",
+] as const;
+
+const FEED_COLUMNS = [
+  "sales",
+  "issuances",
+  "dispensers",
+  "dispenses",
+  "orders",
+  "sends",
+  "fairmints",
+  "dividends",
+  "destructions",
+  "pools",
+  "subassets",
+  "updated_at",
+] as const;
+
+function upsertSet(columns: readonly string[]): string {
+  return columns.map((column) => `${column}=excluded.${column}`).join(",");
+}
+
+/** Reconcile the bounded post-seed mutable set rather than rescanning hundreds of thousands of stable signals. */
+export async function reconcileRecentCoreProjections(env: Pick<Env, "DB" | "CORE_DB">) {
+  const seedBlock = Number.parseInt((await state(env.CORE_DB, "seed_block_index")) ?? "0", 10);
+  if (!Number.isSafeInteger(seedBlock) || seedBlock <= 0) throw new Error("compact seed block is missing");
+  const [addresses, assets, exchange] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM address_signals WHERE last_block>? ORDER BY address`)
+      .bind(seedBlock)
+      .all<SourceRow>(),
+    env.DB.prepare(
+      `SELECT s.* FROM asset_signals s JOIN assets a ON a.asset=s.asset
+        WHERE a.first_issuance_block_index>? ORDER BY s.asset`,
+    )
+      .bind(seedBlock)
+      .all<SourceRow>(),
+    env.DB.prepare(
+      `SELECT generation,asset,depositors FROM exchange_top_assets ORDER BY generation,asset`,
+    ).all<SourceRow>(),
+  ]);
+  const assetNames = assets.results.map((row) => String(row.asset));
+  const feeds =
+    assetNames.length === 0
+      ? { results: [] as SourceRow[] }
+      : await env.DB.prepare(
+          `SELECT * FROM asset_feed_counts WHERE asset IN (${assetNames.map(() => "?").join(",")}) ORDER BY asset`,
+        )
+          .bind(...assetNames)
+          .all<SourceRow>();
+
+  const addressNames = new Set<string>();
+  for (const row of addresses.results) addressNames.add(String(row.address));
+  for (const row of assets.results) if (nullableString(row.issuer)) addressNames.add(String(row.issuer));
+  const allAssets = new Set<string>([...assetNames, ...exchange.results.map((row) => String(row.asset))]);
+  if (addressNames.size > 0)
+    await env.CORE_DB.batch(
+      [...addressNames].map((address) =>
+        env.CORE_DB.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address),
+      ),
+    );
+  if (allAssets.size > 0)
+    await env.CORE_DB.batch(
+      [...allAssets].map((asset) =>
+        env.CORE_DB.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES(?)`).bind(asset),
+      ),
+    );
+
+  const addressSql = `INSERT INTO address_signals(address_id,${ADDRESS_SIGNAL_COLUMNS.join(",")})
+    VALUES((SELECT address_id FROM address_dictionary WHERE address=?),${ADDRESS_SIGNAL_COLUMNS.map(() => "?").join(",")})
+    ON CONFLICT(address_id) DO UPDATE SET ${upsertSet(ADDRESS_SIGNAL_COLUMNS)}`;
+  for (let index = 0; index < addresses.results.length; index += 80)
+    await env.CORE_DB.batch(
+      addresses.results
+        .slice(index, index + 80)
+        .map((row) =>
+          env.CORE_DB.prepare(addressSql).bind(
+            row.address,
+            ...ADDRESS_SIGNAL_COLUMNS.map((column) => row[column] ?? null),
+          ),
+        ),
+    );
+
+  const assetSql = `INSERT INTO asset_signals(asset_id,issuer_id,${ASSET_SIGNAL_COLUMNS.join(",")})
+    VALUES((SELECT asset_id FROM asset_dictionary WHERE asset=?),
+           (SELECT address_id FROM address_dictionary WHERE address=?),${ASSET_SIGNAL_COLUMNS.map(() => "?").join(",")})
+    ON CONFLICT(asset_id) DO UPDATE SET issuer_id=excluded.issuer_id,${upsertSet(ASSET_SIGNAL_COLUMNS)}`;
+  for (let index = 0; index < assets.results.length; index += 80)
+    await env.CORE_DB.batch(
+      assets.results
+        .slice(index, index + 80)
+        .map((row) =>
+          env.CORE_DB.prepare(assetSql).bind(
+            row.asset,
+            row.issuer ?? null,
+            ...ASSET_SIGNAL_COLUMNS.map((column) => row[column] ?? null),
+          ),
+        ),
+    );
+
+  const feedSql = `INSERT INTO asset_feed_counts(asset_id,${FEED_COLUMNS.join(",")})
+    VALUES((SELECT asset_id FROM asset_dictionary WHERE asset=?),${FEED_COLUMNS.map(() => "?").join(",")})
+    ON CONFLICT(asset_id) DO UPDATE SET ${upsertSet(FEED_COLUMNS)}`;
+  for (let index = 0; index < feeds.results.length; index += 80)
+    await env.CORE_DB.batch(
+      feeds.results
+        .slice(index, index + 80)
+        .map((row) =>
+          env.CORE_DB.prepare(feedSql).bind(row.asset, ...FEED_COLUMNS.map((column) => row[column] ?? null)),
+        ),
+    );
+
+  for (let index = 0; index < exchange.results.length; index += 80)
+    await env.CORE_DB.batch(
+      exchange.results.slice(index, index + 80).map((row) =>
+        env.CORE_DB.prepare(
+          `INSERT INTO exchange_top_assets(generation,asset_id,depositors)
+       SELECT ?,asset_id,? FROM asset_dictionary WHERE asset=?
+       ON CONFLICT(generation,asset_id) DO UPDATE SET depositors=excluded.depositors`,
+        ).bind(row.generation, row.depositors, row.asset),
+      ),
+    );
+
+  return {
+    seed_block: seedBlock,
+    address_signals: addresses.results.length,
+    asset_signals: assets.results.length,
+    asset_feed_counts: feeds.results.length,
+    exchange_top_assets: exchange.results.length,
+  };
 }

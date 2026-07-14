@@ -34,7 +34,7 @@ import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
-import { reconcileCoreProjection } from "#api/indexer/core-projections";
+import { reconcileCoreProjection, reconcileRecentCoreProjections } from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -141,6 +141,10 @@ admin.post("/admin/core-projections/reconcile/:table", async (c) => {
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "projection reconciliation failed" }, 400);
   }
+});
+
+admin.post("/admin/core-projections/reconcile-recent", async (c) => {
+  return c.json(await reconcileRecentCoreProjections(c.env));
 });
 
 // Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;

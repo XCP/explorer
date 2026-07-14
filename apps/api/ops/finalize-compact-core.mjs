@@ -102,6 +102,8 @@ for (const table of incrementalProjections) {
     throw new Error(`${table} reconciliation did not catch up within ${maxReplaySteps} steps`);
 }
 
+report("recent_projections", await request("/admin/core-projections/reconcile-recent", "POST"));
+
 // Reconciliation can take long enough for new Counterparty events to arrive. Close that interval before parity;
 // the replay is idempotent and normally applies zero or only a handful of events.
 for (let step = 1; step <= maxReplaySteps; step += 1) {
