@@ -21,16 +21,15 @@ export const vaults = router();
 vaults.get("/v2/vaults", (c) =>
   cached(c, "vaults", { ttl: 3600, edge: 120, swr: 86400 }, async (): Promise<Envelope<VaultsPayload>> => {
     const db = c.env.CORE_DB;
-    const [summary, sales_by_class, top_sold_assets, top_assets, top_funders, top_crackers, sales_activity] =
-      await Promise.all([
-        vaultSummary(db).catch(() => null),
-        vaultSalesByClass(db).catch(() => []),
-        vaultTopSoldAssets(db).catch(() => []),
-        vaultTopAssets(db).catch(() => []),
-        vaultTopFunders(db).catch(() => []),
-        vaultTopCrackers(db).catch(() => []),
-        vaultSalesActivity(db).catch(() => []),
-      ]);
+    // These are aggregate scans over one SQLite database. Running them concurrently multiplies D1
+    // contention and is substantially slower than letting indexed statements complete in sequence.
+    const summary = await vaultSummary(db).catch(() => null);
+    const sales_by_class = await vaultSalesByClass(db).catch(() => []);
+    const top_sold_assets = await vaultTopSoldAssets(db).catch(() => []);
+    const top_assets = await vaultTopAssets(db).catch(() => []);
+    const top_funders = await vaultTopFunders(db).catch(() => []);
+    const top_crackers = await vaultTopCrackers(db).catch(() => []);
+    const sales_activity = await vaultSalesActivity(db).catch(() => []);
     return {
       result: { summary, sales_by_class, top_sold_assets, top_assets, top_funders, top_crackers, sales_activity },
     };
