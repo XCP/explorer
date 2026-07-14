@@ -14,19 +14,28 @@ type SaleClassRow = VaultsPayload["sales_by_class"][number];
 type TopSoldRow = VaultsPayload["top_sold_assets"][number];
 
 // a funded vault box: an Emblem vault BTC address currently holding a positive Counterparty balance.
-const inVault = `emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`;
+const inVault = `emblem_vaults e JOIN balances b ON b.address_id=e.btc_address_id AND CAST(b.quantity AS INTEGER)>0`;
 
 /** Honest vault census (Counterparty vs foreign) + the Emblem sales market (count + realized USD). */
 export function vaultSummary(db: D1Database): Promise<VaultSummary | null> {
   return one<VaultSummary>(
     db,
-    `SELECT (SELECT COUNT(*) FROM emblem_vaults) total_vaults,
-        (SELECT COUNT(*) FROM emblem_vaults WHERE vault_kind IN ('single','multi')) counterparty_vaults,
-        (SELECT COUNT(*) FROM emblem_vaults WHERE vault_kind='foreign') foreign_vaults,
-        (SELECT COUNT(*) FROM emblem_vaults e WHERE EXISTS(SELECT 1 FROM balances b WHERE b.holder=e.btc_address AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0)) funded_vaults,
-        (SELECT COUNT(*) FROM emblem_vaults WHERE is_scam_shell=1) scam_shells,
-        (SELECT COUNT(*) FROM trades WHERE venue='emblem') sales,
-        (SELECT COALESCE(ROUND(SUM(usd_value)),0) FROM trades WHERE venue='emblem' AND sale_class IN ('real','bundle')) realized_usd`,
+    `WITH census AS (
+       SELECT COUNT(*) total_vaults,
+              SUM(vault_kind IN ('single','multi')) counterparty_vaults,
+              SUM(vault_kind='foreign') foreign_vaults,
+              SUM(is_scam_shell=1) scam_shells
+         FROM emblem_vaults
+     ), funded AS (
+       SELECT COUNT(DISTINCT vault.token_id) funded_vaults
+         FROM emblem_vaults vault JOIN balances balance
+           ON balance.address_id=vault.btc_address_id AND CAST(balance.quantity AS INTEGER)>0
+     ), market AS (
+       SELECT COUNT(*) sales,
+              COALESCE(ROUND(SUM(CASE WHEN sale_class IN ('real','bundle') THEN usd_value ELSE 0 END)),0) realized_usd
+         FROM trades WHERE venue='emblem'
+     )
+     SELECT census.*,funded.funded_vaults,market.sales,market.realized_usd FROM census,funded,market`,
   );
 }
 
@@ -43,10 +52,12 @@ export function vaultSalesByClass(db: D1Database): Promise<SaleClassRow[]> {
 export function vaultTopSoldAssets(db: D1Database): Promise<TopSoldRow[]> {
   return q<TopSoldRow>(
     db,
-    `SELECT t.asset, a.asset_longname, COALESCE(ROUND(SUM(t.usd_value)),0) usd, COUNT(*) sales
-       FROM trades t LEFT JOIN assets a ON a.asset=t.asset
-      WHERE t.venue='emblem' AND t.sale_class='real' AND t.asset IS NOT NULL AND t.usd_value>0
-      GROUP BY t.asset ORDER BY usd DESC LIMIT 15`,
+    `SELECT dictionary.asset, asset.asset_longname, COALESCE(ROUND(SUM(trade.usd_value)),0) usd, COUNT(*) sales
+       FROM trades trade
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=trade.asset_id
+       LEFT JOIN assets asset ON asset.asset_id=trade.asset_id
+      WHERE trade.venue='emblem' AND trade.sale_class='real' AND trade.usd_value>0
+      GROUP BY trade.asset_id ORDER BY usd DESC LIMIT 15`,
   );
 }
 
@@ -54,7 +65,11 @@ export function vaultTopSoldAssets(db: D1Database): Promise<TopSoldRow[]> {
 export function vaultTopAssets(db: D1Database): Promise<VaultTopAsset[]> {
   return q<VaultTopAsset>(
     db,
-    `SELECT b.asset, a.asset_longname, COUNT(DISTINCT b.holder) vaults FROM ${inVault} LEFT JOIN assets a ON a.asset=b.asset GROUP BY b.asset ORDER BY vaults DESC LIMIT 15`,
+    `SELECT dictionary.asset, asset.asset_longname, COUNT(DISTINCT b.address_id) vaults
+       FROM ${inVault}
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=b.asset_id
+       LEFT JOIN assets asset ON asset.asset_id=b.asset_id
+      GROUP BY b.asset_id ORDER BY vaults DESC LIMIT 15`,
   );
 }
 
@@ -62,7 +77,10 @@ export function vaultTopAssets(db: D1Database): Promise<VaultTopAsset[]> {
 export function vaultTopFunders(db: D1Database): Promise<VaultTopAddr[]> {
   return q<VaultTopAddr>(
     db,
-    `SELECT s.source address, COUNT(DISTINCT s.destination) vaults FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.source IS NOT NULL GROUP BY s.source ORDER BY vaults DESC LIMIT 12`,
+    `SELECT address.address, COUNT(DISTINCT send.destination_id) vaults
+       FROM sends send JOIN emblem_vaults vault ON vault.btc_address_id=send.destination_id
+       JOIN address_dictionary address ON address.address_id=send.source_id
+      GROUP BY send.source_id ORDER BY vaults DESC LIMIT 12`,
   );
 }
 
@@ -70,7 +88,10 @@ export function vaultTopFunders(db: D1Database): Promise<VaultTopAddr[]> {
 export function vaultTopCrackers(db: D1Database): Promise<VaultTopAddr[]> {
   return q<VaultTopAddr>(
     db,
-    `SELECT s.destination address, COUNT(DISTINCT s.source) vaults FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source WHERE s.destination IS NOT NULL GROUP BY s.destination ORDER BY vaults DESC LIMIT 12`,
+    `SELECT address.address, COUNT(DISTINCT send.source_id) vaults
+       FROM sends send JOIN emblem_vaults vault ON vault.btc_address_id=send.source_id
+       JOIN address_dictionary address ON address.address_id=send.destination_id
+      GROUP BY send.destination_id ORDER BY vaults DESC LIMIT 12`,
   );
 }
 
