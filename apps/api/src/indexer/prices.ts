@@ -139,11 +139,18 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const c = await env.CORE_DB.prepare(
     `SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`,
   ).all();
+  // Calendar changes can correct any historical day, so schedule exactly one bounded full reconciliation.
+  // Between daily refreshes the monotonic cursor prices only newly appended trades and then stays caught up.
+  await setCoreState(env.CORE_DB, "usd_cur", 0);
   out.calendar = c.results ?? [];
   return out;
 }
 
 const USD_WINDOW = 200_000; // rows per apply call (rowid-windowed — contiguous across venues)
+
+export function tradeUsdWindow(cursor: number, tip: number): { from: number; to: number } | null {
+  return cursor >= tip ? null : { from: cursor, to: Math.min(cursor + USD_WINDOW, tip) };
+}
 
 export const APPLY_TRADE_USD_SQL = `UPDATE trades SET usd_value=total*(
     SELECT price.usd FROM prices price
@@ -152,12 +159,13 @@ export const APPLY_TRADE_USD_SQL = `UPDATE trades SET usd_value=total*(
     AND usd_value IS NOT total*(SELECT price.usd FROM prices price
       WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`;
 
-/** Reconcile each derived trade value against the admitted price calendar in bounded rowid windows. */
+/** Reconcile the daily-reset history or newly appended rows, then remain idle when caught up. */
 export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
   const tip = Number((await env.CORE_DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
-  let cur = await getCoreStateInt(env.CORE_DB, "usd_cur");
-  if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs
-  const hi = Math.min(cur + USD_WINDOW, tip);
+  const cur = await getCoreStateInt(env.CORE_DB, "usd_cur");
+  const window = tradeUsdWindow(cur, tip);
+  if (!window) return { from: cur, to: cur, tip, priced_rows: 0, done: true };
+  const hi = window.to;
   const result = await env.CORE_DB.prepare(APPLY_TRADE_USD_SQL)
     .bind(cur, hi)
     .run();

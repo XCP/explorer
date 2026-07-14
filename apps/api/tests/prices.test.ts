@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { APPLY_TRADE_USD_SQL, BUILD_XCP_BTC_DAILY_SQL, BUILD_XCP_USD_SQL } from "#api/indexer/prices";
+import { APPLY_TRADE_USD_SQL, BUILD_XCP_BTC_DAILY_SQL, BUILD_XCP_USD_SQL, tradeUsdWindow } from "#api/indexer/prices";
+
+test("USD reconciliation advances new rows without wrapping when caught up", () => {
+  assert.deepEqual(tradeUsdWindow(10, 20), { from: 10, to: 20 });
+  assert.deepEqual(tradeUsdWindow(10, 300_020), { from: 10, to: 200_010 });
+  assert.equal(tradeUsdWindow(20, 20), null);
+  assert.equal(tradeUsdWindow(21, 20), null);
+});
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
