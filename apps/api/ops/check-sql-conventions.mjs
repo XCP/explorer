@@ -18,7 +18,7 @@ const violations = [];
 const sourceRoot = fileURLToPath(new URL("../src", import.meta.url));
 const oldDatabaseBudget = new Map([
   ["admin.ts", 16],
-  ["index.ts", 4],
+  ["index.ts", 1],
   ["indexer/core-manifest.ts", 2],
   ["indexer/core-parity.ts", 3],
   ["indexer/core-projections.ts", 2],
@@ -26,7 +26,6 @@ const oldDatabaseBudget = new Map([
   ["indexer/ledger-readiness.ts", 2],
   ["indexer/signals.ts", 20],
   ["indexer/sync.ts", 36],
-  ["indexer/tags.ts", 12],
   ["legacy.ts", 3],
   ["recovery/admin.ts", 1],
   ["verify.ts", 6],

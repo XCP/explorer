@@ -1,335 +1,174 @@
-/**
- * Tag builder — materializes the polymorphic `tags` table (the categorical layer) from the numeric signal
- * tables + curated lists. Rules are DATA (edit here, like the scoring config). Numeric detail stays in signal
- * tables; tags are the categorical facts used for gating, archetypes/badges, segmentation, the signal-test
- * harness targets, and the curated validation set.
- *
- * TWO builders over the SAME rules (mirrors signals.ts' full/scoped pair):
- *   - buildTags(env)                     — FULL self-healing rebuild: DELETE all source='computed' rows, re-run
- *                                          every rule. Ground truth; run on a daily block-delta gate + on demand.
- *   - buildTagsScoped(env, {assets,addrs}) — PER-BLOCK dirty rebuild: DELETE + re-run the behavioral rules only
- *                                          for the entities the cascade touched this tick. Bounded by what
- *                                          changed, not table size. Intrinsic asset-type tags are append-only
- *                                          (INSERT OR IGNORE, never deleted — an asset's type never changes).
- *
- * Each rule carries `key` = the SELECT column that equals entity_id, so the scoped variant is just the full
- * SQL with ` AND <key> IN (?,?,…)` appended (every rule ends on a WHERE-condition, so the append is safe).
- */
+/** Compact computed-tag reconciliation. Current matches are upserted before stale matches are removed. */
 import type { Env } from "#api/env";
 
+type Scope = "asset" | "address";
 interface Rule {
   tag: string;
-  key: string;
-  sql: string;
+  scope: Scope;
+  select: string;
 }
 
-// ---- ADDRESS rules (source='computed'). {TIP} is substituted with the chain tip so age-based tags don't
-// need a correlated subquery. `key` is the column that carries the tagged address. ----
-const ADDR_RULES: Rule[] = [
-  // ---- address classification (infra) ----
-  {
-    tag: "exchange",
-    key: "address",
-    sql: `SELECT 'address',address,'exchange','computed' FROM address_signals WHERE is_exchange=1`,
-  },
-  {
-    tag: "deposit",
-    key: "address",
-    sql: `SELECT 'address',address,'deposit','computed' FROM address_signals WHERE is_deposit=1`,
-  },
-  {
-    tag: "burn",
-    key: "address",
-    sql: `SELECT 'address',address,'burn','computed' FROM address_signals WHERE is_burn=1`,
-  },
-  {
-    tag: "vault",
-    key: "address",
-    sql: `SELECT 'address',address,'vault','computed' FROM address_signals WHERE is_emblem_vault=1`,
-  },
-  // vault FUNDERS (sent assets into a vault) + CRACKERS (received assets out of a vault) — both are power-user
-  // cohorts (lab 06-27: ~100x / ~65x baseline survived_assets). Tags for segmentation, not score weights
-  // (the underlying quality is already captured by survived_assets/btc_fees/assets_held).
+const addressSelect = (condition: string) => `SELECT entity.entity_id
+  FROM address_signals signal
+  JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+  JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
+  WHERE ${condition}`;
+const assetSelect = (condition: string) => `SELECT entity.entity_id
+  FROM asset_signals signal
+  JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+  JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+  WHERE ${condition}`;
+const assetRecordSelect = (condition: string) => `SELECT entity.entity_id
+  FROM assets asset JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+  JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+  WHERE ${condition}`;
+
+const RULES: Rule[] = [
+  { tag: "exchange", scope: "address", select: addressSelect("signal.is_exchange=1") },
+  { tag: "deposit", scope: "address", select: addressSelect("signal.is_deposit=1") },
+  { tag: "burn", scope: "address", select: addressSelect("signal.is_burn=1") },
+  { tag: "vault", scope: "address", select: addressSelect("signal.is_emblem_vault=1") },
   {
     tag: "vault_funder",
-    key: "s.source",
-    sql: `SELECT DISTINCT 'address',s.source,'vault_funder','computed' FROM sends s JOIN emblem_vaults e ON e.btc_address=s.destination WHERE s.source IS NOT NULL`,
+    scope: "address",
+    select: `SELECT DISTINCT entity.entity_id FROM sends send
+      JOIN emblem_vaults vault ON vault.btc_address_id=send.destination_address_id
+      JOIN address_dictionary dictionary ON dictionary.address_id=send.source_address_id
+      JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
+      WHERE send.source_address_id IS NOT NULL`,
   },
   {
     tag: "vault_cracker",
-    key: "s.destination",
-    sql: `SELECT DISTINCT 'address',s.destination,'vault_cracker','computed' FROM sends s JOIN emblem_vaults e ON e.btc_address=s.source WHERE s.destination IS NOT NULL`,
+    scope: "address",
+    select: `SELECT DISTINCT entity.entity_id FROM sends send
+      JOIN emblem_vaults vault ON vault.btc_address_id=send.source_address_id
+      JOIN address_dictionary dictionary ON dictionary.address_id=send.destination_address_id
+      JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
+      WHERE send.destination_address_id IS NOT NULL`,
   },
-  {
-    tag: "service",
-    key: "address",
-    sql: `SELECT 'address',address,'service','computed' FROM address_signals WHERE likely_service=1`,
-  },
-  // ---- address behavior / archetypes ----
-  {
-    tag: "trader",
-    key: "address",
-    sql: `SELECT 'address',address,'trader','computed' FROM address_signals WHERE dex_trades>=10`,
-  },
-  {
-    tag: "active_trader",
-    key: "address",
-    sql: `SELECT 'address',address,'active_trader','computed' FROM address_signals WHERE dex_trades>=100`,
-  },
-  {
-    tag: "collector",
-    key: "address",
-    sql: `SELECT 'address',address,'collector','computed' FROM address_signals WHERE assets_held>=100`,
-  },
-  {
-    tag: "whale",
-    key: "address",
-    sql: `SELECT 'address',address,'whale','computed' FROM address_signals WHERE assets_held>=500`,
-  },
-  {
-    tag: "merchant",
-    key: "address",
-    sql: `SELECT 'address',address,'merchant','computed' FROM address_signals WHERE dispenses>=5`,
-  },
-  {
-    tag: "creator",
-    key: "address",
-    sql: `SELECT 'address',address,'creator','computed' FROM address_signals WHERE survived_assets>=1`,
-  },
-  {
-    tag: "prolific_creator",
-    key: "address",
-    sql: `SELECT 'address',address,'prolific_creator','computed' FROM address_signals WHERE survived_assets>=20`,
-  },
-  {
-    tag: "burner",
-    key: "address",
-    sql: `SELECT 'address',address,'burner','computed' FROM address_signals WHERE assets_burned>=3`,
-  },
-  {
-    tag: "dividend_payer",
-    key: "address",
-    sql: `SELECT 'address',address,'dividend_payer','computed' FROM address_signals WHERE dividends>=1`,
-  },
-  {
-    tag: "stamp_creator",
-    key: "address",
-    sql: `SELECT 'address',address,'stamp_creator','computed' FROM address_signals WHERE stamps_created>=5`,
-  },
-  {
-    tag: "stamp_collector",
-    key: "address",
-    sql: `SELECT 'address',address,'stamp_collector','computed' FROM address_signals WHERE stamps_collected>=20`,
-  },
-  {
-    tag: "src20_deployer",
-    key: "address",
-    sql: `SELECT 'address',address,'src20_deployer','computed' FROM address_signals WHERE src20_deploys>=1`,
-  },
-  {
-    tag: "btns_user",
-    key: "address",
-    sql: `SELECT 'address',address,'btns_user','computed' FROM address_signals WHERE is_btns_user=1`,
-  },
+  { tag: "service", scope: "address", select: addressSelect("signal.likely_service=1") },
+  { tag: "trader", scope: "address", select: addressSelect("signal.dex_trades>=10") },
+  { tag: "active_trader", scope: "address", select: addressSelect("signal.dex_trades>=100") },
+  { tag: "collector", scope: "address", select: addressSelect("signal.assets_held>=100") },
+  { tag: "whale", scope: "address", select: addressSelect("signal.assets_held>=500") },
+  { tag: "merchant", scope: "address", select: addressSelect("signal.dispenses>=5") },
+  { tag: "creator", scope: "address", select: addressSelect("signal.survived_assets>=1") },
+  { tag: "prolific_creator", scope: "address", select: addressSelect("signal.survived_assets>=20") },
+  { tag: "burner", scope: "address", select: addressSelect("signal.assets_burned>=3") },
+  { tag: "dividend_payer", scope: "address", select: addressSelect("signal.dividends>=1") },
+  { tag: "stamp_creator", scope: "address", select: addressSelect("signal.stamps_created>=5") },
+  { tag: "stamp_collector", scope: "address", select: addressSelect("signal.stamps_collected>=20") },
+  { tag: "src20_deployer", scope: "address", select: addressSelect("signal.src20_deploys>=1") },
+  { tag: "btns_user", scope: "address", select: addressSelect("signal.is_btns_user=1") },
   {
     tag: "og",
-    key: "address",
-    sql: `SELECT 'address',address,'og','computed' FROM address_signals WHERE first_block<={TIP}-43800 AND last_block>=850000`,
+    scope: "address",
+    select: addressSelect(
+      "signal.first_block<=(SELECT max(block_index)-43800 FROM blocks) AND signal.last_block>=850000",
+    ),
   },
-];
-// NOTE: stamp classification tags (stamp/src20/src721/src101/src20_deploy) are NOT here — they are written
-// at ingest by the issuance handler with source='protocol' (the classifier base64-decodes the description,
-// which can't be expressed in SQL). The DELETE-and-rebuild below only touches source='computed', so those
-// ingest-written tags survive. See src/indexer/events/issuance.ts.
-
-// ---- ASSET behavioral rules (aggregated features; can gain/lose the tag as features move) ----
-const ASSET_RULES: Rule[] = [
-  { tag: "wash", key: "asset", sql: `SELECT 'asset',asset,'wash','computed' FROM asset_signals WHERE low_quality=1` },
-  { tag: "liquid", key: "asset", sql: `SELECT 'asset',asset,'liquid','computed' FROM asset_signals WHERE trades>=10` },
-  {
-    tag: "durable",
-    key: "asset",
-    sql: `SELECT 'asset',asset,'durable','computed' FROM asset_signals WHERE (last_trade_blk-first_trade_blk)>=43800`,
-  },
-  { tag: "broad", key: "asset", sql: `SELECT 'asset',asset,'broad','computed' FROM asset_signals WHERE holders>=50` },
+  { tag: "wash", scope: "asset", select: assetSelect("signal.low_quality=1") },
+  { tag: "liquid", scope: "asset", select: assetSelect("signal.trades>=10") },
+  { tag: "durable", scope: "asset", select: assetSelect("signal.last_trade_blk-signal.first_trade_blk>=43800") },
+  { tag: "broad", scope: "asset", select: assetSelect("signal.holders>=50") },
   {
     tag: "vaulted",
-    key: "asset",
-    sql: `SELECT 'asset',asset,'vaulted','computed' FROM asset_signals WHERE asset IN (SELECT b.asset FROM emblem_vaults e JOIN balances b ON b.holder=e.btc_address AND CAST(b.quantity AS INTEGER)>0)`,
+    scope: "asset",
+    select: assetSelect(`EXISTS(SELECT 1 FROM balances balance JOIN emblem_vaults vault
+      ON vault.btc_address_id=balance.address_id WHERE balance.asset_id=signal.asset_id
+      AND CAST(balance.quantity AS INTEGER)>0)`),
   },
-  // Provenance — Counterparty predates the Ethereum NFT era. Immutable (first issuance never moves); the BTC
-  // block cutoffs are the milestone dates: pre-ethereum = before ETH genesis 2015-07-30 (blk 367561);
-  // pre-cryptopunks = before CryptoPunks V1 2017-06-09 (blk 470436). Read from the assets table, not signals.
-  {
-    tag: "pre-ethereum",
-    key: "asset",
-    sql: `SELECT 'asset',asset,'pre-ethereum','computed' FROM assets WHERE first_issuance_block_index<367561`,
-  },
+  { tag: "pre-ethereum", scope: "asset", select: assetRecordSelect("asset.first_issuance_block_index<367561") },
   {
     tag: "pre-cryptopunks",
-    key: "asset",
-    sql: `SELECT 'asset',asset,'pre-cryptopunks','computed' FROM assets WHERE first_issuance_block_index<470436`,
+    scope: "asset",
+    select: assetRecordSelect("asset.first_issuance_block_index<470436"),
   },
-];
-// NOTE: `has_media` (asset has real art in the CDN) is NOT computed here — it's a persistent tag with
-// source='media', written directly by the xcp-cdn ingest when it stores art (and backfilled once from the
-// R2 bucket). The DELETE-and-rebuild below only touches source='computed', so those survive. ~91k assets.
-
-// ---- ASSET-TYPE rules (from the assets table). INTRINSIC + append-only: an asset's type never changes once
-// issued, so these are never DELETEd in the scoped path — just INSERT OR IGNORE'd for newly-seen assets. ----
-const ASSET_TYPE_RULES: Rule[] = [
-  { tag: "named", key: "asset", sql: `SELECT 'asset',asset,'named','computed' FROM assets WHERE type='asset'` },
-  {
-    tag: "subasset",
-    key: "asset",
-    sql: `SELECT 'asset',asset,'subasset','computed' FROM assets WHERE type='subasset'`,
-  },
-  { tag: "numeric", key: "asset", sql: `SELECT 'asset',asset,'numeric','computed' FROM assets WHERE type='numeric'` },
+  { tag: "named", scope: "asset", select: assetRecordSelect("asset.type='asset'") },
+  { tag: "subasset", scope: "asset", select: assetRecordSelect("asset.type='subasset'") },
+  { tag: "numeric", scope: "asset", select: assetRecordSelect("asset.type='numeric'") },
 ];
 
-// Every computed rule, in the original (address → asset-behavior → asset-type) order — used by the FULL rebuild.
-const COMPUTED_RULES: Rule[] = [...ADDR_RULES, ...ASSET_RULES, ...ASSET_TYPE_RULES];
-
-// Behavioral tag names by scope — the scoped rebuild DELETEs exactly these for dirty entities (leaving
-// intrinsic asset-type tags + protocol/curated/manual/collection/media tags untouched).
-const ADDR_BEHAVIORAL_TAGS = ADDR_RULES.map((r) => `'${r.tag}'`).join(",");
-const ASSET_BEHAVIORAL_TAGS = ASSET_RULES.map((r) => `'${r.tag}'`).join(",");
-// Intrinsic asset-type tags — immutable once issued (an asset's type never changes). The behavioral-only
-// rebuild leaves these in place instead of churning ~254k rows every daily self-heal (58% of all computed tags).
-const ASSET_TYPE_TAGS = ASSET_TYPE_RULES.map((r) => `'${r.tag}'`).join(",");
-
-// Curated grail labels (source='curated') now live in the `curated` table (kind='grail', migration 0022),
-// editable via /admin/curated. They are the validation anchors — known-iconic assets, the ground truth we
-// test the objective score against (NOT a score override; the score stays objective). LESSON (2026-06-28):
-// liquid grails (FDCARD/SATOSHICARD ~p98) the model ranks well, but ultra-rare 1/1 grails (WINKELPEPE 3
-// holders/3 trades, p62) are objectively indistinguishable from dead assets in Counterparty data — grail-ness there =
-// series membership, which must come from the canonical Rare Pepe / Fake Rare directories (off-chain but
-// authoritative), imported as tags later. Read straight from the table in buildTags below.
-
-const KEY_CHUNK = 800; // dirty keys per statement (SQLite var limit is 999)
-const chunk = <T>(a: T[], n: number): T[][] => {
-  const o: T[][] = [];
-  for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
-  return o;
+const chunks = <T>(items: T[], size = 800): T[][] => {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+  return result;
 };
 
-async function tipBlock(env: Env): Promise<number> {
-  return Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+async function ensureEntities(db: D1Database): Promise<void> {
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
+      SELECT 'asset',asset FROM asset_dictionary`),
+    db.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
+      SELECT 'address',address FROM address_dictionary`),
+  ]);
 }
 
-/**
- * FULL self-healing rebuild (canonical): drop every computed tag and re-derive from the rules. Curated /
- * protocol / manual / collection / media tags (other `source` values) are left untouched. Idempotent.
- *
- * `includeTypes` (default true) governs the intrinsic asset-type tags (named/subasset/numeric). They're
- * immutable — an asset's type never changes — and are seeded per-issuance by buildTagsScoped, so the frequent
- * daily self-heal passes `false` to skip re-deriving all ~254k of them (a full `assets` scan + DELETE churn
- * every run). The on-demand admin rebuild keeps the default (true) to re-seed them as ground truth.
- */
-export async function buildTags(env: Env, opts: { includeTypes?: boolean } = {}): Promise<Record<string, unknown>> {
-  const { includeTypes = true } = opts;
-  const tip = await tipBlock(env);
-  // refresh computed tags only (leave curated/manual/protocol/collection/media intact). Behavioral-only runs
-  // also leave the immutable asset-type tags in place.
-  // Per-rule ATOMIC swap instead of a global DELETE-then-rebuild: for each computed tag, delete its prior rows
-  // and re-derive them in ONE D1 batch (a transaction). No computed tag is ever empty mid-run, and a crash
-  // between rules leaves every not-yet-processed tag at its prior value — the set is never globally wiped.
-  // (includeTypes=false simply omits the immutable asset-type rules, so those tags are never touched.)
-  const rulesToRun = includeTypes ? COMPUTED_RULES : [...ADDR_RULES, ...ASSET_RULES];
-  let rules = 0;
-  for (const r of rulesToRun) {
-    const insert = `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql.replace(/\{TIP\}/g, String(tip))}`;
-    await env.DB.batch([
-      env.DB.prepare(`DELETE FROM tags WHERE source='computed' AND tag=?`).bind(r.tag),
-      env.DB.prepare(insert),
-    ]);
-    rules++;
-  }
-  // upsert curated grail labels from the curated table (source='curated'; idempotent)
-  const grails = await env.DB.prepare(`SELECT key FROM curated WHERE kind='grail'`).all<{ key: string }>();
-  for (const g of grails.results) {
-    await env.DB.prepare(
-      `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) VALUES ('asset',?,'grail','curated')`,
+async function reconcileRule(db: D1Database, rule: Rule, keys?: string[]): Promise<number> {
+  const placeholders = keys?.map(() => "?").join(",");
+  const selected = keys
+    ? `SELECT entity_id FROM entity_dictionary WHERE entity_type=? AND entity_key IN (${placeholders})`
+    : null;
+  const current = selected ? `${rule.select} INTERSECT ${selected}` : rule.select;
+  const write = await db
+    .prepare(
+      `INSERT INTO tags(entity_id,tag,source)
+      SELECT entity_id,?,'computed' FROM (${current}) WHERE 1
+      ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source WHERE tags.source='computed'`,
     )
-      .bind(g.key)
-      .run();
-  }
-  const n = await env.DB.prepare(`SELECT COUNT(*) c FROM tags`).first<{ c: number }>();
-  return { rules, curated: grails.results.length, total_tags: n?.c ?? 0 };
+    .bind(rule.tag, ...(keys ? [rule.scope, ...keys] : []))
+    .run();
+  await db
+    .prepare(
+      `DELETE FROM tags WHERE source='computed' AND tag=?
+      ${selected ? `AND entity_id IN (${selected})` : ""}
+      AND entity_id NOT IN (${rule.select})`,
+    )
+    .bind(rule.tag, ...(keys ? [rule.scope, ...keys] : []))
+    .run();
+  return write.meta.rows_written ?? 0;
 }
 
-/**
- * PER-BLOCK DIRTY rebuild (Layer B) — the same rules, scoped to the entities the cascade touched this tick.
- * For each dirty chunk: DELETE its behavioral computed tags, then re-run every behavioral rule filtered to
- * that chunk (an entity that stopped matching a rule loses the tag — same guarantee as the full rebuild, but
- * only for dirty entities; the daily full rebuild self-heals anything the dirty set missed). Intrinsic
- * asset-type tags are append-only, so they are INSERT OR IGNORE'd (never DELETEd) for the dirty assets —
- * this is also how a freshly-issued asset (dirtied by its issuance) gets its named/subasset/numeric tag.
- *
- * Takes the dirty sets straight from runSignalsCascade's return (one derivation, shared with the signals
- * cascade) so tags and signals are always rebuilt over the exact same entities.
- */
+export async function buildTags(env: Env, opts: { includeTypes?: boolean } = {}): Promise<Record<string, unknown>> {
+  const db = env.CORE_DB;
+  await ensureEntities(db);
+  const rules =
+    opts.includeTypes === false ? RULES.filter((rule) => !["named", "subasset", "numeric"].includes(rule.tag)) : RULES;
+  let written = 0;
+  for (const rule of rules) written += await reconcileRule(db, rule);
+  await db
+    .prepare(
+      `INSERT INTO tags(entity_id,tag,source)
+    SELECT entity.entity_id,'grail','curated' FROM curated item
+    JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=item.key
+    WHERE item.kind='grail' ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source`,
+    )
+    .run();
+  await db
+    .prepare(
+      `DELETE FROM tags WHERE source='curated' AND tag='grail' AND entity_id NOT IN (
+    SELECT entity.entity_id FROM curated item JOIN entity_dictionary entity
+      ON entity.entity_type='asset' AND entity.entity_key=item.key WHERE item.kind='grail')`,
+    )
+    .run();
+  const total = await db.prepare(`SELECT count(*) count FROM tags`).first<{ count: number }>();
+  return { rules: rules.length, written, total_tags: total?.count ?? 0 };
+}
+
 export async function buildTagsScoped(
   env: Env,
   dirty: { assets: string[]; addrs: string[] },
 ): Promise<Record<string, unknown>> {
-  const tip = await tipBlock(env);
-  const sub = (sql: string) => sql.replace(/\{TIP\}/g, String(tip));
-  let addrWrote = 0,
-    assetWrote = 0,
-    typeWrote = 0;
-
-  // --- dirty ADDRESSES: replace their behavioral tags ---
-  for (const part of chunk(dirty.addrs, KEY_CHUNK)) {
-    if (!part.length) continue;
-    const ph = part.map(() => "?").join(",");
-    await env.DB.prepare(
-      `DELETE FROM tags WHERE source='computed' AND entity_type='address' AND tag IN (${ADDR_BEHAVIORAL_TAGS}) AND entity_id IN (${ph})`,
-    )
-      .bind(...part)
-      .run();
-    for (const r of ADDR_RULES) {
-      const res = await env.DB.prepare(
-        `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${sub(r.sql)} AND ${r.key} IN (${ph})`,
-      )
-        .bind(...part)
-        .run();
-      addrWrote += res?.meta?.rows_written ?? 0;
+  const db = env.CORE_DB;
+  await ensureEntities(db);
+  let written = 0;
+  for (const scope of ["address", "asset"] as const) {
+    const keys = scope === "asset" ? dirty.assets : dirty.addrs;
+    for (const part of chunks(keys)) {
+      if (part.length === 0) continue;
+      for (const rule of RULES.filter((candidate) => candidate.scope === scope))
+        written += await reconcileRule(db, rule, part);
     }
   }
-
-  // --- dirty ASSETS: replace their behavioral tags, then ensure their intrinsic type tag ---
-  for (const part of chunk(dirty.assets, KEY_CHUNK)) {
-    if (!part.length) continue;
-    const ph = part.map(() => "?").join(",");
-    await env.DB.prepare(
-      `DELETE FROM tags WHERE source='computed' AND entity_type='asset' AND tag IN (${ASSET_BEHAVIORAL_TAGS}) AND entity_id IN (${ph})`,
-    )
-      .bind(...part)
-      .run();
-    for (const r of ASSET_RULES) {
-      const res = await env.DB.prepare(
-        `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${sub(r.sql)} AND ${r.key} IN (${ph})`,
-      )
-        .bind(...part)
-        .run();
-      assetWrote += res?.meta?.rows_written ?? 0;
-    }
-    for (const r of ASSET_TYPE_RULES) {
-      const res = await env.DB.prepare(
-        `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source) ${r.sql} AND ${r.key} IN (${ph})`,
-      )
-        .bind(...part)
-        .run();
-      typeWrote += res?.meta?.rows_written ?? 0;
-    }
-  }
-
-  return {
-    dirty_addrs: dirty.addrs.length,
-    dirty_assets: dirty.assets.length,
-    addr_tags: addrWrote,
-    asset_tags: assetWrote,
-    type_tags: typeWrote,
-  };
+  return { dirty_addrs: dirty.addrs.length, dirty_assets: dirty.assets.length, written };
 }
