@@ -41,6 +41,7 @@ import {
   reconcileRecentCoreProjection,
 } from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
+import { backfillDispenseIdentities } from "#api/indexer/dispense-identity";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -158,6 +159,12 @@ admin.post("/admin/core-projections/reconcile-balance-snapshots", async (c) => {
   const offset = Math.max(0, Number.parseInt(c.req.query("offset") ?? "0", 10) || 0);
   const rows = Math.min(100, Math.max(1, Number.parseInt(c.req.query("rows") ?? "100", 10) || 100));
   return c.json(await reconcileBalanceSnapshotPage(c.env, offset, rows));
+});
+
+admin.post("/admin/core-projections/reconcile-dispense-identities", async (c) => {
+  const after = Math.max(0, Number.parseInt(c.req.query("after") ?? "0", 10) || 0);
+  const rows = Math.min(500, Math.max(1, Number.parseInt(c.req.query("rows") ?? "500", 10) || 500));
+  return c.json(await backfillDispenseIdentities(c.env.DB, c.env.CORE_DB, after, rows));
 });
 
 // Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;

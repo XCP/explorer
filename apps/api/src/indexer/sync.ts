@@ -25,6 +25,7 @@ import { hashToBytes } from "#api/indexer/compact-codec";
 import { getIndexerStateStringArray } from "#api/indexer/state";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
+import { reconcileDispenseIdentities } from "#api/indexer/dispense-identity";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -393,6 +394,11 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
           ...ctx.ledgerStmts,
         ]);
         await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
+        await reconcileDispenseIdentities(
+          env.DB,
+          env.CORE_DB,
+          evs.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
+        );
         await env.CORE_DB.prepare(
           `INSERT INTO core_state(key,value) VALUES('last_event_index',?)
            ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
@@ -483,6 +489,13 @@ export async function syncCompactEvents(
       if (!compact) throw new Error("compact replay context is missing");
       await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
       await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
+      if (env.DB) {
+        await reconcileDispenseIdentities(
+          env.DB,
+          env.CORE_DB,
+          events.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
+        );
+      }
 
       lastIndex = events[events.length - 1].event_index;
       lastBlock = Math.max(lastBlock, ctx.maxBlock);

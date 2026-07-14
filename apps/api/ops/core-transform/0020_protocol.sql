@@ -260,10 +260,10 @@ ON CONFLICT(tx_index) DO UPDATE SET
   last_status_tx_hash=excluded.last_status_tx_hash;
 
 INSERT INTO dispenses(
-  event_index,tx_index,dispense_index,tx_hash,dispenser_tx_index,source_id,destination_id,asset_id,
+  event_index,tx_index,dispense_index,tx_hash,dispenser_tx_index,source_id,destination_id,asset_id,dispense_id,
   dispense_quantity,dispense_quantity_normalized,btc_amount,block_index,block_time
 )
-SELECT d.event_index,t.tx_index,d.dispense_index,unhex(d.tx_hash),p.tx_index,s.address_id,g.address_id,a.asset_id,
+SELECT d.event_index,t.tx_index,d.dispense_index,unhex(d.tx_hash),p.tx_index,s.address_id,g.address_id,a.asset_id,d.id,
        d.dispense_quantity,d.dispense_quantity_normalized,d.btc_amount,d.block_index,d.block_time
 FROM source.dispenses d
 JOIN source.transactions t ON t.tx_hash=d.tx_hash
@@ -276,6 +276,7 @@ ON CONFLICT(event_index) DO UPDATE SET
   tx_index=excluded.tx_index,tx_hash=excluded.tx_hash,dispense_index=excluded.dispense_index,
   dispenser_tx_index=excluded.dispenser_tx_index,source_id=excluded.source_id,
   destination_id=excluded.destination_id,asset_id=excluded.asset_id,
+  dispense_id=excluded.dispense_id,
   dispense_quantity=excluded.dispense_quantity,
   dispense_quantity_normalized=excluded.dispense_quantity_normalized,
   btc_amount=excluded.btc_amount,block_index=excluded.block_index,block_time=excluded.block_time;
