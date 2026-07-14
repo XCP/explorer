@@ -9,12 +9,6 @@ cpu_ms = 300000
 [triggers]
 crons = ["*/2 * * * *", "1-59/2 * * * *"]
 
-[[d1_databases]]
-binding = "DB"
-database_name = "xcpio"
-database_id = "0aa317ef-600f-4908-b7e3-fb8df8c71104"
-migrations_dir = "migrations"
-
 # Canonical compact Counterparty mirror. It remains read-gated until the complete snapshot passes parity and imports.
 [[d1_databases]]
 binding = "CORE_DB"

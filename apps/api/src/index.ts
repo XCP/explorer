@@ -3,7 +3,7 @@
  *
  * Composition root: defines the Env bindings, mounts the route modules, and runs the scheduled cron.
  *   read     -> explorer read API (/v2/*)            verify -> mirror-vs-Counterparty evaluation harness (/admin/verify)
- *   legacy   -> app.xcp.io/api/v1 wallet endpoints   admin  -> operational routes (/admin/*)
+ *   extension -> app.xcp.io/api/v1 wallet endpoints  admin  -> operational routes (/admin/*)
  * The scheduled handler advances the Counterparty event mirror, then (only while caught up) steps the reputation
  * signal rebuild, the Emblem crawl, and deterministic supply maintenance — so catch-up never contends.
  */
@@ -31,7 +31,7 @@ import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
 import { runScheduledJob } from "#api/scheduler/job";
 import { read } from "#api/read/router";
 import { verify } from "#api/verify";
-import { legacy } from "#api/legacy";
+import { extensionApi } from "#api/extension-api";
 import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
@@ -144,7 +144,7 @@ app.get("/", (c) => c.text("api.xcp.io ok"));
 app.get("/health", (c) => c.text("ok"));
 app.route("/", read); // explorer read API: /v2/assets, /v2/addresses/{a}/balances, /v2/blocks, ...
 app.route("/", verify); // /admin/verify — mirror-vs-Counterparty evaluation harness
-app.route("/", legacy); // /api/v1/* — wallet-extension compatibility surface
+app.route("/", extensionApi); // stable wallet-extension API
 app.route("/", admin); // /admin/* — operational routes (token-gated)
 app.route("/", recoveryRead); // native Counterparty bare-multisig recovery
 

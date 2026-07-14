@@ -16,9 +16,7 @@ async function sourceFiles(directory) {
 
 const violations = [];
 const sourceRoot = fileURLToPath(new URL("../src", import.meta.url));
-const oldDatabaseBudget = new Map([
-  ["legacy.ts", 3],
-]);
+const oldDatabaseBudget = new Map([]);
 const observedOldDatabaseReferences = new Map();
 
 for (const file of await sourceFiles(sourceRoot)) {
