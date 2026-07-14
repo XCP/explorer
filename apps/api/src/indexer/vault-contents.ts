@@ -19,7 +19,7 @@
  * so a single pass is never final). Cron / admin driven, like the other Emblem sidecars.
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const BATCH = 400; // vaults per step; aggregates join sends/balances on a vault ROWID RANGE (2 bound params,
 // not an IN-list — D1 caps bound params at 100, so IN-lists can't scale the batch)
@@ -27,7 +27,7 @@ const BATCH = 400; // vaults per step; aggregates join sends/balances on a vault
 interface VaultRow {
   rowid: number;
   token_id: string;
-  contract: string;
+  btc_address_id: number;
   btc_address: string;
 }
 interface Classification {
@@ -46,12 +46,13 @@ const qn = (v: string | null): number => {
 
 /** One bounded, resumable step: classify the next BATCH of resolved vaults from their send/balance history. */
 export async function classifyVaults(env: Env): Promise<Record<string, unknown>> {
-  const cursor = parseInt((await getState(env.DB, "vault_contents_cursor")) || "0", 10);
+  const cursor = await getCoreStateInt(env.CORE_DB, "vault_contents_cursor");
   const rows =
     (
-      await env.DB.prepare(
-        `SELECT rowid, token_id, contract, btc_address FROM emblem_vaults
-      WHERE btc_address IS NOT NULL AND rowid > ? ORDER BY rowid LIMIT ?`,
+      await env.CORE_DB.prepare(
+        `SELECT vault.rowid,vault.token_id,vault.btc_address_id,address.address btc_address
+         FROM emblem_vaults vault JOIN address_dictionary address ON address.address_id=vault.btc_address_id
+         WHERE vault.rowid>? ORDER BY vault.rowid LIMIT ?`,
       )
         .bind(cursor, BATCH)
         .all<VaultRow>()
@@ -60,10 +61,11 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   const out: Record<string, unknown> = { from: cursor, classified: 0, single: 0, multi: 0, foreign: 0, cracked: 0 };
   if (!rows.length) {
     // wrapped — re-sweep from the top next tick (vaults crack after minting)
-    await setState(env.DB, "vault_contents_cursor", "0");
+    await setCoreState(env.CORE_DB, "vault_contents_cursor", 0);
     out.wrapped = true;
     out.total =
-      (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE classified=1`).first<{ c: number }>())?.c ?? 0;
+      (await env.CORE_DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE classified=1`).first<{ c: number }>())
+        ?.c ?? 0;
     return out;
   }
   // The selected vaults occupy the rowid range (cursor, hi] — aggregate by JOINing the raw tables to that
@@ -78,11 +80,15 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   // Inbound funding: every non-XCP card that ever ARRIVED, summed (gross — what the vault was filled with).
   const fundRows =
     (
-      await env.DB.prepare(
-        `SELECT s.destination address, s.asset, SUM(COALESCE(CAST(s.quantity_normalized AS REAL), CAST(s.quantity AS REAL))) qn
-       FROM emblem_vaults ev JOIN sends s ON s.destination = ev.btc_address
-      WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL AND s.asset IS NOT NULL AND s.asset <> 'XCP'
-      GROUP BY s.destination, s.asset`,
+      await env.CORE_DB.prepare(
+        `SELECT destination.address,asset.asset,
+           SUM(COALESCE(CAST(send.quantity_normalized AS REAL),CAST(send.quantity AS REAL))) qn
+         FROM emblem_vaults vault
+         JOIN sends send ON send.destination_address_id=vault.btc_address_id
+         JOIN address_dictionary destination ON destination.address_id=send.destination_address_id
+         JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
+         WHERE vault.rowid>? AND vault.rowid<=? AND asset.asset<>'XCP'
+         GROUP BY send.destination_address_id,send.asset_id`,
       )
         .bind(cursor, hi)
         .all<{ address: string; asset: string; qn: number }>()
@@ -91,10 +97,14 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   // Still-held balances: authoritative "the card is right there now" (best contents_qty for un-cracked vaults).
   const balRows =
     (
-      await env.DB.prepare(
-        `SELECT b.holder address, b.asset, CAST(b.quantity_normalized AS REAL) qn
-       FROM emblem_vaults ev JOIN balances b ON b.holder = ev.btc_address
-      WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL AND b.asset <> 'XCP' AND CAST(b.quantity AS REAL) > 0`,
+      await env.CORE_DB.prepare(
+        `SELECT holder.address,asset.asset,CAST(balance.quantity_normalized AS REAL) qn
+         FROM emblem_vaults vault
+         JOIN balances balance ON balance.address_id=vault.btc_address_id
+         JOIN address_dictionary holder ON holder.address_id=balance.address_id
+         JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id
+         WHERE vault.rowid>? AND vault.rowid<=? AND asset.asset<>'XCP'
+           AND CAST(balance.quantity AS INTEGER)>0`,
       )
         .bind(cursor, hi)
         .all<{ address: string; asset: string; qn: number }>()
@@ -103,10 +113,15 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   // Outbound sends: a crack — a non-XCP card sent back out, and who received it.
   const outRows =
     (
-      await env.DB.prepare(
-        `SELECT s.source address, s.block_time, s.destination FROM emblem_vaults ev JOIN sends s ON s.source = ev.btc_address
-      WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL AND s.asset IS NOT NULL AND s.asset <> 'XCP'
-      ORDER BY s.source, s.block_time ASC, s.id ASC`,
+      await env.CORE_DB.prepare(
+        `SELECT source.address,send.block_time,destination.address destination
+         FROM emblem_vaults vault
+         JOIN sends send ON send.source_address_id=vault.btc_address_id
+         JOIN address_dictionary source ON source.address_id=send.source_address_id
+         JOIN address_dictionary destination ON destination.address_id=send.destination_address_id
+         JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
+         WHERE vault.rowid>? AND vault.rowid<=? AND asset.asset<>'XCP'
+         ORDER BY send.source_address_id,send.block_time,send.event_index`,
       )
         .bind(cursor, hi)
         .all<{ address: string; block_time: number; destination: string }>()
@@ -116,10 +131,14 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   // row), so any outbound sweep from a funded vault empties it. Merge with sends; earliest wins.
   const sweepRows =
     (
-      await env.DB.prepare(
-        `SELECT sw.source address, sw.block_time, sw.destination FROM emblem_vaults ev JOIN sweeps sw ON sw.source = ev.btc_address
-      WHERE ev.rowid > ? AND ev.rowid <= ? AND ev.btc_address IS NOT NULL
-      ORDER BY sw.source, sw.block_time ASC`,
+      await env.CORE_DB.prepare(
+        `SELECT source.address,sweep.block_time,destination.address destination
+         FROM emblem_vaults vault
+         JOIN sweeps sweep ON sweep.source_id=vault.btc_address_id
+         JOIN address_dictionary source ON source.address_id=sweep.source_id
+         JOIN address_dictionary destination ON destination.address_id=sweep.destination_id
+         WHERE vault.rowid>? AND vault.rowid<=?
+         ORDER BY sweep.source_id,sweep.block_time`,
       )
         .bind(cursor, hi)
         .all<{ address: string; block_time: number; destination: string }>()
@@ -190,14 +209,17 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
     const c = classify(r.btc_address);
     out[c.vault_kind] = (out[c.vault_kind] as number) + 1;
     if (c.cracked_at != null) out.cracked = (out.cracked as number) + 1;
-    return env.DB.prepare(
-      `UPDATE emblem_vaults SET contents_asset=?, contents_qty=?, vault_kind=?, funded=?, cracked_at=?, cracker_address=?, classified=1 WHERE token_id=?`,
+    return env.CORE_DB.prepare(
+      `UPDATE emblem_vaults SET
+         contents_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?),contents_qty=?,vault_kind=?,
+         funded=?,cracked_at=?,cracker_address_id=(SELECT address_id FROM address_dictionary WHERE address=?),
+         classified=1 WHERE token_id=?`,
     ).bind(c.contents_asset, c.contents_qty, c.vault_kind, c.funded, c.cracked_at, c.cracker_address, r.token_id);
   });
-  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+  for (let i = 0; i < stmts.length; i += 50) await env.CORE_DB.batch(stmts.slice(i, i + 50));
   out.classified = stmts.length;
 
-  await setState(env.DB, "vault_contents_cursor", String(hi));
+  await setCoreState(env.CORE_DB, "vault_contents_cursor", hi);
   out.to = hi;
   return out;
 }

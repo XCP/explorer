@@ -17,6 +17,9 @@ import { fetchEmblemMetadata } from "#api/integrations/emblem-metadata";
 
 const PER_RUN = 80; // vaults per step (bounded under the Worker subrequest/CPU budget)
 const CONCURRENCY = 5;
+export const EMBLEM_META_UPDATE_SQL = `UPDATE emblem_vaults SET claimed_name=?,
+  claimed_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?),
+  content_coins=?,has_contents=?,emblem_fraud=?,meta_crawled=1 WHERE token_id=?`;
 
 /** The card a vault CLAIMS: the leading alphanumeric token of its name, uppercased. Emblem CP vaults lead
  *  with the ticker ("PEPECASH | Series 1 #78" → PEPECASH; "PepeonMusk" → PEPEONMUSK). Resolved against the
@@ -61,8 +64,8 @@ async function fetchMeta(id: string): Promise<Parsed | null> {
 export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>> {
   const rows =
     (
-      await env.DB.prepare(
-        `SELECT token_id FROM emblem_vaults WHERE vault_kind='foreign' AND meta_crawled=0 ORDER BY rowid LIMIT ?`,
+      await env.CORE_DB.prepare(
+        `SELECT token_id FROM emblem_vaults WHERE vault_kind='foreign' AND meta_crawled=0 ORDER BY token_id LIMIT ?`,
       )
         .bind(PER_RUN)
         .all<{ token_id: string }>()
@@ -92,11 +95,15 @@ export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>
     if (p.claimed) out.claims_cp = (out.claims_cp as number) + 1;
     if (p.has) out.has_contents = (out.has_contents as number) + 1;
     if (p.fraud) out.fraud = (out.fraud as number) + 1;
-    return env.DB.prepare(
-      `UPDATE emblem_vaults SET claimed_name=?, claimed_asset=(SELECT a.asset FROM assets a WHERE a.asset=?),
-         content_coins=?, has_contents=?, emblem_fraud=?, meta_crawled=1 WHERE token_id=?`,
-    ).bind(p.claimed, p.claimed, p.coins, p.has, p.fraud, p.id);
+    return env.CORE_DB.prepare(EMBLEM_META_UPDATE_SQL).bind(
+      p.claimed,
+      p.claimed,
+      p.coins,
+      p.has,
+      p.fraud,
+      p.id,
+    );
   });
-  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+  for (let i = 0; i < stmts.length; i += 50) await env.CORE_DB.batch(stmts.slice(i, i + 50));
   return out;
 }
