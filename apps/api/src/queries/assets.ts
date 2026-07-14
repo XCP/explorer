@@ -12,12 +12,10 @@ import type {
   AssetIndexRow,
   FeaturedAsset,
   BalanceRow,
-  AssetListRow,
   HolderTierRow,
   HolderArchetypes,
   AssetReviewDistribution,
   AssetReviewTopRow,
-  AssetSales,
 } from "@xcp/shared/assets";
 import type {
   SendRow,
@@ -30,7 +28,6 @@ import type {
   PoolRow,
   PoolMatchRow,
 } from "@xcp/shared/records";
-import type { AssetSignalsRow, AssetRow } from "#api/storage-types";
 import { q, one } from "#api/db";
 import { ORDER_SELECT, FAIRMINT_SELECT } from "#api/queries/records";
 
@@ -114,64 +111,15 @@ export function featuredAssets(db: D1Database, expr: string, limit: number): Pro
 /* ---------- detail (business logic lives in the handler; each statement is a function here) ---------- */
 
 /** Full assets row by asset name or longname. */
-export function getAsset(db: D1Database, asset: string): Promise<AssetRow | null> {
-  return one<AssetRow>(db, `SELECT * FROM assets WHERE asset=? OR asset_longname=?`, asset.toUpperCase(), asset);
-}
-
 /** Distinct address holders with a positive balance of an asset. */
-export async function holderCount(db: D1Database, asset: string): Promise<number> {
-  const r = await one<{ c: number }>(
-    db,
-    `SELECT COUNT(*) c FROM balances WHERE asset=? AND CAST(quantity AS INTEGER)>0`,
-    asset,
-  );
-  return r?.c ?? 0;
-}
-
 /** Native XCP supply = proof-of-burn minus everything destroyed (destructions + issuance/sweep/dividend fees).
  *  Returned as an exact int64 from SQLite; the handler normalizes. */
-export function xcpNativeSupply(db: D1Database): Promise<{ supply: string } | null> {
-  return one<{ supply: string }>(db, `SELECT xcp_supply supply FROM network_stats_snapshot WHERE singleton=1`);
-}
-
 /** The one-line issuance brief an offer storefront shows about its asset: total supply + locked. */
-export function assetBrief(
-  db: D1Database,
-  asset: string,
-): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
-  return one<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null }>(
-    db,
-    `SELECT supply_normalized, divisible, locked FROM assets WHERE asset=?`,
-    asset,
-  );
-}
-
 /** Precomputed asset-quality signal row (feeds the composed score). */
-export function assetSignalsRow(db: D1Database, asset: string): Promise<AssetSignalsRow | null> {
-  return one<AssetSignalsRow>(db, `SELECT * FROM asset_signals WHERE asset=?`, asset);
-}
-
 /** Lifetime money stats from the unified trades ledger: realized USD across every venue plus the most
  *  recent USD-known sale. Both reads ride idx_trades_asset(asset, block_time DESC); the LIMIT 1 probe
  *  early-terminates at the newest priced row. */
-export function assetSales(db: D1Database, asset: string): Promise<AssetSales | null> {
-  return one<AssetSales>(
-    db,
-    `WITH last AS (SELECT usd_value, quantity, block_time FROM trades
-                   WHERE asset=?1 AND usd_value IS NOT NULL ORDER BY block_time DESC LIMIT 1)
-     SELECT (SELECT SUM(usd_value) FROM trades WHERE asset=?1) realized_usd,
-            (SELECT CASE WHEN quantity > 0 THEN usd_value / quantity END FROM last) last_price_usd,
-            (SELECT block_time FROM last) last_sale_time`,
-    asset,
-  );
-}
-
 /** Categorical tags for an asset (stamp/src20/grail/behavioral labels). */
-export async function assetTags(db: D1Database, asset: string): Promise<string[]> {
-  const rows = await q<{ tag: string }>(db, `SELECT tag FROM tags WHERE entity_type='asset' AND entity_id=?`, asset);
-  return rows.map((t) => String(t.tag));
-}
-
 /* ---------- holder makeup ---------- */
 
 /** Chain tip (max block) — substituted into the address-decay term of the reputation expression. */
@@ -437,40 +385,11 @@ export function listAssetPoolMatches(
 }
 
 /** Subassets of an asset (longname prefix match). */
-export function listSubassets(db: D1Database, asset: string, limit: number, offset: number): Promise<AssetListRow[]> {
-  return q<AssetListRow>(
-    db,
-    `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
-     WHERE asset_longname LIKE ? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`,
-    asset + ".%",
-    limit,
-    offset,
-  );
-}
-
 /** The asset's collection tag + project site. Considers both collection sources — the curated pepe.wtf
  *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
  *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green
  *  "Part of …" band, so tokenscan-only projects (Rare Pigeons, Age of Chains, …) now show it too. */
 /** The card's artist, from the pepe.wtf-sourced source='artist' tag (its slug powers /tags/<artist-slug>). */
-export async function assetArtist(
-  db: D1Database,
-  asset: string,
-): Promise<{ tag: string; name: string; slug: string } | null> {
-  const r = await one<{ tag: string; meta: string | null }>(
-    db,
-    `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source='artist' LIMIT 1`,
-    asset,
-  );
-  if (!r?.meta) return null;
-  try {
-    const m = JSON.parse(r.meta) as { name?: string; slug?: string };
-    return m.name ? { tag: r.tag, name: m.name, slug: m.slug || r.tag.replace(/^artist-/, "") } : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Collector cohort: assets most co-held with this one. Excludes XCP (currency everyone holds); the b1
  *  side is filtered to real, non-dust address holders. `pct` = shared holders as a share of the subject's
  *  own holders (the Related tab's "why it's related" line). `excludeCollection` drops same-collection
