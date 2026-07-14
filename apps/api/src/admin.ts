@@ -34,6 +34,7 @@ import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
+import { reconcileCoreProjection } from "#api/indexer/core-projections";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -129,6 +130,16 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/core-replay", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
+});
+
+admin.post("/admin/core-projections/reconcile/:table", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 250, min: 1, max: 500 });
+  try {
+    const result = await reconcileCoreProjection(c.env, c.req.param("table"), rows);
+    return c.json(result, "skipped" in result ? 409 : 200);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "projection reconciliation failed" }, 400);
+  }
 });
 
 // Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;
