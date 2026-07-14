@@ -431,7 +431,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
  * of the current source mirror: a current source cursor cannot prove that a newly imported compact seed received
  * the events that arrived while its tables were copied. Source-mirror statements are dispatched but ignored. */
 export async function syncCompactEvents(
-  env: Pick<Env, "CORE_DB" | "COUNTERPARTY_API_BASE">,
+  env: Pick<Env, "CORE_DB" | "COUNTERPARTY_API_BASE"> & Partial<Pick<Env, "DB">>,
   opts: { maxEvents?: number } = {},
 ): Promise<Record<string, unknown>> {
   const now = Math.floor(Date.now() / 1000);
@@ -495,6 +495,8 @@ export async function syncCompactEvents(
 
     const caughtUp = lastIndex >= tip;
     if (caughtUp) {
+      if (env.DB) await reconcileGenesisTransaction(env.DB, env.CORE_DB);
+      if (lastBlock > SNAPSHOT_WINDOW) await pruneCompactSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW);
       await env.CORE_DB.batch([
         setCoreStateStmt(env.CORE_DB, "seed_reconciled", "1"),
         setCoreStateStmt(env.CORE_DB, "reconciled_event_index", String(lastIndex)),
@@ -511,6 +513,81 @@ export async function syncCompactEvents(
   } finally {
     await env.CORE_DB.prepare(`DELETE FROM core_state WHERE key='replay_lock' AND value=?`).bind(lockValue).run();
   }
+}
+
+interface SourceTransaction {
+  tx_index: number;
+  tx_hash: string;
+  block_index: number;
+  block_time: number | null;
+  source: string | null;
+  destination: string | null;
+  btc_amount: string | null;
+  fee: string | null;
+  supported: number | null;
+  utxos_info: string | null;
+}
+
+/** Counterparty's genesis burn transaction can appear after a normalized source bootstrap even when it was absent
+ * from the frozen snapshot. Reconcile that canonical special row explicitly at the caught-up frontier. */
+export async function reconcileGenesisTransaction(source: D1Database, compact: D1Database): Promise<void> {
+  const row = await source
+    .prepare(
+      `SELECT tx_index,tx_hash,block_index,block_time,source,destination,btc_amount,fee,supported,utxos_info
+         FROM transactions WHERE tx_index=0`,
+    )
+    .first<SourceTransaction>();
+  if (!row) return;
+  const identities = createIdentitySet();
+  if (row.source) identities.addresses.add(row.source);
+  if (row.destination) identities.addresses.add(row.destination);
+  await batchAll(compact, dictionaryStatements(identities));
+  await compact
+    .prepare(
+      `INSERT INTO transactions(
+         tx_index,tx_hash,block_index,block_time,source_id,destination_id,btc_amount,fee,supported,utxos_info
+       ) VALUES(?,?,?, ?,
+         (SELECT address_id FROM address_dictionary WHERE address=?),
+         (SELECT address_id FROM address_dictionary WHERE address=?),?,?,?,?)
+       ON CONFLICT(tx_index) DO UPDATE SET
+         tx_hash=excluded.tx_hash,block_index=excluded.block_index,block_time=excluded.block_time,
+         source_id=excluded.source_id,destination_id=excluded.destination_id,btc_amount=excluded.btc_amount,
+         fee=excluded.fee,supported=excluded.supported,utxos_info=excluded.utxos_info`,
+    )
+    .bind(
+      row.tx_index,
+      hashToBytes(row.tx_hash),
+      row.block_index,
+      row.block_time,
+      row.source,
+      row.destination,
+      row.btc_amount,
+      row.fee,
+      row.supported ?? 1,
+      row.utxos_info,
+    )
+    .run();
+}
+
+/** Match the source mirror's rolling reorg window using compact holder identities. */
+export async function pruneCompactSnapshots(db: D1Database, cutoff: number): Promise<void> {
+  await db
+    .prepare(
+      `DELETE FROM balance_snapshots AS old
+        WHERE old.block_index < ?
+          AND EXISTS (
+            SELECT 1 FROM balance_snapshots newer
+             WHERE newer.asset_id=old.asset_id
+               AND newer.block_index < ?
+               AND newer.block_index > old.block_index
+               AND (
+                 (old.address_id IS NOT NULL AND newer.address_id=old.address_id) OR
+                 (old.address_id IS NULL AND newer.utxo_tx_hash=old.utxo_tx_hash AND newer.utxo_vout=old.utxo_vout)
+               )
+          )`,
+    )
+    .bind(cutoff, cutoff)
+    .run();
 }
 
 /* ---------- reorg rollback ---------- */

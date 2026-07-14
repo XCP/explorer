@@ -56,6 +56,34 @@ export async function buildIssuerCollections(env: Env): Promise<Record<string, u
       .bind(c.tag, meta, c.issuer)
       .run();
     tagged += res?.meta?.rows_written ?? 0;
+    const compactReady = await env.CORE_DB.prepare(
+      `SELECT count(*) ready FROM core_state WHERE key IN ('build_complete','import_complete') AND value='1'`,
+    ).first<{ ready: number }>();
+    if (Number(compactReady?.ready ?? 0) === 2) {
+      const assets = await env.DB.prepare(`SELECT asset FROM assets WHERE issuer=? ORDER BY asset`)
+        .bind(c.issuer)
+        .all<{ asset: string }>();
+      for (let index = 0; index < assets.results.length; index += 80) {
+        const page = assets.results.slice(index, index + 80);
+        await env.CORE_DB.batch(
+          page.map((row) =>
+            env.CORE_DB.prepare(
+              `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`,
+            ).bind(row.asset),
+          ),
+        );
+        await env.CORE_DB.batch(
+          page.map((row) =>
+            env.CORE_DB.prepare(
+              `INSERT INTO tags(entity_id,tag,source,meta)
+               SELECT entity_id,?,'issuer',? FROM entity_dictionary
+                WHERE entity_type='asset' AND entity_key=?
+               ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+            ).bind(c.tag, meta, row.asset),
+          ),
+        );
+      }
+    }
     // reconcile removals (e.g. an asset transferred away) — scoped to this issuer's assets, so never a full wipe.
     await env.DB.prepare(
       `DELETE FROM tags WHERE source='issuer' AND tag=? AND entity_id NOT IN (SELECT asset FROM assets WHERE issuer=?)`,

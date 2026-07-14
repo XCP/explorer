@@ -6,7 +6,12 @@ import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionari
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
-import { rollbackCompactDatabase, syncCompactEvents } from "#api/indexer/sync";
+import {
+  pruneCompactSnapshots,
+  reconcileGenesisTransaction,
+  rollbackCompactDatabase,
+  syncCompactEvents,
+} from "#api/indexer/sync";
 
 const CORE_DDL = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -1243,6 +1248,57 @@ test("compact replay advances its own seed cursor without writing the source mir
     seed_reconciled: "1",
     reconciled_event_index: "1",
   });
+});
+
+test("compact caught-up maintenance restores genesis and prunes superseded snapshots", async () => {
+  const compact = new DatabaseSync(":memory:");
+  compact.exec(CORE_DDL);
+  const source = new DatabaseSync(":memory:");
+  source.exec(`
+    CREATE TABLE transactions(
+      tx_index INTEGER PRIMARY KEY,tx_hash TEXT,block_index INTEGER,block_time INTEGER,source TEXT,
+      destination TEXT,btc_amount TEXT,fee TEXT,supported INTEGER,utxos_info TEXT
+    );
+    INSERT INTO transactions VALUES(
+      0,'${"68".repeat(32)}',278319,1,'alice','burn','50000','10000',1,NULL
+    );
+  `);
+  await reconcileGenesisTransaction(d1(source), d1(compact));
+  assert.deepEqual(
+    {
+      ...compact
+        .prepare(
+          `SELECT tx_index,lower(hex(tx_hash)) tx_hash,s.address source,d.address destination
+             FROM transactions t
+             LEFT JOIN address_dictionary s ON s.address_id=t.source_id
+             LEFT JOIN address_dictionary d ON d.address_id=t.destination_id`,
+        )
+        .get(),
+    },
+    { tx_index: 0, tx_hash: "68".repeat(32), source: "alice", destination: "burn" },
+  );
+
+  compact.exec(`
+    INSERT OR IGNORE INTO asset_dictionary(asset) VALUES('XCP');
+    INSERT OR IGNORE INTO address_dictionary(address) VALUES('alice');
+    INSERT INTO balance_snapshots(address_id,asset_id,block_index,quantity,updated_event_index)
+      SELECT address_id,asset_id,10,'1',1 FROM address_dictionary,asset_dictionary
+       WHERE address='alice' AND asset='XCP';
+    INSERT INTO balance_snapshots(address_id,asset_id,block_index,quantity,updated_event_index)
+      SELECT address_id,asset_id,20,'2',2 FROM address_dictionary,asset_dictionary
+       WHERE address='alice' AND asset='XCP';
+    INSERT INTO balance_snapshots(address_id,asset_id,block_index,quantity,updated_event_index)
+      SELECT address_id,asset_id,40,'3',3 FROM address_dictionary,asset_dictionary
+       WHERE address='alice' AND asset='XCP';
+  `);
+  await pruneCompactSnapshots(d1(compact), 30);
+  assert.deepEqual(
+    compact
+      .prepare(`SELECT block_index FROM balance_snapshots ORDER BY block_index`)
+      .all()
+      .map((row) => row.block_index),
+    [20, 40],
+  );
 });
 
 test("compact rollback removes orphan rows and restores balance quantity and high-water", async () => {

@@ -169,6 +169,23 @@ const issuance: Handler = ({ ev, p, b, bt }, ctx) => {
           )
           .bind(p.asset, collection.tag, issuerCollectionMeta(collection)),
       );
+      if (ctx.compact) {
+        ctx.compact.stmts.push(
+          (db) =>
+            db
+              .prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`)
+              .bind(p.asset),
+          (db) =>
+            db
+              .prepare(
+                `INSERT INTO tags(entity_id,tag,source,meta)
+                 SELECT entity_id,?,'issuer',? FROM entity_dictionary
+                  WHERE entity_type='asset' AND entity_key=?
+                 ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+              )
+              .bind(collection.tag, issuerCollectionMeta(collection), p.asset),
+        );
+      }
     }
     if (ctx.compact) {
       const asset = String(p.asset);
