@@ -40,7 +40,7 @@ function stateMap(rows: StateRow[]): Record<string, string> {
  * import journal rather than recounting recovery outputs on every request.
  */
 export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 1000)) {
-  const [coreRows, ledgerRows, recoveryRows, imports, firstUnchecked, lastChecked, verificationFailures, attempts] =
+  const [coreRows, recoveryRows, imports, firstUnchecked, lastChecked, verificationFailures, attempts] =
     await Promise.all([
       env.CORE_DB.prepare(
         `SELECT key,value FROM core_state
@@ -48,11 +48,6 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
                      'snapshot_mode','snapshot_expected_tables','seed_event_index','last_event_index',
                      'seed_reconciled','parity_verified','forward_write_ready','read_surface_complete',
                      'projection_writes_ready')`,
-      ).all<StateRow>(),
-      env.LEDGER_DB.prepare(
-        `SELECT key,value FROM ledger_state
-       WHERE key IN ('backfill_active','ledger_credit_cursor','ledger_credit_done',
-                     'ledger_debit_cursor','ledger_debit_done')`,
       ).all<StateRow>(),
       env.RECOVERY_DB.prepare(
         `SELECT key,value,updated_at FROM recovery_state
@@ -93,7 +88,6 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
     ]);
 
   const core = stateMap(coreRows.results);
-  const ledger = stateMap(ledgerRows.results);
   const recovery = stateMap(recoveryRows.results);
   const importCount = Number(imports?.imports ?? 0);
   const completedImports = Number(imports?.completed ?? 0);
@@ -127,15 +121,6 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
         core.forward_write_ready === "1" &&
         core.read_surface_complete === "1" &&
         core.projection_writes_ready === "1",
-    },
-    ledger: {
-      backfill_active: ledger.backfill_active === "1",
-      credit: { cursor: ledger.ledger_credit_cursor ?? null, complete: ledger.ledger_credit_done === "1" },
-      debit: { cursor: ledger.ledger_debit_cursor ?? null, complete: ledger.ledger_debit_done === "1" },
-      read_ready:
-        ledger.backfill_active === "0" &&
-        ledger.ledger_credit_done === "1" &&
-        ledger.ledger_debit_done === "1",
     },
     recovery: {
       import: {

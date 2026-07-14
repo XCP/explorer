@@ -11,8 +11,7 @@ import { Hono } from "hono";
 import type { Env } from "#api/env";
 export type { Env } from "#api/env";
 import { describeHttpError, requestId } from "#api/http/errors";
-import { syncCompactEvents, backfillLedger } from "#api/indexer/sync";
-import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
+import { syncCompactEvents } from "#api/indexer/sync";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { buildTags } from "#api/indexer/tags";
@@ -185,36 +184,11 @@ export default {
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {
-          // One-off historical credit/debit ledger backfill (migration 0038): while indexer_state
-          // 'ledger_backfill_active'='1', walk a bounded batch of the event stream and insert only CREDIT/DEBIT
-          // rows (isolated — never touches balances/mirror/signals, so no contention risk). Runs FIRST so it gets
-          // tick budget; clears the flag when caught up. Grinds through history over a day or two, hands-free.
-          await runScheduledJob("backfillLedger", async () => {
-            const bf = await env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='backfill_active'").first<{
-              value: string;
-            }>();
-            if (bf?.value === "1") {
-              // Multi-row compact inserts keep a 50k pass comfortably bounded while reducing the
-              // one-time migration from roughly a day to a few hours. The function hard-caps at 50k.
-              const r = await backfillLedger(env, { maxEvents: 50000 });
-              if (r.caught_up) {
-                await env.LEDGER_DB.prepare("UPDATE ledger_state SET value='0' WHERE key='backfill_active'").run();
-                const readiness = await auditLedgerReadiness(env);
-                console.info({ event: "ledger_readiness", outcome: readiness.ready ? "ready" : "blocked", readiness });
-              }
-            }
-          });
           // Compact-native signal maintenance uses the same convergent writers for event refreshes and
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
           await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
-          // Publish the expensive exchange depositor aggregate off the request path (~daily). The first build
-          // scans historical sends, so do not compete with the one-time compact-ledger backfill.
-          const ledgerBackfill = await env.LEDGER_DB.prepare(
-            "SELECT value FROM ledger_state WHERE key='backfill_active'",
-          ).first<{ value: string }>();
-          if (ledgerBackfill?.value !== "1")
-            await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
+          await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
           // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
           await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
           // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).

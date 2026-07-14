@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "#api/env";
-import { syncCompactEvents, backfillLedger } from "#api/indexer/sync";
+import { syncCompactEvents } from "#api/indexer/sync";
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
@@ -28,7 +28,6 @@ import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated"
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { recoveryAdmin } from "#api/recovery/admin";
-import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { operationalStatus } from "#api/operations/status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
@@ -112,21 +111,6 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/catch-up-asset-feed-counts", async (c) => {
   const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 250 });
   return c.json(await catchUpCoreAssetFeedCounts(c.env.CORE_DB, rows));
-});
-
-// Backfill the historical credits/debits ledger (migration 0038) — isolated & non-destructive: inserts only
-// CREDIT/DEBIT rows, never touches balances/mirror/signals, so it's safe to loop against the live DB. Repeat
-// until {caught_up:true}. ?events=N tunes the per-call batch (default 10000). Its own cursor; forward capture
-// (events/balance.ts) handles new events.
-admin.post("/admin/backfill-ledger", async (c) => {
-  const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
-  return c.json(await backfillLedger(c.env, { maxEvents: events }));
-});
-
-// Read-only parity audit for source and compact ledger integrity.
-admin.get("/admin/ledger-readiness", async (c) => {
-  const radius = boundedInteger(c.req.query("sample_radius"), { defaultValue: 2_000, min: 1, max: 10_000 });
-  return c.json(await auditLedgerReadiness(c.env, radius));
 });
 
 // Advance both compact-native reputation projections. Cron runs the same bounded repair steps.

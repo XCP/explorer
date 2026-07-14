@@ -18,10 +18,9 @@
  */
 import type { Env } from "#api/env";
 import { normalize } from "#api/indexer/codec";
-import { type Ev, type Stmt, type Ctx, str } from "#api/indexer/events/context";
+import { type Ev, type Stmt, type Ctx } from "#api/indexer/events/context";
 import { dispatch } from "#api/indexer/events/dispatch";
 import { counterpartyJson } from "#api/integrations/counterparty";
-import { hashToBytes } from "#api/indexer/compact-codec";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
 import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
 import { enqueueCoreSupply } from "#api/indexer/asset-supply";
@@ -47,19 +46,6 @@ function setCoreStateStmt(db: D1Database, key: string, value: string): D1Prepare
     .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
     .bind(key, value);
 }
-async function getLedgerState(db: D1Database, key: string): Promise<string | null> {
-  return (
-    (await db.prepare(`SELECT value FROM ledger_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null
-  );
-}
-
-async function setLedgerState(db: D1Database, key: string, value: string): Promise<void> {
-  await db
-    .prepare(`INSERT INTO ledger_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
-    .bind(key, value)
-    .run();
-}
-
 // Flush statements in D1-sized batches. STRICT: a batch failure throws so the caller aborts the run
 // without advancing the cursor; the chunk re-runs and idempotency re-applies it exactly. Never drops.
 async function batchAll(db: D1Database, stmts: Stmt[]): Promise<void> {
@@ -97,124 +83,6 @@ async function blockHash(api: string, n: number): Promise<string | null> {
 async function currentBlock(api: string): Promise<number> {
   const d = await counterpartyJson<{ result?: { block_index?: number } }>(api, `/blocks/last`);
   return d.result?.block_index ?? 0;
-}
-
-/* ---------- credit/debit ledger backfill (isolated, non-destructive) ---------- */
-
-/** One-off historical backfill of the credits/debits ledger (migration 0038). Pages the Counterparty
- *  event-TYPE endpoints /events/CREDIT and /events/DEBIT directly (next_cursor descending) so it fetches ONLY
- *  those ~4.3M + ~4M events instead of scanning the whole ~20M global stream — far fewer requests, far fewer
- *  429s. Per-type cursor + done flag in indexer_state. Isolated: INSERT-OR-IGNORE only, never touches
- *  balances/mirror/signals, so zero corruption risk. Idempotent on event_index. Loop /admin/backfill-ledger
- *  until {caught_up:true}. Forward capture (events/balance.ts) covers new events. */
-const LEDGER_KINDS = [
-  { type: "CREDIT", table: "credits", cursorKey: "ledger_credit_cursor", doneKey: "ledger_credit_done" },
-  { type: "DEBIT", table: "debits", cursorKey: "ledger_debit_cursor", doneKey: "ledger_debit_done" },
-] as const;
-
-export async function backfillLedger(
-  env: Env,
-  opts: { maxEvents?: number } = {},
-): Promise<{ processed: number; written: number; credit_done: boolean; debit_done: boolean; caught_up: boolean }> {
-  const api = env.COUNTERPARTY_API_BASE;
-  const cap = Math.min(opts.maxEvents ?? 10000, MAX_EVENTS_PER_RUN);
-  let processed = 0,
-    written = 0;
-  const done: Record<string, boolean> = {};
-  for (const k of LEDGER_KINDS) {
-    done[k.type] = (await getLedgerState(env.LEDGER_DB, k.doneKey)) === "1";
-    if (done[k.type]) continue;
-    let cursor = await getLedgerState(env.LEDGER_DB, k.cursorKey); // null on first pass = newest page
-    while (processed < cap) {
-      // Per-page durability: a 429/throw here ends the call, but every prior page is already committed and its
-      // cursor persisted, so the next call resumes cleanly with no lost work. This is what makes it 429-resilient.
-      const d = await counterpartyJson<{ result?: Ev[]; next_cursor?: number | null }>(
-        api,
-        `/events/${k.type}?verbose=true&limit=${CHUNK}${cursor != null ? `&cursor=${cursor}` : ""}`,
-      );
-      const rows = d.result || [];
-      const records: unknown[][] = [];
-      const addresses = new Set<string>();
-      const assets = new Set<string>();
-      for (const ev of rows) {
-        const p = ev.params;
-        const holder = (p.utxo as string) || (p.address as string);
-        if (holder && p.asset) {
-          const utxoAddress = p.utxo ? str(p.utxo_address ?? null) : null;
-          addresses.add(holder);
-          assets.add(p.asset);
-          if (utxoAddress) addresses.add(utxoAddress);
-          records.push([
-            ev.event_index,
-            k.type === "CREDIT" ? 1 : 0,
-            ev.block_index,
-            hashToBytes(ev.tx_hash),
-            holder,
-            p.asset,
-            str(p.quantity) ?? "0",
-            str(p.calling_function ?? null),
-            utxoAddress,
-          ]);
-          written++;
-        }
-        processed++;
-      }
-      if (records.length) {
-        const dictionary: Stmt[] = [
-          ...[...addresses].map(
-            (address): Stmt =>
-              (db) =>
-                db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES (?)`).bind(address),
-          ),
-          ...[...assets].map(
-            (asset): Stmt =>
-              (db) =>
-                db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES (?)`).bind(asset),
-          ),
-        ];
-        const page: Stmt[] = [];
-        // Ten rows per statement stays below D1's bind-variable ceiling and cuts event-write
-        // statements by 90% compared with one INSERT per row.
-        for (let i = 0; i < records.length; i += 10) {
-          const group = records.slice(i, i + 10);
-          const values = group
-            .map(
-              () =>
-                `(?,?,?,?,(SELECT address_id FROM address_dictionary WHERE address=?),` +
-                `(SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,` +
-                `(SELECT address_id FROM address_dictionary WHERE address=?))`,
-            )
-            .join(",");
-          const binds = group.flat();
-          page.push((db) =>
-            db
-              .prepare(
-                `INSERT OR IGNORE INTO ledger_events
-               (event_index,direction,block_index,tx_hash,address_id,asset_id,quantity,calling_function,utxo_address_id)
-             VALUES ${values}`,
-              )
-              .bind(...binds),
-          );
-        }
-        await batchAll(env.LEDGER_DB, [...dictionary, ...page]);
-      }
-      const nc = d.next_cursor;
-      if (nc == null || rows.length === 0) {
-        await setLedgerState(env.LEDGER_DB, k.doneKey, "1");
-        done[k.type] = true;
-        break;
-      }
-      cursor = String(nc);
-      await setLedgerState(env.LEDGER_DB, k.cursorKey, cursor);
-    }
-  }
-  return {
-    processed,
-    written,
-    credit_done: !!done["CREDIT"],
-    debit_done: !!done["DEBIT"],
-    caught_up: !!done["CREDIT"] && !!done["DEBIT"],
-  };
 }
 
 /** Replay the post-seed event delta directly into the compact database. This cursor is intentionally independent

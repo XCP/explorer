@@ -1,7 +1,6 @@
 /** Cloudflare bindings and configuration available to the API Worker. */
 export interface Env {
   DB: D1Database;
-  LEDGER_DB: D1Database;
   CORE_DB: D1Database;
   RECOVERY_DB: D1Database;
   RECOVERY_TRANSACTIONS: R2Bucket;

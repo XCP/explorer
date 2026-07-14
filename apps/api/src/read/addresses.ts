@@ -55,10 +55,9 @@ addresses.get("/v2/addresses/:address/sends", async (c) => {
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-// This largest protocol relation lives in its own compact D1.
 addresses.get("/v2/addresses/:address/ledger", async (c) => {
   const page = { limit: lim(c), offset: off(c) };
-  const result = await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page);
+  const result = await listAddressLedger(c.env.CORE_DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 

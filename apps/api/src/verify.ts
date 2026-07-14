@@ -68,7 +68,7 @@ verify.get("/admin/diag", async (c) => {
     );
     const m: Record<string, number> = {};
     (cnt?.result || []).forEach((e) => (m[e.event] = e.event_count));
-    const our = (await c.env.DB.prepare(
+    const our = (await c.env.CORE_DB.prepare(
       `SELECT (SELECT COUNT(*) FROM transactions WHERE block_index=?) tx,
               (SELECT COUNT(*) FROM issuances WHERE block_index=?) iss,
               (SELECT COUNT(*) FROM fairmints WHERE block_index=?) fm`,
@@ -93,14 +93,14 @@ verify.get("/admin/diag", async (c) => {
 // tx-count per block (from BLOCK_PARSED); compare to our actual transactions rows per block.
 // Any block where actual < reported lost rows. No Counterparty calls, no sampling — finds ALL of them.
 verify.get("/admin/shortblocks", async (c) => {
-  const totals = (await c.env.DB.prepare(
+  const totals = (await c.env.CORE_DB.prepare(
     `SELECT COALESCE(SUM(d),0) deficit, COUNT(*) blocks FROM (
        SELECT b.transaction_count - COUNT(t.tx_index) d
        FROM blocks b LEFT JOIN transactions t ON t.block_index = b.block_index
        WHERE b.transaction_count > 0
        GROUP BY b.block_index HAVING d > 0)`,
   ).first<{ deficit: number; blocks: number }>())!;
-  const top = await c.env.DB.prepare(
+  const top = await c.env.CORE_DB.prepare(
     `SELECT b.block_index, b.transaction_count reported, COUNT(t.tx_index) actual,
             b.transaction_count - COUNT(t.tx_index) missing
      FROM blocks b LEFT JOIN transactions t ON t.block_index = b.block_index
@@ -116,8 +116,8 @@ verify.get("/admin/verify", async (c) => {
 
   // 1) our counts (single query) + invariants
   const sel = MODELS.map((m) => `(SELECT COUNT(*) FROM ${m.table}) "${m.table}"`).join(",\n    ");
-  const ours = (await c.env.DB.prepare(`SELECT\n    ${sel}`).first<Record<string, number>>())!;
-  const inv = (await c.env.DB.prepare(
+  const ours = (await c.env.CORE_DB.prepare(`SELECT\n    ${sel}`).first<Record<string, number>>())!;
+  const inv = (await c.env.CORE_DB.prepare(
     `SELECT (SELECT MAX(block_index) FROM blocks) tip,
             (SELECT COUNT(*) FROM blocks WHERE block_hash IS NULL) null_block_hash,
             (SELECT COUNT(*) FROM balances WHERE CAST(quantity AS INTEGER) < 0) negative_balances`,
@@ -151,7 +151,11 @@ verify.get("/admin/verify", async (c) => {
   // 4) sample-asset supply parity (cheap: our assets row vs Counterparty asset detail)
   const supply = await Promise.all(
     SUPPLY_ASSETS.map(async (a) => {
-      const our = await c.env.DB.prepare(`SELECT supply_normalized FROM assets WHERE asset=?`)
+      const our = await c.env.CORE_DB.prepare(
+        `SELECT asset.supply_normalized FROM assets asset
+         JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+         WHERE dictionary.asset=?`,
+      )
         .bind(a)
         .first<{ supply_normalized: string | null }>();
       const cp = await counterpartyJson<{ result?: { supply_normalized?: string | null } }>(
