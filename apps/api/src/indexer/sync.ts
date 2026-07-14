@@ -26,7 +26,6 @@ import { getIndexerStateStringArray } from "#api/indexer/state";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
 import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
-import { reconcileDispenseIdentities } from "#api/indexer/dispense-identity";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -380,18 +379,9 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       lastBlock = Math.max(lastBlock, ctx.maxBlock);
       const compact = ctx.compact;
       if (!compact) throw new Error("compact event context is missing");
-      await batchAll(env.CORE_DB, [
-          ...dictionaryStatements(compact.identities),
-          ...compact.stmts,
-          ...ctx.ledgerStmts,
-        ]);
+      await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
       await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
       await rebuildCoreAssetSignals(env.CORE_DB, compact.identities.assets);
-      await reconcileDispenseIdentities(
-        env.DB,
-        env.CORE_DB,
-        evs.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
-      );
       await env.CORE_DB.batch([
         setCoreStateStmt(env.CORE_DB, "last_event_index", String(evs[evs.length - 1].event_index)),
         setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
@@ -478,14 +468,6 @@ export async function syncCompactEvents(
       if (!compact) throw new Error("compact replay context is missing");
       await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
       await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
-      if (env.DB) {
-        await reconcileDispenseIdentities(
-          env.DB,
-          env.CORE_DB,
-          events.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
-        );
-      }
-
       lastIndex = events[events.length - 1].event_index;
       lastBlock = Math.max(lastBlock, ctx.maxBlock);
       applied += events.length;
@@ -736,6 +718,7 @@ export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number
     "blocks",
   ];
   for (const table of tables) await deleteAbove(db, table, rollbackTo);
+  await db.prepare(`DELETE FROM trades WHERE venue IN ('dex','dispense') AND block_index>?`).bind(rollbackTo).run();
   await db
     .prepare(`UPDATE orders SET status='open',closed_block_index=NULL WHERE closed_block_index>?`)
     .bind(rollbackTo)
@@ -807,6 +790,8 @@ export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number
   await batchAll(db, statements);
   await db.batch([
     setCoreStateStmt(db, "last_block_index", String(rollbackTo)),
+    setCoreStateStmt(db, "trades_cur_dex", String(rollbackTo)),
+    setCoreStateStmt(db, "trades_cur_dispense", String(rollbackTo)),
     setCoreStateStmt(db, "parity_verified", "0"),
   ]);
 }

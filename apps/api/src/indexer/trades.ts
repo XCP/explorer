@@ -1,108 +1,105 @@
-/**
- * `trades` — the polymorphic sales ledger. One row per trade across every venue (DEX order-matches, dispenses,
- * Emblem-vault NFT sales), normalized to a common shape so the unified feed is a flat read, not a runtime union:
- *
- *   venue · asset (the Counterparty card) · block_time · quantity · currency · total · price(gen) · usd_value · buyer · seller · tx
- *
- * Materialized incrementally from the source tables (on-chain venues by Counterparty block cursor; Emblem re-folded from
- * the emblem_sales staging table each pass — idempotent via INSERT OR IGNORE on the (venue,ref) key). `usd_value`
- * is filled here only where it's free (USDC sales); XCP/BTC/ETH→USD backfill is a later pass over a price feed.
- */
+/** Compact-owned polymorphic sales ledger across Counterparty and external venues. */
 import type { Env } from "#api/env";
-import { getIndexerStateInt as getState, setIndexerState as setState } from "#api/indexer/state";
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
-// Schema lives in migrations/0021_trades_prices.sql.
-
-// Payment-token map (ETH-family all 18-dec and value-equivalent; USDC is 6-dec and ≈USD). Derived from the
-// observed getNFTSales token distribution: native-ETH, WETH, the Blur ETH-pool, a Blur router, and USDC.
 const ETH_TOKENS = [
-  "0x0000000000000000000000000000000000000000", // native ETH
-  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH
-  "0x0000000000a39bb272e79075ade125fd351887ac", // Blur ETH pool
-  "0x223e16c52436cab2ca9fe37087c79986a288fffa", // Blur
+  "eth",
+  "0x0000000000000000000000000000000000000000",
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+  "0x0000000000a39bb272e79075ade125fd351887ac",
+  "0x223e16c52436cab2ca9fe37087c79986a288fffa",
 ];
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const BLOCK_WINDOW = 250_000;
+const EMBLEM_WINDOW = 5_000;
 
-const WINDOW = 250_000; // Counterparty blocks materialized per on-chain venue per call
-
-/** DEX: an order_match where one side is XCP/BTC is a priced sale — that side is the money, the other the asset. */
-function dexSql(lo: number, hi: number) {
-  const money = `om.forward_asset IN ('XCP','BTC')`;
-  return `INSERT OR IGNORE INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,buyer,seller,tx_hash)
-    SELECT 'dex', CAST(om.id AS TEXT),
-      CASE WHEN ${money} THEN om.backward_asset ELSE om.forward_asset END,
-      om.block_time, om.block_index,
-      (CASE WHEN ${money} THEN om.backward_quantity ELSE om.forward_quantity END) * 1.0
-        / (CASE WHEN a.divisible = 1 THEN 1e8 ELSE 1 END),
-      CASE WHEN ${money} THEN om.forward_asset ELSE om.backward_asset END,
-      (CASE WHEN ${money} THEN om.forward_quantity ELSE om.backward_quantity END) * 1.0 / 1e8,
-      CASE WHEN ${money} THEN om.tx0_address ELSE om.tx1_address END,   -- buyer = money-giver
-      CASE WHEN ${money} THEN om.tx1_address ELSE om.tx0_address END,   -- seller = asset-giver
-      om.tx1_hash
-    FROM order_matches AS om INDEXED BY idx_om_block
-    LEFT JOIN assets a ON a.asset = (CASE WHEN ${money} THEN om.backward_asset ELSE om.forward_asset END)
-    WHERE om.status='completed' AND (om.forward_asset IN ('XCP','BTC') OR om.backward_asset IN ('XCP','BTC'))
-      AND om.block_index > ${lo} AND om.block_index <= ${hi}`;
-}
-
-/** Dispense: asset dispensed for BTC. btc_amount is raw sats (no normalized column); destination bought, source sold. */
-function dispenseSql(lo: number, hi: number) {
-  return `INSERT OR IGNORE INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,buyer,seller,tx_hash)
-    SELECT 'dispense', CAST(d.id AS TEXT), d.asset, d.block_time, d.block_index,
-      CAST(d.dispense_quantity_normalized AS REAL), 'BTC', d.btc_amount * 1.0 / 1e8,
-      d.destination, d.source, d.tx_hash
-    FROM dispenses d
-    WHERE d.btc_amount > 0 AND d.block_index > ${lo} AND d.block_index <= ${hi}`;
-}
-
-/** Emblem: an Ethereum NFT sale → the wrapped Counterparty card the vault holds. Attribution + a per-sale
- *  scam verdict come from the vault classification (src/indexer/vault-contents.ts): a sale is 'real' only
- *  when the vault held ONE Counterparty card and was still full at sale time; 'scam_cracked' if the card had
- *  already been sent/swept back out before the sale; 'bundle' for multi-card vaults; 'scam_empty' if the
- *  vault NAME claims a real Counterparty card but it holds nothing on any chain (empty shell — from Emblem
- *  /meta, indexer/emblem-meta.ts); 'non_counterparty' if its value is genuinely on another chain (Namecoin,
- *  Ordinals, BTC … — NOT a scam, just invisible to us). Only 'real' sales carry an attributed asset.
- *  ETH block→time is approximated (piecewise around the merge; tight for Emblem's 2021+ era). */
-function emblemSql(rowFilter = "") {
-  const eth = ETH_TOKENS.map((t) => `'${t}'`).join(",");
-  const isUsdc = `es.token_addr = '${USDC}'`;
-  // The sale's unix time, in the same clock as a BTC crack (sends.block_time), so full-at-sale is decidable.
-  const saleTime = `(CASE WHEN es.block_number >= 15537394 THEN 1663224162 + (es.block_number - 15537394) * 12
-                         ELSE CAST(1438269973 + es.block_number * 13.15 AS INTEGER) END)`;
-  const isReal = `ev.vault_kind = 'single' AND (ev.cracked_at IS NULL OR ${saleTime} < ev.cracked_at)`;
-  // Upsert (not INSERT OR IGNORE): a vault can be RECLASSIFIED after the sale was first materialized
-  // (it gets cracked later, or the crawl fills in contents), so refresh the classification columns on
-  // every fold. usd_value is filled by a SEPARATE prices pass — leave it untouched here.
-  return `INSERT INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,usd_value,buyer,seller,tx_hash,sale_class)
-    SELECT 'emblem', es.tx_hash || '_' || es.log_index,
-      CASE WHEN ${isReal} THEN ev.contents_asset ELSE NULL END,
-      ${saleTime},
-      es.block_number,
-      CASE WHEN ${isReal} THEN COALESCE(ev.contents_qty, 1.0) ELSE 1.0 END,
-      CASE WHEN ${isUsdc} THEN 'USDC' ELSE 'ETH' END,
-      CAST(es.price_raw AS REAL) / (CASE WHEN ${isUsdc} THEN 1e6 ELSE 1e18 END),
-      CASE WHEN ${isUsdc} THEN CAST(es.price_raw AS REAL) / 1e6 ELSE NULL END,
-      es.buyer, es.seller, es.tx_hash,
-      CASE WHEN ev.vault_kind = 'single' AND (ev.cracked_at IS NULL OR ${saleTime} < ev.cracked_at) THEN 'real'
-           WHEN ev.vault_kind = 'multi' THEN 'bundle'
-           WHEN ev.vault_kind = 'single' THEN 'scam_cracked'
-           WHEN ev.is_scam_shell = 1 THEN 'scam_empty'
-           ELSE 'non_counterparty' END
-    FROM emblem_sales es
-    JOIN emblem_vaults ev ON ev.token_id = es.token_id AND ev.contract = es.contract
-    WHERE ev.btc_address IS NOT NULL AND CAST(es.price_raw AS REAL) > 0 ${rowFilter}
-      AND es.token_addr IN (${eth}, '${USDC}')
+export function compactDexTradesSql(): string {
+  const forwardMoney = `forward_asset.asset IN ('XCP','BTC')`;
+  return `INSERT INTO trades(
+      venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash
+    )
+    SELECT 'dex',lower(hex(match.tx0_hash)) || lower(hex(match.tx1_hash)),
+      CASE WHEN ${forwardMoney} THEN match.backward_asset_id ELSE match.forward_asset_id END,
+      match.block_time,match.block_index,
+      CAST(CASE WHEN ${forwardMoney} THEN match.backward_quantity ELSE match.forward_quantity END AS REAL)
+        / CASE WHEN sold_asset.divisible=1 THEN 1e8 ELSE 1 END,
+      CASE WHEN ${forwardMoney} THEN forward_asset.asset ELSE backward_asset.asset END,
+      CAST(CASE WHEN ${forwardMoney} THEN match.forward_quantity ELSE match.backward_quantity END AS REAL) / 1e8,
+      CASE WHEN ${forwardMoney} THEN match.tx0_address_id ELSE match.tx1_address_id END,
+      CASE WHEN ${forwardMoney} THEN match.tx1_address_id ELSE match.tx0_address_id END,
+      match.tx1_hash
+    FROM order_matches match
+    JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
+    JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
+    LEFT JOIN assets sold_asset ON sold_asset.asset_id=
+      CASE WHEN ${forwardMoney} THEN match.backward_asset_id ELSE match.forward_asset_id END
+    WHERE match.status='completed'
+      AND (forward_asset.asset IN ('XCP','BTC') OR backward_asset.asset IN ('XCP','BTC'))
+      AND match.block_index>? AND match.block_index<=?
     ON CONFLICT(venue,ref) DO UPDATE SET
-      asset = excluded.asset, quantity = excluded.quantity, sale_class = excluded.sale_class`;
+      asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
+      quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
+      buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash`;
 }
 
-/** Scarce.city: a Bitcoin-native card sale (qty 1) priced in BTC. No on-chain tx/block — sold_at IS
- *  the time; block_index left 0. buyer/seller aren't in the API. usd_value filled later via BTC/USD. */
-function scarceSql(rowFilter = "") {
-  return `INSERT OR IGNORE INTO trades (venue,ref,asset,block_time,block_index,quantity,currency,total,buyer,seller,tx_hash)
-    SELECT 'scarce.city', s.asset || '_' || s.sold_at, s.asset, s.sold_at, 0, 1.0, 'BTC', s.price_btc, NULL, NULL, NULL
-    FROM scarce_city_sales s WHERE true ${rowFilter}`;
+export const COMPACT_DISPENSE_TRADES_SQL = `INSERT INTO trades(
+    venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash
+  )
+  SELECT 'dispense',CAST(dispense.event_index AS TEXT),dispense.asset_id,dispense.block_time,
+    dispense.block_index,CAST(dispense.dispense_quantity_normalized AS REAL),'BTC',
+    CAST(dispense.btc_amount AS REAL)/1e8,dispense.destination_id,dispense.source_id,dispense.tx_hash
+  FROM dispenses dispense
+  WHERE CAST(dispense.btc_amount AS REAL)>0 AND dispense.block_index>? AND dispense.block_index<=?
+  ON CONFLICT(venue,ref) DO UPDATE SET
+    asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
+    quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
+    buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash`;
+
+export function compactEmblemTradesSql(rowFilter: string): string {
+  const acceptedTokens = ETH_TOKENS.map((token) => `'${token}'`).join(",");
+  const isUsdc = `payment.address='${USDC}'`;
+  const saleTime = `(CASE WHEN sale.block_number>=15537394
+    THEN 1663224162+(sale.block_number-15537394)*12
+    ELSE CAST(1438269973+sale.block_number*13.15 AS INTEGER) END)`;
+  const isReal = `vault.vault_kind='single' AND (vault.cracked_at IS NULL OR ${saleTime}<vault.cracked_at)`;
+  return `INSERT INTO trades(
+      venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,
+      buyer_id,seller_id,external_tx_hash,sale_class
+    )
+    SELECT 'emblem',sale.tx_hash || '_' || sale.log_index || '_' || contract.address || '_' || sale.token_id,
+      CASE WHEN ${isReal} THEN vault.contents_asset_id END,${saleTime},sale.block_number,
+      CASE WHEN ${isReal} THEN COALESCE(vault.contents_qty,1.0) ELSE 1.0 END,
+      CASE WHEN ${isUsdc} THEN 'USDC' ELSE 'ETH' END,
+      CAST(sale.price_raw AS REAL)/CASE WHEN ${isUsdc} THEN 1e6 ELSE 1e18 END,
+      CASE WHEN ${isUsdc} THEN CAST(sale.price_raw AS REAL)/1e6 END,
+      sale.buyer_id,sale.seller_id,sale.tx_hash,
+      CASE WHEN ${isReal} THEN 'real'
+           WHEN vault.vault_kind='multi' THEN 'bundle'
+           WHEN vault.vault_kind='single' THEN 'scam_cracked'
+           WHEN vault.is_scam_shell=1 THEN 'scam_empty'
+           ELSE 'non_counterparty' END
+    FROM emblem_sales sale
+    JOIN address_dictionary contract ON contract.address_id=sale.contract_id
+    JOIN address_dictionary payment ON payment.address_id=sale.token_address_id
+    JOIN emblem_vaults vault ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
+    WHERE vault.btc_address_id IS NOT NULL AND CAST(sale.price_raw AS REAL)>0
+      AND payment.address IN (${acceptedTokens},'${USDC}') ${rowFilter}
+    ON CONFLICT(venue,ref) DO UPDATE SET
+      asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
+      quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
+      usd_value=CASE WHEN excluded.currency='USDC' THEN excluded.usd_value ELSE trades.usd_value END,
+      buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,
+      external_tx_hash=excluded.external_tx_hash,sale_class=excluded.sale_class`;
 }
+
+export const COMPACT_SCARCE_TRADES_SQL = `INSERT INTO trades(
+    venue,ref,asset_id,block_time,block_index,quantity,currency,total
+  )
+  SELECT 'scarce.city',asset.asset || '_' || sale.sold_at,sale.asset_id,sale.sold_at,0,1.0,'BTC',sale.price_btc
+  FROM scarce_city_sales sale JOIN asset_dictionary asset ON asset.asset_id=sale.asset_id
+  ON CONFLICT(venue,ref) DO UPDATE SET
+    asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
+    quantity=excluded.quantity,currency=excluded.currency,total=excluded.total`;
 
 export interface TradesBuildProgress {
   tip: number;
@@ -114,62 +111,74 @@ export interface TradesBuildProgress {
   done: boolean;
 }
 
-/** Advance the trades materialization one bounded step. On-chain venues walk a Counterparty-block window per call;
- *  Emblem is re-folded whole (small, idempotent). Loop until dex_done && dispense_done. */
+async function advanceBlockVenue(
+  db: D1Database,
+  stateKey: string,
+  tip: number,
+  sql: string,
+): Promise<{ range?: { from: number; to: number }; written: number; done: boolean }> {
+  const cursor = await getCoreStateInt(db, stateKey);
+  if (cursor >= tip) return { written: 0, done: true };
+  const high = Math.min(cursor + BLOCK_WINDOW, tip);
+  const result = await db.prepare(sql).bind(cursor, high).run();
+  await setCoreState(db, stateKey, high);
+  return { range: { from: cursor, to: high }, written: result.meta.rows_written ?? 0, done: high >= tip };
+}
+
+/** Advance every venue from canonical compact inputs using bounded, replay-safe upserts. */
 export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const out: Partial<TradesBuildProgress> = { tip };
+  const tip = Number(
+    (await env.CORE_DB.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip ?? 0,
+  );
   const writes: Record<string, number> = {};
+  const dex = await advanceBlockVenue(env.CORE_DB, "trades_cur_dex", tip, compactDexTradesSql());
+  const dispense = await advanceBlockVenue(env.CORE_DB, "trades_cur_dispense", tip, COMPACT_DISPENSE_TRADES_SQL);
+  writes.dex = dex.written;
+  writes.dispense = dispense.written;
 
-  const dcur = await getState(env.DB, "trades_cur_dex");
-  if (dcur < tip) {
-    const hi = Math.min(dcur + WINDOW, tip);
-    const result = await env.DB.prepare(dexSql(dcur, hi)).run();
-    writes.dex = result.meta.rows_written ?? 0;
-    await setState(env.DB, "trades_cur_dex", hi);
-    out.dex = { from: dcur, to: hi };
+  let dexReconcileCursor = await getCoreStateInt(env.CORE_DB, "trades_dex_reconcile_block");
+  if (dexReconcileCursor >= tip) dexReconcileCursor = 0;
+  if (tip > 0) {
+    const high = Math.min(dexReconcileCursor + BLOCK_WINDOW, tip);
+    const result = await env.CORE_DB.prepare(compactDexTradesSql()).bind(dexReconcileCursor, high).run();
+    writes.dex_reconcile = result.meta.rows_written ?? 0;
+    await setCoreState(env.CORE_DB, "trades_dex_reconcile_block", high);
   }
-  out.dex_done = (await getState(env.DB, "trades_cur_dex")) >= tip;
 
-  const pcur = await getState(env.DB, "trades_cur_dispense");
-  if (pcur < tip) {
-    const hi = Math.min(pcur + WINDOW, tip);
-    const result = await env.DB.prepare(dispenseSql(pcur, hi)).run();
-    writes.dispense = result.meta.rows_written ?? 0;
-    await setState(env.DB, "trades_cur_dispense", hi);
-    out.dispense = { from: pcur, to: hi };
-  }
-  out.dispense_done = (await getState(env.DB, "trades_cur_dispense")) >= tip;
-
-  // New Emblem sales are folded by rowid cursor. Vault classification can change after a sale, so a daily
-  // full reconciliation remains as the self-healing backstop instead of rewriting ~231k rows every 2 minutes.
-  const emblemTip =
-    Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM emblem_sales`).first<{ m: number }>())?.m) || 0;
-  const emblemCur = await getState(env.DB, "trades_cur_emblem");
-  const fullGen = Math.floor(tip / 144);
-  if (emblemCur < emblemTip) {
-    const result = await env.DB.prepare(emblemSql(`AND es.rowid>${emblemCur} AND es.rowid<=${emblemTip}`)).run();
+  const emblemTip = Number(
+    (await env.CORE_DB.prepare(`SELECT COALESCE(MAX(rowid),0) tip FROM emblem_sales`).first<{ tip: number }>())?.tip ??
+      0,
+  );
+  const emblemCursor = await getCoreStateInt(env.CORE_DB, "trades_cur_emblem");
+  if (emblemCursor < emblemTip) {
+    const high = Math.min(emblemCursor + EMBLEM_WINDOW, emblemTip);
+    const result = await env.CORE_DB.prepare(compactEmblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
+      .bind(emblemCursor, high)
+      .run();
     writes.emblem_new = result.meta.rows_written ?? 0;
-    await setState(env.DB, "trades_cur_emblem", emblemTip);
-    // A genesis fold already used the current classification for every sale; do not immediately repeat it.
-    if (emblemCur === 0) await setState(env.DB, "trades_emblem_full_gen", fullGen);
-  }
-  if ((await getState(env.DB, "trades_emblem_full_gen")) < fullGen) {
-    const result = await env.DB.prepare(emblemSql()).run();
-    writes.emblem_reconcile = result.meta.rows_written ?? 0;
-    await setState(env.DB, "trades_emblem_full_gen", fullGen);
-  }
-  // Scarce.city sales are immutable. Fold only staging rows beyond the saved rowid.
-  const scarceTip =
-    Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM scarce_city_sales`).first<{ m: number }>())?.m) || 0;
-  const scarceCur = await getState(env.DB, "trades_cur_scarce");
-  if (scarceCur < scarceTip) {
-    const result = await env.DB.prepare(scarceSql(`AND s.rowid>${scarceCur} AND s.rowid<=${scarceTip}`)).run();
-    writes.scarce = result.meta.rows_written ?? 0;
-    await setState(env.DB, "trades_cur_scarce", scarceTip);
+    await setCoreState(env.CORE_DB, "trades_cur_emblem", high);
   }
 
-  out.writes = writes;
-  out.done = out.dex_done && out.dispense_done;
-  return out as TradesBuildProgress;
+  let reconcileCursor = await getCoreStateInt(env.CORE_DB, "trades_emblem_reconcile_cursor");
+  if (reconcileCursor >= emblemTip) reconcileCursor = 0;
+  if (emblemTip > 0) {
+    const high = Math.min(reconcileCursor + EMBLEM_WINDOW, emblemTip);
+    const result = await env.CORE_DB.prepare(compactEmblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
+      .bind(reconcileCursor, high)
+      .run();
+    writes.emblem_reconcile = result.meta.rows_written ?? 0;
+    await setCoreState(env.CORE_DB, "trades_emblem_reconcile_cursor", high);
+  }
+
+  const scarce = await env.CORE_DB.prepare(COMPACT_SCARCE_TRADES_SQL).run();
+  writes.scarce = scarce.meta.rows_written ?? 0;
+  return {
+    tip,
+    dex: dex.range,
+    dex_done: dex.done,
+    dispense: dispense.range,
+    dispense_done: dispense.done,
+    writes,
+    done: dex.done && dispense.done,
+  };
 }

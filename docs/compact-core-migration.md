@@ -32,7 +32,7 @@ addresses and UTXOs, and credits/debits share `ledger_events` with an explicit d
 | ledger_events | compact event sync | CREDIT/DEBIT events | absorb the separate ledger frontier and retire `LEDGER_DB` |
 | emblem_vaults, emblem_sales, emblem_listings | corresponding Emblem crawler | validated provider responses | compact-native producers are prepared; deploy with their trade, signal, and tag consumers |
 | scarce_city_sales | Scarce City crawler | validated provider response | compact-native producer is prepared; deploy with the market-data dependency cut |
-| trades | unified trade builder | compact protocol rows plus compact external sales | its external inputs still live in the old database |
+| trades | unified trade builder | compact protocol rows plus compact external sales | compact-native builder is prepared; deploy with Emblem, Scarce City, pricing, and signal consumers |
 | prices, xcp_btc_daily | price job | Coinbase candles and compact order matches | pricing change must land after its schema and compact trade owner |
 | address_signals, asset_signals, asset_feed_counts | signal builders | compact protocol, trades, vaults | builders still query the old schema |
 | tags | tag owner for each source | compact signals/assets plus external directories | computed tag builder remains on the old schema; collection/issuer writers are already compact |

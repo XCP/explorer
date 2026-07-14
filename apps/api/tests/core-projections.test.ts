@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { reconcileCoreProjection } from "#api/indexer/core-projections";
 import { upsertEmblemVaultIdentities } from "#api/indexer/emblem";
 import { upsertEmblemListingContract } from "#api/indexer/emblem-listings";
 import { priceOf, upsertEmblemSales } from "#api/indexer/emblem-sales";
@@ -243,43 +242,4 @@ test("compact listing generations converge asks and remove observed delistings",
       .map((row) => ({ ...row })),
     [{ token_id: "8", price_usd: 22, updated_at: 101 }],
   );
-});
-
-test("incremental trade projection reconciliation upserts bounded pages and dictionary identities", async () => {
-  const { source, compact, env } = databases();
-  source.exec(`
-    INSERT INTO emblem_sales VALUES('abc',1,'contract','7','10','token','market','buyer','seller',99);
-    INSERT INTO trades VALUES('dex','one','RAREPEPE',10,9,2,'XCP',3,4,'buyer','seller','${"ab".repeat(32)}','clean');
-    INSERT INTO trades VALUES('external','two',NULL,11,NULL,1,'USD',5,5,NULL,NULL,'provider-id','clean');
-  `);
-  assert.equal((await reconcileCoreProjection(env, "trades")).caught_up, true);
-  assert.deepEqual(
-    compact
-      .prepare(
-        `SELECT venue,lower(hex(tx_hash)) tx_hash,external_tx_hash
-           FROM trades ORDER BY venue`,
-      )
-      .all()
-      .map((row) => ({ ...row })),
-    [
-      { venue: "dex", tx_hash: "ab".repeat(32), external_tx_hash: null },
-      { venue: "external", tx_hash: "", external_tx_hash: "provider-id" },
-    ],
-  );
-});
-
-test("projection reconciliation remains closed before the compact import completes", async () => {
-  const { compact, env } = databases();
-  compact.exec(`UPDATE core_state SET value='0' WHERE key='import_complete'`);
-  assert.deepEqual(await reconcileCoreProjection(env, "trades"), {
-    table: "trades",
-    skipped: "compact import is incomplete",
-  });
-  let error: unknown;
-  try {
-    await reconcileCoreProjection(env, "tags");
-  } catch (caught) {
-    error = caught;
-  }
-  assert.match(String(error), /unsupported incremental projection/);
 });

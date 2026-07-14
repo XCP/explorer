@@ -37,7 +37,6 @@ import { legacy } from "#api/legacy";
 import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
-import { reconcileCoreProjection } from "#api/indexer/core-projections";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
@@ -331,7 +330,6 @@ export default {
           // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).
           await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
           await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
-          await runScheduledJob("reconcileCoreTrades", () => reconcileCoreProjection(env, "trades", 500));
         }
       })(),
     );

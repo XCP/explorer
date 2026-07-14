@@ -36,11 +36,9 @@ import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrit
 import {
   CORE_RECENT_PROJECTIONS,
   reconcileBalanceSnapshotPage,
-  reconcileCoreProjection,
   reconcileRecentCoreProjection,
 } from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
-import { backfillDispenseIdentities } from "#api/indexer/dispense-identity";
 import { catchUpCoreAssetFeedCounts } from "#api/indexer/core-feed-counts";
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -139,16 +137,6 @@ admin.post("/admin/core-replay", async (c) => {
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
 });
 
-admin.post("/admin/core-projections/reconcile/:table", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 250, min: 1, max: 500 });
-  try {
-    const result = await reconcileCoreProjection(c.env, c.req.param("table"), rows);
-    return c.json(result, "skipped" in result ? 409 : 200);
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "projection reconciliation failed" }, 400);
-  }
-});
-
 admin.post("/admin/core-projections/reconcile-recent/:table", async (c) => {
   const table = c.req.param("table");
   if (!CORE_RECENT_PROJECTIONS.some((candidate) => candidate === table)) return c.json({ error: "unknown table" }, 400);
@@ -159,12 +147,6 @@ admin.post("/admin/core-projections/reconcile-balance-snapshots", async (c) => {
   const offset = Math.max(0, Number.parseInt(c.req.query("offset") ?? "0", 10) || 0);
   const rows = Math.min(100, Math.max(1, Number.parseInt(c.req.query("rows") ?? "100", 10) || 100));
   return c.json(await reconcileBalanceSnapshotPage(c.env, offset, rows));
-});
-
-admin.post("/admin/core-projections/reconcile-dispense-identities", async (c) => {
-  const after = Math.max(0, Number.parseInt(c.req.query("after") ?? "0", 10) || 0);
-  const rows = Math.min(500, Math.max(1, Number.parseInt(c.req.query("rows") ?? "500", 10) || 500));
-  return c.json(await backfillDispenseIdentities(c.env.DB, c.env.CORE_DB, after, rows));
 });
 
 admin.post("/admin/core-projections/catch-up-asset-feed-counts", async (c) => {

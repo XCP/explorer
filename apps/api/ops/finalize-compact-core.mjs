@@ -10,7 +10,6 @@ const maxReplaySteps = boundedInteger(
 );
 const maxAttempts = boundedInteger(process.env.CORE_FINALIZE_MAX_ATTEMPTS ?? "8", 1, 20, "CORE_FINALIZE_MAX_ATTEMPTS");
 const projectionRows = boundedInteger(process.env.CORE_PROJECTION_ROWS ?? "100", 1, 500, "CORE_PROJECTION_ROWS");
-const incrementalProjections = ["trades"];
 const token = process.env.ADMIN_TOKEN ?? readLocalAdminToken();
 
 function boundedInteger(value, minimum, maximum, name) {
@@ -83,18 +82,6 @@ for (let step = 1; step <= maxReplaySteps; step += 1) {
   if (replay.skipped) throw new Error(`Compact replay did not advance: ${replay.skipped}`);
 }
 if (!replay?.caught_up) throw new Error(`Compact replay did not catch up within ${maxReplaySteps} steps`);
-
-for (const table of incrementalProjections) {
-  let projection;
-  for (let step = 1; step <= maxReplaySteps; step += 1) {
-    projection = await request(`/admin/core-projections/reconcile/${table}?rows=${projectionRows}`, "POST");
-    report("projection", { step, ...projection });
-    if (projection.caught_up) break;
-    if (projection.skipped) throw new Error(`${table} reconciliation did not advance: ${projection.skipped}`);
-  }
-  if (!projection?.caught_up)
-    throw new Error(`${table} reconciliation did not catch up within ${maxReplaySteps} steps`);
-}
 
 let snapshotOffset = 0;
 for (let step = 1; step <= maxReplaySteps; step += 1) {
