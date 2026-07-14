@@ -15,18 +15,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
-  passStatements,
-  finalizeStatements,
   seedSubset,
   graphTier,
-  NODE_INSERTS,
-  RANK_INIT,
-  SEED_APPLY,
   entityPassStatements,
   entityNodeStatements,
   entityRankInitStatements,
   entitySeedApplyStatement,
   entitySeedInsertStatement,
+  entityFinalizeStatements,
   ENTITY_IDENTITY_STATEMENTS,
   entityEdgeStatements,
   K,
@@ -35,18 +31,24 @@ import {
 } from "#api/indexer/graph-core";
 
 const CONTROL_SLOT = K + 1; // slot 4: the plain-PPR control (single vector over ALL trust seeds, no MIN).
+const GENERATION = 1;
 
 // ---- in-memory working tables (same DDL as migration 0024) ----
 function freshDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec(`
-    CREATE TABLE graph_edges (src TEXT NOT NULL, dst TEXT NOT NULL, w REAL NOT NULL);
-    CREATE INDEX idx_gedge_src ON graph_edges(src);
-    CREATE INDEX idx_gedge_dst ON graph_edges(dst);
-    CREATE TABLE graph_node (id TEXT PRIMARY KEY, outsum REAL DEFAULT 0, insum REAL DEFAULT 0);
-    CREATE TABLE graph_rank (node TEXT NOT NULL, slot INTEGER NOT NULL, s REAL DEFAULT 0, r REAL DEFAULT 0, rn REAL DEFAULT 0, PRIMARY KEY (node, slot));
-    CREATE TABLE graph_seed (node TEXT NOT NULL, slot INTEGER NOT NULL, s REAL NOT NULL, PRIMARY KEY (node, slot));
-    CREATE TABLE graph_inflow (node TEXT PRIMARY KEY, v REAL NOT NULL);
+    CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,
+      UNIQUE(entity_type,entity_key));
+    CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,
+      weight REAL,edge_block INTEGER,PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
+    CREATE TABLE graph_node(generation INTEGER,entity_id INTEGER,outsum REAL DEFAULT 0,insum REAL DEFAULT 0,
+      PRIMARY KEY(generation,entity_id)) WITHOUT ROWID;
+    CREATE TABLE graph_rank(generation INTEGER,entity_id INTEGER,slot INTEGER,score REAL DEFAULT 0,
+      rank REAL DEFAULT 0,normalized_rank REAL DEFAULT 0,PRIMARY KEY(generation,entity_id,slot)) WITHOUT ROWID;
+    CREATE TABLE graph_seed(generation INTEGER,entity_id INTEGER,slot INTEGER,score REAL,
+      PRIMARY KEY(generation,entity_id,slot)) WITHOUT ROWID;
+    CREATE TABLE graph_inflow(generation INTEGER,entity_id INTEGER,value REAL,
+      PRIMARY KEY(generation,entity_id)) WITHOUT ROWID;
   `);
   return db;
 }
@@ -71,11 +73,19 @@ interface Graph {
 }
 
 function buildSyntheticGraph(db: DatabaseSync): Graph {
-  const edge = db.prepare(`INSERT INTO graph_edges (src,dst,w) VALUES (?,?,1.0)`);
-  const dir = (a: string, b: string) => edge.run(a, b);
+  const insertEntity = db.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('address',?)`);
+  const selectEntity = db.prepare(`SELECT entity_id FROM entity_dictionary WHERE entity_type='address' AND entity_key=?`);
+  const id = (name: string): number => {
+    insertEntity.run(name);
+    return selectEntity.get(name)!.entity_id as number;
+  };
+  const edge = db.prepare(
+    `INSERT OR IGNORE INTO graph_edges(generation,source_entity_id,destination_entity_id,weight) VALUES(?,?,?,1.0)`,
+  );
+  const dir = (a: string, b: string) => edge.run(GENERATION, id(a), id(b));
   const bi = (a: string, b: string) => {
-    edge.run(a, b);
-    edge.run(b, a);
+    dir(a, b);
+    dir(b, a);
   };
 
   // one guaranteed trust seed per subset, so the trusted cluster is reachable from ALL k subsets (a MIN>0).
@@ -128,28 +138,31 @@ function buildSyntheticGraph(db: DatabaseSync): Graph {
 
 // ---- run the PRODUCTION build + iteration over the synthetic edges ----
 function run(db: DatabaseSync, g: Graph): void {
-  for (const sql of NODE_INSERTS) db.exec(sql);
-  for (const sql of RANK_INIT) db.exec(sql);
-  db.exec(`INSERT INTO graph_rank (node,slot,s,r,rn) SELECT id, ${CONTROL_SLOT}, 0, 0, 0 FROM graph_node`);
+  for (const sql of entityNodeStatements(GENERATION)) db.exec(sql);
+  for (const sql of entityRankInitStatements(GENERATION)) db.exec(sql);
+  db.exec(`INSERT INTO graph_rank(generation,entity_id,slot,score,rank,normalized_rank)
+    SELECT ${GENERATION},entity_id,${CONTROL_SLOT},0,0,0 FROM graph_node WHERE generation=${GENERATION}`);
 
   // teleport vectors. trust seeds split k ways by the production seedSubset(); distrust -> slot K; the control
   // vector -> slot K+1 teleports uniformly to ALL trust seeds at once (the un-hardened plain-PPR baseline).
   const subsets: string[][] = Array.from({ length: K }, () => []);
   for (const s of g.trustSeeds) subsets[seedSubset(s)].push(s);
-  const seed = db.prepare(`INSERT OR REPLACE INTO graph_seed (node,slot,s) VALUES (?,?,?)`);
+  const seed = db.prepare(`INSERT OR REPLACE INTO graph_seed(generation,entity_id,slot,score)
+    SELECT ${GENERATION},entity_id,?,? FROM entity_dictionary WHERE entity_type='address' AND entity_key=?`);
   subsets.forEach((sub, slot) => {
     const s = sub.length ? 1 / sub.length : 0;
-    for (const n of sub) seed.run(n, slot, s);
+    for (const n of sub) seed.run(slot, s, n);
   });
-  seed.run(g.distrustSeed, DISTRUST_SLOT, 1);
+  seed.run(DISTRUST_SLOT, 1, g.distrustSeed);
   const cs = 1 / g.trustSeeds.length;
-  for (const s of g.trustSeeds) seed.run(s, CONTROL_SLOT, cs);
-  db.exec(SEED_APPLY);
+  for (const s of g.trustSeeds) seed.run(CONTROL_SLOT, cs, s);
+  db.exec(entitySeedApplyStatement(GENERATION));
 
   // ~20 power-iteration passes; each slot advances independently (order across slots is irrelevant).
   for (let p = 0; p < PASSES; p++) {
-    for (let slot = 0; slot <= K; slot++) for (const sql of passStatements(slot, slot === DISTRUST_SLOT)) db.exec(sql);
-    for (const sql of passStatements(CONTROL_SLOT, false)) db.exec(sql);
+    for (let slot = 0; slot <= K; slot++)
+      for (const sql of entityPassStatements(GENERATION, slot, slot === DISTRUST_SLOT)) db.exec(sql);
+    for (const sql of entityPassStatements(GENERATION, CONTROL_SLOT, false)) db.exec(sql);
   }
 }
 
@@ -159,14 +172,20 @@ function vectors(db: DatabaseSync) {
   const trustSlots = Array.from({ length: K }, (_, i) => i).join(",");
   const trust: Map0 = new Map();
   for (const r of db
-    .prepare(`SELECT node, MIN(r) tr FROM graph_rank WHERE slot IN (${trustSlots}) GROUP BY node`)
+    .prepare(`SELECT entity.entity_key node,MIN(rank.rank) tr FROM graph_rank rank
+      JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id
+      WHERE rank.generation=${GENERATION} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id`)
     .all())
     trust.set(r.node as string, r.tr as number);
   const distrust: Map0 = new Map();
-  for (const r of db.prepare(`SELECT node, r dr FROM graph_rank WHERE slot=${DISTRUST_SLOT}`).all())
+  for (const r of db.prepare(`SELECT entity.entity_key node,rank.rank dr FROM graph_rank rank
+    JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id
+    WHERE rank.generation=${GENERATION} AND rank.slot=${DISTRUST_SLOT}`).all())
     distrust.set(r.node as string, r.dr as number);
   const plain: Map0 = new Map();
-  for (const r of db.prepare(`SELECT node, r pr FROM graph_rank WHERE slot=${CONTROL_SLOT}`).all())
+  for (const r of db.prepare(`SELECT entity.entity_key node,rank.rank pr FROM graph_rank rank
+    JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id
+    WHERE rank.generation=${GENERATION} AND rank.slot=${CONTROL_SLOT}`).all())
     plain.set(r.node as string, r.pr as number);
   return { trust, distrust, plain };
 }
@@ -240,7 +259,8 @@ test("gauntlet: isolated newcomer is unscored (zero, not negative)", () => {
   run(db, g);
   const { trust, distrust } = vectors(db);
   // never entered the graph at all -> no node row.
-  const present = db.prepare(`SELECT COUNT(*) c FROM graph_node WHERE id=?`).get(g.newcomer)!.c as number;
+  const present = db.prepare(`SELECT COUNT(*) c FROM graph_node node JOIN entity_dictionary entity
+    ON entity.entity_id=node.entity_id WHERE entity.entity_key=?`).get(g.newcomer)!.c as number;
   assert.equal(present, 0, "newcomer has no edges -> absent from graph_node");
   const t = trust.get(g.newcomer) ?? 0,
     d = distrust.get(g.newcomer) ?? 0;
@@ -263,9 +283,9 @@ test("gauntlet: reverse-graph Anti-TrustRank flags the held-out scam node as dis
   assert.equal(graphTier(trust.get("T5")!, distrust.get("T5") ?? 0), "trusted", "T5 tier is trusted");
 });
 
-test("finalizeStatements target the signals tables and carry no bind placeholders", () => {
+test("entityFinalizeStatements target compact signals and carry no bind placeholders", () => {
   // parity guard: the write-back SQL must be self-contained (literals only), like the rest of the signal SQL.
-  const sql = finalizeStatements().join("\n");
+  const sql = entityFinalizeStatements(GENERATION).join("\n");
   assert(!sql.includes("?"), "finalize SQL must contain no '?' placeholders");
   assert(sql.includes("address_signals") && sql.includes("asset_signals"), "writes both signals tables");
 });
