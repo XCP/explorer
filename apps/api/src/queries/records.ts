@@ -8,6 +8,13 @@
 import type { RecordKind, RecordRowMap, CancelRow, DispenserRefillRow, PoolLiquidityRow } from "@xcp/shared/records";
 import { q, one } from "#api/db";
 
+const TRANSACTION_FEED_SQL = `SELECT LOWER(HEX(tx.tx_hash)) tx_hash,tx.tx_index,tx.block_index,tx.block_time,
+  source.address source,destination.address destination,tx.btc_amount,tx.fee,tx.supported
+FROM transactions tx
+LEFT JOIN address_dictionary source ON source.address_id=tx.source_id
+LEFT JOIN address_dictionary destination ON destination.address_id=tx.destination_id
+ORDER BY tx.block_index DESC,tx.tx_index DESC LIMIT ? OFFSET ?`;
+
 const SEND_FEED_SQL = `SELECT LOWER(HEX(send.tx_hash)) tx_hash,send.block_index,send.block_time,
   source.address source,destination.address destination,asset.asset,send.quantity_normalized,
   send.send_type,send.status,send.memo
@@ -17,9 +24,30 @@ LEFT JOIN address_dictionary destination ON destination.address_id=send.destinat
 LEFT JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
 ORDER BY send.block_index DESC,send.event_index DESC LIMIT ? OFFSET ?`;
 
+const ISSUANCE_FEED_SQL = `SELECT LOWER(HEX(issuance.tx_hash)) tx_hash,issuance.block_index,issuance.block_time,
+  asset.asset,issuance.asset_longname,source.address source,issuer.address issuer,issuance.quantity_normalized,
+  issuance.transfer,issuance.divisible,issuance.locked,issuance.description,issuance.asset_events,issuance.status
+FROM issuances issuance
+LEFT JOIN asset_dictionary asset ON asset.asset_id=issuance.asset_id
+LEFT JOIN address_dictionary source ON source.address_id=issuance.source_id
+LEFT JOIN address_dictionary issuer ON issuer.address_id=issuance.issuer_id
+ORDER BY issuance.block_index DESC,issuance.event_index DESC LIMIT ? OFFSET ?`;
+
+export function listTransactions(
+  db: D1Database,
+  limit: number,
+  offset: number,
+): Promise<RecordRowMap["transactions"][]> {
+  return q<RecordRowMap["transactions"]>(db, TRANSACTION_FEED_SQL, limit, offset);
+}
+
 /** Global send feed from the canonical compact ledger. Event index makes MPMA rows deterministic. */
 export function listSends(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["sends"][]> {
   return q<RecordRowMap["sends"]>(db, SEND_FEED_SQL, limit, offset);
+}
+
+export function listIssuances(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["issuances"][]> {
+  return q<RecordRowMap["issuances"]>(db, ISSUANCE_FEED_SQL, limit, offset);
 }
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even

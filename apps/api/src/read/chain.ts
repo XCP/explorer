@@ -7,7 +7,9 @@ import { router, J, lim, off, type Ctx } from "#api/read/respond";
 import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
   listRecords,
+  listTransactions,
   listSends,
+  listIssuances,
   classifyTx,
   recordsByTxHash,
   dispensesOfDispenser,
@@ -323,8 +325,12 @@ for (const kind of RECORD_KINDS) {
         ? await listOrders(c.env.CORE_DB, l, o)
         : kind === "order_matches"
           ? await listOrderMatches(c.env.CORE_DB, l, o)
+          : kind === "transactions"
+            ? await listTransactions(c.env.CORE_DB, l, o)
           : kind === "sends"
             ? await listSends(c.env.CORE_DB, l, o)
+            : kind === "issuances"
+              ? await listIssuances(c.env.CORE_DB, l, o)
           : await listRecords(c.env.DB, kind, l, o);
     return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
   });
