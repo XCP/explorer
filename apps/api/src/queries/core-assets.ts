@@ -1,4 +1,4 @@
-import type { AssetFeedCounts, AssetIndexRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
+import type { AssetFeedCounts, AssetIndexRow, AssetListRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
 import type {
   DestructionRow,
   DispenseRow,
@@ -94,6 +94,32 @@ export function getCoreAsset(db: D1Database, asset: string): Promise<AssetRow | 
       WHERE dictionary.asset=? OR assets.asset_longname=?`,
     asset.toUpperCase(),
     asset,
+  );
+}
+
+export function listCoreSubassets(
+  db: D1Database,
+  parent: string,
+  limit: number,
+  offset: number,
+): Promise<AssetListRow[]> {
+  return q<AssetListRow>(
+    db,
+    `WITH page AS (
+       SELECT asset_id FROM assets
+        WHERE asset_longname>=?1 AND asset_longname<?2
+        ORDER BY first_issuance_block_index DESC,asset_id DESC LIMIT ?3 OFFSET ?4
+     )
+     SELECT dictionary.asset,asset.asset_longname,asset.divisible,asset.locked,issuer.address issuer,
+       asset.first_issuance_block_index
+     FROM page JOIN assets asset ON asset.asset_id=page.asset_id
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+     LEFT JOIN address_dictionary issuer ON issuer.address_id=asset.issuer_id
+     ORDER BY asset.first_issuance_block_index DESC,asset.asset_id DESC`,
+    `${parent}.`,
+    `${parent}/`,
+    limit,
+    offset,
   );
 }
 

@@ -26,7 +26,6 @@ import {
   assetReviewDistribution,
   assetReviewTop,
   assetValidation,
-  listSubassets,
   assetCohort,
   assetCollectionCohort,
   assetQualitySignals,
@@ -56,6 +55,7 @@ import {
   listAssetPools,
   listAssetPoolMatches,
   listAssetFairmints,
+  listCoreSubassets,
 } from "#api/queries/core-assets";
 import { listAssetOrders } from "#api/queries/core-orders";
 
@@ -434,7 +434,7 @@ function fixArweaveImageUrls<T>(v: T): T {
 // failures a client fetch hits on non-CORS hosts), cap size/time, and verify the optional ;sha256 hash. We
 // return the parsed object only — never execute anything; the client sanitizes HTML fields with DOMPurify.
 assets.get("/v2/assets/:asset/enhanced", async (c) => {
-  const r = await getAsset(c.env.DB, c.req.param("asset").toUpperCase());
+  const r = await getCoreAsset(c.env.CORE_DB, c.req.param("asset").toUpperCase());
   const ptr = parseJsonDescriptor(r?.description || "");
   if (!ptr) return J(c, { result: null }, 300);
   try {
@@ -511,7 +511,7 @@ assets.get("/v2/assets/:asset/market", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/subassets", async (c) => {
-  const rows = await listSubassets(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const rows = await listCoreSubassets(c.env.CORE_DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
