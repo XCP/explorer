@@ -2,9 +2,10 @@
 
 ## End state
 
-`xcpio-core` is the explorer database. It contains normalized Counterparty protocol data, explorer-owned
-projections, curated facts, and external enrichments. Runtime code uses `CORE_DB` for all of those relations.
-The separately scoped Bitcoin recovery database and ledger database remain separate products.
+`xcpio-core` is the explorer database. It contains normalized Counterparty protocol data (including unified
+credit/debit provenance in `ledger_events`), explorer-owned projections, curated facts, and external enrichments.
+Runtime code uses `CORE_DB` for all of those relations. Only the separately scoped Bitcoin recovery database
+remains a separate product; `LEDGER_DB` is transition machinery and must be retired.
 
 Completion means all of the following are true:
 
@@ -13,6 +14,7 @@ Completion means all of the following are true:
 - every derived relation has one runtime owner and one state cursor in `core_state`;
 - no runtime branch selects a database based on readiness, version, or environment flags;
 - no background job copies a relation from the old database into `CORE_DB`;
+- no runtime path reads or writes `LEDGER_DB` after its rows and readiness checks are absorbed by `CORE_DB`;
 - import, parity, snapshot, and cutover endpoints are absent from the deployed Worker;
 - the old database binding is absent from `Env` and `wrangler.toml`;
 - the old database is retained only for a time-bounded rollback checkpoint, then deleted.
@@ -27,7 +29,7 @@ addresses and UTXOs, and credits/debits share `ledger_events` with an explicit d
 |---|---|---|---|
 | blocks, transactions, balances, balance_snapshots, sends, assets, issuances, orders, order_matches | compact event sync | Counterparty events | old mirror is still written for downstream jobs |
 | dispensers, dispenses, refills, burns, destructions, dividends, sweeps, bets, RPS, pools, fairminters, fairmints, broadcasts, cancels, btcpays | compact event sync | Counterparty events | same |
-| ledger_events | compact event sync | CREDIT/DEBIT events | independent ledger readiness must remain green |
+| ledger_events | compact event sync | CREDIT/DEBIT events | absorb the separate ledger frontier and retire `LEDGER_DB` |
 | emblem_vaults, emblem_sales, emblem_listings | corresponding Emblem crawler | validated provider responses | crawlers still store their canonical rows in the old database |
 | scarce_city_sales | Scarce City crawler | validated provider response | crawler still scans/writes the old database |
 | trades | unified trade builder | compact protocol rows plus compact external sales | its external inputs still live in the old database |
@@ -93,8 +95,10 @@ has exactly one writer.
 1. Confirm no crawler or projection reads protocol tables from the old database.
 2. Move pause/lock/checkpoint/rollback state to `core_state`.
 3. Remove old event statements and the old balance/supply queues.
-4. Exercise interrupted replay, duplicate delivery, reorg rollback, and genesis recovery tests.
-5. Observe at least one new block and compare Counterparty frontier, hashes, balances, and representative protocol
+4. Confirm compact `ledger_events` is complete/current, move its readiness checks into the core audit, and remove
+   the separate ledger binding and backfill job.
+5. Exercise interrupted replay, duplicate delivery, reorg rollback, and genesis recovery tests.
+6. Observe at least one new block and compare Counterparty frontier, hashes, balances, and representative protocol
 records.
 
 Gate: the old protocol tables receive no writes and compact sync stays current through a real block.
