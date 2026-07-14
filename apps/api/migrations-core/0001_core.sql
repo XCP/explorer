@@ -1,4 +1,4 @@
--- Canonical compact Counterparty mirror. This database is populated and parity-checked before it serves reads.
+-- Canonical Counterparty index optimized for D1 storage and query execution.
 -- Public strings are decoded at the API boundary; filters and pagination operate on compact base columns.
 
 CREATE TABLE address_dictionary (

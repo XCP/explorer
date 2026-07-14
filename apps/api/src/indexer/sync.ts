@@ -85,9 +85,7 @@ async function currentBlock(api: string): Promise<number> {
   return d.result?.block_index ?? 0;
 }
 
-/** Replay the post-seed event delta directly into the compact database. This cursor is intentionally independent
- * of the current source mirror: a current source cursor cannot prove that a newly imported compact seed received
- * the events that arrived while its tables were copied. Source-mirror statements are dispatched but ignored. */
+/** Replay Counterparty's canonical event stream from the durable local cursor. */
 export async function syncCompactEvents(
   env: Pick<Env, "CORE_DB" | "COUNTERPARTY_API_BASE">,
   opts: { maxEvents?: number } = {},
@@ -103,23 +101,13 @@ export async function syncCompactEvents(
   if (lock.meta.changes === 0) return { skipped: "locked" };
 
   try {
-    const [buildComplete, importComplete, seedValue, cursorValue, blockValue] = await Promise.all([
-      getCoreState(env.CORE_DB, "build_complete"),
-      getCoreState(env.CORE_DB, "import_complete"),
-      getCoreState(env.CORE_DB, "seed_event_index"),
+    const [cursorValue, blockValue] = await Promise.all([
       getCoreState(env.CORE_DB, "last_event_index"),
       getCoreState(env.CORE_DB, "last_block_index"),
     ]);
-    if (buildComplete !== "1" || importComplete !== "1") {
-      return { skipped: "compact import is incomplete" };
-    }
-    if (seedValue == null) throw new Error("compact seed_event_index is missing");
-    const seedIndex = Number.parseInt(seedValue, 10);
-    let lastIndex = Number.parseInt(cursorValue ?? seedValue, 10);
+    let lastIndex = Number.parseInt(cursorValue ?? "-1", 10);
     let lastBlock = Number.parseInt(blockValue ?? "0", 10);
-    if (!Number.isSafeInteger(seedIndex) || !Number.isSafeInteger(lastIndex) || lastIndex < seedIndex) {
-      throw new Error("compact replay cursor is invalid");
-    }
+    if (!Number.isSafeInteger(lastIndex) || lastIndex < -1) throw new Error("replay cursor is invalid");
 
     const tip = await tipEventIndex(env.COUNTERPARTY_API_BASE);
     const followingWindow = tip - lastIndex < 5 * CHUNK;
@@ -170,15 +158,10 @@ export async function syncCompactEvents(
     if (caughtUp) {
       if (lastBlock > SNAPSHOT_WINDOW) await pruneCompactSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW);
       const checkpointHash = lastBlock > 0 ? await blockHash(env.COUNTERPARTY_API_BASE, lastBlock) : null;
-      await env.CORE_DB.batch([
-        setCoreStateStmt(env.CORE_DB, "seed_reconciled", "1"),
-        setCoreStateStmt(env.CORE_DB, "reconciled_event_index", String(lastIndex)),
-        ...(checkpointHash ? [setCoreStateStmt(env.CORE_DB, "last_block_hash", checkpointHash)] : []),
-      ]);
+      if (checkpointHash) await setCoreStateStmt(env.CORE_DB, "last_block_hash", checkpointHash).run();
     }
     return {
       applied,
-      seed_event_index: seedIndex,
       last_event_index: lastIndex,
       last_block: lastBlock,
       tip,
@@ -352,6 +335,5 @@ export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number
     setCoreStateStmt(db, "last_block_index", String(rollbackTo)),
     setCoreStateStmt(db, "trades_cur_dex", String(rollbackTo)),
     setCoreStateStmt(db, "trades_cur_dispense", String(rollbackTo)),
-    setCoreStateStmt(db, "parity_verified", "0"),
   ]);
 }

@@ -31,7 +31,6 @@ import { recoveryAdmin } from "#api/recovery/admin";
 import { operationalStatus } from "#api/operations/status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
-import { catchUpCoreAssetFeedCounts } from "#api/indexer/core-feed-counts";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -106,11 +105,6 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
 admin.post("/admin/sync", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
-});
-
-admin.post("/admin/catch-up-asset-feed-counts", async (c) => {
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 250 });
-  return c.json(await catchUpCoreAssetFeedCounts(c.env.CORE_DB, rows));
 });
 
 // Advance both compact-native reputation projections. Cron runs the same bounded repair steps.

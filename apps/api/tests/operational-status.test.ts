@@ -33,18 +33,9 @@ class Database {
 
 test("operational status aggregates durable frontiers without counting recovery outputs", async () => {
   const core = new Database(() => [
-    { key: "build_complete", value: "1" },
-    { key: "import_complete", value: "1" },
-    { key: "snapshot_consistent", value: "0" },
-    { key: "snapshot_mode", value: "d1_export" },
-    { key: "snapshot_expected_tables", value: "55" },
-    { key: "seed_event_index", value: "100" },
     { key: "last_event_index", value: "120" },
-    { key: "seed_reconciled", value: "1" },
-    { key: "parity_verified", value: "1" },
-    { key: "forward_write_ready", value: "1" },
-    { key: "read_surface_complete", value: "1" },
-    { key: "projection_writes_ready", value: "1" },
+    { key: "last_block_index", value: "101" },
+    { key: "last_block_hash", value: "abc" },
   ]);
   const recovery = new Database((sql) => {
     if (sql.includes("FROM recovery_state"))
@@ -66,15 +57,7 @@ test("operational status aggregates durable frontiers without counting recovery 
 
   assert.equal(result.generated_at, 123);
   assert.deepEqual(result.core, {
-    build_complete: true,
-    import_complete: true,
-    snapshot: { mode: "d1_export", consistent: false, expected_tables: 55 },
-    replay: { seed_event_index: 100, last_event_index: 120, reconciled: true },
-    parity_verified: true,
-    forward_write_ready: true,
-    read_surface_complete: true,
-    projection_writes_ready: true,
-    read_ready: true,
+    replay: { last_event_index: 120, last_block_index: 101, last_block_hash: "abc" },
   });
   assert.equal(result.recovery.import.rows_seen, 12_000);
   assert.equal(result.recovery.verification.complete, false);

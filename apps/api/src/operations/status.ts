@@ -44,10 +44,7 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
     await Promise.all([
       env.CORE_DB.prepare(
         `SELECT key,value FROM core_state
-       WHERE key IN ('build_complete','import_complete','snapshot_consistent',
-                     'snapshot_mode','snapshot_expected_tables','seed_event_index','last_event_index',
-                     'seed_reconciled','parity_verified','forward_write_ready','read_surface_complete',
-                     'projection_writes_ready')`,
+       WHERE key IN ('last_event_index','last_block_index','last_block_hash')`,
       ).all<StateRow>(),
       env.RECOVERY_DB.prepare(
         `SELECT key,value,updated_at FROM recovery_state
@@ -97,30 +94,11 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
   return {
     generated_at: now,
     core: {
-      build_complete: core.build_complete === "1",
-      import_complete: core.import_complete === "1",
-      snapshot: {
-        mode: core.snapshot_mode ?? null,
-        consistent: core.snapshot_consistent === "1",
-        expected_tables: core.snapshot_expected_tables == null ? null : Number(core.snapshot_expected_tables),
-      },
       replay: {
-        seed_event_index: core.seed_event_index == null ? null : Number(core.seed_event_index),
         last_event_index: core.last_event_index == null ? null : Number(core.last_event_index),
-        reconciled: core.seed_reconciled === "1",
+        last_block_index: core.last_block_index == null ? null : Number(core.last_block_index),
+        last_block_hash: core.last_block_hash ?? null,
       },
-      parity_verified: core.parity_verified === "1",
-      forward_write_ready: core.forward_write_ready === "1",
-      read_surface_complete: core.read_surface_complete === "1",
-      projection_writes_ready: core.projection_writes_ready === "1",
-      read_ready:
-        core.build_complete === "1" &&
-        core.import_complete === "1" &&
-        core.seed_reconciled === "1" &&
-        core.parity_verified === "1" &&
-        core.forward_write_ready === "1" &&
-        core.read_surface_complete === "1" &&
-        core.projection_writes_ready === "1",
     },
     recovery: {
       import: {

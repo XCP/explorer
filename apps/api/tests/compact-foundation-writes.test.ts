@@ -1172,17 +1172,13 @@ test("compact bet and RPS state machines preserve composite match identities", a
   assert.deepEqual({ ...rpsMatch }, { tx0_index: 80, tx1_index: 81, status: "resolved and pending" });
 });
 
-test("compact replay advances its own seed cursor without writing the source mirror", async () => {
+test("replay advances its durable cursor", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
   database.exec(`
     INSERT INTO core_state(key,value) VALUES
-      ('build_complete','1'),
-      ('import_complete','1'),
-      ('seed_event_index','0'),
       ('last_event_index','0'),
-      ('last_block_index','100'),
-      ('seed_reconciled','0');
+      ('last_block_index','100');
   `);
   const txHash = "d1".repeat(32);
   const originalFetch = globalThis.fetch;
@@ -1216,7 +1212,6 @@ test("compact replay advances its own seed cursor without writing the source mir
     );
     assert.deepEqual(result, {
       applied: 1,
-      seed_event_index: 0,
       last_event_index: 1,
       last_block: 101,
       tip: 1,
@@ -1238,17 +1233,14 @@ test("compact replay advances its own seed cursor without writing the source mir
       database
         .prepare(
           `SELECT key,value FROM core_state
-         WHERE key IN ('seed_event_index','last_event_index','last_block_index','seed_reconciled','reconciled_event_index')`,
+         WHERE key IN ('last_event_index','last_block_index')`,
         )
         .all() as { key: string; value: string }[]
     ).map((row) => [row.key, row.value]),
   );
   assert.deepEqual(state, {
-    seed_event_index: "0",
     last_event_index: "1",
     last_block_index: "101",
-    seed_reconciled: "1",
-    reconciled_event_index: "1",
   });
 });
 
@@ -1259,7 +1251,6 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
     INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}'),(101,X'${"a1".repeat(32)}');
     INSERT INTO transactions(tx_index,tx_hash,block_index) VALUES(1,X'${"b1".repeat(32)}',101);
     INSERT INTO core_state(key,value) VALUES
-      ('build_complete','1'),('import_complete','1'),('seed_event_index','0'),
       ('last_event_index','10'),('last_block_index','101'),('last_block_hash','orphan');
   `);
   const originalFetch = globalThis.fetch;
@@ -1362,8 +1353,7 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
     INSERT INTO dispensers(tx_index,tx_hash,block_index,source_id,asset_id,status,closed_block_index)
       VALUES (3,X'${"e3".repeat(32)}',100,${addressId},${assetId},11,102);
     INSERT INTO core_state(key,value) VALUES
-      ('last_block_index','102'),
-      ('parity_verified','1');
+      ('last_block_index','102');
   `);
 
   await rollbackCompactDatabase(d1(database), 101);
@@ -1393,5 +1383,4 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
     ]),
   );
   assert.equal(state.last_block_index, "101");
-  assert.equal(state.parity_verified, "0");
 });

@@ -62,7 +62,6 @@ function databases() {
   const compact = new DatabaseSync(":memory:");
   compact.exec(`
     CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-    INSERT INTO core_state VALUES('build_complete','1'),('import_complete','1');
     INSERT INTO core_state VALUES('emblem_listings_generation','0');
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT NOT NULL UNIQUE);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT NOT NULL UNIQUE);
