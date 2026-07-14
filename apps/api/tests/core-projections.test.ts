@@ -40,6 +40,11 @@ function d1(database: DatabaseSync): D1Database {
 function databases() {
   const source = new DatabaseSync(":memory:");
   source.exec(`
+    CREATE TABLE emblem_listings(
+      token_id TEXT,contract TEXT,asset TEXT,order_id TEXT,marketplace TEXT,price_usd REAL,
+      price_amount TEXT,currency TEXT,url TEXT,expiry INTEGER,updated_at INTEGER,
+      PRIMARY KEY(contract,token_id)
+    );
     CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,source TEXT,PRIMARY KEY(day,currency));
     CREATE TABLE xcp_btc_daily(day TEXT PRIMARY KEY,xcpbtc REAL);
     CREATE TABLE scarce_city_sales(asset TEXT,sold_at INTEGER,price_btc REAL,PRIMARY KEY(asset,sold_at));
@@ -47,11 +52,16 @@ function databases() {
       tx_hash TEXT,log_index INTEGER,contract TEXT,token_id TEXT,price_raw TEXT,token_addr TEXT,
       marketplace TEXT,buyer TEXT,seller TEXT,block_number INTEGER,PRIMARY KEY(tx_hash,log_index)
     );
+    CREATE TABLE trades(
+      venue TEXT,ref TEXT,asset TEXT,block_time INTEGER,block_index INTEGER,quantity REAL,currency TEXT,
+      total REAL,usd_value REAL,buyer TEXT,seller TEXT,tx_hash TEXT,sale_class TEXT,PRIMARY KEY(venue,ref)
+    );
   `);
   const compact = new DatabaseSync(":memory:");
   compact.exec(`
     CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     INSERT INTO core_state VALUES('build_complete','1'),('import_complete','1');
+    INSERT INTO core_state VALUES('emblem_listings_generation','0');
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT NOT NULL UNIQUE);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT NOT NULL UNIQUE);
     CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,source TEXT,PRIMARY KEY(day,currency));
@@ -61,6 +71,16 @@ function databases() {
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,token_address_id INTEGER,
       marketplace TEXT,buyer_id INTEGER,seller_id INTEGER,block_number INTEGER,PRIMARY KEY(tx_hash,log_index)
     );
+    CREATE TABLE emblem_listings(
+      generation INTEGER NOT NULL,contract_id INTEGER NOT NULL,token_id TEXT NOT NULL,asset_id INTEGER,
+      order_id TEXT,marketplace TEXT,price_usd REAL,price_amount TEXT,currency_id INTEGER,url TEXT,
+      expiry INTEGER,updated_at INTEGER NOT NULL,PRIMARY KEY(generation,contract_id,token_id)
+    );
+    CREATE TABLE trades(
+      venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,currency TEXT,
+      total REAL,usd_value REAL,buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,
+      sale_class TEXT,PRIMARY KEY(venue,ref)
+    );
   `);
   return { source, compact, env: { DB: d1(source), CORE_DB: d1(compact) } };
 }
@@ -68,12 +88,19 @@ function databases() {
 test("incremental projection reconciliation upserts bounded pages and dictionary identities", async () => {
   const { source, compact, env } = databases();
   source.exec(`
+    INSERT INTO emblem_listings VALUES('live','contract','RAREPEPE','order','market',10,'10','currency','url',999,100);
     INSERT INTO prices VALUES('2026-07-12','BTC',100000,'coinbase');
     INSERT INTO prices VALUES('2026-07-13','BTC',101000,'coinbase');
     INSERT INTO scarce_city_sales VALUES('RAREPEPE',123,0.25);
     INSERT INTO emblem_sales VALUES('abc',1,'contract','7','10','token','market','buyer','seller',99);
+    INSERT INTO trades VALUES('dex','one','RAREPEPE',10,9,2,'XCP',3,4,'buyer','seller','${"ab".repeat(32)}','clean');
+    INSERT INTO trades VALUES('external','two',NULL,11,NULL,1,'USD',5,5,NULL,NULL,'provider-id','clean');
   `);
   compact.exec(`INSERT INTO prices VALUES('2026-07-12','BTC',1,'stale')`);
+  compact.exec(`
+    INSERT INTO address_dictionary(address) VALUES('old-contract');
+    INSERT INTO emblem_listings VALUES(0,1,'stale',NULL,NULL,'market',1,'1',NULL,'old',999,1);
+  `);
 
   const first = await reconcileCoreProjection(env, "prices", 1);
   const second = await reconcileCoreProjection(env, "prices", 1);
@@ -121,6 +148,39 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
         .get(),
     },
     { contract: "contract", token: "token", buyer: "buyer", seller: "seller" },
+  );
+
+  assert.equal((await reconcileCoreProjection(env, "emblem_listings")).caught_up, true);
+  assert.equal(
+    compact.prepare(`SELECT value FROM core_state WHERE key='emblem_listings_generation'`).get()?.value,
+    "1",
+  );
+  assert.deepEqual(
+    compact
+      .prepare(
+        `SELECT a.asset,l.token_id,l.price_usd
+           FROM emblem_listings l JOIN asset_dictionary a ON a.asset_id=l.asset_id
+          WHERE l.generation=CAST((SELECT value FROM core_state WHERE key='emblem_listings_generation') AS INTEGER)`,
+      )
+      .all()
+      .map((row) => ({ ...row })),
+    [{ asset: "RAREPEPE", token_id: "live", price_usd: 10 }],
+  );
+  assert.equal(compact.prepare(`SELECT count(*) count FROM emblem_listings`).get()?.count, 2);
+
+  assert.equal((await reconcileCoreProjection(env, "trades")).caught_up, true);
+  assert.deepEqual(
+    compact
+      .prepare(
+        `SELECT venue,lower(hex(tx_hash)) tx_hash,external_tx_hash
+           FROM trades ORDER BY venue`,
+      )
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      { venue: "dex", tx_hash: "ab".repeat(32), external_tx_hash: null },
+      { venue: "external", tx_hash: "", external_tx_hash: "provider-id" },
+    ],
   );
 });
 

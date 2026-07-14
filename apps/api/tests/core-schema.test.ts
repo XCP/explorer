@@ -67,7 +67,12 @@ test("every table already present in compact DDL is declared by the manifest", (
     ...CORE_TABLE_MANIFEST.flatMap((entry) => (entry.target == null ? [] : [entry.target])),
     ...GENERATED_CORE_TABLES,
   ]);
-  const ddlTables = [...CORE_DDL.matchAll(/CREATE TABLE\s+([a-z_]+)/gi)].map((match) => match[1]);
+  const migrated = new DatabaseSync(":memory:");
+  migrated.exec(CORE_DDL);
+  const ddlTables = migrated
+    .prepare(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+    .all()
+    .map((row) => String(row.name));
   assert.deepEqual(
     ddlTables.filter((table) => !declaredTargets.has(table)),
     [],

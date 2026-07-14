@@ -10,7 +10,14 @@ const maxReplaySteps = boundedInteger(
 );
 const maxAttempts = boundedInteger(process.env.CORE_FINALIZE_MAX_ATTEMPTS ?? "8", 1, 20, "CORE_FINALIZE_MAX_ATTEMPTS");
 const projectionRows = boundedInteger(process.env.CORE_PROJECTION_ROWS ?? "500", 1, 500, "CORE_PROJECTION_ROWS");
-const incrementalProjections = ["emblem_sales", "prices", "scarce_city_sales", "xcp_btc_daily"];
+const incrementalProjections = [
+  "emblem_listings",
+  "emblem_sales",
+  "prices",
+  "scarce_city_sales",
+  "trades",
+  "xcp_btc_daily",
+];
 const token = process.env.ADMIN_TOKEN ?? readLocalAdminToken();
 
 function boundedInteger(value, minimum, maximum, name) {

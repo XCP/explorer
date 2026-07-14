@@ -36,7 +36,9 @@ export const CORE_PARITY_RELATIONS: readonly CoreParityRelation[] = [
     targetSql:
       entry.source === "pr_edges"
         ? `SELECT coalesce(sum(multiplicity),0) count FROM pr_edges`
-        : `SELECT count(*) count FROM ${quote(entry.target)}`,
+        : entry.source === "emblem_listings"
+          ? `SELECT count(*) count FROM emblem_listings WHERE generation=coalesce((SELECT CAST(value AS INTEGER) FROM core_state WHERE key='emblem_listings_generation'),0)`
+          : `SELECT count(*) count FROM ${quote(entry.target)}`,
   })),
   {
     target: "ledger_events",
