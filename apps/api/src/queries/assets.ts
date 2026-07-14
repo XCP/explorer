@@ -25,7 +25,6 @@ import type {
   SendRow,
   IssuanceRow,
   DispenserRow,
-  DispenseRow,
   OrderRow,
   FairmintRow,
   DividendRow,
@@ -35,7 +34,7 @@ import type {
 } from "@xcp/shared/records";
 import type { AssetSignalsRow, AssetRow } from "#api/storage-types";
 import { q, one } from "#api/db";
-import { ORDER_SELECT, DISPENSE_SELECT, FAIRMINT_SELECT } from "#api/queries/records";
+import { ORDER_SELECT, FAIRMINT_SELECT } from "#api/queries/records";
 
 /* ---------- index + search ---------- */
 
@@ -336,22 +335,6 @@ export function listAssetDispensers(
             d.satoshirate,d.satoshirate_normalized,d.dispense_count,d.status, ROUND(COALESCE(sg.disp_trust,0),1) operator_trust
      FROM dispensers d LEFT JOIN address_signals sg ON sg.address=d.source
      WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
-    asset,
-    limit,
-    offset,
-  );
-}
-
-/** An asset's dispenses. */
-export function listAssetDispenses(
-  db: D1Database,
-  asset: string,
-  limit: number,
-  offset: number,
-): Promise<DispenseRow[]> {
-  return q<DispenseRow>(
-    db,
-    `${DISPENSE_SELECT} WHERE d.asset=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
     asset,
     limit,
     offset,

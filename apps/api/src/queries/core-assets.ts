@@ -314,7 +314,7 @@ export function listCoreAssetDispensers(
   );
 }
 
-export function listCoreAssetDispenses(
+export function listAssetDispenses(
   db: D1Database,
   asset: string,
   limit: number,
