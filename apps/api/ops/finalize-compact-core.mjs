@@ -119,6 +119,18 @@ for (const table of ["address_signals", "asset_signals", "asset_feed_counts", "e
   report("recent_projection", await request(`/admin/core-projections/reconcile-recent/${table}`, "POST"));
 }
 
+let feedCounts;
+for (let step = 1; step <= maxReplaySteps; step += 1) {
+  feedCounts = await request(
+    `/admin/core-projections/catch-up-asset-feed-counts?rows=${Math.min(projectionRows, 250)}`,
+    "POST",
+  );
+  report("asset_feed_counts", { step, ...feedCounts });
+  if (feedCounts.caught_up) break;
+  if (feedCounts.processed === 0) throw new Error("asset feed count catch-up did not advance");
+}
+if (!feedCounts?.caught_up) throw new Error("asset feed count catch-up did not finish within the step limit");
+
 // Reconciliation can take long enough for new Counterparty events to arrive. Close that interval before parity;
 // the replay is idempotent and normally applies zero or only a handful of events.
 for (let step = 1; step <= maxReplaySteps; step += 1) {
