@@ -3,7 +3,7 @@
  *  (liquidity legs; deposit mints LP, withdraw burns it). LP token + reserve balances flow through
  *  CREDIT/DEBIT (balance.ts). */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const open: Handler = ({ p, b }, ctx) => {
   for (const asset of [p.asset_a, p.asset_b]) {
     if (asset) ctx.identities.assets.add(String(asset));

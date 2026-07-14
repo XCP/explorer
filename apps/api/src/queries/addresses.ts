@@ -22,7 +22,7 @@ import type {
 } from "@xcp/shared/addresses";
 import type { AddressSignalsRow } from "#api/storage-types";
 import { q, one } from "#api/db";
-import { ADDRESS_LEDGER_SQL } from "#api/queries/compact-ledger";
+import { ADDRESS_LEDGER_SQL } from "#api/queries/ledger";
 
 export interface Page {
   limit: number;

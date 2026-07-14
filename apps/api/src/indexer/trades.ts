@@ -1,4 +1,4 @@
-/** Compact-owned polymorphic sales ledger across Counterparty and external venues. */
+/** Polymorphic sales ledger across Counterparty and external venues. */
 import type { Env } from "#api/env";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
@@ -13,7 +13,7 @@ const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const BLOCK_WINDOW = 250_000;
 const EMBLEM_WINDOW = 5_000;
 
-export function compactDexTradesSql(): string {
+export function coreDexTradesSql(): string {
   const forwardMoney = `forward_asset.asset IN ('XCP','BTC')`;
   return `INSERT INTO trades(
       venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash
@@ -107,7 +107,7 @@ export const DISPENSE_TRADE_LEGS_SQL = `${DISPENSE_PAYMENTS}
   ON CONFLICT(venue,trade_ref,leg_index) DO UPDATE SET
     asset_id=excluded.asset_id,quantity=excluded.quantity`;
 
-export function compactEmblemTradesSql(rowFilter: string): string {
+export function emblemTradesSql(rowFilter: string): string {
   const acceptedTokens = ETH_TOKENS.map((token) => `'${token}'`).join(",");
   const isUsdc = `payment.address='${USDC}'`;
   const saleTime = `(CASE WHEN sale.block_number>=15537394
@@ -144,7 +144,7 @@ export function compactEmblemTradesSql(rowFilter: string): string {
       external_tx_hash=excluded.external_tx_hash,sale_class=excluded.sale_class`;
 }
 
-export const COMPACT_SCARCE_TRADES_SQL = `INSERT INTO trades(
+export const SCARCE_TRADES_SQL = `INSERT INTO trades(
     venue,ref,asset_id,block_time,block_index,quantity,currency,total
   )
   SELECT 'scarce.city',asset.asset || '_' || sale.sold_at,sale.asset_id,sale.sold_at,0,1.0,'BTC',sale.price_btc
@@ -199,13 +199,13 @@ async function advanceDispenseVenue(
   };
 }
 
-/** Advance every venue from canonical compact inputs using bounded, replay-safe upserts. */
+/** Advance every venue from canonical inputs using bounded, replay-safe upserts. */
 export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const tip = Number(
     (await env.CORE_DB.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip ?? 0,
   );
   const writes: Record<string, number> = {};
-  const dex = await advanceBlockVenue(env.CORE_DB, "trades_cur_dex", tip, compactDexTradesSql());
+  const dex = await advanceBlockVenue(env.CORE_DB, "trades_cur_dex", tip, coreDexTradesSql());
   const dispense = await advanceDispenseVenue(env.CORE_DB, tip);
   writes.dex = dex.written;
   writes.dispense = dispense.written;
@@ -214,7 +214,7 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   if (dexReconcileCursor >= tip) dexReconcileCursor = 0;
   if (tip > 0) {
     const high = Math.min(dexReconcileCursor + BLOCK_WINDOW, tip);
-    const result = await env.CORE_DB.prepare(compactDexTradesSql()).bind(dexReconcileCursor, high).run();
+    const result = await env.CORE_DB.prepare(coreDexTradesSql()).bind(dexReconcileCursor, high).run();
     writes.dex_reconcile = result.meta.rows_written ?? 0;
     await setCoreState(env.CORE_DB, "trades_dex_reconcile_block", high);
   }
@@ -226,7 +226,7 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const emblemCursor = await getCoreStateInt(env.CORE_DB, "trades_cur_emblem");
   if (emblemCursor < emblemTip) {
     const high = Math.min(emblemCursor + EMBLEM_WINDOW, emblemTip);
-    const result = await env.CORE_DB.prepare(compactEmblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
+    const result = await env.CORE_DB.prepare(emblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
       .bind(emblemCursor, high)
       .run();
     writes.emblem_new = result.meta.rows_written ?? 0;
@@ -237,14 +237,14 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   if (reconcileCursor >= emblemTip) reconcileCursor = 0;
   if (emblemTip > 0) {
     const high = Math.min(reconcileCursor + EMBLEM_WINDOW, emblemTip);
-    const result = await env.CORE_DB.prepare(compactEmblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
+    const result = await env.CORE_DB.prepare(emblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
       .bind(reconcileCursor, high)
       .run();
     writes.emblem_reconcile = result.meta.rows_written ?? 0;
     await setCoreState(env.CORE_DB, "trades_emblem_reconcile_cursor", high);
   }
 
-  const scarce = await env.CORE_DB.prepare(COMPACT_SCARCE_TRADES_SQL).run();
+  const scarce = await env.CORE_DB.prepare(SCARCE_TRADES_SQL).run();
   writes.scarce = scarce.meta.rows_written ?? 0;
   return {
     tip,

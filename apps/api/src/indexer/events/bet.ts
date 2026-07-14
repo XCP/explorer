@@ -2,7 +2,7 @@
  *  remainings / status, never re-INSERT a match — that would wipe it); BET_MATCH_RESOLUTION records the
  *  settlement outcome. Wager escrow + settlement balances flow through CREDIT/DEBIT (balance.ts). */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes, parseMatchId } from "#api/indexer/compact-codec";
+import { hashToBytes, parseMatchId } from "#api/indexer/identities";
 function matchId(p: Record<string, unknown>): string {
   return String(p.bet_match_id ?? p.id ?? `${p.tx0_hash}_${p.tx1_hash}`);
 }

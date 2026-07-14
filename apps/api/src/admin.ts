@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "#api/env";
-import { syncCompactEvents } from "#api/indexer/sync";
+import { syncCoreEvents } from "#api/indexer/sync";
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
@@ -101,13 +101,13 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
   });
 });
 
-// Drive the canonical compact Counterparty mirror. The same locked replay runs from cron.
+// Drive the canonical Counterparty database. The same locked replay runs from cron.
 admin.post("/admin/sync", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
-  return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
+  return c.json(await syncCoreEvents(c.env, { maxEvents: events }));
 });
 
-// Advance both compact-native reputation projections. Cron runs the same bounded repair steps.
+// Advance both reputation projections. Cron runs the same bounded repair steps.
 admin.post("/admin/refresh-signals", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 400, min: 1, max: 1000 });
   const [assets, addresses] = await Promise.all([

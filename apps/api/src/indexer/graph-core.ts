@@ -220,10 +220,7 @@ const ENTITY_EXCLUDED = (addressId: string) => `(
              WHERE address.address_id=${addressId})
 )`;
 
-const entityCountEdges = (
-  generation: number,
-  select: (lo: number, hi: number) => string,
-): string[] =>
+const entityCountEdges = (generation: number, select: (lo: number, hi: number) => string): string[] =>
   blockWindows.map(
     ([lo, hi]) =>
       `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight,edge_block)
@@ -241,7 +238,7 @@ export const ENTITY_IDENTITY_STATEMENTS = [
    SELECT 'asset',asset FROM asset_dictionary`,
 ] as const;
 
-/** Build one isolated normalized edge generation from the compact protocol tables. */
+/** Build one isolated normalized edge generation from the canonical protocol tables. */
 export function entityEdgeStatements(generation: number, bipartite = false): string[] {
   const statements: string[] = [
     ...entityCountEdges(

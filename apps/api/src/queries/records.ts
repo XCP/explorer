@@ -231,7 +231,7 @@ export function listTransactions(
   return q<RecordRowMap["transactions"]>(db, TRANSACTION_FEED_SQL, limit, offset);
 }
 
-/** Global send feed from the canonical compact ledger. Event index makes MPMA rows deterministic. */
+/** Global send feed from the canonical ledger. Event index makes MPMA rows deterministic. */
 export function listSends(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["sends"][]> {
   return q<RecordRowMap["sends"]>(db, SEND_FEED_SQL, limit, offset);
 }
@@ -253,7 +253,9 @@ export function listSweeps(db: D1Database, limit: number, offset: number): Promi
 }
 
 export function listDestructions(
-  db: D1Database,limit: number,offset: number,
+  db: D1Database,
+  limit: number,
+  offset: number,
 ): Promise<RecordRowMap["destructions"][]> {
   return q<RecordRowMap["destructions"]>(db, DESTRUCTION_FEED_SQL, limit, offset);
 }
@@ -302,7 +304,11 @@ export function listPools(db: D1Database, limit: number, offset: number): Promis
   return q<RecordRowMap["pools"]>(db, POOL_FEED_SQL, limit, offset);
 }
 
-export function listPoolMatches(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["pool_matches"][]> {
+export function listPoolMatches(
+  db: D1Database,
+  limit: number,
+  offset: number,
+): Promise<RecordRowMap["pool_matches"][]> {
   return q<RecordRowMap["pool_matches"]>(db, POOL_MATCH_FEED_SQL, limit, offset);
 }
 
@@ -473,13 +479,11 @@ const TX_KIND_ORDER: TxRecordKind[] = [
   "rps",
 ];
 
-/** Classify a compact transaction through its canonical integer identity. Every message table stores
+/** Classify a transaction through its canonical integer identity. Every message table stores
  * tx_index, including multi-row sends/dispenses, so this avoids decoding and probing hash text. */
 export async function classifyCoreTx(db: D1Database, txIndex: number): Promise<TxRecordKind | null> {
   const results = await db.batch<{ k: TxRecordKind }>(
-    TX_KIND_ORDER.map((kind) =>
-      db.prepare(`SELECT '${kind}' k FROM ${kind} WHERE tx_index=?1 LIMIT 1`).bind(txIndex),
-    ),
+    TX_KIND_ORDER.map((kind) => db.prepare(`SELECT '${kind}' k FROM ${kind} WHERE tx_index=?1 LIMIT 1`).bind(txIndex)),
   );
   const found = new Set(results.flatMap((result) => (result.results ?? []).map((row) => row.k)));
   return TX_KIND_ORDER.find((kind) => found.has(kind)) ?? null;

@@ -2,7 +2,7 @@
  *  Counterparty also emits a real ASSET_ISSUANCE per fairmint, so issuance.ts keeps supply correct — we just enqueue
  *  the asset for recompute); FAIRMINTER_UPDATE flips status. */
 import { type Handler, str, cap } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const newFairminter: Handler = ({ p, b, bt }, ctx) => {
   if (p.source) ctx.identities.addresses.add(String(p.source));
   for (const asset of [p.asset, p.asset_parent]) {

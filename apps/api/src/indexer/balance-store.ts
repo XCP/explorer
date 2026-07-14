@@ -1,5 +1,5 @@
 import { normalize } from "#api/indexer/codec";
-import { parseUtxoHolder } from "#api/indexer/compact-codec";
+import { parseUtxoHolder } from "#api/indexer/identities";
 import { bi, type Ctx, type Stmt } from "#api/indexer/events/context";
 
 const BATCH_SIZE = 90;
@@ -11,7 +11,7 @@ async function batch(db: D1Database, statements: Stmt[]): Promise<void> {
 }
 
 /** Apply one replay chunk to the normalized polymorphic balance relation. Dictionaries must exist first. */
-export async function applyCompactBalanceDeltas(
+export async function applyCoreBalanceDeltas(
   db: D1Database,
   deltas: Ctx["balDelta"],
   snapshot: boolean,

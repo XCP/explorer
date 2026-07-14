@@ -1,7 +1,7 @@
 /** NEW_TRANSACTION: the raw Counterparty transaction envelope. `data` is intentionally not stored (blob; can be
  *  megabytes for stamps — images live in R2). */
 import type { Handler } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const newTransaction: Handler = ({ p, b, bt }, ctx) => {
   if (p.source) ctx.identities.addresses.add(String(p.source));
   if (p.destination) ctx.identities.addresses.add(String(p.destination));

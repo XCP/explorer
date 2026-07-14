@@ -4,7 +4,7 @@
  *  Invalid sends are indexed too (marked by status; they emit no CREDIT/DEBIT so balances are unaffected). */
 import { type Handler, cap } from "#api/indexer/events/context";
 import { normalize } from "#api/indexer/codec";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const send: Handler = ({ ev, p, b, bt, div }, ctx) => {
   const stype =
     ev.event === "ENHANCED_SEND"

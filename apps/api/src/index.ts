@@ -11,7 +11,7 @@ import { Hono } from "hono";
 import type { Env } from "#api/env";
 export type { Env } from "#api/env";
 import { describeHttpError, requestId } from "#api/http/errors";
-import { syncCompactEvents } from "#api/indexer/sync";
+import { syncCoreEvents } from "#api/indexer/sync";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { buildTags } from "#api/indexer/tags";
@@ -176,15 +176,12 @@ export default {
     }
     ctx.waitUntil(
       (async () => {
-        // The compact database is the sole live Counterparty event projection. Its D1 lock serializes cron and
-        // manual invocations, so there is no second source-mirror writer to pause or coordinate.
-        const syncResult = await runScheduledJob("syncCompactEvents", () =>
-          syncCompactEvents(env, { maxEvents: 10000 }),
-        );
+        // The canonical database's D1 lock serializes scheduled and manual syncs.
+        const syncResult = await runScheduledJob("syncCoreEvents", () => syncCoreEvents(env, { maxEvents: 10000 }));
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {
-          // Compact-native signal maintenance uses the same convergent writers for event refreshes and
+          // Signal maintenance uses the same convergent writers for event refreshes and
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
           await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));

@@ -1,6 +1,6 @@
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
-/** Run a compact maintenance job once per block interval and advance state only after success. */
+/** Run a maintenance job once per block interval and advance state only after success. */
 export async function runCoreBlockGated(
   db: D1Database,
   key: string,

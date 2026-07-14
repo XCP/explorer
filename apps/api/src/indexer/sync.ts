@@ -25,7 +25,7 @@ import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionari
 import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
 import { enqueueCoreSupply } from "#api/indexer/asset-supply";
 import { enqueueCoreAddressSignals } from "#api/indexer/core-address-signals";
-import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
+import { applyCoreBalanceDeltas } from "#api/indexer/balance-store";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -86,7 +86,7 @@ async function currentBlock(api: string): Promise<number> {
 }
 
 /** Replay Counterparty's canonical event stream from the durable local cursor. */
-export async function syncCompactEvents(
+export async function syncCoreEvents(
   env: Pick<Env, "CORE_DB" | "COUNTERPARTY_API_BASE">,
   opts: { maxEvents?: number } = {},
 ): Promise<Record<string, unknown>> {
@@ -118,7 +118,7 @@ export async function syncCompactEvents(
       ]);
       if (storedHash && actualHash && storedHash !== actualHash) {
         const rollbackTo = lastBlock - 1;
-        await rollbackCompactDatabase(env.CORE_DB, rollbackTo);
+        await rollbackCoreDatabase(env.CORE_DB, rollbackTo);
         lastIndex = await eventCursorBeforeBlock(env.COUNTERPARTY_API_BASE, lastIndex, rollbackTo);
         lastBlock = rollbackTo;
         await env.CORE_DB.batch([
@@ -141,7 +141,7 @@ export async function syncCompactEvents(
       };
       for (const event of events) dispatch(event, ctx);
       await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
-      await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
+      await applyCoreBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
       await rebuildCoreAssetSignals(env.CORE_DB, ctx.identities.assets);
       await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses);
       await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
@@ -156,7 +156,7 @@ export async function syncCompactEvents(
 
     const caughtUp = lastIndex >= tip;
     if (caughtUp) {
-      if (lastBlock > SNAPSHOT_WINDOW) await pruneCompactSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW);
+      if (lastBlock > SNAPSHOT_WINDOW) await pruneCoreSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW);
       const checkpointHash = lastBlock > 0 ? await blockHash(env.COUNTERPARTY_API_BASE, lastBlock) : null;
       if (checkpointHash) await setCoreStateStmt(env.CORE_DB, "last_block_hash", checkpointHash).run();
     }
@@ -185,8 +185,8 @@ async function eventCursorBeforeBlock(api: string, cursor: number, block: number
   }
 }
 
-/** Match the source mirror's rolling reorg window using compact holder identities. */
-export async function pruneCompactSnapshots(db: D1Database, cutoff: number): Promise<void> {
+/** Maintain the rolling reorg window using canonical holder identities. */
+export async function pruneCoreSnapshots(db: D1Database, cutoff: number): Promise<void> {
   await db
     .prepare(
       `DELETE FROM balance_snapshots AS old
@@ -222,15 +222,15 @@ async function deleteAbove(db: D1Database, table: string, block: number): Promis
   }
 }
 
-interface CompactBalanceIdentity {
+interface CoreBalanceIdentity {
   address_id: number | null;
   utxo_tx_hash: ArrayBuffer | null;
   utxo_vout: number | null;
   asset_id: number;
 }
 
-/** Remove one orphaned compact branch and restore every affected balance to its nearest retained snapshot. */
-export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number): Promise<void> {
+/** Remove one orphaned branch and restore every affected balance to its nearest retained snapshot. */
+export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number): Promise<void> {
   const tables = [
     "transactions",
     "transaction_outputs",
@@ -281,7 +281,7 @@ export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number
        FROM balance_snapshots WHERE block_index>?`,
     )
     .bind(rollbackTo)
-    .all<CompactBalanceIdentity>();
+    .all<CoreBalanceIdentity>();
   const statements: Stmt[] = [];
   for (const identity of changed.results) {
     const snapshot = await db

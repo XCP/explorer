@@ -3,11 +3,11 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
-  COMPACT_SCARCE_TRADES_SQL,
+  SCARCE_TRADES_SQL,
   DISPENSE_TRADE_LEGS_SQL,
   DISPENSE_TRADES_SQL,
-  compactDexTradesSql,
-  compactEmblemTradesSql,
+  coreDexTradesSql,
+  emblemTradesSql,
 } from "#api/indexer/trades";
 import { listTrades, tradeVenueStats } from "#api/queries/trades";
 
@@ -130,11 +130,11 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       ('7',3,3,1,'single',NULL,0,5),('8',3,3,1,'single',NULL,0,5);
     INSERT INTO scarce_city_sales VALUES(3,2000,0.25);
   `);
-  db.prepare(compactDexTradesSql()).run(0, 200);
+  db.prepare(coreDexTradesSql()).run(0, 200);
   db.prepare(DISPENSE_TRADES_SQL).run(0, 200);
   db.prepare(DISPENSE_TRADE_LEGS_SQL).run(0, 200);
-  db.prepare(compactEmblemTradesSql("")).run();
-  db.prepare(COMPACT_SCARCE_TRADES_SQL).run();
+  db.prepare(emblemTradesSql("")).run();
+  db.prepare(SCARCE_TRADES_SQL).run();
   assert.deepEqual(
     db
       .prepare(`SELECT venue,ref,asset_id,quantity,currency,total FROM trades ORDER BY venue,ref`)

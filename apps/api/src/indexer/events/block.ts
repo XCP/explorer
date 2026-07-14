@@ -1,6 +1,6 @@
 /** Block headers: NEW_BLOCK (hash/time/difficulty) then BLOCK_PARSED (ledger hashes + tx count). */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const newBlock: Handler = ({ p, b, bt }, ctx) => {
   ctx.stmts.push((db) =>
     db

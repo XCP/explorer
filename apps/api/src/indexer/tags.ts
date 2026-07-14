@@ -1,4 +1,4 @@
-/** Compact computed-tag reconciliation. Current matches are upserted before stale matches are removed. */
+/** Computed-tag reconciliation. Current matches are upserted before stale matches are removed. */
 import type { Env } from "#api/env";
 
 type Scope = "asset" | "address";

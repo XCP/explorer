@@ -1,4 +1,4 @@
-/** Canonical compact-chain reads. Dictionary joins restore the public string identities. */
+/** Canonical chain reads. Dictionary joins restore the public string identities. */
 import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
 import { q, one } from "#api/db";
 
@@ -41,6 +41,9 @@ export function getTransaction(db: D1Database, hash: string): Promise<TxDetail |
 }
 
 export async function blockTip(db: D1Database): Promise<number> {
-  const row = await one<{ block_index: number }>(db, `SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1`);
+  const row = await one<{ block_index: number }>(
+    db,
+    `SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1`,
+  );
   return Number(row?.block_index) || 0;
 }

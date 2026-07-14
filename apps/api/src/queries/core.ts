@@ -1,4 +1,4 @@
-// Indexed read plans for the canonical compact schema.
+// Indexed read plans for the canonical schema.
 import type { AddressBalanceRow, AddressSendRow } from "@xcp/shared/addresses";
 import { one, q } from "#api/db";
 

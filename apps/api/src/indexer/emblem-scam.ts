@@ -1,4 +1,4 @@
-/** Emblem empty-shell and high-supply dump attribution, derived entirely from compact relations. */
+/** Emblem empty-shell and high-supply dump attribution, derived entirely from canonical relations. */
 import type { Env } from "#api/env";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 

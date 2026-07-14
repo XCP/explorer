@@ -3,10 +3,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
-import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
+import { applyCoreBalanceDeltas } from "#api/indexer/balance-store";
 import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
-import { pruneCompactSnapshots, rollbackCompactDatabase, syncCompactEvents } from "#api/indexer/sync";
+import { pruneCoreSnapshots, rollbackCoreDatabase, syncCoreEvents } from "#api/indexer/sync";
 
 const CORE_DDL = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -63,7 +63,7 @@ async function execute(database: DatabaseSync, statements: Stmt[]) {
   for (const statement of statements) await statement(target).run();
 }
 
-async function executeCompact(database: DatabaseSync, ctx: Ctx) {
+async function executeCore(database: DatabaseSync, ctx: Ctx) {
   await execute(database, dictionaryStatements(ctx.identities));
   await execute(database, ctx.stmts);
 }
@@ -134,9 +134,9 @@ test("compact foundational writes preserve identities and converge on replay", a
 
   await execute(database, dictionaryStatements(ctx.identities));
   await execute(database, ctx.stmts);
-  await applyCompactBalanceDeltas(d1(database), ctx.balDelta, true);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
   await execute(database, ctx.stmts);
-  await applyCompactBalanceDeltas(d1(database), ctx.balDelta, true);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
 
   const transaction = database
     .prepare(
@@ -227,7 +227,7 @@ test("compact balance catch-up applies only events above an imported row high-wa
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "5" }, 3), ctx);
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "7" }, 5), ctx);
 
-  await applyCompactBalanceDeltas(d1(database), ctx.balDelta, false);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, false);
 
   const balance = database.prepare(`SELECT quantity,updated_event_index FROM balances`).get() as {
     quantity: string;
@@ -308,8 +308,8 @@ test("compact asset creation, issuances, and MPMA sends preserve canonical ident
     ctx,
   );
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   const assetRow = database
     .prepare(
@@ -483,8 +483,8 @@ test("compact orders preserve match pairs and lifecycle updates", async () => {
     ctx,
   );
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   const orderRows = database
     .prepare(`SELECT tx_index,give_remaining,get_remaining,status,closed_block_index FROM orders ORDER BY tx_index`)
@@ -599,8 +599,8 @@ test("compact transaction-level protocol records converge on replay", async () =
     ctx,
   );
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   for (const table of ["burns", "destructions", "sweeps", "dividends", "broadcasts"]) {
     const row = database.prepare(`SELECT COUNT(*) count FROM ${table}`).get() as { count: number };
@@ -708,8 +708,8 @@ test("compact dispenser lifecycle preserves dispenser transaction relationships"
     ctx,
   );
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   const dispenser = database
     .prepare(
@@ -803,8 +803,8 @@ test("compact fairminter lifecycle preserves campaign and mint transaction ident
   );
   dispatch(event("FAIRMINTER_UPDATE", { tx_hash: fairminterHash, status: "closed" }, 54), ctx);
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   const fairminter = database
     .prepare(
@@ -945,8 +945,8 @@ test("compact pool lifecycle preserves pair, swap, and liquidity identities", as
     ctx,
   );
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   const pool = database
     .prepare(
@@ -1146,8 +1146,8 @@ test("compact bet and RPS state machines preserve composite match identities", a
   dispatch(event("RPS_MATCH_UPDATE", { id: rpsMatchId, status: "resolved and pending" }, 85), ctx);
   dispatch(event("RPS_RESOLVE", { rps_match_id: rpsMatchId, status: "valid" }, 86), ctx);
 
-  await executeCompact(database, ctx);
-  await executeCompact(database, ctx);
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
 
   const bet = database.prepare(`SELECT tx_index,wager_remaining,status FROM bets`).get() as Record<string, unknown>;
   assert.deepEqual({ ...bet }, { tx_index: 70, wager_remaining: "0", status: "filled" });
@@ -1222,7 +1222,7 @@ test("replay advances its durable cursor", async () => {
     throw new Error(`unexpected Counterparty request: ${url}`);
   };
   try {
-    const result = await syncCompactEvents(
+    const result = await syncCoreEvents(
       { CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" },
       { maxEvents: 10 },
     );
@@ -1287,7 +1287,7 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
     throw new Error(`unexpected Counterparty request: ${url}`);
   };
   try {
-    const result = await syncCompactEvents({
+    const result = await syncCoreEvents({
       CORE_DB: d1(database),
       COUNTERPARTY_API_BASE: "https://counterparty.test",
     });
@@ -1325,7 +1325,7 @@ test("compact caught-up maintenance prunes superseded snapshots", async () => {
       SELECT address_id,asset_id,40,'3',3 FROM address_dictionary,asset_dictionary
        WHERE address='alice' AND asset='XCP';
   `);
-  await pruneCompactSnapshots(d1(compact), 30);
+  await pruneCoreSnapshots(d1(compact), 30);
   assert.deepEqual(
     compact
       .prepare(`SELECT block_index FROM balance_snapshots ORDER BY block_index`)
@@ -1372,7 +1372,7 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
       ('last_block_index','102');
   `);
 
-  await rollbackCompactDatabase(d1(database), 101);
+  await rollbackCoreDatabase(d1(database), 101);
 
   const balance = database
     .prepare(`SELECT quantity,quantity_normalized,updated_block_index,updated_event_index FROM balances`)

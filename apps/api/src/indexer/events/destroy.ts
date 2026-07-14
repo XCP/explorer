@@ -2,7 +2,7 @@
  *  records here). Lowers supply, so the asset is enqueued for deterministic recompute. */
 import { type Handler, str } from "#api/indexer/events/context";
 import { normalize } from "#api/indexer/codec";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const destroy: Handler = ({ ev, p, b, bt, div }, ctx) => {
   {
     if (p.source) ctx.identities.addresses.add(String(p.source));

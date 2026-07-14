@@ -102,7 +102,7 @@ ON CONFLICT(asset_id) DO UPDATE SET
   distinct_dispense_buyers=excluded.distinct_dispense_buyers,
   max_dispense_btc_clean=excluded.max_dispense_btc_clean,emblem_trades=excluded.emblem_trades`;
 
-/** Refresh volatile asset features from canonical compact relations for identities touched by an event batch. */
+/** Refresh volatile asset features from canonical relations for identities touched by an event batch. */
 export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<string>): Promise<number> {
   const unique = [...new Set(assets)];
   for (let index = 0; index < unique.length; index += 40) {

@@ -3,7 +3,7 @@
  *  that are BTNS (Broadcast Token Naming System) commands — see btns.ts (tag only, not implemented). */
 import { type Handler, str, cap } from "#api/indexer/events/context";
 import { classifyBtns } from "#api/indexer/events/btns";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const broadcast: Handler = ({ p, b, bt }, ctx) => {
   const bn = classifyBtns(p.text);
   if (p.source) ctx.identities.addresses.add(String(p.source));

@@ -4,7 +4,7 @@
  *  single buy. Escrow in/out flows through CREDIT/DEBIT (balance.ts). */
 import { type Handler, str } from "#api/indexer/events/context";
 import { normalize } from "#api/indexer/codec";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const open: Handler = ({ p, b, bt, div }, ctx) => {
   for (const address of [p.source, p.oracle_address, p.origin]) {
     if (address) ctx.identities.addresses.add(String(address));

@@ -2,7 +2,7 @@
  *  never re-INSERT a match). RPS_RESOLVE's status is the resolve TX's own status ("valid"), NOT the match
  *  conclusion (that arrives via RPS_MATCH_UPDATE), so it must not write rps_matches.status. */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes, parseMatchId } from "#api/indexer/compact-codec";
+import { hashToBytes, parseMatchId } from "#api/indexer/identities";
 function matchId(p: Record<string, unknown>): string {
   return String(p.rps_match_id ?? p.id ?? `${p.tx0_hash}_${p.tx1_hash}`);
 }

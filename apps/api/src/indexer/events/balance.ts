@@ -4,7 +4,7 @@
  *  We ALSO capture each event 1:1 into credits/debits (migration 0038) — the raw ledger that powers the
  *  per-address provenance view and a definitive first-appearance signal (MIN block over credits). */
 import { type Handler, addDelta, bi, str } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const creditDebit: Handler = ({ ev, p, b, div }, ctx) => {
   const holder = (p.utxo as string) || (p.address as string);
   if (!holder || !p.asset) return;

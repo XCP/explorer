@@ -6,7 +6,7 @@
 import { type Handler, cap } from "#api/indexer/events/context";
 import { normalize } from "#api/indexer/codec";
 import { classifyStamp } from "#api/indexer/events/stamp";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 import { issuerCollection, issuerCollectionMeta } from "#api/indexer/issuer-collections";
 function assetType(asset: string, longname: unknown): string {
   if (asset === "BTC" || asset === "XCP") return "native";

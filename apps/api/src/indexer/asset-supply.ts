@@ -1,4 +1,4 @@
-/** Deterministic supply and protocol-derived totals owned entirely by the compact database. */
+/** Deterministic supply and protocol-derived totals owned entirely by the canonical database. */
 import type { Env } from "#api/env";
 import { normalize } from "#api/indexer/codec";
 import { getCoreState, setCoreState } from "#api/indexer/core-state";

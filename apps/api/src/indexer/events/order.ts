@@ -3,7 +3,7 @@
  *  fields, so they UPDATE — never re-INSERT (which would wipe the row). Escrow/settlement balances flow
  *  through CREDIT/DEBIT (balance.ts). */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes, parseMatchId } from "#api/indexer/compact-codec";
+import { hashToBytes, parseMatchId } from "#api/indexer/identities";
 function matchId(p: Record<string, unknown>): string {
   return String(p.order_match_id ?? p.id ?? `${p.tx0_hash}_${p.tx1_hash}`);
 }
@@ -73,7 +73,7 @@ const status: Handler = ({ ev, p, b, bt }, ctx) => {
   const frr = p.fee_required_remaining != null ? String(p.fee_required_remaining) : null;
   const fpr = p.fee_provided_remaining != null ? String(p.fee_provided_remaining) : null;
   if (hash) {
-    const compactHash = hashToBytes(hash);
+    const txHashBytes = hashToBytes(hash);
     if (st === null) {
       ctx.stmts.push((db) =>
         db
@@ -82,7 +82,7 @@ const status: Handler = ({ ev, p, b, bt }, ctx) => {
                fee_required_remaining=coalesce(?,fee_required_remaining),
                fee_provided_remaining=coalesce(?,fee_provided_remaining) WHERE tx_hash=?`,
           )
-          .bind(gr, xr, frr, fpr, compactHash),
+          .bind(gr, xr, frr, fpr, txHashBytes),
       );
     } else if (st === "open") {
       ctx.stmts.push((db) =>
@@ -93,7 +93,7 @@ const status: Handler = ({ ev, p, b, bt }, ctx) => {
                fee_provided_remaining=coalesce(?,fee_provided_remaining),status='open',closed_block_index=NULL
              WHERE tx_hash=?`,
           )
-          .bind(gr, xr, frr, fpr, compactHash),
+          .bind(gr, xr, frr, fpr, txHashBytes),
       );
     } else {
       ctx.stmts.push((db) =>
@@ -104,7 +104,7 @@ const status: Handler = ({ ev, p, b, bt }, ctx) => {
                fee_required_remaining=coalesce(?,fee_required_remaining),
                fee_provided_remaining=coalesce(?,fee_provided_remaining) WHERE tx_hash=?`,
           )
-          .bind(st, b, gr, xr, frr, fpr, compactHash),
+          .bind(st, b, gr, xr, frr, fpr, txHashBytes),
       );
     }
   }

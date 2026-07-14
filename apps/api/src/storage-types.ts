@@ -1,7 +1,7 @@
 /**
  * Storage row types — TypeScript mirrors of the D1 tables the API reads back frequently enough to
  * deserve a shape. These are API-INTERNAL: the wire contract lives in @xcp/shared; nothing here is
- * sent to a client as-is. Sources: the canonical source and compact database migrations.
+ * sent to a client as-is. Source: the canonical database migrations.
  */
 
 /** Mirror of the `assets` table (migration 0001). The asset-detail handler spreads the whole row, so the

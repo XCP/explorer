@@ -2,7 +2,7 @@
  *  emit CREDIT/DEBIT (balance.ts) and ownership transfers emit ASSET_TRANSFER (issuance.ts); here we just
  *  record the sweep row (flags/memo/fee). */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const sweep: Handler = ({ p, b, bt }, ctx) => {
   for (const address of [p.source, p.destination]) {
     if (address) ctx.identities.addresses.add(String(address));

@@ -2,7 +2,7 @@
  *  the source debit + the XCP fee all emit CREDIT/DEBIT (balance.ts); the fee is also part of deterministic
  *  XCP supply. Here we record the dividend declaration. */
 import { type Handler, str } from "#api/indexer/events/context";
-import { hashToBytes } from "#api/indexer/compact-codec";
+import { hashToBytes } from "#api/indexer/identities";
 const dividend: Handler = ({ p, b, bt }, ctx) => {
   if (p.source) ctx.identities.addresses.add(String(p.source));
   for (const asset of [p.asset, p.dividend_asset]) {

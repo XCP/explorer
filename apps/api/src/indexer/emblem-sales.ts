@@ -1,4 +1,4 @@
-/** Compact-native Emblem Vault secondary-market history from Alchemy. */
+/** Emblem Vault secondary-market history from Alchemy. */
 import type { Env } from "#api/env";
 import { fetchAlchemyNftSales } from "#api/integrations/alchemy-sales";
 import { getCoreState, getCoreStateInt, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
@@ -117,7 +117,7 @@ function normalizeSales(contract: string, sales: NftSale[]): EmblemSaleRow[] {
   });
 }
 
-/** Pull a bounded set of pages for the active contract and resume from compact-owned state. */
+/** Pull a bounded set of pages for the active contract and resume from canonical state. */
 export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown>> {
   if (!env.ALCHEMY_KEY) return { skipped: "no ALCHEMY_KEY" };
   const contracts = await getCoreStateStringArray(env.CORE_DB, "emblem_contracts");
