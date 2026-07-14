@@ -273,6 +273,25 @@ test("contract: GET /v2/blocks?limit=2 — BlockRow list", async (t) => {
   assertListEnvelope(await getJson("/v2/blocks?limit=2"), BLOCK_ROW, 2, "blocks");
 });
 
+test("contract: GET /v2/firsts — normalized historical catalog", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson(`/v2/firsts?contract=${Date.now()}`);
+  assert.ok(Array.isArray(j.result) && j.result.length >= 37, "firsts must contain the historical catalog");
+  const stamp = j.result.find((row: { key?: string }) => row.key === "stamp");
+  assert.deepEqual(
+    stamp,
+    {
+      key: "stamp",
+      label: "First Bitcoin Stamp",
+      block: 779652,
+      date: "2023-03-07",
+      ref: "A7337447728884561000",
+      type: "asset",
+    },
+    "the curated Stamp genesis must remain stable",
+  );
+});
+
 test("contract: GET /v2/assets?limit=2 — AssetIndexRow list", async (t) => {
   if (skipUnlessLive(t)) return;
   assertListEnvelope(await getJson("/v2/assets?limit=2"), ASSET_INDEX_ROW, 2, "assets");
