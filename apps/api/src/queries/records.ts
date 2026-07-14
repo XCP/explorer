@@ -65,6 +65,56 @@ LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
 LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
 ORDER BY dispense.block_index DESC,dispense.event_index DESC`;
 
+const SWEEP_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM sweeps ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(sweep.tx_hash)) tx_hash,sweep.block_index,sweep.block_time,source.address source,
+  destination.address destination,sweep.flags,sweep.memo,sweep.fee_paid,sweep.status
+FROM page JOIN sweeps sweep ON sweep.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=sweep.source_id
+LEFT JOIN address_dictionary destination ON destination.address_id=sweep.destination_id
+ORDER BY sweep.block_index DESC,sweep.tx_index DESC`;
+
+const DESTRUCTION_FEED_SQL = `WITH page AS (
+  SELECT event_index FROM destructions ORDER BY block_index DESC,event_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(destruction.tx_hash)) tx_hash,destruction.block_index,destruction.block_time,
+  source.address source,asset.asset,destruction.quantity_normalized,destruction.tag,destruction.status
+FROM page JOIN destructions destruction ON destruction.event_index=page.event_index
+LEFT JOIN address_dictionary source ON source.address_id=destruction.source_id
+LEFT JOIN asset_dictionary asset ON asset.asset_id=destruction.asset_id
+ORDER BY destruction.block_index DESC,destruction.event_index DESC`;
+
+const BURN_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM burns ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(burn.tx_hash)) tx_hash,burn.block_index,burn.block_time,source.address source,
+  burn.burned_normalized,burn.earned_normalized,burn.status
+FROM page JOIN burns burn ON burn.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=burn.source_id
+ORDER BY burn.block_index DESC,burn.tx_index DESC`;
+
+const DIVIDEND_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM dividends ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(dividend.tx_hash)) tx_hash,dividend.block_index,dividend.block_time,source.address source,
+  asset.asset,dividend_asset.asset dividend_asset,dividend.quantity_per_unit_normalized,dividend.status
+FROM page JOIN dividends dividend ON dividend.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=dividend.source_id
+LEFT JOIN asset_dictionary asset ON asset.asset_id=dividend.asset_id
+LEFT JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=dividend.dividend_asset_id
+ORDER BY dividend.block_index DESC,dividend.tx_index DESC`;
+
+const BROADCAST_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM broadcasts ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(broadcast.tx_hash)) tx_hash,broadcast.block_index,broadcast.block_time,
+  source.address source,broadcast.timestamp,broadcast.value,broadcast.text,broadcast.locked,
+  broadcast.mime_type,broadcast.status
+FROM page JOIN broadcasts broadcast ON broadcast.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=broadcast.source_id
+ORDER BY broadcast.block_index DESC,broadcast.tx_index DESC`;
+
 export function listTransactions(
   db: D1Database,
   limit: number,
@@ -88,6 +138,28 @@ export function listDispensers(db: D1Database, limit: number, offset: number): P
 
 export function listDispenses(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["dispenses"][]> {
   return q<RecordRowMap["dispenses"]>(db, DISPENSE_FEED_SQL, limit, offset);
+}
+
+export function listSweeps(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["sweeps"][]> {
+  return q<RecordRowMap["sweeps"]>(db, SWEEP_FEED_SQL, limit, offset);
+}
+
+export function listDestructions(
+  db: D1Database,limit: number,offset: number,
+): Promise<RecordRowMap["destructions"][]> {
+  return q<RecordRowMap["destructions"]>(db, DESTRUCTION_FEED_SQL, limit, offset);
+}
+
+export function listBurns(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["burns"][]> {
+  return q<RecordRowMap["burns"]>(db, BURN_FEED_SQL, limit, offset);
+}
+
+export function listDividends(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["dividends"][]> {
+  return q<RecordRowMap["dividends"]>(db, DIVIDEND_FEED_SQL, limit, offset);
+}
+
+export function listBroadcasts(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["broadcasts"][]> {
+  return q<RecordRowMap["broadcasts"]>(db, BROADCAST_FEED_SQL, limit, offset);
 }
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even

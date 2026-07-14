@@ -1,6 +1,6 @@
 /** Chain primitives (blocks, transaction detail) + the recent-first record feeds. SQL lives in
  *  queries/chain.ts (blocks/tx) and queries/records.ts (the 21 per-kind feeds). */
-import { RECORD_KINDS } from "@xcp/shared/records";
+import { RECORD_KINDS, type RecordKind } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
@@ -12,6 +12,11 @@ import {
   listIssuances,
   listDispensers,
   listDispenses,
+  listSweeps,
+  listDestructions,
+  listBurns,
+  listDividends,
+  listBroadcasts,
   classifyTx,
   recordsByTxHash,
   dispensesOfDispenser,
@@ -318,26 +323,29 @@ chain.get("/v2/transactions/:hash/bitcoin", async (c) => {
    Offset pagination only — next_offset is null at the end (a short page), so the UI gets correct
    Prev/Next without an expensive COUNT(*) over millions of rows. Each kind maps to GET /v2/<kind>;
    the per-kind SELECT lives in queries/records.ts. */
+function recordFeed(c: Ctx, kind: RecordKind, limit: number, offset: number) {
+  switch (kind) {
+    case "orders": return listOrders(c.env.CORE_DB, limit, offset);
+    case "order_matches": return listOrderMatches(c.env.CORE_DB, limit, offset);
+    case "transactions": return listTransactions(c.env.CORE_DB, limit, offset);
+    case "sends": return listSends(c.env.CORE_DB, limit, offset);
+    case "issuances": return listIssuances(c.env.CORE_DB, limit, offset);
+    case "dispensers": return listDispensers(c.env.CORE_DB, limit, offset);
+    case "dispenses": return listDispenses(c.env.CORE_DB, limit, offset);
+    case "sweeps": return listSweeps(c.env.CORE_DB, limit, offset);
+    case "destructions": return listDestructions(c.env.CORE_DB, limit, offset);
+    case "burns": return listBurns(c.env.CORE_DB, limit, offset);
+    case "dividends": return listDividends(c.env.CORE_DB, limit, offset);
+    case "broadcasts": return listBroadcasts(c.env.CORE_DB, limit, offset);
+    default: return listRecords(c.env.DB, kind, limit, offset);
+  }
+}
+
 for (const kind of RECORD_KINDS) {
   chain.get(`/v2/${kind}`, async (c) => {
     const l = lim(c),
       o = off(c);
-    const rows =
-      kind === "orders"
-        ? await listOrders(c.env.CORE_DB, l, o)
-        : kind === "order_matches"
-          ? await listOrderMatches(c.env.CORE_DB, l, o)
-          : kind === "transactions"
-            ? await listTransactions(c.env.CORE_DB, l, o)
-          : kind === "sends"
-            ? await listSends(c.env.CORE_DB, l, o)
-            : kind === "issuances"
-              ? await listIssuances(c.env.CORE_DB, l, o)
-              : kind === "dispensers"
-                ? await listDispensers(c.env.CORE_DB, l, o)
-                : kind === "dispenses"
-                  ? await listDispenses(c.env.CORE_DB, l, o)
-          : await listRecords(c.env.DB, kind, l, o);
+    const rows = await recordFeed(c, kind, l, o);
     return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
   });
 }
