@@ -1,0 +1,1 @@
+ALTER TABLE cache ADD COLUMN refreshing_until INTEGER NOT NULL DEFAULT 0;

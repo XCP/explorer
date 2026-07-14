@@ -20,6 +20,17 @@ export const J = (c: Ctx, body: unknown, ttl = 30) =>
     "access-control-allow-origin": "*",
   });
 
+const CACHE_REFRESH_LEASE_SECONDS = 60;
+
+/** Atomically elect one stale-cache request to refresh while every contender serves the existing body. */
+export async function claimCacheRefresh(db: D1Database, key: string, now: number): Promise<boolean> {
+  const result = await db
+    .prepare(`UPDATE cache SET refreshing_until=? WHERE key=? AND refreshing_until<?`)
+    .bind(now + CACHE_REFRESH_LEASE_SECONDS, key, now)
+    .run();
+  return (result.meta.rows_written ?? 0) === 1;
+}
+
 /**
  * D1-backed response cache (the `cache` table: key, body, ctype, expires_at) with stale-while-revalidate.
  * Layer 2 above the per-colo edge cache: it PERSISTS across colos and cold edge, so a heavy aggregation
@@ -45,8 +56,9 @@ export async function cached(
   const write = async (): Promise<string> => {
     const body = JSON.stringify(await producer());
     await c.env.CORE_DB.prepare(
-      `INSERT INTO cache (key,body,ctype,expires_at) VALUES (?,?,'application/json',?)
-       ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype, expires_at=excluded.expires_at`,
+      `INSERT INTO cache (key,body,ctype,expires_at,refreshing_until) VALUES (?,?,'application/json',?,0)
+       ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype,
+         expires_at=excluded.expires_at,refreshing_until=0`,
     )
       .bind(key, body, Math.floor(Date.now() / 1000) + ttl)
       .run()
@@ -73,7 +85,8 @@ export async function cached(
         }
       })();
       if (ctx) {
-        ctx.waitUntil(write().catch(() => {}));
+        const claimed = await claimCacheRefresh(c.env.CORE_DB, key, now).catch(() => false);
+        if (claimed) ctx.waitUntil(write().catch(() => {}));
         const response = send(hit.body, hit.ctype);
         response.headers.set("x-d1-cache", "STALE");
         return response;
