@@ -472,90 +472,267 @@ const TX_KIND_ORDER: TxRecordKind[] = [
   "bets",
   "rps",
 ];
-// column-qualifying alias per aliased feed (mirrors the aliases the SELECTs use)
-const TX_ALIAS: Partial<Record<TxRecordKind, string>> = { dispenses: "d.", orders: "o.", fairmints: "f." };
 
-// The three non-feed message tables: their tx-page SELECTs live here (records.ts owns record SQL).
-const TX_ONLY_SELECTS: Record<"cancels" | "dispenser_refills" | "pool_liquidity", string> = {
-  cancels: `SELECT tx_hash,block_index,block_time,source,offer_hash,status FROM cancels`,
-  dispenser_refills: `SELECT tx_hash,block_index,block_time,source,destination,asset,dispense_quantity,dispenser_tx_hash FROM dispenser_refills`,
-  pool_liquidity: `SELECT tx_hash,block_index,block_time,source,kind,asset_a,asset_b,quantity_a,quantity_b,quantity_minted,quantity_destroyed,status FROM pool_liquidity`,
-};
-
-/** Which record kind is this confirmed tx? One D1 batch of block-scoped point probes across every
- *  message table (one network round trip; a compound UNION would trip D1's compound-SELECT term cap). */
-export async function classifyTx(db: D1Database, hash: string, blockIndex: number): Promise<TxRecordKind | null> {
+/** Classify a compact transaction through its canonical integer identity. Every message table stores
+ * tx_index, including multi-row sends/dispenses, so this avoids decoding and probing hash text. */
+export async function classifyCoreTx(db: D1Database, txIndex: number): Promise<TxRecordKind | null> {
   const results = await db.batch<{ k: TxRecordKind }>(
-    TX_KIND_ORDER.map((k) =>
-      db.prepare(`SELECT '${k}' k FROM ${k} WHERE tx_hash=?1 AND block_index=?2 LIMIT 1`).bind(hash, blockIndex),
+    TX_KIND_ORDER.map((kind) =>
+      db.prepare(`SELECT '${kind}' k FROM ${kind} WHERE tx_index=?1 LIMIT 1`).bind(txIndex),
     ),
   );
-  const found = new Set(results.flatMap((r) => (r.results ?? []).map((row) => row.k)));
-  return TX_KIND_ORDER.find((k) => found.has(k)) ?? null;
+  const found = new Set(results.flatMap((result) => (result.results ?? []).map((row) => row.k)));
+  return TX_KIND_ORDER.find((kind) => found.has(kind)) ?? null;
 }
 
-/** A dispenser's sales — recent dispenses of one machine (rides idx_dispe_disp). The tx-page
- *  storefront's history table + social proof. */
-export function dispensesOfDispenser(
+type StatelessTxKind = "sends" | "sweeps" | "broadcasts" | "dividends" | "burns" | "destructions" | "bets" | "rps";
+
+const STATELESS_TX_SELECT: Record<StatelessTxKind, string> = {
+  sends: `SELECT LOWER(HEX(send.tx_hash)) tx_hash,send.block_index,send.block_time,source.address source,
+    destination.address destination,asset.asset,send.quantity_normalized,send.send_type,send.status,send.memo
+    FROM sends send
+    LEFT JOIN address_dictionary source ON source.address_id=send.source_id
+    LEFT JOIN address_dictionary destination ON destination.address_id=send.destination_id
+    LEFT JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
+    WHERE send.tx_index=?1 ORDER BY send.event_index`,
+  sweeps: `SELECT LOWER(HEX(sweep.tx_hash)) tx_hash,sweep.block_index,sweep.block_time,source.address source,
+    destination.address destination,sweep.flags,sweep.memo,sweep.fee_paid,sweep.status
+    FROM sweeps sweep
+    LEFT JOIN address_dictionary source ON source.address_id=sweep.source_id
+    LEFT JOIN address_dictionary destination ON destination.address_id=sweep.destination_id
+    WHERE sweep.tx_index=?1`,
+  broadcasts: `SELECT LOWER(HEX(broadcast.tx_hash)) tx_hash,broadcast.block_index,broadcast.block_time,
+    source.address source,broadcast.timestamp,broadcast.value,broadcast.text,broadcast.locked,
+    broadcast.mime_type,broadcast.status
+    FROM broadcasts broadcast
+    LEFT JOIN address_dictionary source ON source.address_id=broadcast.source_id
+    WHERE broadcast.tx_index=?1`,
+  dividends: `SELECT LOWER(HEX(dividend.tx_hash)) tx_hash,dividend.block_index,dividend.block_time,
+    source.address source,asset.asset,dividend_asset.asset dividend_asset,
+    dividend.quantity_per_unit_normalized,dividend.status
+    FROM dividends dividend
+    LEFT JOIN address_dictionary source ON source.address_id=dividend.source_id
+    LEFT JOIN asset_dictionary asset ON asset.asset_id=dividend.asset_id
+    LEFT JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=dividend.dividend_asset_id
+    WHERE dividend.tx_index=?1`,
+  burns: `SELECT LOWER(HEX(burn.tx_hash)) tx_hash,burn.block_index,burn.block_time,source.address source,
+    burn.burned_normalized,burn.earned_normalized,burn.status
+    FROM burns burn LEFT JOIN address_dictionary source ON source.address_id=burn.source_id
+    WHERE burn.tx_index=?1`,
+  destructions: `SELECT LOWER(HEX(destruction.tx_hash)) tx_hash,destruction.block_index,destruction.block_time,
+    source.address source,asset.asset,destruction.quantity_normalized,destruction.tag,destruction.status
+    FROM destructions destruction
+    LEFT JOIN address_dictionary source ON source.address_id=destruction.source_id
+    LEFT JOIN asset_dictionary asset ON asset.asset_id=destruction.asset_id
+    WHERE destruction.tx_index=?1 ORDER BY destruction.event_index`,
+  bets: `SELECT LOWER(HEX(bet.tx_hash)) tx_hash,bet.block_index,bet.block_time,source.address source,
+    feed.address feed_address,bet.bet_type,bet.deadline,bet.wager_quantity,bet.counterwager_quantity,
+    bet.target_value,bet.leverage,bet.status
+    FROM bets bet
+    LEFT JOIN address_dictionary source ON source.address_id=bet.source_id
+    LEFT JOIN address_dictionary feed ON feed.address_id=bet.feed_address_id
+    WHERE bet.tx_index=?1`,
+  rps: `SELECT LOWER(HEX(rps.tx_hash)) tx_hash,rps.block_index,rps.block_time,source.address source,
+    rps.possible_moves,rps.wager,rps.expiration,rps.status
+    FROM rps LEFT JOIN address_dictionary source ON source.address_id=rps.source_id
+    WHERE rps.tx_index=?1`,
+};
+
+export function coreStatelessRecordsByTx<K extends StatelessTxKind>(
   db: D1Database,
-  dispenserTx: string,
+  kind: K,
+  txIndex: number,
+): Promise<RecordRowMap[K][]> {
+  return q<RecordRowMap[K]>(db, STATELESS_TX_SELECT[kind], txIndex);
+}
+
+type ContextTxKind = "issuances" | "fairminters" | "fairmints" | "btcpays" | "pool_matches";
+
+const CONTEXT_TX_SELECT: Record<ContextTxKind, string> = {
+  issuances: `SELECT LOWER(HEX(issuance.tx_hash)) tx_hash,issuance.block_index,issuance.block_time,
+    asset.asset,issuance.asset_longname,source.address source,issuer.address issuer,
+    issuance.quantity_normalized,issuance.transfer,issuance.divisible,issuance.locked,
+    issuance.description,issuance.asset_events,issuance.status
+    FROM issuances issuance
+    LEFT JOIN asset_dictionary asset ON asset.asset_id=issuance.asset_id
+    LEFT JOIN address_dictionary source ON source.address_id=issuance.source_id
+    LEFT JOIN address_dictionary issuer ON issuer.address_id=issuance.issuer_id
+    WHERE issuance.tx_index=?1 ORDER BY issuance.msg_index`,
+  fairminters: `SELECT LOWER(HEX(fairminter.tx_hash)) tx_hash,fairminter.block_index,fairminter.block_time,
+    source.address source,asset.asset,fairminter.asset_longname,fairminter.price,
+    fairminter.quantity_by_price,fairminter.hard_cap,fairminter.soft_cap,fairminter.pool_quantity,
+    fairminter.lp_asset,fairminter.divisible,fairminter.earned_quantity,fairminter.paid_quantity,
+    fairminter.status
+    FROM fairminters fairminter
+    LEFT JOIN address_dictionary source ON source.address_id=fairminter.source_id
+    LEFT JOIN asset_dictionary asset ON asset.asset_id=fairminter.asset_id
+    WHERE fairminter.tx_index=?1`,
+  fairmints: `SELECT LOWER(HEX(fairmint.tx_hash)) tx_hash,fairmint.block_index,fairmint.block_time,
+    source.address source,LOWER(HEX(fairminter.tx_hash)) fairminter_tx_hash,asset.asset,
+    fairmint.earn_quantity,fairmint.paid_quantity,COALESCE(asset_state.divisible,0) divisible,fairmint.status
+    FROM fairmints fairmint
+    LEFT JOIN address_dictionary source ON source.address_id=fairmint.source_id
+    LEFT JOIN fairminters fairminter ON fairminter.tx_index=fairmint.fairminter_tx_index
+    LEFT JOIN asset_dictionary asset ON asset.asset_id=fairmint.asset_id
+    LEFT JOIN assets asset_state ON asset_state.asset_id=fairmint.asset_id
+    WHERE fairmint.tx_index=?1`,
+  btcpays: `SELECT LOWER(HEX(btcpay.tx_hash)) tx_hash,btcpay.block_index,btcpay.block_time,
+    source.address source,destination.address destination,
+    LOWER(HEX(match.tx0_hash)||'_'||HEX(match.tx1_hash)) order_match_id,
+    btcpay.btc_amount_normalized,btcpay.status
+    FROM btcpays btcpay
+    LEFT JOIN address_dictionary source ON source.address_id=btcpay.source_id
+    LEFT JOIN address_dictionary destination ON destination.address_id=btcpay.destination_id
+    LEFT JOIN order_matches match ON match.tx0_index=btcpay.order_match_tx0_index
+      AND match.tx1_index=btcpay.order_match_tx1_index
+    WHERE btcpay.tx_index=?1`,
+  pool_matches: `SELECT LOWER(HEX(match.tx_hash)) tx_hash,match.block_index,match.block_time,
+    source.address source,match.lp_asset,match.pair,forward.asset forward_asset,match.forward_quantity,
+    backward.asset backward_asset,match.backward_quantity,match.fee_quantity,match.fee_bps
+    FROM pool_matches match
+    LEFT JOIN address_dictionary source ON source.address_id=match.source_id
+    LEFT JOIN asset_dictionary forward ON forward.asset_id=match.forward_asset_id
+    LEFT JOIN asset_dictionary backward ON backward.asset_id=match.backward_asset_id
+    WHERE match.tx_index=?1`,
+};
+
+export function coreContextRecordsByTx<K extends ContextTxKind>(
+  db: D1Database,
+  kind: K,
+  txIndex: number,
+): Promise<RecordRowMap[K][]> {
+  return q<RecordRowMap[K]>(db, CONTEXT_TX_SELECT[kind], txIndex);
+}
+
+export function corePoolLiquidityByTx(db: D1Database, txIndex: number): Promise<PoolLiquidityRow[]> {
+  return q<PoolLiquidityRow>(
+    db,
+    `SELECT LOWER(HEX(liquidity.tx_hash)) tx_hash,liquidity.block_index,liquidity.block_time,
+      source.address source,liquidity.kind,asset_a.asset asset_a,asset_b.asset asset_b,
+      liquidity.quantity_a,liquidity.quantity_b,liquidity.quantity_minted,liquidity.quantity_destroyed,
+      liquidity.status
+      FROM pool_liquidity liquidity
+      LEFT JOIN address_dictionary source ON source.address_id=liquidity.source_id
+      LEFT JOIN asset_dictionary asset_a ON asset_a.asset_id=liquidity.asset_a_id
+      LEFT JOIN asset_dictionary asset_b ON asset_b.asset_id=liquidity.asset_b_id
+      WHERE liquidity.tx_index=?1`,
+    txIndex,
+  );
+}
+
+export function coreDispensersByTx(db: D1Database, txIndex: number): Promise<RecordRowMap["dispensers"][]> {
+  return q<RecordRowMap["dispensers"]>(
+    db,
+    `SELECT LOWER(HEX(dispenser.tx_hash)) tx_hash,dispenser.block_index,dispenser.block_time,
+      source.address source,asset.asset,dispenser.give_quantity_normalized,dispenser.give_remaining_normalized,
+      dispenser.satoshirate,dispenser.satoshirate_normalized,dispenser.dispense_count,dispenser.status,
+      dispenser.escrow_quantity,dispenser.closed_block_index
+      FROM dispensers dispenser
+      LEFT JOIN address_dictionary source ON source.address_id=dispenser.source_id
+      LEFT JOIN asset_dictionary asset ON asset.asset_id=dispenser.asset_id
+      WHERE dispenser.tx_index=?1`,
+    txIndex,
+  );
+}
+
+export function coreDispensesByTx(db: D1Database, txIndex: number): Promise<RecordRowMap["dispenses"][]> {
+  return q<RecordRowMap["dispenses"]>(
+    db,
+    `SELECT LOWER(HEX(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
+      source.address source,destination.address destination,asset.asset,dispense.dispense_quantity_normalized,
+      LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,trade.usd_value
+      FROM dispenses dispense
+      LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
+      LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
+      LEFT JOIN asset_dictionary asset ON asset.asset_id=dispense.asset_id
+      LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
+      LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
+      WHERE dispense.tx_index=?1 ORDER BY dispense.dispense_index`,
+    txIndex,
+  );
+}
+
+export function coreRefillsByTx(db: D1Database, txIndex: number): Promise<DispenserRefillRow[]> {
+  return q<DispenserRefillRow>(
+    db,
+    `SELECT LOWER(HEX(refill.tx_hash)) tx_hash,refill.block_index,refill.block_time,source.address source,
+      destination.address destination,asset.asset,refill.dispense_quantity,
+      LOWER(HEX(dispenser.tx_hash)) dispenser_tx_hash
+      FROM dispenser_refills refill
+      LEFT JOIN address_dictionary source ON source.address_id=refill.source_id
+      LEFT JOIN address_dictionary destination ON destination.address_id=refill.destination_id
+      LEFT JOIN asset_dictionary asset ON asset.asset_id=refill.asset_id
+      LEFT JOIN dispensers dispenser ON dispenser.tx_index=refill.dispenser_tx_index
+      WHERE refill.tx_index=?1 ORDER BY refill.event_index`,
+    txIndex,
+  );
+}
+
+export function coreCancelsByTx(db: D1Database, txIndex: number): Promise<CancelRow[]> {
+  return q<CancelRow>(
+    db,
+    `SELECT LOWER(HEX(cancel.tx_hash)) tx_hash,cancel.block_index,cancel.block_time,source.address source,
+      LOWER(HEX(offer.tx_hash)) offer_hash,cancel.status
+      FROM cancels cancel
+      LEFT JOIN address_dictionary source ON source.address_id=cancel.source_id
+      LEFT JOIN orders offer ON offer.tx_index=cancel.offer_tx_index
+      WHERE cancel.tx_index=?1`,
+    txIndex,
+  );
+}
+
+export function coreDispensesOfDispenser(
+  db: D1Database,
+  dispenserTxIndex: number,
   limit = 8,
 ): Promise<RecordRowMap["dispenses"][]> {
   return q<RecordRowMap["dispenses"]>(
     db,
-    `${DISPENSE_SELECT} WHERE d.dispenser_tx_hash=? ORDER BY d.block_index DESC LIMIT ?`,
-    dispenserTx,
+    `SELECT LOWER(HEX(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
+      source.address source,destination.address destination,asset.asset,dispense.dispense_quantity_normalized,
+      LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,trade.usd_value
+      FROM dispenses dispense
+      LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
+      LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
+      LEFT JOIN asset_dictionary asset ON asset.asset_id=dispense.asset_id
+      LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
+      LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
+      WHERE dispense.dispenser_tx_index=?1 ORDER BY dispense.block_index DESC,dispense.event_index DESC LIMIT ?2`,
+    dispenserTxIndex,
     limit,
   );
 }
 
-/** A dispenser's lifetime totals — sales count, BTC taken (sats), units vended. One sale can vend
- *  many multiples of give_quantity, so the storefront's stock math needs UNITS, not event counts. */
-export function dispenserTotals(
+export function coreDispenserTotals(
   db: D1Database,
-  dispenserTx: string,
+  dispenserTxIndex: number,
 ): Promise<{ n: number; sats: number; units: number } | null> {
   return one<{ n: number; sats: number; units: number }>(
     db,
-    `SELECT COUNT(*) n, COALESCE(SUM(CAST(btc_amount AS REAL)),0) sats,
-            COALESCE(SUM(CAST(dispense_quantity_normalized AS REAL)),0) units
-       FROM dispenses WHERE dispenser_tx_hash=?`,
-    dispenserTx,
+    `SELECT COUNT(*) n,COALESCE(SUM(CAST(btc_amount AS REAL)),0) sats,
+      COALESCE(SUM(CAST(dispense_quantity_normalized AS REAL)),0) units
+      FROM dispenses WHERE dispenser_tx_index=?1`,
+    dispenserTxIndex,
   );
 }
 
-/** An order's matches — the tape under the offer (the dispenser-sales pattern). A match references
- *  its two maker orders by tx0/tx1; the order can be either side (rides idx_om_tx0/idx_om_tx1). */
-export function matchesOfOrder(db: D1Database, orderTx: string, limit = 10): Promise<RecordRowMap["order_matches"][]> {
-  return q<RecordRowMap["order_matches"]>(
-    db,
-    `${ORDER_MATCH_SELECT} WHERE om.tx0_hash=?1 OR om.tx1_hash=?1 ORDER BY om.block_index DESC LIMIT ?2`,
-    orderTx,
-    limit,
-  );
-}
-
-/** TxRecordKind → row shape (the feed kinds' wire rows + the three tx-only rows). */
-export type TxRecordRowMap = { [K in Extract<TxRecordKind, RecordKind>]: RecordRowMap[K] } & {
-  cancels: CancelRow;
-  dispenser_refills: DispenserRefillRow;
-  pool_liquidity: PoolLiquidityRow;
+type ParentBearingKind = "dispenses" | "dispenser_refills" | "cancels" | "fairmints";
+const PARENT_COLUMN: Record<ParentBearingKind, string> = {
+  dispenses: "dispenser_tx_index",
+  dispenser_refills: "dispenser_tx_index",
+  cancels: "offer_tx_index",
+  fairmints: "fairminter_tx_index",
 };
 
-/** The record row(s) behind one tx (MPMA sends return several). Feed kinds reuse the feed's SELECT, so
- *  the row shape is the kind's wire row; the three tx-only kinds use their own SELECTs above. blockIndex
- *  scopes the read onto the block index for the tables without a tx_hash index; omit it for parent-context
- *  lookups keyed by a DIFFERENT tx (a dispense's dispenser, a fairmint's fairminter — tx_hash-PK tables). */
-export function recordsByTxHash<K extends TxRecordKind>(
+export async function coreParentTxIndex(
   db: D1Database,
-  kind: K,
-  hash: string,
-  blockIndex?: number,
-): Promise<TxRecordRowMap[K][]> {
-  const select =
-    kind in TX_ONLY_SELECTS ? TX_ONLY_SELECTS[kind as keyof typeof TX_ONLY_SELECTS] : FEEDS[kind as RecordKind].select;
-  const a = TX_ALIAS[kind] ?? "";
-  const scope = blockIndex != null ? ` AND ${a}block_index=?2` : "";
-  const args: (string | number)[] = blockIndex != null ? [hash, blockIndex] : [hash];
-  return q<TxRecordRowMap[K]>(db, `${select} WHERE ${a}tx_hash=?1${scope}`, ...args);
+  kind: ParentBearingKind,
+  txIndex: number,
+): Promise<number | null> {
+  const row = await one<{ parent: number | null }>(
+    db,
+    `SELECT ${PARENT_COLUMN[kind]} parent FROM ${kind} WHERE tx_index=?1 LIMIT 1`,
+    txIndex,
+  );
+  return row?.parent ?? null;
 }

@@ -27,6 +27,7 @@ import {
   assetReviewTop,
   assetValidation,
   assetCohort,
+  assetCollection,
   assetCollectionCohort,
   assetQualitySignals,
   latestUsdRate,

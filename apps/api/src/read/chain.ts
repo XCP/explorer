@@ -25,16 +25,22 @@ import {
   listRpsMatches,
   listPools,
   listPoolMatches,
-  classifyTx,
-  recordsByTxHash,
-  dispensesOfDispenser,
-  dispenserTotals,
-  matchesOfOrder,
+  classifyCoreTx,
+  coreStatelessRecordsByTx,
+  coreContextRecordsByTx,
+  corePoolLiquidityByTx,
+  coreDispensersByTx,
+  coreDispensesByTx,
+  coreRefillsByTx,
+  coreCancelsByTx,
+  coreDispensesOfDispenser,
+  coreDispenserTotals,
+  coreParentTxIndex,
 } from "#api/queries/records";
-import { assetCollection, assetBrief } from "#api/queries/assets";
+import { coreAssetBrief, coreAssetCollection } from "#api/queries/core-assets";
 import { mempoolTxActions } from "#api/read/mempool";
 import { boundedInteger } from "#api/http/numbers";
-import { listOrderMatches, listOrders } from "#api/queries/core-orders";
+import { listOrderMatches, listOrders, matchesOfOrderIndex, orderByTxIndex } from "#api/queries/core-orders";
 
 export const chain = router();
 
@@ -63,40 +69,45 @@ chain.get("/v2/blocks/:n", async (c) => {
 const offerArt = (give?: string | null, get?: string | null): string | null =>
   give && give !== "XCP" && give !== "BTC" ? give : get && get !== "XCP" && get !== "BTC" ? get : null;
 const collectionOf = (db: D1Database, asset: string | null) =>
-  asset ? assetCollection(db, asset).catch(() => null) : Promise.resolve(null);
+  asset ? coreAssetCollection(db, asset).catch(() => null) : Promise.resolve(null);
 const supplyOf = (db: D1Database, asset: string | null) =>
-  asset ? assetBrief(db, asset).catch(() => null) : Promise.resolve(null);
+  asset ? coreAssetBrief(db, asset).catch(() => null) : Promise.resolve(null);
 
-async function composeAction(db: D1Database, hash: string, blockIndex: number): Promise<TxAction | null> {
-  const kind = await classifyTx(db, hash, blockIndex);
+async function composeAction(db: D1Database, txIndex: number): Promise<TxAction | null> {
+  const kind = await classifyCoreTx(db, txIndex);
   if (!kind) return null;
   switch (kind) {
     case "sends":
-      return { kind: "send", sends: await recordsByTxHash(db, "sends", hash, blockIndex) };
+      return { kind: "send", sends: await coreStatelessRecordsByTx(db, "sends", txIndex) };
     case "dispenses": {
-      const dispenses = await recordsByTxHash(db, "dispenses", hash, blockIndex);
-      const parent = dispenses[0]?.dispenser_tx_hash;
-      const dispenser = parent ? ((await recordsByTxHash(db, "dispensers", parent))[0] ?? null) : null;
+      const [dispenses, parent] = await Promise.all([
+        coreDispensesByTx(db, txIndex),
+        coreParentTxIndex(db, "dispenses", txIndex),
+      ]);
+      const dispenser = parent == null ? null : ((await coreDispensersByTx(db, parent))[0] ?? null);
       return { kind: "dispense", dispenses, dispenser };
     }
     case "dispensers": {
       // The dispenser tx page IS the machine's storefront — carry its sales history + lifetime totals.
-      const dispenser = (await recordsByTxHash(db, "dispensers", hash, blockIndex))[0];
+      const dispenser = (await coreDispensersByTx(db, txIndex))[0];
       const [sales, totals, collection, supply] = await Promise.all([
-        dispensesOfDispenser(db, hash).catch(() => []),
-        dispenserTotals(db, hash).catch(() => null),
+        coreDispensesOfDispenser(db, txIndex).catch(() => []),
+        coreDispenserTotals(db, txIndex).catch(() => null),
         collectionOf(db, dispenser?.asset ?? null),
         supplyOf(db, dispenser?.asset ?? null),
       ]);
       return { kind: "dispenser", dispenser, sales, totals, collection, supply };
     }
     case "dispenser_refills": {
-      const refill = (await recordsByTxHash(db, "dispenser_refills", hash, blockIndex))[0];
-      const parent = refill.dispenser_tx_hash;
+      const [refills, parent] = await Promise.all([
+        coreRefillsByTx(db, txIndex),
+        coreParentTxIndex(db, "dispenser_refills", txIndex),
+      ]);
+      const refill = refills[0];
       const [dispenser, sales, totals] = await Promise.all([
-        parent ? recordsByTxHash(db, "dispensers", parent).then((r) => r[0] ?? null) : Promise.resolve(null),
-        parent ? dispensesOfDispenser(db, parent).catch(() => []) : Promise.resolve([]),
-        parent ? dispenserTotals(db, parent).catch(() => null) : Promise.resolve(null),
+        parent == null ? Promise.resolve(null) : coreDispensersByTx(db, parent).then((r) => r[0] ?? null),
+        parent == null ? Promise.resolve([]) : coreDispensesOfDispenser(db, parent).catch(() => []),
+        parent == null ? Promise.resolve(null) : coreDispenserTotals(db, parent).catch(() => null),
       ]);
       const [collection, supply] = await Promise.all([
         collectionOf(db, dispenser?.asset ?? refill.asset ?? null),
@@ -106,50 +117,56 @@ async function composeAction(db: D1Database, hash: string, blockIndex: number): 
     }
     case "orders": {
       // the offer + its tape: matches this order participated in (either side)
-      const order = (await recordsByTxHash(db, "orders", hash, blockIndex))[0];
+      const order = (await orderByTxIndex(db, txIndex))[0];
       const [matches, collection, supply] = await Promise.all([
-        matchesOfOrder(db, hash).catch(() => []),
+        matchesOfOrderIndex(db, txIndex).catch(() => []),
         collectionOf(db, offerArt(order?.give_asset, order?.get_asset)),
         supplyOf(db, offerArt(order?.give_asset, order?.get_asset)),
       ]);
       return { kind: "order", order, matches, collection, supply };
     }
     case "cancels": {
-      const cancel = (await recordsByTxHash(db, "cancels", hash, blockIndex))[0];
-      const order = cancel.offer_hash ? ((await recordsByTxHash(db, "orders", cancel.offer_hash))[0] ?? null) : null;
+      const [cancels, parent] = await Promise.all([
+        coreCancelsByTx(db, txIndex),
+        coreParentTxIndex(db, "cancels", txIndex),
+      ]);
+      const cancel = cancels[0];
+      const order = parent == null ? null : ((await orderByTxIndex(db, parent))[0] ?? null);
       return { kind: "cancel", cancel, order };
     }
     case "btcpays":
-      return { kind: "btcpay", btcpay: (await recordsByTxHash(db, "btcpays", hash, blockIndex))[0] };
+      return { kind: "btcpay", btcpay: (await coreContextRecordsByTx(db, "btcpays", txIndex))[0] };
     case "issuances":
-      return { kind: "issuance", issuance: (await recordsByTxHash(db, "issuances", hash, blockIndex))[0] };
+      return { kind: "issuance", issuance: (await coreContextRecordsByTx(db, "issuances", txIndex))[0] };
     case "fairminters":
-      return { kind: "fairminter", fairminter: (await recordsByTxHash(db, "fairminters", hash, blockIndex))[0] };
+      return { kind: "fairminter", fairminter: (await coreContextRecordsByTx(db, "fairminters", txIndex))[0] };
     case "fairmints": {
-      const fairmint = (await recordsByTxHash(db, "fairmints", hash, blockIndex))[0];
-      const fairminter = fairmint.fairminter_tx_hash
-        ? ((await recordsByTxHash(db, "fairminters", fairmint.fairminter_tx_hash))[0] ?? null)
-        : null;
+      const [fairmints, parent] = await Promise.all([
+        coreContextRecordsByTx(db, "fairmints", txIndex),
+        coreParentTxIndex(db, "fairmints", txIndex),
+      ]);
+      const fairmint = fairmints[0];
+      const fairminter = parent == null ? null : ((await coreContextRecordsByTx(db, "fairminters", parent))[0] ?? null);
       return { kind: "fairmint", fairmint, fairminter };
     }
     case "broadcasts":
-      return { kind: "broadcast", broadcast: (await recordsByTxHash(db, "broadcasts", hash, blockIndex))[0] };
+      return { kind: "broadcast", broadcast: (await coreStatelessRecordsByTx(db, "broadcasts", txIndex))[0] };
     case "sweeps":
-      return { kind: "sweep", sweep: (await recordsByTxHash(db, "sweeps", hash, blockIndex))[0] };
+      return { kind: "sweep", sweep: (await coreStatelessRecordsByTx(db, "sweeps", txIndex))[0] };
     case "dividends":
-      return { kind: "dividend", dividend: (await recordsByTxHash(db, "dividends", hash, blockIndex))[0] };
+      return { kind: "dividend", dividend: (await coreStatelessRecordsByTx(db, "dividends", txIndex))[0] };
     case "burns":
-      return { kind: "burn", burn: (await recordsByTxHash(db, "burns", hash, blockIndex))[0] };
+      return { kind: "burn", burn: (await coreStatelessRecordsByTx(db, "burns", txIndex))[0] };
     case "destructions":
-      return { kind: "destruction", destruction: (await recordsByTxHash(db, "destructions", hash, blockIndex))[0] };
+      return { kind: "destruction", destruction: (await coreStatelessRecordsByTx(db, "destructions", txIndex))[0] };
     case "bets":
-      return { kind: "bet", bet: (await recordsByTxHash(db, "bets", hash, blockIndex))[0] };
+      return { kind: "bet", bet: (await coreStatelessRecordsByTx(db, "bets", txIndex))[0] };
     case "rps":
-      return { kind: "rps", rps: (await recordsByTxHash(db, "rps", hash, blockIndex))[0] };
+      return { kind: "rps", rps: (await coreStatelessRecordsByTx(db, "rps", txIndex))[0] };
     case "pool_liquidity":
-      return { kind: "pool_liquidity", liquidity: (await recordsByTxHash(db, "pool_liquidity", hash, blockIndex))[0] };
+      return { kind: "pool_liquidity", liquidity: (await corePoolLiquidityByTx(db, txIndex))[0] };
     case "pool_matches":
-      return { kind: "pool_swap", swap: (await recordsByTxHash(db, "pool_matches", hash, blockIndex))[0] };
+      return { kind: "pool_swap", swap: (await coreContextRecordsByTx(db, "pool_matches", txIndex))[0] };
     default:
       return null;
   }
@@ -206,7 +223,7 @@ chain.get("/v2/transactions/:hash", async (c) => {
   if (t) {
     const [tip, action] = await Promise.all([
       blockTip(c.env.CORE_DB),
-      composeAction(c.env.DB, t.tx_hash, t.block_index).catch((e) => {
+      composeAction(c.env.CORE_DB, t.tx_index).catch((e) => {
         console.log("tx action compose failed:", e instanceof Error ? e.message : String(e));
         return null;
       }),

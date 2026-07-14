@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { listIssuances, listTransactions } from "#api/queries/records";
+import { coreContextRecordsByTx, listIssuances, listTransactions } from "#api/queries/records";
 
 class Statement {
   private values: unknown[] = [];
@@ -29,7 +29,7 @@ test("compact transaction and issuance feeds restore public identities", async (
       destination_id INTEGER,btc_amount TEXT,fee TEXT,supported INTEGER
     );
     CREATE TABLE issuances(
-      event_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,asset_id INTEGER,
+      event_index INTEGER PRIMARY KEY,tx_index INTEGER,msg_index INTEGER,tx_hash BLOB,block_index INTEGER,block_time INTEGER,asset_id INTEGER,
       asset_longname TEXT,source_id INTEGER,issuer_id INTEGER,quantity_normalized TEXT,transfer INTEGER,
       divisible INTEGER,locked INTEGER,description TEXT,asset_events TEXT,status TEXT
     );
@@ -39,7 +39,7 @@ test("compact transaction and issuance feeds restore public identities", async (
       8,x'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',100,1000,1,2,'25','5',1
     );
     INSERT INTO issuances VALUES(
-      9,x'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',101,1001,1,
+      9,18,0,x'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',101,1001,1,
       'PARENT.CARD',1,3,'1',0,0,1,'description','["lock"]','valid'
     );
   `);
@@ -57,4 +57,5 @@ test("compact transaction and issuance feeds restore public identities", async (
   assert.equal(issuances[0].source, "source");
   assert.equal(issuances[0].issuer, "issuer");
   assert.equal(issuances[0].asset_events, '["lock"]');
+  assert.equal((await coreContextRecordsByTx(d1(db), "issuances", 18))[0].asset_longname, "PARENT.CARD");
 });

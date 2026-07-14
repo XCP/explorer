@@ -97,6 +97,20 @@ export function getCoreAsset(db: D1Database, asset: string): Promise<AssetRow | 
   );
 }
 
+export function coreAssetBrief(
+  db: D1Database,
+  asset: string,
+): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
+  return one<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null }>(
+    db,
+    `SELECT state.supply_normalized,state.divisible,state.locked
+       FROM assets state JOIN asset_dictionary dictionary ON dictionary.asset_id=state.asset_id
+      WHERE dictionary.asset=?1 OR state.asset_longname=?2`,
+    asset.toUpperCase(),
+    asset,
+  );
+}
+
 export function listCoreSubassets(
   db: D1Database,
   parent: string,

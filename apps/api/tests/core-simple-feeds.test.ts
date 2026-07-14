@@ -9,6 +9,8 @@ import {
   listFairminters,
   listFairmints,
   listSweeps,
+  coreStatelessRecordsByTx,
+  coreContextRecordsByTx,
 } from "#api/queries/records";
 
 class Statement {
@@ -32,7 +34,7 @@ test("compact simple record feeds restore address and asset identities", async (
     CREATE TABLE broadcasts(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,timestamp INTEGER,value TEXT,text TEXT,locked INTEGER,mime_type TEXT,status TEXT);
     CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,divisible INTEGER);
     CREATE TABLE fairminters(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,asset_id INTEGER,asset_longname TEXT,price TEXT,quantity_by_price TEXT,hard_cap TEXT,soft_cap TEXT,pool_quantity TEXT,lp_asset TEXT,divisible INTEGER,earned_quantity TEXT,paid_quantity TEXT,status TEXT);
-    CREATE TABLE fairmints(event_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,fairminter_tx_index INTEGER,asset_id INTEGER,earn_quantity TEXT,paid_quantity TEXT,status TEXT);
+    CREATE TABLE fairmints(event_index INTEGER PRIMARY KEY,tx_index INTEGER,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,fairminter_tx_index INTEGER,asset_id INTEGER,earn_quantity TEXT,paid_quantity TEXT,status TEXT);
     INSERT INTO address_dictionary VALUES(1,'source'),(2,'destination');
     INSERT INTO asset_dictionary VALUES(1,'CARD'),(2,'XCP');
     INSERT INTO sweeps VALUES(1,zeroblob(32),10,100,1,2,3,'memo','5','valid');
@@ -42,7 +44,7 @@ test("compact simple record feeds restore address and asset identities", async (
     INSERT INTO broadcasts VALUES(5,zeroblob(32),14,104,1,99,'1.25','hello',1,'text/plain','valid');
     INSERT INTO assets VALUES(1,1);
     INSERT INTO fairminters VALUES(6,zeroblob(32),15,105,1,1,'PARENT.CARD','10','2','100','50','20','CARD-XCP',1,'40','200','open');
-    INSERT INTO fairmints VALUES(7,zeroblob(32),16,106,2,6,1,'2','10','valid');
+    INSERT INTO fairmints VALUES(7,17,zeroblob(32),16,106,2,6,1,'2','10','valid');
   `);
   const dbBinding = d1(db);
 
@@ -57,7 +59,13 @@ test("compact simple record feeds restore address and asset identities", async (
     tx_hash: "0".repeat(64),block_index: 14,block_time: 104,source: "source",timestamp: 99,
     value: "1.25",text: "hello",locked: 1,mime_type: "text/plain",status: "valid",
   });
+  assert.equal((await coreStatelessRecordsByTx(dbBinding, "sweeps", 1))[0].destination, "destination");
+  assert.equal((await coreStatelessRecordsByTx(dbBinding, "burns", 3))[0].burned_normalized, "1.0");
+  assert.equal((await coreStatelessRecordsByTx(dbBinding, "dividends", 4))[0].asset, "CARD");
+  assert.equal((await coreStatelessRecordsByTx(dbBinding, "broadcasts", 5))[0].text, "hello");
   assert.equal((await listFairminters(dbBinding, 1, 0))[0].asset_longname, "PARENT.CARD");
+  assert.equal((await coreContextRecordsByTx(dbBinding, "fairminters", 6))[0].asset, "CARD");
+  assert.equal((await coreContextRecordsByTx(dbBinding, "fairmints", 17))[0].fairminter_tx_hash, "0".repeat(64));
   assert.deepEqual({ ...(await listFairmints(dbBinding, 1, 0))[0] }, {
     tx_hash: "0".repeat(64),block_index: 16,block_time: 106,source: "destination",
     fairminter_tx_hash: "0".repeat(64),asset: "CARD",earn_quantity: "2",paid_quantity: "10",
