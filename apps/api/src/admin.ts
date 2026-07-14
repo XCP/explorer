@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "#api/env";
-import { syncEvents, syncCompactEvents, backfillLedger } from "#api/indexer/sync";
+import { syncCompactEvents, backfillLedger } from "#api/indexer/sync";
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
@@ -121,15 +121,8 @@ admin.get("/admin/btc-stats/addresses", async (c) => {
   });
 });
 
-// Drive the full Counterparty mirror (chronological event replay). Repeat until caught_up.
+// Drive the canonical compact Counterparty mirror. The same locked replay runs from cron.
 admin.post("/admin/sync", async (c) => {
-  const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
-  return c.json(await syncEvents(c.env, { maxEvents: events }));
-});
-
-// Advance the compact database from its immutable seed frontier using its own cursor. This never writes the
-// current source mirror and remains available before forward dual-writes are enabled.
-admin.post("/admin/core-replay", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
 });
@@ -174,22 +167,6 @@ admin.post("/admin/backfill-ledger", async (c) => {
 admin.get("/admin/ledger-readiness", async (c) => {
   const radius = boundedInteger(c.req.query("sample_radius"), { defaultValue: 2_000, min: 1, max: 10_000 });
   return c.json(await auditLedgerReadiness(c.env, radius));
-});
-
-// Full re-index: reset the event cursor to -1 so the next /admin/sync (or cron) WIPES balances + snapshots
-// and replays from event 0. Needed to heal balances corrupted by the old reorg high-water bug — the
-// per-balance high-water makes a plain replay a no-op on existing balances, so they must be wiped first. Heavy.
-admin.post("/admin/reindex", async (c) => {
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO indexer_state (key,value) VALUES ('last_event_index','-1') ON CONFLICT(key) DO UPDATE SET value='-1'`,
-    ),
-    c.env.DB.prepare(
-      `INSERT INTO indexer_state (key,value) VALUES ('last_block_index','0') ON CONFLICT(key) DO UPDATE SET value='0'`,
-    ),
-    c.env.DB.prepare(`DELETE FROM indexer_state WHERE key='last_block_hash'`),
-  ]);
-  return c.json({ ok: true, note: "cursor reset to -1; next sync wipes balances+snapshots and replays from event 0" });
 });
 
 // Advance both compact-native reputation projections. Cron runs the same bounded repair steps.

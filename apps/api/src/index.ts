@@ -11,7 +11,7 @@ import { Hono } from "hono";
 import type { Env } from "#api/env";
 export type { Env } from "#api/env";
 import { describeHttpError, requestId } from "#api/http/errors";
-import { syncEvents, backfillLedger } from "#api/indexer/sync";
+import { syncCompactEvents, backfillLedger } from "#api/indexer/sync";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
@@ -177,18 +177,11 @@ export default {
     }
     ctx.waitUntil(
       (async () => {
-        // BOOTSTRAP PAUSE: while a full reindex/bootstrap is driven manually, set indexer_state 'cron_paused'='1'
-        // so the cron stands down entirely. A cron sync running CONCURRENTLY with the bootstrap driver means two
-        // large D1 write transactions at once → SQLITE_NOMEM (D1 out of memory). One driver at a time avoids it.
-        const paused = await runScheduledJob("cronPausedCheck", async () => {
-          const p = await env.DB.prepare("SELECT value FROM indexer_state WHERE key='cron_paused'").first<{
-            value: string;
-          }>();
-          return p?.value === "1";
-        });
-        if (paused) return;
-        // assets (incl. supply) are maintained deterministically from the event stream — no Counterparty refetch.
-        const syncResult = await runScheduledJob("syncEvents", () => syncEvents(env, { maxEvents: 10000 }));
+        // The compact database is the sole live Counterparty event projection. Its D1 lock serializes cron and
+        // manual invocations, so there is no second source-mirror writer to pause or coordinate.
+        const syncResult = await runScheduledJob("syncCompactEvents", () =>
+          syncCompactEvents(env, { maxEvents: 10000 }),
+        );
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {

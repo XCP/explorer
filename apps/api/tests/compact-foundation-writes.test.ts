@@ -6,12 +6,7 @@ import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionari
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
-import {
-  pruneCompactSnapshots,
-  reconcileGenesisTransaction,
-  rollbackCompactDatabase,
-  syncCompactEvents,
-} from "#api/indexer/sync";
+import { pruneCompactSnapshots, rollbackCompactDatabase, syncCompactEvents } from "#api/indexer/sync";
 
 const CORE_DDL = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -1264,34 +1259,59 @@ test("compact replay advances its own seed cursor without writing the source mir
   });
 });
 
-test("compact caught-up maintenance restores genesis and prunes superseded snapshots", async () => {
+test("compact replay rolls back a mismatched checkpoint before accepting the replacement branch", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`
+    INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}'),(101,X'${"a1".repeat(32)}');
+    INSERT INTO transactions(tx_index,tx_hash,block_index) VALUES(1,X'${"b1".repeat(32)}',101);
+    INSERT INTO core_state(key,value) VALUES
+      ('build_complete','1'),('import_complete','1'),('seed_event_index','0'),
+      ('last_event_index','10'),('last_block_index','101'),('last_block_hash','orphan');
+  `);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result_count: 10 }));
+    if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "replacement-101" } }));
+    if (url.includes("/events?cursor=10"))
+      return new Response(
+        JSON.stringify({
+          result: [
+            { event_index: 10, block_index: 101 },
+            { event_index: 9, block_index: 100 },
+          ],
+        }),
+      );
+    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: "replacement-100" } }));
+    throw new Error(`unexpected Counterparty request: ${url}`);
+  };
+  try {
+    const result = await syncCompactEvents({
+      CORE_DB: d1(database),
+      COUNTERPARTY_API_BASE: "https://counterparty.test",
+    });
+    assert.equal(result.last_event_index, 9);
+    assert.equal(result.last_block, 100);
+    assert.equal(result.caught_up, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(database.prepare(`SELECT count(*) count FROM transactions`).get()?.count, 0);
+  const state = Object.fromEntries(
+    (database.prepare(`SELECT key,value FROM core_state`).all() as { key: string; value: string }[]).map((row) => [
+      row.key,
+      row.value,
+    ]),
+  );
+  assert.equal(state.last_event_index, "9");
+  assert.equal(state.last_block_index, "100");
+  assert.equal(state.last_block_hash, "replacement-100");
+});
+
+test("compact caught-up maintenance prunes superseded snapshots", async () => {
   const compact = new DatabaseSync(":memory:");
   compact.exec(CORE_DDL);
-  const source = new DatabaseSync(":memory:");
-  source.exec(`
-    CREATE TABLE transactions(
-      tx_index INTEGER PRIMARY KEY,tx_hash TEXT,block_index INTEGER,block_time INTEGER,source TEXT,
-      destination TEXT,btc_amount TEXT,fee TEXT,supported INTEGER,utxos_info TEXT
-    );
-    INSERT INTO transactions VALUES(
-      0,'${"68".repeat(32)}',278319,1,'alice','burn','50000','10000',1,NULL
-    );
-  `);
-  await reconcileGenesisTransaction(d1(source), d1(compact));
-  assert.deepEqual(
-    {
-      ...compact
-        .prepare(
-          `SELECT tx_index,lower(hex(tx_hash)) tx_hash,s.address source,d.address destination
-             FROM transactions t
-             LEFT JOIN address_dictionary s ON s.address_id=t.source_id
-             LEFT JOIN address_dictionary d ON d.address_id=t.destination_id`,
-        )
-        .get(),
-    },
-    { tx_index: 0, tx_hash: "68".repeat(32), source: "alice", destination: "burn" },
-  );
-
   compact.exec(`
     INSERT OR IGNORE INTO asset_dictionary(asset) VALUES('XCP');
     INSERT OR IGNORE INTO address_dictionary(address) VALUES('alice');
