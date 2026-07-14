@@ -31,10 +31,6 @@ import { recoveryAdmin } from "#api/recovery/admin";
 import { auditLedgerReadiness } from "#api/indexer/ledger-readiness";
 import { operationalStatus } from "#api/operations/status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
-import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
-import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
-import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
-import { reconcileBalanceSnapshotPage } from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { catchUpCoreAssetFeedCounts } from "#api/indexer/core-feed-counts";
 
@@ -47,23 +43,6 @@ admin.route("/", recoveryAdmin);
 // Cheap, read-only snapshot for operators. Large tables are probed by indexed
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
-
-// Fail-closed schema inventory: every live source table must have one explicit compact/rebuild/preserve rule,
-// and every resulting target relation must exist before the compact database can be considered complete.
-admin.get("/admin/core-coverage", async (c) => c.json(await auditCoreTableCoverage(c.env)));
-
-// Read-only source snapshot stream for the offline compact builder. Table names are a closed manifest and
-// rowid keysets keep large history reads indexed; the one WITHOUT ROWID projection is tiny and offset-paged.
-admin.get("/admin/core-snapshot/schema", async (c) => c.json(await coreSnapshotSchema(c.env.DB)));
-admin.get("/admin/core-snapshot/:table", async (c) => {
-  const after = boundedInteger(c.req.query("after"), { defaultValue: 0, min: 0 });
-  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 1_000, min: 1, max: 2_000 });
-  try {
-    return c.json(await coreSnapshotPage(c.env.DB, c.req.param("table"), after, rows));
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "snapshot failed" }, 400);
-  }
-});
 
 // Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).
@@ -127,31 +106,9 @@ admin.post("/admin/sync", async (c) => {
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
 });
 
-admin.post("/admin/core-projections/reconcile-balance-snapshots", async (c) => {
-  const offset = Math.max(0, Number.parseInt(c.req.query("offset") ?? "0", 10) || 0);
-  const rows = Math.min(100, Math.max(1, Number.parseInt(c.req.query("rows") ?? "100", 10) || 100));
-  return c.json(await reconcileBalanceSnapshotPage(c.env, offset, rows));
-});
-
-admin.post("/admin/core-projections/catch-up-asset-feed-counts", async (c) => {
+admin.post("/admin/catch-up-asset-feed-counts", async (c) => {
   const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 250 });
   return c.json(await catchUpCoreAssetFeedCounts(c.env.CORE_DB, rows));
-});
-
-// Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;
-// success records the checked frontier for the later forward-write and read cutovers.
-admin.post("/admin/core-parity", async (c) => {
-  const result = await auditCoreDataParity(c.env, { accept: true });
-  return c.json(result, result.ok ? 200 : 409);
-});
-
-admin.post("/admin/core-forward-writes/activate", async (c) => {
-  const result = await activateCoreForwardWrites(c.env);
-  return c.json(result, result.ok ? 200 : 409);
-});
-
-admin.post("/admin/core-forward-writes/rollback", async (c) => {
-  return c.json(await rollbackCoreForwardWrites(c.env.CORE_DB));
 });
 
 // Backfill the historical credits/debits ledger (migration 0038) — isolated & non-destructive: inserts only
