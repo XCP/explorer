@@ -42,6 +42,7 @@ import {
 } from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { backfillDispenseIdentities } from "#api/indexer/dispense-identity";
+import { catchUpCoreAssetFeedCounts } from "#api/indexer/core-feed-counts";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -165,6 +166,11 @@ admin.post("/admin/core-projections/reconcile-dispense-identities", async (c) =>
   const after = Math.max(0, Number.parseInt(c.req.query("after") ?? "0", 10) || 0);
   const rows = Math.min(500, Math.max(1, Number.parseInt(c.req.query("rows") ?? "500", 10) || 500));
   return c.json(await backfillDispenseIdentities(c.env.DB, c.env.CORE_DB, after, rows));
+});
+
+admin.post("/admin/core-projections/catch-up-asset-feed-counts", async (c) => {
+  const rows = boundedInteger(c.req.query("rows"), { defaultValue: 100, min: 1, max: 250 });
+  return c.json(await catchUpCoreAssetFeedCounts(c.env.CORE_DB, rows));
 });
 
 // Exact source/compact relation counts at one shared event cursor. A failed check closes the parity gate;
