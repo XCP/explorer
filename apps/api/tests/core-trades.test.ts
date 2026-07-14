@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
-  COMPACT_DISPENSE_TRADES_SQL,
   COMPACT_SCARCE_TRADES_SQL,
+  DISPENSE_TRADE_LEGS_SQL,
+  DISPENSE_TRADES_SQL,
   compactDexTradesSql,
   compactEmblemTradesSql,
 } from "#api/indexer/trades";
@@ -83,8 +84,11 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       tx0_hash BLOB,tx1_hash BLOB,tx0_address_id INTEGER,tx1_address_id INTEGER,
       forward_asset_id INTEGER,forward_quantity TEXT,backward_asset_id INTEGER,backward_quantity TEXT,
       block_index INTEGER,block_time INTEGER,status TEXT);
+    CREATE TABLE transactions(tx_index INTEGER PRIMARY KEY,tx_hash BLOB);
+    CREATE TABLE transaction_outputs(
+      tx_index INTEGER,out_index INTEGER,block_index INTEGER,destination_id INTEGER,btc_amount TEXT);
     CREATE TABLE dispenses(
-      event_index INTEGER,asset_id INTEGER,block_time INTEGER,block_index INTEGER,
+      event_index INTEGER,tx_index INTEGER,dispense_index INTEGER,asset_id INTEGER,block_time INTEGER,block_index INTEGER,
       dispense_quantity_normalized TEXT,btc_amount TEXT,destination_id INTEGER,source_id INTEGER,tx_hash BLOB);
     CREATE TABLE emblem_sales(
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,
@@ -98,13 +102,23 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       currency TEXT,total REAL,price REAL GENERATED ALWAYS AS (total/quantity) VIRTUAL,usd_value REAL,
       buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,sale_class TEXT,
       PRIMARY KEY(venue,ref));
-    INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'BTC'),(3,'CARD');
+    CREATE TABLE trade_legs(
+      venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
+      PRIMARY KEY(venue,trade_ref,leg_index));
+    INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'BTC'),(3,'CARD'),(4,'OTHER');
     INSERT INTO assets VALUES(3,0);
     INSERT INTO address_dictionary VALUES
       (1,'buyer'),(2,'seller'),(3,'0xcontract'),(4,'eth'),(5,'btc-vault');
     INSERT INTO order_matches VALUES(
       x'${"11".repeat(32)}',x'${"22".repeat(32)}',1,2,1,'100000000',3,'2',100,1000,'completed');
-    INSERT INTO dispenses VALUES(77,3,1001,101,'4','50000000',1,2,x'${"33".repeat(32)}');
+    INSERT INTO transactions VALUES(9,x'${"33".repeat(32)}');
+    INSERT INTO transaction_outputs VALUES(9,0,101,2,'50000000');
+    INSERT INTO dispenses VALUES(77,9,0,3,1001,101,'4','50000000',1,2,x'${"33".repeat(32)}');
+    INSERT INTO transactions VALUES(10,x'${"44".repeat(32)}');
+    INSERT INTO transaction_outputs VALUES(10,1,102,2,'60000000');
+    INSERT INTO dispenses VALUES
+      (78,10,0,3,1002,102,'1','60000000',1,2,x'${"44".repeat(32)}'),
+      (79,10,1,4,1002,102,'2','60000000',1,2,x'${"44".repeat(32)}');
     INSERT INTO emblem_sales VALUES
       ('0xeth',9,3,'7','1000000000000000000',4,1,2,16000000),
       ('0xeth',9,3,'8','2000000000000000000',4,1,2,16000000);
@@ -113,7 +127,8 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     INSERT INTO scarce_city_sales VALUES(3,2000,0.25);
   `);
   db.prepare(compactDexTradesSql()).run(0, 200);
-  db.prepare(COMPACT_DISPENSE_TRADES_SQL).run(0, 200);
+  db.prepare(DISPENSE_TRADES_SQL).run(0, 200);
+  db.prepare(DISPENSE_TRADE_LEGS_SQL).run(0, 200);
   db.prepare(compactEmblemTradesSql("")).run();
   db.prepare(COMPACT_SCARCE_TRADES_SQL).run();
   assert.deepEqual(
@@ -130,10 +145,31 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
         currency: "XCP",
         total: 1,
       },
-      { venue: "dispense", ref: "77", asset_id: 3, quantity: 4, currency: "BTC", total: 0.5 },
+      { venue: "dispense", ref: `${"33".repeat(32)}:0`, asset_id: 3, quantity: 4, currency: "BTC", total: 0.5 },
+      {
+        venue: "dispense",
+        ref: `${"44".repeat(32)}:1`,
+        asset_id: null,
+        quantity: null,
+        currency: "BTC",
+        total: 0.6,
+      },
       { venue: "emblem", ref: "0xeth_9_0xcontract_7", asset_id: 3, quantity: 1, currency: "ETH", total: 1 },
       { venue: "emblem", ref: "0xeth_9_0xcontract_8", asset_id: 3, quantity: 1, currency: "ETH", total: 2 },
       { venue: "scarce.city", ref: "CARD_2000", asset_id: 3, quantity: 1, currency: "BTC", total: 0.25 },
+    ],
+  );
+  assert.deepEqual(
+    db
+      .prepare(
+        `SELECT leg_index,asset_id,quantity FROM trade_legs
+         WHERE venue='dispense' AND trade_ref=? ORDER BY leg_index`,
+      )
+      .all(`${"44".repeat(32)}:1`)
+      .map((row) => ({ ...row })),
+    [
+      { leg_index: 0, asset_id: 3, quantity: 1 },
+      { leg_index: 1, asset_id: 4, quantity: 2 },
     ],
   );
 });

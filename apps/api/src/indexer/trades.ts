@@ -42,18 +42,50 @@ export function compactDexTradesSql(): string {
       buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash`;
 }
 
-export const COMPACT_DISPENSE_TRADES_SQL = `INSERT INTO trades(
-    venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash
+const DISPENSE_PAYMENTS = `WITH payment AS (
+    SELECT output.tx_index,output.destination_id seller_id,output.btc_amount,
+      MIN(output.out_index) first_out,MAX(output.out_index) last_out,COUNT(*) output_count,
+      SUM(CAST(output.btc_amount AS REAL)) total_sats,MIN(output.block_index) block_index,
+      lower(hex(tx.tx_hash)) || ':' || MIN(output.out_index) ||
+        CASE WHEN COUNT(*)>1 THEN '+' || COUNT(*) ELSE '' END trade_ref,
+      tx.tx_hash
+    FROM transaction_outputs output
+    JOIN transactions tx ON tx.tx_index=output.tx_index
+    WHERE output.block_index>? AND output.block_index<=?
+    GROUP BY output.tx_index,output.destination_id,output.btc_amount
+  )`;
+
+export const DISPENSE_TRADES_SQL = `${DISPENSE_PAYMENTS}
+  INSERT INTO trades(
+    venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash,sale_class
   )
-  SELECT 'dispense',CAST(dispense.event_index AS TEXT),dispense.asset_id,dispense.block_time,
-    dispense.block_index,CAST(dispense.dispense_quantity_normalized AS REAL),'BTC',
-    CAST(dispense.btc_amount AS REAL)/1e8,dispense.destination_id,dispense.source_id,dispense.tx_hash
-  FROM dispenses dispense
-  WHERE CAST(dispense.btc_amount AS REAL)>0 AND dispense.block_index>? AND dispense.block_index<=?
+  SELECT 'dispense',payment.trade_ref,
+    CASE WHEN payment.output_count=1 AND COUNT(*)=1 THEN MIN(dispense.asset_id) END,
+    MIN(dispense.block_time),payment.block_index,
+    CASE WHEN payment.output_count=1 AND COUNT(*)=1
+      THEN MIN(CAST(dispense.dispense_quantity_normalized AS REAL)) END,
+    'BTC',payment.total_sats/1e8,MIN(dispense.destination_id),payment.seller_id,payment.tx_hash,
+    CASE WHEN payment.output_count=1 AND COUNT(*)=1 THEN 'single' ELSE 'bundle' END
+  FROM payment
+  JOIN dispenses dispense ON dispense.tx_index=payment.tx_index
+    AND dispense.source_id=payment.seller_id AND dispense.btc_amount=payment.btc_amount
+  GROUP BY payment.tx_index,payment.trade_ref,payment.output_count,payment.block_index,
+    payment.total_sats,payment.seller_id,payment.tx_hash
   ON CONFLICT(venue,ref) DO UPDATE SET
     asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
     quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
-    buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash`;
+    buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash,
+    sale_class=CASE WHEN excluded.asset_id IS NULL THEN 'bundle' ELSE 'single' END`;
+
+export const DISPENSE_TRADE_LEGS_SQL = `${DISPENSE_PAYMENTS}
+  INSERT INTO trade_legs(venue,trade_ref,leg_index,asset_id,quantity)
+  SELECT 'dispense',payment.trade_ref,dispense.dispense_index,dispense.asset_id,
+    CAST(dispense.dispense_quantity_normalized AS REAL)
+  FROM payment
+  JOIN dispenses dispense ON dispense.tx_index=payment.tx_index
+    AND dispense.source_id=payment.seller_id AND dispense.btc_amount=payment.btc_amount
+  ON CONFLICT(venue,trade_ref,leg_index) DO UPDATE SET
+    asset_id=excluded.asset_id,quantity=excluded.quantity`;
 
 export function compactEmblemTradesSql(rowFilter: string): string {
   const acceptedTokens = ETH_TOKENS.map((token) => `'${token}'`).join(",");
@@ -125,6 +157,28 @@ async function advanceBlockVenue(
   return { range: { from: cursor, to: high }, written: result.meta.rows_written ?? 0, done: high >= tip };
 }
 
+async function advanceDispenseVenue(
+  db: D1Database,
+  tip: number,
+): Promise<{ range?: { from: number; to: number }; written: number; done: boolean }> {
+  const cursor = await getCoreStateInt(db, "trades_cur_dispense_payments");
+  if (cursor >= tip) return { written: 0, done: true };
+  const high = Math.min(cursor + BLOCK_WINDOW, tip);
+  const results = await db.batch([
+    db.prepare(DISPENSE_TRADES_SQL).bind(cursor, high),
+    db.prepare(DISPENSE_TRADE_LEGS_SQL).bind(cursor, high),
+    db
+      .prepare(`DELETE FROM trades WHERE venue='dispense' AND block_index>? AND block_index<=? AND instr(ref,':')=0`)
+      .bind(cursor, high),
+  ]);
+  await setCoreState(db, "trades_cur_dispense_payments", high);
+  return {
+    range: { from: cursor, to: high },
+    written: results.reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0),
+    done: high >= tip,
+  };
+}
+
 /** Advance every venue from canonical compact inputs using bounded, replay-safe upserts. */
 export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const tip = Number(
@@ -132,7 +186,7 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   );
   const writes: Record<string, number> = {};
   const dex = await advanceBlockVenue(env.CORE_DB, "trades_cur_dex", tip, compactDexTradesSql());
-  const dispense = await advanceBlockVenue(env.CORE_DB, "trades_cur_dispense", tip, COMPACT_DISPENSE_TRADES_SQL);
+  const dispense = await advanceDispenseVenue(env.CORE_DB, tip);
   writes.dex = dex.written;
   writes.dispense = dispense.written;
 

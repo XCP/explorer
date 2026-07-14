@@ -264,6 +264,12 @@ export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number
   for (const table of tables) await deleteAbove(db, table, rollbackTo);
   await db.prepare(`DELETE FROM trades WHERE venue IN ('dex','dispense') AND block_index>?`).bind(rollbackTo).run();
   await db
+    .prepare(
+      `DELETE FROM trade_legs WHERE venue IN ('dex','dispense')
+       AND NOT EXISTS (SELECT 1 FROM trades WHERE trades.venue=trade_legs.venue AND trades.ref=trade_legs.trade_ref)`,
+    )
+    .run();
+  await db
     .prepare(`UPDATE orders SET status='open',closed_block_index=NULL WHERE closed_block_index>?`)
     .bind(rollbackTo)
     .run();
@@ -335,6 +341,6 @@ export async function rollbackCompactDatabase(db: D1Database, rollbackTo: number
   await db.batch([
     setCoreStateStmt(db, "last_block_index", String(rollbackTo)),
     setCoreStateStmt(db, "trades_cur_dex", String(rollbackTo)),
-    setCoreStateStmt(db, "trades_cur_dispense", String(rollbackTo)),
+    setCoreStateStmt(db, "trades_cur_dispense_payments", String(rollbackTo)),
   ]);
 }
