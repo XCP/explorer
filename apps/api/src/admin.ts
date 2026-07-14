@@ -308,7 +308,7 @@ admin.post("/admin/promote-collection", async (c) => {
         ),
     );
   }
-  await c.env.DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
+  await c.env.CORE_DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
   return c.json({ issuer, slug, name: name || slug, tagged: assets.length });
 });
 

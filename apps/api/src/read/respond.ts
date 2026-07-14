@@ -44,7 +44,7 @@ export async function cached(
     });
   const write = async (): Promise<string> => {
     const body = JSON.stringify(await producer());
-    await c.env.DB.prepare(
+    await c.env.CORE_DB.prepare(
       `INSERT INTO cache (key,body,ctype,expires_at) VALUES (?,?,'application/json',?)
        ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype, expires_at=excluded.expires_at`,
     )
@@ -53,7 +53,7 @@ export async function cached(
       .catch(() => {});
     return body;
   };
-  const hit = await c.env.DB.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
+  const hit = await c.env.CORE_DB.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
     .bind(key)
     .first<{ body: string; ctype: string; expires_at: number }>()
     .catch(() => null);
