@@ -10,6 +10,8 @@ import {
   listTransactions,
   listSends,
   listIssuances,
+  listDispensers,
+  listDispenses,
   classifyTx,
   recordsByTxHash,
   dispensesOfDispenser,
@@ -331,6 +333,10 @@ for (const kind of RECORD_KINDS) {
             ? await listSends(c.env.CORE_DB, l, o)
             : kind === "issuances"
               ? await listIssuances(c.env.CORE_DB, l, o)
+              : kind === "dispensers"
+                ? await listDispensers(c.env.CORE_DB, l, o)
+                : kind === "dispenses"
+                  ? await listDispenses(c.env.CORE_DB, l, o)
           : await listRecords(c.env.DB, kind, l, o);
     return J(c, { result: rows, next_offset: rows.length === l ? o + l : null });
   });

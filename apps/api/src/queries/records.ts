@@ -39,6 +39,32 @@ LEFT JOIN address_dictionary source ON source.address_id=issuance.source_id
 LEFT JOIN address_dictionary issuer ON issuer.address_id=issuance.issuer_id
 ORDER BY issuance.block_index DESC,issuance.event_index DESC`;
 
+const DISPENSER_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM dispensers ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(dispenser.tx_hash)) tx_hash,dispenser.block_index,dispenser.block_time,
+  source.address source,asset.asset,dispenser.give_quantity_normalized,dispenser.give_remaining_normalized,
+  dispenser.satoshirate,dispenser.satoshirate_normalized,dispenser.dispense_count,dispenser.status,
+  dispenser.escrow_quantity,dispenser.closed_block_index
+FROM page JOIN dispensers dispenser ON dispenser.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=dispenser.source_id
+LEFT JOIN asset_dictionary asset ON asset.asset_id=dispenser.asset_id
+ORDER BY dispenser.block_index DESC,dispenser.tx_index DESC`;
+
+const DISPENSE_FEED_SQL = `WITH page AS (
+  SELECT event_index FROM dispenses ORDER BY block_index DESC,event_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
+  source.address source,destination.address destination,asset.asset,dispense.dispense_quantity_normalized,
+  LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,trade.usd_value
+FROM page JOIN dispenses dispense ON dispense.event_index=page.event_index
+LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
+LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
+LEFT JOIN asset_dictionary asset ON asset.asset_id=dispense.asset_id
+LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
+LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
+ORDER BY dispense.block_index DESC,dispense.event_index DESC`;
+
 export function listTransactions(
   db: D1Database,
   limit: number,
@@ -54,6 +80,14 @@ export function listSends(db: D1Database, limit: number, offset: number): Promis
 
 export function listIssuances(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["issuances"][]> {
   return q<RecordRowMap["issuances"]>(db, ISSUANCE_FEED_SQL, limit, offset);
+}
+
+export function listDispensers(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["dispensers"][]> {
+  return q<RecordRowMap["dispensers"]>(db, DISPENSER_FEED_SQL, limit, offset);
+}
+
+export function listDispenses(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["dispenses"][]> {
+  return q<RecordRowMap["dispenses"]>(db, DISPENSE_FEED_SQL, limit, offset);
 }
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even
