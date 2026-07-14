@@ -335,7 +335,7 @@ admin.post("/admin/crawl-emblem-sales", async (c) => {
 });
 
 // Recover post-April-2024 Emblem sales that getNFTSales stopped indexing: getAssetTransfers + Seaport decode
-// (emblem-transfers.ts). Loop until it cycles the contracts; INSERT OR IGNORE dedupes the getNFTSales overlap.
+// (emblem-transfers.ts). Loop until it cycles the contracts; canonical sale identity deduplicates overlap.
 admin.post("/admin/crawl-emblem-transfers", async (c) => {
   return c.json(await crawlEmblemTransfers(c.env));
 });

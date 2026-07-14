@@ -24,7 +24,6 @@ const oldDatabaseBudget = new Map([
   ["indexer/core-parity.ts", 3],
   ["indexer/core-projections.ts", 7],
   ["indexer/emblem-listings.ts", 8],
-  ["indexer/emblem-transfers.ts", 11],
   ["indexer/graph-eval.ts", 2],
   ["indexer/holder-cohesion.ts", 4],
   ["indexer/ledger-readiness.ts", 2],

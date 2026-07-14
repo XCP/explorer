@@ -75,8 +75,8 @@ export async function upsertEmblemSales(db: D1Database, rows: EmblemSaleRow[]): 
          (SELECT address_id FROM address_dictionary WHERE address=?),
          (SELECT address_id FROM address_dictionary WHERE address=?),?
        )
-       ON CONFLICT(tx_hash,log_index) DO UPDATE SET
-         contract_id=excluded.contract_id,token_id=excluded.token_id,price_raw=excluded.price_raw,
+       ON CONFLICT(tx_hash,log_index,contract_id,token_id) DO UPDATE SET
+         price_raw=excluded.price_raw,
          token_address_id=excluded.token_address_id,marketplace=excluded.marketplace,
          buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,block_number=excluded.block_number`,
           )

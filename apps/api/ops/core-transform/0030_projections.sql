@@ -251,8 +251,8 @@ LEFT JOIN address_dictionary t ON t.address=s.token_addr
 LEFT JOIN address_dictionary b ON b.address=s.buyer
 LEFT JOIN address_dictionary v ON v.address=s.seller
 WHERE true
-ON CONFLICT(tx_hash,log_index) DO UPDATE SET
-  contract_id=excluded.contract_id,token_id=excluded.token_id,price_raw=excluded.price_raw,
+ON CONFLICT(tx_hash,log_index,contract_id,token_id) DO UPDATE SET
+  price_raw=excluded.price_raw,
   token_address_id=excluded.token_address_id,marketplace=excluded.marketplace,
   buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,block_number=excluded.block_number;
 

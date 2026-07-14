@@ -71,7 +71,8 @@ function databases() {
     CREATE TABLE scarce_city_sales(asset_id INTEGER,sold_at INTEGER,price_btc REAL,PRIMARY KEY(asset_id,sold_at));
     CREATE TABLE emblem_sales(
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,token_address_id INTEGER,
-      marketplace TEXT,buyer_id INTEGER,seller_id INTEGER,block_number INTEGER,PRIMARY KEY(tx_hash,log_index)
+      marketplace TEXT,buyer_id INTEGER,seller_id INTEGER,block_number INTEGER,
+      PRIMARY KEY(tx_hash,log_index,contract_id,token_id)
     );
     CREATE TABLE emblem_vaults(
       token_id TEXT PRIMARY KEY,contract_id INTEGER,btc_address_id INTEGER,resolved INTEGER DEFAULT 0,first_seen INTEGER
@@ -153,6 +154,20 @@ test("compact Emblem sales preserve exact prices and converge provider correctio
       transactionHash: "0xabc",
       logIndex: 1,
       contract: "contract",
+      tokenId: "8",
+      priceRaw: "12",
+      tokenAddress: "eth",
+      marketplace: "corrected",
+      buyer: "buyer",
+      seller: null,
+      blockNumber: 100,
+    },
+  ]);
+  await upsertEmblemSales(d1(compact), [
+    {
+      transactionHash: "0xabc",
+      logIndex: 1,
+      contract: "contract",
       tokenId: "7",
       priceRaw: "12",
       tokenAddress: "eth",
@@ -163,28 +178,40 @@ test("compact Emblem sales preserve exact prices and converge provider correctio
     },
   ]);
   assert.deepEqual(
-    {
-      ...compact
-        .prepare(
-          `SELECT sale.price_raw,sale.marketplace,sale.block_number,contract.address contract,
+    compact
+      .prepare(
+        `SELECT sale.token_id,sale.price_raw,sale.marketplace,sale.block_number,contract.address contract,
             token.address token,buyer.address buyer,seller.address seller
        FROM emblem_sales sale
        JOIN address_dictionary contract ON contract.address_id=sale.contract_id
        JOIN address_dictionary token ON token.address_id=sale.token_address_id
        LEFT JOIN address_dictionary buyer ON buyer.address_id=sale.buyer_id
        LEFT JOIN address_dictionary seller ON seller.address_id=sale.seller_id`,
-        )
-        .get(),
-    },
-    {
-      price_raw: "12",
-      marketplace: "corrected",
-      block_number: 100,
-      contract: "contract",
-      token: "eth",
-      buyer: "buyer",
-      seller: null,
-    },
+      )
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      {
+        token_id: "7",
+        price_raw: "12",
+        marketplace: "corrected",
+        block_number: 100,
+        contract: "contract",
+        token: "eth",
+        buyer: "buyer",
+        seller: null,
+      },
+      {
+        token_id: "8",
+        price_raw: "12",
+        marketplace: "corrected",
+        block_number: 100,
+        contract: "contract",
+        token: "eth",
+        buyer: "buyer",
+        seller: null,
+      },
+    ],
   );
 });
 
