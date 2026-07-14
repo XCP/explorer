@@ -518,6 +518,33 @@ test("contract: GET /v2/radar - non-empty compact conviction rankings", async (t
   );
 });
 
+test("contract: GET /v2/reputation/asset-review - compact population distribution", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/reputation/asset-review")).result;
+  assertShape(
+    result.distribution,
+    { n: "number", mean: "number", max: "number", min: "number", top1pct: "number", top10pct: "number" },
+    "asset-review.distribution.",
+  );
+  assertRows(
+    result.top,
+    { asset: "string", asset_longname: "string|null", holders: "number", trades: "number", raw: "number" },
+    "asset-review.top",
+  );
+  assert.ok(result.distribution.n > 150_000, "asset review population is incomplete");
+  assert.equal(result.top[0].asset, "XCP", "top raw-quality asset changed");
+});
+
+test("contract: GET /v2/reputation/asset-validation - compact vaulted lift", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/reputation/asset-validation")).result;
+  const group = { n: "number", mean: "number", median: "number" };
+  assertShape(result.vaulted, group, "asset-validation.vaulted.");
+  assertShape(result.non_vaulted, group, "asset-validation.non_vaulted.");
+  assert.ok(result.vaulted.n > 4_000 && result.non_vaulted.n > 18_000, "validation cohorts are incomplete");
+  assert.ok(result.lift > 2 && result.median_gap > 20, "vaulted quality separation degraded");
+});
+
 test("contract: GET /v2/mempool — MempoolActionRow envelope (may be empty)", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/mempool");

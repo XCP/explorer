@@ -208,7 +208,14 @@ export function assetReviewDistribution(db: D1Database, expr: string): Promise<A
 export function assetReviewTop(db: D1Database, expr: string): Promise<AssetReviewTopRow[]> {
   return q<AssetReviewTopRow>(
     db,
-    `SELECT asset, asset_longname, holders, trades, ROUND((${expr}),2) raw FROM asset_signals ORDER BY (${expr}) DESC LIMIT 20`,
+    `WITH ranked AS (
+       SELECT signal.asset_id,signal.holders,signal.trades,(${expr}) raw
+       FROM asset_signals signal ORDER BY raw DESC LIMIT 20
+     )
+     SELECT dictionary.asset,state.asset_longname,ranked.holders,ranked.trades,ROUND(ranked.raw,2) raw
+     FROM ranked JOIN asset_dictionary dictionary ON dictionary.asset_id=ranked.asset_id
+     LEFT JOIN assets state ON state.asset_id=ranked.asset_id
+     ORDER BY ranked.raw DESC,dictionary.asset ASC`,
   );
 }
 
@@ -230,8 +237,13 @@ export function assetValidation(db: D1Database, expr: string): Promise<AssetVali
     db,
     `WITH m AS (
        SELECT (${expr}) raw,
-         CASE WHEN EXISTS (SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=s.asset AND t.tag='vaulted') THEN 1 ELSE 0 END v
-       FROM asset_signals s WHERE s.trades>0 OR s.dispenses>0
+         CASE WHEN EXISTS (
+           SELECT 1 FROM asset_dictionary dictionary
+           JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+           JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='vaulted'
+           WHERE dictionary.asset_id=signal.asset_id
+         ) THEN 1 ELSE 0 END v
+       FROM asset_signals signal WHERE signal.trades>0 OR signal.dispenses>0
      ),
      r AS (
        SELECT v, raw, ROW_NUMBER() OVER (PARTITION BY v ORDER BY raw) rn, COUNT(*) OVER (PARTITION BY v) cnt FROM m

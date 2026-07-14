@@ -257,8 +257,8 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
 // distribution + top/bottom for face-validity after a weight change.
 assets.get("/v2/reputation/asset-review", async (c) => {
   const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-  const dist = await assetReviewDistribution(c.env.DB, expr).catch(() => null);
-  const top = await assetReviewTop(c.env.DB, expr).catch(() => []);
+  const dist = await assetReviewDistribution(c.env.CORE_DB, expr);
+  const top = await assetReviewTop(c.env.CORE_DB, expr);
   return J(c, { result: { distribution: dist, top } }, 60);
 });
 
@@ -267,9 +267,9 @@ assets.get("/v2/reputation/asset-review", async (c) => {
 // stable across weight changes — a collapse means a re-dial broke the "quality" signal. Same raw expr as
 // /v2/reputation/asset-review (rawSqlExpr − the flat low_quality penalty).
 assets.get("/v2/reputation/asset-validation", async (c) => {
-  return cached(c, "asset-validation", { ttl: 600 }, async () => {
+  return cached(c, "asset-validation:quality", { ttl: 600 }, async () => {
     const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    const rows = await assetValidation(c.env.DB, expr).catch(() => []);
+    const rows = await assetValidation(c.env.CORE_DB, expr);
     const grp = (v: 0 | 1) => rows.find((r) => r.v === v) ?? { v, n: 0, mean: 0, median: 0 };
     const vaulted = grp(1),
       non_vaulted = grp(0);
