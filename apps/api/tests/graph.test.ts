@@ -22,6 +22,10 @@ import {
   NODE_INSERTS,
   RANK_INIT,
   SEED_APPLY,
+  entityPassStatements,
+  entityNodeStatements,
+  entityRankInitStatements,
+  entitySeedApplyStatement,
   K,
   DISTRUST_SLOT,
   PASSES,
@@ -261,4 +265,49 @@ test("finalizeStatements target the signals tables and carry no bind placeholder
   const sql = finalizeStatements().join("\n");
   assert(!sql.includes("?"), "finalize SQL must contain no '?' placeholders");
   assert(sql.includes("address_signals") && sql.includes("asset_signals"), "writes both signals tables");
+});
+
+test("normalized entity graph preserves Min-k sybil resistance within one generation", () => {
+  const generation = 7;
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,
+      weight REAL,edge_block INTEGER,PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
+    CREATE TABLE graph_node(generation INTEGER,entity_id INTEGER,outsum REAL DEFAULT 0,insum REAL DEFAULT 0,
+      PRIMARY KEY(generation,entity_id)) WITHOUT ROWID;
+    CREATE TABLE graph_rank(generation INTEGER,entity_id INTEGER,slot INTEGER,score REAL DEFAULT 0,
+      rank REAL DEFAULT 0,normalized_rank REAL DEFAULT 0,PRIMARY KEY(generation,entity_id,slot)) WITHOUT ROWID;
+    CREATE TABLE graph_seed(generation INTEGER,entity_id INTEGER,slot INTEGER,score REAL,
+      PRIMARY KEY(generation,entity_id,slot)) WITHOUT ROWID;
+    CREATE TABLE graph_inflow(generation INTEGER,entity_id INTEGER,value REAL,
+      PRIMARY KEY(generation,entity_id)) WITHOUT ROWID;
+  `);
+  const names = [nameForSubset(0), nameForSubset(1), nameForSubset(2), "T1", "T2", "A0", "P1"];
+  const id = new Map(names.map((name, index) => [name, index + 1]));
+  const edge = db.prepare(
+    `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight) VALUES(?,?,?,1)`,
+  );
+  const put = (source: string, destination: string) => edge.run(generation, id.get(source), id.get(destination));
+  for (const seed of names.slice(0, 3)) put(seed, "T1");
+  put("T1", "T2");
+  put("T2", "T1");
+  put(names[0], "A0");
+  put("P1", "A0");
+  for (const sql of entityNodeStatements(generation)) db.exec(sql);
+  for (const sql of entityRankInitStatements(generation)) db.exec(sql);
+  const insertSeed = db.prepare(`INSERT INTO graph_seed(generation,entity_id,slot,score) VALUES(?,?,?,?)`);
+  for (const seed of names.slice(0, 3)) insertSeed.run(generation, id.get(seed), seedSubset(seed), 1);
+  db.exec(entitySeedApplyStatement(generation));
+  for (let pass = 0; pass < PASSES; pass++)
+    for (let slot = 0; slot < K; slot++) for (const sql of entityPassStatements(generation, slot, false)) db.exec(sql);
+  const trust = (name: string) =>
+    Number(
+      db
+        .prepare(`SELECT MIN(rank) value FROM graph_rank WHERE generation=? AND entity_id=? AND slot<?`)
+        .get(generation, id.get(name), K)?.value ?? 0,
+    );
+  assert.ok(trust("T2") > 0, "held-out connected node is reached from every seed subset");
+  assert.equal(trust("A0"), 0, "single-subset attacker still receives zero Min-k trust");
+  assert.equal(trust("P1"), 0, "unseeded petal receives zero trust");
+  db.close();
 });

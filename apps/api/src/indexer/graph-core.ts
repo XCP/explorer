@@ -299,3 +299,145 @@ export const RANK_INIT: string[] = Array.from(
 // join the computed teleport vectors into graph_rank and START the iteration from the teleport (r = s).
 export const SEED_APPLY = `UPDATE graph_rank AS g SET s = sd.s, r = sd.s
   FROM graph_seed sd WHERE g.node = sd.node AND g.slot = sd.slot`;
+
+// ---- normalized entity graph ---------------------------------------------------------------
+// The compact graph stores both addresses and assets as entity_dictionary rows and builds a new generation
+// beside the live one. These builders are the final storage form; the text-node SQL above remains only until
+// the source-DB graph reader is cut over after the first compact generation is verified.
+const ENTITY_CHUNK = 50_000;
+const ENTITY_MAX = 1_000_000;
+const entityWindows: Array<[number, number]> = [];
+for (let lo = 0; lo < ENTITY_MAX; lo += ENTITY_CHUNK) entityWindows.push([lo, lo + ENTITY_CHUNK]);
+
+export function entityPassStatements(generation: number, slot: number, reverse: boolean, alpha = ALPHA): string[] {
+  const tele = 1 - alpha;
+  const chunks = entityWindows.map(([lo, hi]) =>
+    reverse
+      ? `INSERT INTO graph_inflow(generation,entity_id,value)
+         SELECT ${generation},edge.source_entity_id,
+                SUM(edge.weight/node.insum*rank.rank)
+         FROM graph_edges edge
+         JOIN graph_node node ON node.generation=${generation}
+           AND node.entity_id=edge.destination_entity_id
+         JOIN graph_rank rank ON rank.generation=${generation}
+           AND rank.entity_id=edge.destination_entity_id AND rank.slot=${slot}
+         WHERE edge.generation=${generation}
+           AND edge.destination_entity_id>${lo} AND edge.destination_entity_id<=${hi}
+           AND node.insum>0 AND rank.rank<>0
+         GROUP BY edge.source_entity_id
+         ON CONFLICT(generation,entity_id) DO UPDATE SET value=graph_inflow.value+excluded.value`
+      : `INSERT INTO graph_inflow(generation,entity_id,value)
+         SELECT ${generation},edge.destination_entity_id,
+                SUM(edge.weight/node.outsum*rank.rank)
+         FROM graph_edges edge
+         JOIN graph_node node ON node.generation=${generation}
+           AND node.entity_id=edge.source_entity_id
+         JOIN graph_rank rank ON rank.generation=${generation}
+           AND rank.entity_id=edge.source_entity_id AND rank.slot=${slot}
+         WHERE edge.generation=${generation}
+           AND edge.source_entity_id>${lo} AND edge.source_entity_id<=${hi}
+           AND node.outsum>0 AND rank.rank<>0
+         GROUP BY edge.destination_entity_id
+         ON CONFLICT(generation,entity_id) DO UPDATE SET value=graph_inflow.value+excluded.value`,
+  );
+  return [
+    `UPDATE graph_rank SET normalized_rank=${tele}*score WHERE generation=${generation} AND slot=${slot}`,
+    `DELETE FROM graph_inflow WHERE generation=${generation}`,
+    ...chunks,
+    `UPDATE graph_rank AS rank SET normalized_rank=rank.normalized_rank+${alpha}*inflow.value
+     FROM graph_inflow inflow WHERE rank.generation=${generation} AND rank.slot=${slot}
+       AND inflow.generation=${generation} AND inflow.entity_id=rank.entity_id`,
+    `UPDATE graph_rank SET rank=normalized_rank WHERE generation=${generation} AND slot=${slot}`,
+  ];
+}
+
+export function entityNodeStatements(generation: number): string[] {
+  return [
+    `INSERT INTO graph_node(generation,entity_id,outsum)
+     SELECT ${generation},source_entity_id,SUM(weight) FROM graph_edges
+     WHERE generation=${generation} GROUP BY source_entity_id
+     ON CONFLICT(generation,entity_id) DO UPDATE SET outsum=excluded.outsum`,
+    `INSERT INTO graph_node(generation,entity_id,insum)
+     SELECT ${generation},destination_entity_id,SUM(weight) FROM graph_edges
+     WHERE generation=${generation} GROUP BY destination_entity_id
+     ON CONFLICT(generation,entity_id) DO UPDATE SET insum=excluded.insum`,
+  ];
+}
+
+export function entityRankInitStatements(generation: number): string[] {
+  return Array.from(
+    { length: K + 1 },
+    (_, slot) =>
+      `INSERT INTO graph_rank(generation,entity_id,slot,score,rank,normalized_rank)
+       SELECT ${generation},entity_id,${slot},0,0,0 FROM graph_node WHERE generation=${generation}
+       ON CONFLICT(generation,entity_id,slot) DO NOTHING`,
+  );
+}
+
+export function entitySeedApplyStatement(generation: number): string {
+  return `UPDATE graph_rank AS rank SET score=seed.score,rank=seed.score
+          FROM graph_seed seed WHERE rank.generation=${generation} AND seed.generation=${generation}
+            AND rank.entity_id=seed.entity_id AND rank.slot=seed.slot`;
+}
+
+export function entityFinalizeStatements(generation: number): string[] {
+  const trustSlots = Array.from({ length: K }, (_, index) => index).join(",");
+  const cuts: Array<[string, string, string, number]> = [
+    ["graph_cut_addr_trust", "address_signals", "graph_trust", 0.9],
+    ["graph_cut_addr_distrust", "address_signals", "graph_distrust", 0.98],
+    ["graph_cut_asset_trust", "asset_signals", "graph_trust", 0.9],
+    ["graph_cut_asset_distrust", "asset_signals", "graph_distrust", 0.98],
+  ];
+  return [
+    `UPDATE address_signals SET graph_trust=0,graph_distrust=0`,
+    `UPDATE address_signals AS signal SET graph_trust=score.value FROM (
+       SELECT address.address_id,MIN(rank.rank) value FROM graph_rank rank
+       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id AND entity.entity_type='address'
+       JOIN address_dictionary address ON address.address=entity.entity_key
+       WHERE rank.generation=${generation} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id
+     ) score WHERE score.address_id=signal.address_id`,
+    `UPDATE address_signals AS signal SET graph_distrust=score.value FROM (
+       SELECT address.address_id,rank.rank value FROM graph_rank rank
+       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id AND entity.entity_type='address'
+       JOIN address_dictionary address ON address.address=entity.entity_key
+       WHERE rank.generation=${generation} AND rank.slot=${DISTRUST_SLOT}
+     ) score WHERE score.address_id=signal.address_id`,
+    `UPDATE asset_signals SET graph_trust=0,graph_distrust=0`,
+    `UPDATE asset_signals AS signal SET graph_trust=score.value FROM (
+       SELECT asset.asset_id,MIN(rank.rank) value FROM graph_rank rank
+       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id AND entity.entity_type='asset'
+       JOIN asset_dictionary asset ON asset.asset=entity.entity_key
+       WHERE rank.generation=${generation} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id
+     ) score WHERE score.asset_id=signal.asset_id`,
+    `UPDATE asset_signals AS signal SET graph_distrust=score.value FROM (
+       SELECT asset.asset_id,rank.rank value FROM graph_rank rank
+       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id AND entity.entity_type='asset'
+       JOIN asset_dictionary asset ON asset.asset=entity.entity_key
+       WHERE rank.generation=${generation} AND rank.slot=${DISTRUST_SLOT}
+     ) score WHERE score.asset_id=signal.asset_id`,
+    `UPDATE address_signals AS signal SET graph_trust=score.value FROM (
+       SELECT address.address_id,MAX(rank.rank) value FROM graph_rank rank
+       JOIN graph_seed seed ON seed.generation=${generation} AND seed.entity_id=rank.entity_id AND seed.slot<${K}
+       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id AND entity.entity_type='address'
+       JOIN address_dictionary address ON address.address=entity.entity_key
+       WHERE rank.generation=${generation} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id
+     ) score WHERE score.address_id=signal.address_id`,
+    `UPDATE asset_signals AS signal SET graph_trust=score.value FROM (
+       SELECT asset.asset_id,MAX(rank.rank) value FROM graph_rank rank
+       JOIN graph_seed seed ON seed.generation=${generation} AND seed.entity_id=rank.entity_id AND seed.slot<${K}
+       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id AND entity.entity_type='asset'
+       JOIN asset_dictionary asset ON asset.asset=entity.entity_key
+       WHERE rank.generation=${generation} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id
+     ) score WHERE score.asset_id=signal.asset_id`,
+    `UPDATE asset_signals SET graph_trust=0 WHERE low_quality=1`,
+    ...cuts.map(
+      ([key, table, column, percentile]) =>
+        `INSERT INTO core_state(key,value) VALUES('${key}',COALESCE((
+           SELECT CAST(${column} AS TEXT) FROM ${table} WHERE ${column}>0 ORDER BY ${column}
+           LIMIT 1 OFFSET (SELECT CAST(COUNT(*)*${percentile} AS INT) FROM ${table} WHERE ${column}>0)
+         ),'0')) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ),
+    `INSERT INTO core_state(key,value) VALUES('graph_generation','${generation}')
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+  ];
+}
