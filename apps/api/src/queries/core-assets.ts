@@ -50,7 +50,13 @@ export function listCoreAssets(db: D1Database, filter: CoreAssetListFilter): Pro
     const direction = filter.dir === "asc" ? "ASC" : "DESC";
     return q<AssetIndexRow>(
       db,
-      `${SELECT} ORDER BY ${sort} ${direction},dictionary.asset ASC LIMIT ? OFFSET ?`,
+      `WITH page AS MATERIALIZED (
+         SELECT assets.asset_id FROM assets
+         JOIN asset_dictionary dictionary ON dictionary.asset_id=assets.asset_id
+         ORDER BY ${sort} ${direction},dictionary.asset ASC LIMIT ? OFFSET ?
+       )
+       ${SELECT} WHERE assets.asset_id IN (SELECT asset_id FROM page)
+       ORDER BY ${sort} ${direction},dictionary.asset ASC`,
       filter.limit,
       filter.offset,
     );
