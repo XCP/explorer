@@ -257,6 +257,24 @@ test("one balance table sums address and UTXO holders without a union", () => {
   );
 });
 
+test("asset accounting seeks address-held balances by asset", () => {
+  const plan = fixture()
+    .prepare(
+      `EXPLAIN QUERY PLAN SELECT SUM(CAST(balance.quantity AS INTEGER))
+         FROM balances balance JOIN address_signals signal ON signal.address_id=balance.address_id
+        WHERE balance.asset_id=? AND signal.is_burn=1`,
+    )
+    .all(3) as { detail: string }[];
+  assert.equal(
+    plan.some((row) => row.detail.includes("idx_balances_asset_address")),
+    true,
+  );
+  assert.equal(
+    plan.some((row) => row.detail.includes("SCAN balance")),
+    false,
+  );
+});
+
 test("orders and matches use source transaction identities and reconstruct public match ids", () => {
   const db = fixture();
   const h0 = new Uint8Array(32).fill(0x11),
