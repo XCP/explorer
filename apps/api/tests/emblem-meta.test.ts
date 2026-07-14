@@ -8,15 +8,17 @@ test("Emblem metadata resolves claims through compact asset identity", () => {
   db.exec(`
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE emblem_vaults(
-      token_id TEXT PRIMARY KEY,claimed_name TEXT,claimed_asset_id INTEGER,content_coins TEXT,
-      has_contents INTEGER,emblem_fraud INTEGER,meta_crawled INTEGER DEFAULT 0);
+      contract_id INTEGER,token_id TEXT,claimed_name TEXT,claimed_asset_id INTEGER,content_coins TEXT,
+      has_contents INTEGER,emblem_fraud INTEGER,meta_crawled INTEGER DEFAULT 0,
+      PRIMARY KEY(contract_id,token_id));
     INSERT INTO asset_dictionary VALUES(7,'RAREPEPE');
-    INSERT INTO emblem_vaults(token_id) VALUES('1');
+    INSERT INTO emblem_vaults(contract_id,token_id) VALUES(9,'1');
   `);
-  db.prepare(EMBLEM_META_UPDATE_SQL).run("RAREPEPE", "RAREPEPE", "btc", 1, 0, "1");
+  db.prepare(EMBLEM_META_UPDATE_SQL).run("RAREPEPE", "RAREPEPE", "btc", 1, 0, 9, "1");
   assert.deepEqual(
     { ...db.prepare(`SELECT * FROM emblem_vaults`).get() },
     {
+      contract_id: 9,
       token_id: "1",
       claimed_name: "RAREPEPE",
       claimed_asset_id: 7,

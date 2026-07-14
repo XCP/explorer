@@ -17,11 +17,7 @@ import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
 import { fetchEtherscanMintLogs } from "#api/integrations/etherscan-logs";
 import { fetchEmblemCuratedCollections } from "#api/integrations/emblem-curated";
 import { fetchEmblemMetadata } from "#api/integrations/emblem-metadata";
-import {
-  getCoreState,
-  getCoreStateStringArray,
-  setCoreState,
-} from "#api/indexer/core-state";
+import { getCoreState, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
 
 const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
 const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
@@ -30,7 +26,6 @@ const ETHERSCAN_PAGE = 1000;
 const RESOLVE_PER_STEP = 200;
 const META_CONCURRENCY = 16;
 const STATS_REFRESH_SECONDS = 24 * 60 * 60;
-
 
 const hexToDec = (hex: string) => BigInt(hex).toString();
 const pickBtc = (addrs: unknown): string | null => {
@@ -123,7 +118,7 @@ async function resolveBtc(tokenId: string): Promise<{ ok: boolean; btc: string |
 
 export interface EmblemVaultIdentity {
   tokenId: string;
-  contract: string | null;
+  contract: string;
   btcAddress: string | null;
   resolved: number;
   firstSeen: number | null;
@@ -136,23 +131,24 @@ export async function upsertEmblemVaultIdentities(db: D1Database, rows: EmblemVa
   ];
   for (let index = 0; index < addresses.length; index += 80)
     await db.batch(
-      addresses.slice(index, index + 80).map((address) =>
-        db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address),
-      ),
+      addresses
+        .slice(index, index + 80)
+        .map((address) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address)),
     );
   for (let index = 0; index < rows.length; index += 80)
     await db.batch(
       rows.slice(index, index + 80).map((row) =>
-        db.prepare(
-          `INSERT INTO emblem_vaults(token_id,contract_id,btc_address_id,resolved,first_seen)
-           VALUES(?,(SELECT address_id FROM address_dictionary WHERE address=?),
+        db
+          .prepare(
+            `INSERT INTO emblem_vaults(contract_id,token_id,btc_address_id,resolved,first_seen)
+           VALUES((SELECT address_id FROM address_dictionary WHERE address=?),?,
              (SELECT address_id FROM address_dictionary WHERE address=?),?,?)
-           ON CONFLICT(token_id) DO UPDATE SET
-             contract_id=COALESCE(excluded.contract_id,emblem_vaults.contract_id),
+           ON CONFLICT(contract_id,token_id) DO UPDATE SET
              btc_address_id=COALESCE(excluded.btc_address_id,emblem_vaults.btc_address_id),
              resolved=MAX(emblem_vaults.resolved,excluded.resolved),
              first_seen=COALESCE(emblem_vaults.first_seen,excluded.first_seen)`,
-        ).bind(row.tokenId, row.contract, row.btcAddress, row.resolved, row.firstSeen),
+          )
+          .bind(row.contract, row.tokenId, row.btcAddress, row.resolved, row.firstSeen),
       ),
     );
 }
@@ -232,19 +228,25 @@ export async function crawlEmblemStep(env: Env): Promise<Record<string, unknown>
 
   // ---- RESOLVE leftovers (Etherscan-fallback rows or any unresolved) via /meta ----
   const rows = (
-    await env.CORE_DB.prepare(`SELECT token_id FROM emblem_vaults WHERE resolved=0 LIMIT ?`)
+    await env.CORE_DB.prepare(
+      `SELECT vault.token_id,contract.address contract FROM emblem_vaults vault
+       JOIN address_dictionary contract ON contract.address_id=vault.contract_id
+       WHERE vault.resolved=0 LIMIT ?`,
+    )
       .bind(RESOLVE_PER_STEP)
-      .all<{ token_id: string }>()
+      .all<{ token_id: string; contract: string }>()
   ).results;
   let resolved = 0;
   for (let i = 0; i < rows.length; i += META_CONCURRENCY) {
     const slice = rows.slice(i, i + META_CONCURRENCY);
-    const res = await Promise.all(slice.map(async (r) => ({ id: r.token_id, ...(await resolveBtc(r.token_id)) })));
+    const res = await Promise.all(
+      slice.map(async (r) => ({ id: r.token_id, contract: r.contract, ...(await resolveBtc(r.token_id)) })),
+    );
     const done = res.filter((r) => r.ok);
     if (done.length) {
       await upsertEmblemVaultIdentities(
         env.CORE_DB,
-        done.map((r) => ({ tokenId: r.id, contract: null, btcAddress: r.btc, resolved: 1, firstSeen: null })),
+        done.map((r) => ({ tokenId: r.id, contract: r.contract, btcAddress: r.btc, resolved: 1, firstSeen: null })),
       );
     }
     resolved += done.length;

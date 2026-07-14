@@ -19,7 +19,7 @@ const PER_RUN = 80; // vaults per step (bounded under the Worker subrequest/CPU 
 const CONCURRENCY = 5;
 export const EMBLEM_META_UPDATE_SQL = `UPDATE emblem_vaults SET claimed_name=?,
   claimed_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?),
-  content_coins=?,has_contents=?,emblem_fraud=?,meta_crawled=1 WHERE token_id=?`;
+  content_coins=?,has_contents=?,emblem_fraud=?,meta_crawled=1 WHERE contract_id=? AND token_id=?`;
 
 /** The card a vault CLAIMS: the leading alphanumeric token of its name, uppercased. Emblem CP vaults lead
  *  with the ticker ("PEPECASH | Series 1 #78" → PEPECASH; "PepeonMusk" → PEPEONMUSK). Resolved against the
@@ -31,12 +31,13 @@ function claimedName(name: string | undefined): string | null {
 
 interface Parsed {
   id: string;
+  contractId: number;
   claimed: string | null;
   coins: string | null;
   has: number;
   fraud: number;
 }
-async function fetchMeta(id: string): Promise<Parsed | null> {
+async function fetchMeta(id: string, contractId: number): Promise<Parsed | null> {
   try {
     const j = await fetchEmblemMetadata(id);
     const vals = Array.isArray(j.values) ? j.values : [];
@@ -50,6 +51,7 @@ async function fetchMeta(id: string): Promise<Parsed | null> {
     ];
     return {
       id,
+      contractId,
       claimed: claimedName(j.name),
       coins: coins.join(",") || null,
       has: coins.length ? 1 : 0,
@@ -65,10 +67,11 @@ export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>
   const rows =
     (
       await env.CORE_DB.prepare(
-        `SELECT token_id FROM emblem_vaults WHERE vault_kind='foreign' AND meta_crawled=0 ORDER BY token_id LIMIT ?`,
+        `SELECT contract_id,token_id FROM emblem_vaults
+         WHERE vault_kind='foreign' AND meta_crawled=0 ORDER BY contract_id,token_id LIMIT ?`,
       )
         .bind(PER_RUN)
-        .all<{ token_id: string }>()
+        .all<{ contract_id: number; token_id: string }>()
     ).results || [];
 
   const out: Record<string, unknown> = { fetched: rows.length, claims_cp: 0, has_contents: 0, fraud: 0 };
@@ -80,7 +83,7 @@ export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>
   const parsed: Parsed[] = [];
   let failed = 0;
   for (let i = 0; i < rows.length; i += CONCURRENCY) {
-    const results = await Promise.all(rows.slice(i, i + CONCURRENCY).map((r) => fetchMeta(r.token_id)));
+    const results = await Promise.all(rows.slice(i, i + CONCURRENCY).map((r) => fetchMeta(r.token_id, r.contract_id)));
     for (const result of results) {
       if (result) parsed.push(result);
       else failed++;
@@ -101,6 +104,7 @@ export async function crawlEmblemMeta(env: Env): Promise<Record<string, unknown>
       p.coins,
       p.has,
       p.fraud,
+      p.contractId,
       p.id,
     );
   });

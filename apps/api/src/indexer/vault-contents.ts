@@ -26,6 +26,7 @@ const BATCH = 400; // vaults per step; aggregates join sends/balances on a vault
 
 interface VaultRow {
   rowid: number;
+  contract_id: number;
   token_id: string;
   btc_address_id: number;
   btc_address: string;
@@ -50,7 +51,7 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
   const rows =
     (
       await env.CORE_DB.prepare(
-        `SELECT vault.rowid,vault.token_id,vault.btc_address_id,address.address btc_address
+        `SELECT vault.rowid,vault.contract_id,vault.token_id,vault.btc_address_id,address.address btc_address
          FROM emblem_vaults vault JOIN address_dictionary address ON address.address_id=vault.btc_address_id
          WHERE vault.rowid>? ORDER BY vault.rowid LIMIT ?`,
       )
@@ -213,8 +214,17 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
       `UPDATE emblem_vaults SET
          contents_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?),contents_qty=?,vault_kind=?,
          funded=?,cracked_at=?,cracker_address_id=(SELECT address_id FROM address_dictionary WHERE address=?),
-         classified=1 WHERE token_id=?`,
-    ).bind(c.contents_asset, c.contents_qty, c.vault_kind, c.funded, c.cracked_at, c.cracker_address, r.token_id);
+         classified=1 WHERE contract_id=? AND token_id=?`,
+    ).bind(
+      c.contents_asset,
+      c.contents_qty,
+      c.vault_kind,
+      c.funded,
+      c.cracked_at,
+      c.cracker_address,
+      r.contract_id,
+      r.token_id,
+    );
   });
   for (let i = 0; i < stmts.length; i += 50) await env.CORE_DB.batch(stmts.slice(i, i + 50));
   out.classified = stmts.length;

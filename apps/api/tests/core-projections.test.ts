@@ -75,7 +75,8 @@ function databases() {
       PRIMARY KEY(tx_hash,log_index,contract_id,token_id)
     );
     CREATE TABLE emblem_vaults(
-      token_id TEXT PRIMARY KEY,contract_id INTEGER,btc_address_id INTEGER,resolved INTEGER DEFAULT 0,first_seen INTEGER
+      contract_id INTEGER,token_id TEXT,btc_address_id INTEGER,resolved INTEGER DEFAULT 0,first_seen INTEGER,
+      PRIMARY KEY(contract_id,token_id)
     );
     CREATE TABLE emblem_listings(
       generation INTEGER NOT NULL,contract_id INTEGER NOT NULL,token_id TEXT NOT NULL,asset_id INTEGER,
@@ -107,22 +108,25 @@ test("compact Emblem identity writes converge without erasing resolved fields", 
     { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 100 },
   ]);
   await upsertEmblemVaultIdentities(d1(compact), [
-    { tokenId: "7", contract: null, btcAddress: "btc", resolved: 1, firstSeen: null },
+    { tokenId: "7", contract: "contract", btcAddress: "btc", resolved: 1, firstSeen: null },
   ]);
   await upsertEmblemVaultIdentities(d1(compact), [
     { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 200 },
+    { tokenId: "7", contract: "other-contract", btcAddress: "other-btc", resolved: 1, firstSeen: 300 },
   ]);
   assert.deepEqual(
-    {
-      ...compact
-        .prepare(
-          `SELECT vault.token_id,contract.address contract,btc.address btc_address,vault.resolved,vault.first_seen
+    compact
+      .prepare(
+        `SELECT vault.token_id,contract.address contract,btc.address btc_address,vault.resolved,vault.first_seen
        FROM emblem_vaults vault LEFT JOIN address_dictionary contract ON contract.address_id=vault.contract_id
-       LEFT JOIN address_dictionary btc ON btc.address_id=vault.btc_address_id`,
-        )
-        .get(),
-    },
-    { token_id: "7", contract: "contract", btc_address: "btc", resolved: 1, first_seen: 100 },
+       LEFT JOIN address_dictionary btc ON btc.address_id=vault.btc_address_id ORDER BY contract.address`,
+      )
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      { token_id: "7", contract: "contract", btc_address: "btc", resolved: 1, first_seen: 100 },
+      { token_id: "7", contract: "other-contract", btc_address: "other-btc", resolved: 1, first_seen: 300 },
+    ],
   );
 });
 

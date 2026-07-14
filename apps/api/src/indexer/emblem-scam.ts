@@ -17,7 +17,7 @@ WHERE vault.is_scam_shell IS NOT CASE WHEN
   THEN 1 ELSE 0 END`;
 
 export const REFRESH_SCAM_SELLERS_SQL = `INSERT INTO emblem_scam_sellers(seller_id,scams)
-  SELECT sale.seller_id,COUNT(DISTINCT vault.token_id)
+  SELECT sale.seller_id,COUNT(DISTINCT vault.contract_id || ':' || vault.token_id)
   FROM emblem_sales sale JOIN emblem_vaults vault
     ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
   WHERE vault.is_scam_shell=1 AND sale.seller_id IS NOT NULL GROUP BY sale.seller_id
@@ -72,7 +72,7 @@ WHERE vault.is_dump IS NOT CASE WHEN
   THEN 1 ELSE 0 END`;
 
 const DUMP_CTE = `WITH attribution AS (
-    SELECT send.source_address_id address_id,COUNT(DISTINCT vault.token_id) scams
+    SELECT send.source_address_id address_id,COUNT(DISTINCT vault.contract_id || ':' || vault.token_id) scams
     FROM emblem_vaults vault JOIN sends send
       ON send.destination_address_id=vault.btc_address_id AND send.asset_id=vault.contents_asset_id
     JOIN asset_dictionary asset ON asset.asset_id=send.asset_id AND asset.asset<>'XCP'

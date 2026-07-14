@@ -223,14 +223,14 @@ SELECT s.token_id,c.address_id,b.address_id,s.resolved,s.first_seen,a.asset_id,s
   s.vault_kind,s.funded,s.cracked_at,r.address_id,s.classified,s.claimed_name,q.asset_id,
   s.content_coins,s.has_contents,s.emblem_fraud,s.meta_crawled,s.is_scam_shell,s.is_dump
 FROM source.emblem_vaults s
-LEFT JOIN address_dictionary c ON c.address=s.contract
+JOIN address_dictionary c ON c.address=s.contract
 LEFT JOIN address_dictionary b ON b.address=s.btc_address
 LEFT JOIN asset_dictionary a ON a.asset=s.contents_asset
 LEFT JOIN address_dictionary r ON r.address=s.cracker_address
 LEFT JOIN asset_dictionary q ON q.asset=s.claimed_asset
 WHERE true
-ON CONFLICT(token_id) DO UPDATE SET
-  contract_id=excluded.contract_id,btc_address_id=excluded.btc_address_id,resolved=excluded.resolved,
+ON CONFLICT(contract_id,token_id) DO UPDATE SET
+  btc_address_id=excluded.btc_address_id,resolved=excluded.resolved,
   first_seen=excluded.first_seen,contents_asset_id=excluded.contents_asset_id,
   contents_qty=excluded.contents_qty,vault_kind=excluded.vault_kind,funded=excluded.funded,
   cracked_at=excluded.cracked_at,cracker_address_id=excluded.cracker_address_id,

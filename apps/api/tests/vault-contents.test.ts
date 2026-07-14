@@ -5,7 +5,10 @@ import { classifyVaults } from "#api/indexer/vault-contents";
 
 class Statement {
   private args: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...args: unknown[]) {
     this.args = args;
     return this;
@@ -35,18 +38,18 @@ test("vault classification derives compact identities, contents, and crack recip
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE emblem_vaults(
-      token_id TEXT PRIMARY KEY,btc_address_id INTEGER,contents_asset_id INTEGER,contents_qty REAL,
+      contract_id INTEGER,token_id TEXT,btc_address_id INTEGER,contents_asset_id INTEGER,contents_qty REAL,
       vault_kind TEXT,funded INTEGER DEFAULT 0,cracked_at INTEGER,cracker_address_id INTEGER,
-      classified INTEGER DEFAULT 0);
+      classified INTEGER DEFAULT 0,PRIMARY KEY(contract_id,token_id));
     CREATE TABLE sends(
       event_index INTEGER,source_address_id INTEGER,destination_address_id INTEGER,asset_id INTEGER,
       quantity TEXT,quantity_normalized TEXT,block_time INTEGER);
     CREATE TABLE balances(address_id INTEGER,asset_id INTEGER,quantity TEXT,quantity_normalized TEXT);
     CREATE TABLE sweeps(source_id INTEGER,destination_id INTEGER,block_time INTEGER);
     INSERT INTO address_dictionary VALUES
-      (10,'vault-single'),(11,'vault-multi'),(12,'vault-foreign'),(20,'funder'),(30,'cracker');
+      (10,'vault-single'),(11,'vault-multi'),(12,'vault-foreign'),(20,'funder'),(30,'cracker'),(40,'contract');
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CARD'),(3,'OTHER');
-    INSERT INTO emblem_vaults(token_id,btc_address_id) VALUES('1',10),('2',11),('3',12);
+    INSERT INTO emblem_vaults(contract_id,token_id,btc_address_id) VALUES(40,'1',10),(40,'2',11),(40,'3',12);
     INSERT INTO sends VALUES
       (1,20,10,2,'200000000','2',100),
       (2,10,30,2,'200000000','2',200),
