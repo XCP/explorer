@@ -22,16 +22,18 @@ export type TagStatsBase = Omit<TagStatsRow, "median_score" | "median_tier" | "c
 // collection's meta ({collection, site}) — so a tag reads as a COMMUNITY, not just a bag of cards.
 const AGG = (expr: string, convExpr: string, whereTag: boolean) => `
   WITH mem AS (
-    SELECT t.tag, t.entity_type, t.entity_id, MIN(t.source) source, MIN(t.meta) meta
-    FROM tags t ${whereTag ? "WHERE t.tag=?" : ""}
-    GROUP BY t.tag, t.entity_type, t.entity_id
+    SELECT t.tag, e.entity_type, e.entity_key, t.entity_id, t.source, t.meta
+    FROM tags t JOIN entity_dictionary e ON e.entity_id=t.entity_id
+    ${whereTag ? "WHERE t.tag=?" : ""}
   ),
   asset_mem AS (
     SELECT m.tag, (${expr}) raw,
       (CASE WHEN s.low_quality=1 THEN 0 ELSE (${convExpr}) END) conv,
       s.avg_holder_dex holder_dex, s.pct_creator_holders creator_pct,
       s.low_quality, s.max_realized_usd, s.holders
-    FROM mem m JOIN asset_signals s ON m.entity_type='asset' AND s.asset=m.entity_id
+    FROM mem m
+    JOIN asset_dictionary d ON m.entity_type='asset' AND d.asset=m.entity_key
+    JOIN asset_signals s ON s.asset_id=d.asset_id
   ),
   ranked AS (
     SELECT tag, raw, ROW_NUMBER() OVER (PARTITION BY tag ORDER BY raw) rn, COUNT(*) OVER (PARTITION BY tag) cnt
@@ -81,12 +83,16 @@ export function listTagAssetMembers(
 ): Promise<TagMemberQueryRow[]> {
   return q<TagMemberQueryRow>(
     db,
-    `SELECT s.asset, s.asset_longname, s.holders,
+    `SELECT d.asset, a.asset_longname, s.holders,
             (COALESCE(s.distinct_traders,0)+COALESCE(s.distinct_dispense_buyers,0)) buyers,
             ROUND(COALESCE(s.max_realized_usd,0), 2) max_realized_usd, ROUND((${expr}), 2) raw,
             s.trades, s.dispenses, COALESCE(s.low_quality,0) low_quality
-     FROM tags t JOIN asset_signals s ON t.entity_type='asset' AND s.asset=t.entity_id
-     WHERE t.tag=? ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
+     FROM tags t
+     JOIN entity_dictionary e ON e.entity_id=t.entity_id AND e.entity_type='asset'
+     JOIN asset_dictionary d ON d.asset=e.entity_key
+     JOIN assets a ON a.asset_id=d.asset_id
+     JOIN asset_signals s ON s.asset_id=d.asset_id
+     WHERE t.tag=? ORDER BY (${expr}) DESC, d.asset LIMIT ? OFFSET ?`,
     tag,
     limit,
     offset,

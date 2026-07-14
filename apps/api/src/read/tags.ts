@@ -44,7 +44,7 @@ function enrich(r: TagStatsBase): TagStatsRow {
 // this population aggregation at ~8.5m rows / 14s; refreshing it hourly recomputed unchanged source data.
 tags.get("/v2/tags", async (c) =>
   cached(c, "tags:all", { ttl: 86400, edge: 300, swr: 86400 }, async () => ({
-    result: (await listTagStats(c.env.DB, ASSET_RAW, CONV_RAW)).map(enrich),
+    result: (await listTagStats(c.env.CORE_DB, ASSET_RAW, CONV_RAW)).map(enrich),
   })),
 );
 
@@ -52,11 +52,11 @@ tags.get("/v2/tags", async (c) =>
 // percentile score). Standard envelope with null-terminated next_offset; the aggregate repeats per page.
 tags.get("/v2/tags/:tag", async (c) => {
   const tag = c.req.param("tag");
-  const stats = await getTagStats(c.env.DB, ASSET_RAW, CONV_RAW, tag);
+  const stats = await getTagStats(c.env.CORE_DB, ASSET_RAW, CONV_RAW, tag);
   if (!stats) return c.json({ error: "Tag not found" }, 404);
   const limit = lim(c),
     offset = off(c);
-  const rows = await listTagAssetMembers(c.env.DB, ASSET_RAW, tag, limit, offset);
+  const rows = await listTagAssetMembers(c.env.CORE_DB, ASSET_RAW, tag, limit, offset);
   const members = rows.map((r) => {
     // market state mirrors the asset-detail handler: ever traded/dispensed → ranked; held-only → Untraded; none → Dormant.
     const state: MarketState =
