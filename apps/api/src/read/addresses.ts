@@ -20,7 +20,6 @@ import {
   listDispenses,
   listIssued,
   listAddressLedger,
-  listAddressLedgerPrimary,
   addressSummary,
   addressReputationRow,
   addressConnections,
@@ -56,17 +55,10 @@ addresses.get("/v2/addresses/:address/sends", async (c) => {
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-// Provenance ledger — every raw credit/debit for the address (credits/debits, migration 0038): the full
-// money-in/out history with each event's Counterparty reason. Empty until the ledger is backfilled by a reindex.
+// This largest protocol relation lives in its own compact D1.
 addresses.get("/v2/addresses/:address/ledger", async (c) => {
   const page = { limit: lim(c), offset: off(c) };
-  const cutover = await c.env.LEDGER_DB.prepare("SELECT value FROM ledger_state WHERE key='read_cutover'").first<{
-    value: string;
-  }>();
-  const result =
-    cutover?.value === "1"
-      ? await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page)
-      : await listAddressLedgerPrimary(c.env.DB, c.req.param("address"), page);
+  const result = await listAddressLedger(c.env.LEDGER_DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 

@@ -52,7 +52,6 @@ test("operational status aggregates durable frontiers without counting recovery 
     { key: "ledger_credit_done", value: "1" },
     { key: "ledger_debit_cursor", value: "200" },
     { key: "ledger_debit_done", value: "0" },
-    { key: "read_cutover", value: "0" },
   ]);
   const recovery = new Database((sql) => {
     if (sql.includes("FROM recovery_state"))

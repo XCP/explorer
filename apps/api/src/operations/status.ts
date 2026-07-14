@@ -52,7 +52,7 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
       env.LEDGER_DB.prepare(
         `SELECT key,value FROM ledger_state
        WHERE key IN ('backfill_active','ledger_credit_cursor','ledger_credit_done',
-                     'ledger_debit_cursor','ledger_debit_done','read_cutover')`,
+                     'ledger_debit_cursor','ledger_debit_done')`,
       ).all<StateRow>(),
       env.RECOVERY_DB.prepare(
         `SELECT key,value,updated_at FROM recovery_state
@@ -132,7 +132,10 @@ export async function operationalStatus(env: Env, now = Math.floor(Date.now() / 
       backfill_active: ledger.backfill_active === "1",
       credit: { cursor: ledger.ledger_credit_cursor ?? null, complete: ledger.ledger_credit_done === "1" },
       debit: { cursor: ledger.ledger_debit_cursor ?? null, complete: ledger.ledger_debit_done === "1" },
-      read_ready: ledger.read_cutover === "1",
+      read_ready:
+        ledger.backfill_active === "0" &&
+        ledger.ledger_credit_done === "1" &&
+        ledger.ledger_debit_done === "1",
     },
     recovery: {
       import: {

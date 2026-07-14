@@ -38,20 +38,6 @@ export function listAddressLedger(db: D1Database, address: string, p: Page): Pro
   return q<AddressLedgerRow>(db, ADDRESS_LEDGER_SQL, address, p.limit, p.offset);
 }
 
-/** Temporary rollback/read-through path while the compact ledger is backfilling. */
-export function listAddressLedgerPrimary(db: D1Database, address: string, p: Page): Promise<AddressLedgerRow[]> {
-  return q<AddressLedgerRow>(
-    db,
-    `SELECT 'in' direction, block_index, tx_hash, asset, quantity, calling_function FROM credits WHERE address=?1
-     UNION ALL
-     SELECT 'out' direction, block_index, tx_hash, asset, quantity, calling_function FROM debits WHERE address=?1
-     ORDER BY block_index DESC, tx_hash LIMIT ?2 OFFSET ?3`,
-    address,
-    p.limit,
-    p.offset,
-  );
-}
-
 /** Issuances the address made or received (transfer), newest first. */
 export function listIssuances(db: D1Database, address: string, p: Page): Promise<AddressIssuanceRow[]> {
   return q<AddressIssuanceRow>(

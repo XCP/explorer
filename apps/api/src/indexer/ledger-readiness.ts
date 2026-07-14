@@ -57,9 +57,6 @@ export function ledgerReadinessFailures(input: {
   sampleMatches: boolean[];
 }): string[] {
   const failures: string[] = [];
-  if (input.state.read_cutover !== "0" && input.state.read_cutover !== "1") {
-    failures.push("read cutover state is missing or invalid");
-  }
   if (input.state.backfill_active !== "0") failures.push("backfill is still active");
   if (input.state.ledger_credit_done !== "1") failures.push("credit backfill is incomplete");
   if (input.state.ledger_debit_done !== "1") failures.push("debit backfill is incomplete");
@@ -75,7 +72,7 @@ export function ledgerReadinessFailures(input: {
 /**
  * Read-only compact-ledger cutover audit. Exact counts and PK extrema are paired with three bounded
  * range aggregates; this catches missing/misdirected rows without repeatedly scanning both full ledgers.
- * The function intentionally cannot update `read_cutover`.
+ * The function is read-only and cannot mutate either ledger.
  */
 export async function auditLedgerReadiness(
   env: Pick<Env, "DB" | "LEDGER_DB">,
@@ -94,7 +91,7 @@ export async function auditLedgerReadiness(
     ).first<{ rows: number; first_event: number | null; last_event: number | null }>(),
     env.LEDGER_DB.prepare(
       `SELECT key,value FROM ledger_state
-        WHERE key IN ('backfill_active','ledger_credit_done','ledger_debit_done','read_cutover')`,
+        WHERE key IN ('backfill_active','ledger_credit_done','ledger_debit_done')`,
     ).all<StateRow>(),
   ]);
 
@@ -108,7 +105,6 @@ export async function auditLedgerReadiness(
     backfill_active: null,
     ledger_credit_done: null,
     ledger_debit_done: null,
-    read_cutover: null,
   };
   for (const row of stateResult.results) state[row.key] = row.value;
 

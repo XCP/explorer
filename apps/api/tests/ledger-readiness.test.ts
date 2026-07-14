@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ledgerReadinessFailures } from "#api/indexer/ledger-readiness";
 
 const complete = {
-  state: { backfill_active: "0", ledger_credit_done: "1", ledger_debit_done: "1", read_cutover: "0" },
+  state: { backfill_active: "0", ledger_credit_done: "1", ledger_debit_done: "1" },
   sourceRows: 100,
   compactRows: 100,
   sourceFirst: 1,
@@ -13,7 +13,7 @@ const complete = {
   sampleMatches: [true, true, true],
 };
 
-test("ledger readiness accepts completed matching stores without requiring cutover", () => {
+test("ledger readiness accepts completed matching stores", () => {
   assert.deepEqual(ledgerReadinessFailures(complete), []);
 });
 
@@ -51,15 +51,5 @@ test("ledger readiness never treats two empty stores as cutover-ready", () => {
       sampleMatches: [],
     }),
     ["source ledger is empty or unreadable", "compact ledger is empty or unreadable"],
-  );
-});
-
-test("ledger readiness requires an explicit valid cutover state", () => {
-  assert.deepEqual(
-    ledgerReadinessFailures({
-      ...complete,
-      state: { ...complete.state, read_cutover: null },
-    }),
-    ["read cutover state is missing or invalid"],
   );
 });
