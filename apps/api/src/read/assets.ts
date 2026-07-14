@@ -51,7 +51,7 @@ import {
   listAssetFairmints,
   listCoreSubassets,
   coreAssetCohort,
-  coreAssetCollectionCohort,
+  coreAssetRelated,
   coreAssetQualitySignals,
   coreAssetActivityVenues,
   coreAssetActivityFlows,
@@ -530,10 +530,10 @@ assets.get("/v2/assets/:asset/related", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
   const coll = await coreAssetCollection(c.env.CORE_DB, asset).catch(() => null);
   const tag = coll?.tag ?? null;
-  const [collection, cohort] = await Promise.all([
-    tag ? coreAssetCollectionCohort(c.env.CORE_DB, asset, tag, 12).catch(() => []) : Promise.resolve([]),
-    coreAssetCohort(c.env.CORE_DB, asset, 6, tag).catch(() => []),
-  ]);
+  const related = await coreAssetRelated(c.env.CORE_DB, asset, tag, 12, 6).catch(() => []);
+  const rows = related.map(({ in_collection: _, ...row }) => row);
+  const collection = tag ? rows.filter((_, index) => related[index]?.in_collection === 1) : [];
+  const cohort = rows.filter((_, index) => related[index]?.in_collection === 0);
   return J(c, { result: { collection, cohort } }, 3600);
 });
 

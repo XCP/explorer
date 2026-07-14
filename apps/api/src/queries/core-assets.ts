@@ -183,34 +183,49 @@ export function coreAssetCohort(
   );
 }
 
-export function coreAssetCollectionCohort(
+export function coreAssetRelated(
   db: D1Database,
   asset: string,
-  collection: string,
-  limit: number,
-): Promise<AssetCohortRow[]> {
-  return q<AssetCohortRow>(
+  collection: string | null,
+  collectionLimit: number,
+  cohortLimit: number,
+): Promise<(AssetCohortRow & { in_collection: number })[]> {
+  return q<AssetCohortRow & { in_collection: number }>(
     db,
     `WITH subject AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
      subject_holders AS MATERIALIZED (
        SELECT address_id FROM balances WHERE asset_id=(SELECT asset_id FROM subject)
          AND address_id IS NOT NULL AND CAST(quantity AS INTEGER)>0
+     ), overlap AS MATERIALIZED (
+       SELECT other_balance.asset_id,COUNT(*) shared
+       FROM subject_holders subject_balance
+       CROSS JOIN balances other_balance INDEXED BY idx_balances_address_asset
+         ON other_balance.address_id=subject_balance.address_id
+       WHERE other_balance.asset_id<>(SELECT asset_id FROM subject)
+         AND CAST(other_balance.quantity AS INTEGER)>0
+       GROUP BY other_balance.asset_id
+     ), related AS (
+       SELECT dictionary.asset,state.asset_longname,overlap.shared,
+         ROUND(100.0*overlap.shared/NULLIF((SELECT COUNT(*) FROM subject_holders),0),1) pct,
+         ?2 IS NOT NULL AND EXISTS (
+           SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
+           WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tag.tag=?2
+         ) in_collection
+       FROM overlap JOIN asset_dictionary dictionary ON dictionary.asset_id=overlap.asset_id
+       LEFT JOIN assets state ON state.asset_id=overlap.asset_id
+       WHERE dictionary.asset<>'XCP'
+     ), ranked AS (
+       SELECT *,ROW_NUMBER() OVER (
+         PARTITION BY in_collection ORDER BY shared DESC,asset ASC
+       ) position FROM related
      )
-     SELECT other_dictionary.asset,other_state.asset_longname,COUNT(*) shared,
-       ROUND(100.0*COUNT(*)/NULLIF((SELECT COUNT(*) FROM subject_holders),0),1) pct
-     FROM subject_holders subject_balance
-     CROSS JOIN balances other_balance INDEXED BY idx_balances_address_asset
-       ON other_balance.address_id=subject_balance.address_id
-     JOIN asset_dictionary other_dictionary ON other_dictionary.asset_id=other_balance.asset_id
-     LEFT JOIN assets other_state ON other_state.asset_id=other_balance.asset_id
-     WHERE other_dictionary.asset<>?2 AND CAST(other_balance.quantity AS INTEGER)>0
-       AND EXISTS (SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
-         WHERE entity.entity_type='asset' AND entity.entity_key=other_dictionary.asset AND tag.tag=?3)
-     GROUP BY other_balance.asset_id ORDER BY shared DESC,other_dictionary.asset ASC LIMIT ?4`,
-    asset,
+     SELECT asset,asset_longname,shared,pct,in_collection FROM ranked
+     WHERE (in_collection=1 AND position<=?3) OR (in_collection=0 AND position<=?4)
+     ORDER BY in_collection DESC,position`,
     asset,
     collection,
-    limit,
+    collectionLimit,
+    cohortLimit,
   );
 }
 
