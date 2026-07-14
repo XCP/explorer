@@ -1,91 +1,143 @@
-# Compact database cutover
+# Compact database completion plan
 
-This runbook has one outcome: the application `DB` binding points to one normalized, compact, current D1
-database with logical parity to the existing source. The recovery database remains separate because it belongs to
-a separate indexing domain.
+## End state
 
-No remaining full-table operation is for sizing or rehearsal. Every copied row must seed the final compact build,
-every replayed event must advance its independent cursor, and every verification must guard the production
-cutover.
+`xcpio-core` is the explorer database. It contains normalized Counterparty protocol data, explorer-owned
+projections, curated facts, and external enrichments. Runtime code uses `CORE_DB` for all of those relations.
+The separately scoped Bitcoin recovery database and ledger database remain separate products.
 
-## Reusable seed audit
+Completion means all of the following are true:
 
-The existing local staging database is a resumable seed, not a production database. It recorded this starting
-frontier before table copying began:
+- public explorer reads use only `CORE_DB`;
+- the Counterparty event consumer writes only `CORE_DB`;
+- every derived relation has one runtime owner and one state cursor in `core_state`;
+- no runtime branch selects a database based on readiness, version, or environment flags;
+- no background job copies a relation from the old database into `CORE_DB`;
+- import, parity, snapshot, and cutover endpoints are absent from the deployed Worker;
+- the old database binding is absent from `Env` and `wrangler.toml`;
+- the old database is retained only for a time-bounded rollback checkpoint, then deleted.
 
-- block: `957878`
-- event: `20241585`
-- expected tables: `55`
+Compaction changes representation, not data scope. Address and asset strings use dictionary identities, hashes
+use binary storage, protocol composite identities replace synthetic strings, balances remain polymorphic across
+addresses and UTXOs, and credits/debits share `ledger_events` with an explicit direction.
 
-At the audit on 2026-07-13 it contained 20,297,622 copied rows:
+## Runtime ownership
 
-- 49 tables complete
-- `sends` partial at cursor 3,402,527 with 1,518,036 rows copied
-- `sweeps`, `transactions`, `tags`, `trades`, and `xcp_btc_daily` untouched
+| Relations | Final writer | Inputs | Current blocker |
+|---|---|---|---|
+| blocks, transactions, balances, balance_snapshots, sends, assets, issuances, orders, order_matches | compact event sync | Counterparty events | old mirror is still written for downstream jobs |
+| dispensers, dispenses, refills, burns, destructions, dividends, sweeps, bets, RPS, pools, fairminters, fairmints, broadcasts, cancels, btcpays | compact event sync | Counterparty events | same |
+| ledger_events | compact event sync | CREDIT/DEBIT events | independent ledger readiness must remain green |
+| emblem_vaults, emblem_sales, emblem_listings | corresponding Emblem crawler | validated provider responses | crawlers still store their canonical rows in the old database |
+| scarce_city_sales | Scarce City crawler | validated provider response | crawler still scans/writes the old database |
+| trades | unified trade builder | compact protocol rows plus compact external sales | its external inputs still live in the old database |
+| prices, xcp_btc_daily | price job | Coinbase candles and compact order matches | pricing change must land after its schema and compact trade owner |
+| address_signals, asset_signals, asset_feed_counts | signal builders | compact protocol, trades, vaults | builders still query the old schema |
+| tags | tag owner for each source | compact signals/assets plus external directories | computed tag builder remains on the old schema; collection/issuer writers are already compact |
+| exchange_top_assets | exchange leaderboard job | compact sends and address signals | complete in code |
+| graph_edges, graph_node, graph_rank, graph_seed, graph_inflow | graph job | compact protocol/projections | generation 1 must publish and pass validation |
+| emblem_scam_sellers, btc_signals | scam/recovery builders | compact vault and Bitcoin data | upstream vault jobs must move first |
+| network_stats_snapshot, daily_metrics, emblem_stats, cache | compact maintenance jobs | compact relations | verify every refresh path uses `CORE_DB` |
+| curated | admin curated writer | operator input | admin write must become one compact write |
 
-The source was at event 20,241,754, only 169 events beyond the seed frontier. The source table manifest in
-`apps/api/src/indexer/core-manifest.ts` is closed and classifies all 55 staging tables exactly once.
+`entity_dictionary`, `address_dictionary`, and `asset_dictionary` are identities maintained by compact writers,
+not independently copied projections.
 
-### Seed treatment
+## Dependency-ordered execution
 
-- **Compact and reuse (26 complete):** assets, balance snapshots, balances, bets and matches, blocks, broadcasts,
-  BTC pays, burns, cancels, destructions, dispenser relations, dividends, fairminter relations, issuances, orders
-  and matches, pool relations, and RPS relations.
-- **Merge and reuse (complete):** credits and debits become `ledger_events`.
-- **Resume, never restart:** sends, sweeps, transactions, tags, trades, and `xcp_btc_daily`.
-- **Copy and compact projections:** address/asset signals, feed counts, exchange leaders, graph relations, network
-  statistics, PageRank edges, prices, tags, and trades. Their ability to be recomputed later is a repair and
-  maintenance property; it is not a reason to throw away usable historical source rows during migration.
-- **Preserve:** BTC signals, curated records, Emblem relations, Scarce City sales, and `xcp_btc_daily`.
-- **Seed state:** source `indexer_state` supplies operational frontiers; migration-only keys do not become normal
-  production state.
+### 1. Publish and validate the compact read surface
 
-If a completed mutable row changed while its table was copied, chronological replay from event 20,241,586
-converges it. Balance replay additionally compares each change with the row's `updated_event_index`, so an event
-already represented by the copied balance cannot be applied twice.
+1. Allow graph generation 1 to finish without deploying graph reads against generation 0.
+2. Validate node/edge/rank counts, signal publication, graph cuts, and representative graph responses.
+3. Apply pending compact migrations and deploy the already-converted public read surface.
+4. Run all wire-contract checks plus first, middle, and computed-last-page checks.
+5. Capture D1 query duration, rows read/written, and query plans for the hot routes.
 
-## Execution pipeline
+Gate: every public explorer route succeeds from `CORE_DB`; graph generation is nonzero; no public explorer
+handler references the old binding.
 
-1. Resume only partial or required untouched inputs: sends, sweeps, transactions, tags, trades, and
-   `xcp_btc_daily`.
-2. Transform the staging seed into one compact local import artifact. Text hashes become binary, repeated
-   addresses/assets become dictionary identities, and credits/debits merge into the ledger.
-3. Record `seed_event_index=20241585` and an independent compact `last_event_index=20241585`. An inconsistent
-   seed is never marked reconciled merely because its table transforms completed.
-4. Apply every Counterparty event after the seed frontier through the compact-only replay path. The replay owns
-   its cursor and does not depend on the already-current source indexer cursor.
-5. Recompute deterministic projections and refresh preserved provider data.
-6. Verify the local artifact: closed schema coverage, relation counts, transaction/event identities, balance and
-   supply totals, dictionary integrity, API response parity, last-page navigation, query plans, reorg behavior,
-   and allocated size.
-7. Create one empty final D1 target, apply the clean schema, and import bounded hash-verified SQL chunks. Import
-   receipts resume the same artifact; failure never starts a new database or repopulates completed chunks.
-8. Replay the delta accumulated during remote import, then enable forward writes while reads remain on the old
-   source.
-9. Observe both stores through new blocks and rerun parity checks. Only a reconciled, current target may open the
-   read gate.
-10. Switch the application `DB` binding once. Retain the old stores for a bounded rollback window, then remove old
-    bindings, partial targets, staging tooling, and migration state.
+### 2. Move independent external inputs
 
-## Readiness contract
+Convert the Emblem and Scarce City crawlers as complete vertical slices: provider validation, dictionary
+resolution, upsert/reconciliation, cursor state, admin trigger, cron trigger, and tests all move together.
+Do not retain a second write or projection-copy step.
 
-Import completion is not cutover readiness. The compact target must independently prove:
+Order: vault enumeration/resolution -> sales/transfers/listings -> vault metadata/classification/scam attribution
+-> Scarce City sales.
 
-- all required seed inputs completed;
-- all compact transforms completed;
-- seed replay reconciled through the declared source event frontier;
-- parity verification passed at that frontier;
-- remote import completed from the exact verified manifest;
-- forward writes are explicitly enabled and current;
-- allocated database size leaves operational headroom below D1's limit.
+Gate: crawler-owned target counts and cursors advance in `CORE_DB`, replay is idempotent, and the old enrichment
+tables receive no writes.
 
-These are convergent state transitions. Missing or failed evidence keeps reads and writes closed; it never triggers
-a delete-and-repopulate cycle.
+### 3. Move unified market data
 
-## Failure policy
+1. Build `trades` directly from compact DEX, dispense, Emblem, and Scarce City relations.
+2. Preserve `(venue, ref)` identity and reconcile changed classification without delete-first publication.
+3. Remove the scheduled `reconcileCoreTrades` copier and its admin projection route.
+4. Land the price-fidelity schema and compact-only pricing job.
+5. Reconcile trade USD values so an expired derived price clears an old valuation.
 
-- Resume the same table cursor, event cursor, or SQL chunk receipt.
-- Repair only the failing table or key range with upserts.
-- Never recopy a completed source table merely because another table failed.
-- Never call a sizing artifact, partial import, or schema-only target a backfill.
-- Report production progress separately from reusable staging progress and verification work.
+Gate: venue counts, identities, totals, USD coverage, and sampled rows match the accepted source semantics; price
+provenance and observation dates are populated; no market-data copier remains.
+
+### 4. Move deterministic projections
+
+Convert supply, signals, holder cohesion, computed tags, exchange/scam attribution, and aggregate snapshots in
+dependency order. Each conversion includes its cursor/generation in `core_state`, full/scoped convergence tests,
+and an indexed query-plan test for heavy SQL.
+
+Gate: full rebuild and dirty-scoped rebuild converge; graph and reputation validation gates pass; every projection
+has exactly one writer.
+
+### 5. Make compact event sync the sole protocol writer
+
+1. Confirm no crawler or projection reads protocol tables from the old database.
+2. Move pause/lock/checkpoint/rollback state to `core_state`.
+3. Remove old event statements and the old balance/supply queues.
+4. Exercise interrupted replay, duplicate delivery, reorg rollback, and genesis recovery tests.
+5. Observe at least one new block and compare Counterparty frontier, hashes, balances, and representative protocol
+records.
+
+Gate: the old protocol tables receive no writes and compact sync stays current through a real block.
+
+### 6. Remove transition machinery
+
+Delete, rather than disable:
+
+- core snapshot/export and projection-reconciliation admin routes;
+- compact readiness flags and parity branches used only for cutover;
+- local/remote import drivers and chunk receipts after archiving the final manifest outside runtime source;
+- old read modules and database-selection helpers;
+- old binding declarations and migration directories no longer used by a fresh deployment;
+- comments and names describing old/new, legacy, compatibility, or pre/post-compaction behavior.
+
+Generate one clean baseline schema for a fresh `xcpio-core` database while retaining only forward operational
+migrations that production still needs.
+
+Gate: a repository search finds no runtime old-database reference, and a fresh database created from the retained
+schema passes the complete test suite.
+
+## Pricing decision
+
+The accepted pricing direction is data provenance rather than false continuity:
+
+- Coinbase BTC/USD and ETH/USD candles are direct observations;
+- XCP/BTC uses a daily volume-weighted median of completed DEX matches;
+- derived XCP/USD carries for at most seven calendar days, then becomes absent;
+- `observed_day`, `source`, and `fidelity` distinguish direct and derived prices;
+- a higher-fidelity imported market observation cannot be overwritten by a derived value;
+- trade reconciliation clears values whose admitted price has expired.
+
+The initial seven-day horizon is supported by the production distribution: 618 XCP/BTC trading days,
+mean inter-trade-day gap 7.3 days, 520 of 617 gaps at or below seven days, and a maximum gap of 638 days.
+The horizon is an explicit admission rule, not a claim that a seven-day-old print is current. Historic CMC/Zaif
+imports remain a separate acquisition task and must enter through the same fidelity contract.
+
+## Verification and rollback
+
+Every phase records before/after counts, cursor/frontier, representative identities, query metrics, and its exact
+commit/deployment. Failures repair the affected key range with convergent upserts. They never create another
+database generation or restart completed imports.
+
+The old database remains unchanged during the rollback window. Rollback may switch deployment bindings, but no
+new compatibility branch is added to application code. Retirement occurs only after the compact database remains
+current and healthy throughout the agreed observation window.
