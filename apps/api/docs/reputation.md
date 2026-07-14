@@ -38,7 +38,6 @@ This is the single rationale doc; all the knobs live in `src/reputation/config.t
 | `dispense_btc` | 0.8 | log | BTC earned dispensing — merchant activity. |
 | `assets_held` | 0.8 | log | Breadth of holdings — collector depth. |
 | `xcp` | 1.0 | log | XCP held — protocol stake. |
-| `pagerank` | 1.2 | log | **INACTIVE** — `rep_score` is never computed (always 1.0), so this is a constant ~0.83 baked into calibration, not a real factor. Reserved for graph-centrality; weight should go to 0 once anchors are recalibrated, or be implemented. |
 | `modern_active` | +1.5 flat | bonus | Active into the modern chain (≥ block 900k) — not a long-dead address. |
 
 ### Proposed / new factors (wired, default weights — tune after the rebuild)
@@ -268,8 +267,6 @@ and only modest value_xcp despite huge activity (their "value" lived on the ETH 
 ## Scoring Phase A (2026-07-06)
 - **Age cap APPLIED:** the address age transform is winsorized at `SCALARS.addrAgeCap = 4.0` (≈7.6yr), pre-weight,
   in both score.ts and rawSqlExpr (parity is enforced by the reputation tests, which re-derive the cap from config).
-- **Dead pagerank factor REMOVED:** the never-computed `rep_score`/pagerank factor (weight 0.0 since inception) was
-  deleted from `ADDRESS_FACTORS`. The `address_signals.rep_score` column is kept in case personalized PageRank returns.
 - **Address anchors recalibrated** to the capped raw over the real-user population (n=261,746 @ tip 956,949):
   `ADDRESS_PCT`/`ADDRESS_TIERS` p50 2.5→2.88, p90 4.7→5.22, p99/OG 17.5→16.33, max 53→51.15 (the cap compressed the top).
 - **New guard endpoint** `GET /v2/reputation/asset-validation`: vaulted-tagged vs non-vaulted market assets, count/mean/median
@@ -384,7 +381,6 @@ the under-powered-penalty problem:
 ## Open decisions
 - **age:** further options if longevity still over-rewards — lower the weight below 2.0, or require a minimum
   earned-signal floor for high bands (the cap addresses the dominant case).
-- **pagerank:** implement real personalized PageRank over `pr_edges` to revive the reserved `rep_score` column.
 - **social-attention signal:** the Telegram mention count (cross-chat filtered) could become its own
   "community favorite" tag — distinct from on-chain quality (score↔mentions Spearman ≈ 0.30).
 

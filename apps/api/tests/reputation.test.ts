@@ -129,11 +129,9 @@ test("breakdown keys are exactly the weighted factor labels", () => {
   const s = scoreAsset({ trades: 5, holders: 2 });
   const weighted = new Set(ASSET_FACTORS.filter((f) => f.weight).map((f) => f.label));
   for (const k of Object.keys(s.breakdown)) assert(weighted.has(k), `unexpected breakdown key ${k}`);
-  // zero-weight factors (e.g. pagerank on the address side) must never appear
-  assert(
-    !("pagerank" in scoreAddress({ survived_assets: 3 }, 850000).breakdown),
-    "zero-weight factor leaked into breakdown",
-  );
+  const addressWeighted = new Set(ADDRESS_FACTORS.filter((f) => f.weight).map((f) => f.label));
+  for (const k of Object.keys(scoreAddress({ survived_assets: 3 }, 850000).breakdown))
+    assert(addressWeighted.has(k), `unexpected address breakdown key ${k}`);
 });
 
 /* ---------- a known good row scores where the re-derivation says ---------- */

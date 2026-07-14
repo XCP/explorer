@@ -254,11 +254,8 @@ addresses.get("/v2/reputation/tiers", (c) =>
     }));
     const scored = d?.n ?? 0;
     const infrastructure = f?.infra ?? 0;
-    // The census is every REAL address: infrastructure + scored users. "No history" is definitionally 0 —
-    // a historyless row is a contradiction (see NOT_INFRA). The mirror still carries a handful of
-    // footprint-less rows left by a since-removed graph experiment (a stale rep_score, zero on-chain
-    // history); they are not real addresses, so they're excluded from the total rather than shown as an
-    // orphan "no history" bucket.
+    // The census is infrastructure plus identities with measurable scoring history. Dictionary-only
+    // identities with no on-chain footprint are excluded rather than presented as a "no history" cohort.
     const total_addresses = infrastructure + scored;
     const funnel = {
       total_addresses,

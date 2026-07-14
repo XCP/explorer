@@ -111,8 +111,6 @@ export const ADDRESS_FACTORS: Factor[] = [
     label: "dump_scam",
     why: "penalty: dumped single fungible units of very-high-supply cards as $40 Emblem NFTs (thousands-x markup)",
   },
-  // NOTE: the never-computed rep_score/pagerank factor was removed 2026-07-06 (weight 0.0 since inception, so it
-  // never contributed). The address_signals.rep_score column is kept (harmless) in case personalized PageRank returns.
 ];
 
 /* ---------- ASSET quality ---------- */

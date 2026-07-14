@@ -86,7 +86,6 @@ export interface AddressSignalsRow {
   survived_assets: number;
   assets_distributed: number;
   assets_hits: number;
-  rep_score: number; // personalized-PageRank (currently always 1.0)
   clean_dispense_btc: number;
   clean_btc_spent: number;
   is_exchange: 0 | 1;
