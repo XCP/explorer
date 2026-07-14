@@ -33,11 +33,7 @@ import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { auditCoreTableCoverage } from "#api/indexer/core-manifest";
 import { coreSnapshotPage, coreSnapshotSchema } from "#api/indexer/core-snapshot";
 import { activateCoreForwardWrites, auditCoreDataParity, rollbackCoreForwardWrites } from "#api/indexer/core-parity";
-import {
-  CORE_RECENT_PROJECTIONS,
-  reconcileBalanceSnapshotPage,
-  reconcileRecentCoreProjection,
-} from "#api/indexer/core-projections";
+import { reconcileBalanceSnapshotPage } from "#api/indexer/core-projections";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { catchUpCoreAssetFeedCounts } from "#api/indexer/core-feed-counts";
 
@@ -135,12 +131,6 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/core-replay", async (c) => {
   const events = optionalBoundedInteger(c.req.query("events"), { min: 1, max: 50_000 });
   return c.json(await syncCompactEvents(c.env, { maxEvents: events }));
-});
-
-admin.post("/admin/core-projections/reconcile-recent/:table", async (c) => {
-  const table = c.req.param("table");
-  if (!CORE_RECENT_PROJECTIONS.some((candidate) => candidate === table)) return c.json({ error: "unknown table" }, 400);
-  return c.json(await reconcileRecentCoreProjection(c.env, table as (typeof CORE_RECENT_PROJECTIONS)[number]));
 });
 
 admin.post("/admin/core-projections/reconcile-balance-snapshots", async (c) => {
