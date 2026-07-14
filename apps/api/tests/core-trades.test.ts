@@ -135,6 +135,11 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
   db.prepare(DISPENSE_TRADE_LEGS_SQL).run(0, 200);
   db.prepare(emblemTradesSql("")).run();
   db.prepare(SCARCE_TRADES_SQL).run();
+  assert.equal(db.prepare(coreDexTradesSql()).run(0, 200).changes, 0);
+  assert.equal(db.prepare(DISPENSE_TRADES_SQL).run(0, 200).changes, 0);
+  assert.equal(db.prepare(DISPENSE_TRADE_LEGS_SQL).run(0, 200).changes, 0);
+  assert.equal(db.prepare(emblemTradesSql("")).run().changes, 0);
+  assert.equal(db.prepare(SCARCE_TRADES_SQL).run().changes, 0);
   assert.deepEqual(
     db
       .prepare(`SELECT venue,ref,asset_id,quantity,currency,total FROM trades ORDER BY venue,ref`)

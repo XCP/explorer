@@ -39,7 +39,12 @@ export function coreDexTradesSql(): string {
     ON CONFLICT(venue,ref) DO UPDATE SET
       asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
       quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
-      buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash`;
+      buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash
+    WHERE trades.asset_id IS NOT excluded.asset_id OR trades.block_time IS NOT excluded.block_time
+      OR trades.block_index IS NOT excluded.block_index OR trades.quantity IS NOT excluded.quantity
+      OR trades.currency IS NOT excluded.currency OR trades.total IS NOT excluded.total
+      OR trades.buyer_id IS NOT excluded.buyer_id OR trades.seller_id IS NOT excluded.seller_id
+      OR trades.tx_hash IS NOT excluded.tx_hash`;
 }
 
 const DISPENSE_PAYMENTS = `WITH output_payment AS (
@@ -94,7 +99,12 @@ export const DISPENSE_TRADES_SQL = `${DISPENSE_PAYMENTS}
     asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
     quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
     buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash,
-    sale_class=CASE WHEN excluded.asset_id IS NULL THEN 'bundle' ELSE 'single' END`;
+    sale_class=excluded.sale_class
+  WHERE trades.asset_id IS NOT excluded.asset_id OR trades.block_time IS NOT excluded.block_time
+    OR trades.block_index IS NOT excluded.block_index OR trades.quantity IS NOT excluded.quantity
+    OR trades.currency IS NOT excluded.currency OR trades.total IS NOT excluded.total
+    OR trades.buyer_id IS NOT excluded.buyer_id OR trades.seller_id IS NOT excluded.seller_id
+    OR trades.tx_hash IS NOT excluded.tx_hash OR trades.sale_class IS NOT excluded.sale_class`;
 
 export const DISPENSE_TRADE_LEGS_SQL = `${DISPENSE_PAYMENTS}
   INSERT INTO trade_legs(venue,trade_ref,leg_index,asset_id,quantity)
@@ -105,7 +115,8 @@ export const DISPENSE_TRADE_LEGS_SQL = `${DISPENSE_PAYMENTS}
     AND dispense.source_id=payment.seller_id AND dispense.destination_id=payment.buyer_id
     AND dispense.btc_amount=payment.btc_amount
   ON CONFLICT(venue,trade_ref,leg_index) DO UPDATE SET
-    asset_id=excluded.asset_id,quantity=excluded.quantity`;
+    asset_id=excluded.asset_id,quantity=excluded.quantity
+  WHERE trade_legs.asset_id IS NOT excluded.asset_id OR trade_legs.quantity IS NOT excluded.quantity`;
 
 export function emblemTradesSql(rowFilter: string): string {
   const acceptedTokens = ETH_TOKENS.map((token) => `'${token}'`).join(",");
@@ -141,7 +152,14 @@ export function emblemTradesSql(rowFilter: string): string {
       quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
       usd_value=CASE WHEN excluded.currency='USDC' THEN excluded.usd_value ELSE trades.usd_value END,
       buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,
-      external_tx_hash=excluded.external_tx_hash,sale_class=excluded.sale_class`;
+      external_tx_hash=excluded.external_tx_hash,sale_class=excluded.sale_class
+    WHERE trades.asset_id IS NOT excluded.asset_id OR trades.block_time IS NOT excluded.block_time
+      OR trades.block_index IS NOT excluded.block_index OR trades.quantity IS NOT excluded.quantity
+      OR trades.currency IS NOT excluded.currency OR trades.total IS NOT excluded.total
+      OR (excluded.currency='USDC' AND trades.usd_value IS NOT excluded.usd_value)
+      OR trades.buyer_id IS NOT excluded.buyer_id OR trades.seller_id IS NOT excluded.seller_id
+      OR trades.external_tx_hash IS NOT excluded.external_tx_hash
+      OR trades.sale_class IS NOT excluded.sale_class`;
 }
 
 export const SCARCE_TRADES_SQL = `INSERT INTO trades(
@@ -151,7 +169,10 @@ export const SCARCE_TRADES_SQL = `INSERT INTO trades(
   FROM scarce_city_sales sale JOIN asset_dictionary asset ON asset.asset_id=sale.asset_id
   ON CONFLICT(venue,ref) DO UPDATE SET
     asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
-    quantity=excluded.quantity,currency=excluded.currency,total=excluded.total`;
+    quantity=excluded.quantity,currency=excluded.currency,total=excluded.total
+  WHERE trades.asset_id IS NOT excluded.asset_id OR trades.block_time IS NOT excluded.block_time
+    OR trades.block_index IS NOT excluded.block_index OR trades.quantity IS NOT excluded.quantity
+    OR trades.currency IS NOT excluded.currency OR trades.total IS NOT excluded.total`;
 
 export interface TradesBuildProgress {
   tip: number;
