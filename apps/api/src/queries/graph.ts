@@ -28,7 +28,7 @@ export interface GraphTierCounts {
 export async function graphCuts(db: D1Database): Promise<{ address: GraphCuts; asset: GraphCuts }> {
   const rows = await q<{ key: string; value: string }>(
     db,
-    `SELECT key, value FROM indexer_state WHERE key IN ('graph_cut_addr_trust','graph_cut_addr_distrust','graph_cut_asset_trust','graph_cut_asset_distrust')`,
+    `SELECT key,value FROM core_state WHERE key IN ('graph_cut_addr_trust','graph_cut_addr_distrust','graph_cut_asset_trust','graph_cut_asset_distrust')`,
   );
   const v = (k: string) => Number(rows.find((r) => r.key === k)?.value) || 0;
   return {
@@ -40,13 +40,18 @@ export async function graphCuts(db: D1Database): Promise<{ address: GraphCuts; a
 // per-entity score. table/keyCol are fixed literals chosen by the caller (never user input).
 export async function graphScore(
   db: D1Database,
-  table: "address_signals" | "asset_signals",
-  keyCol: "address" | "asset",
+  kind: "address" | "asset",
   id: string,
 ): Promise<GraphScoreRow | null> {
+  const relation =
+    kind === "address"
+      ? `address_signals signal JOIN address_dictionary entity ON entity.address_id=signal.address_id`
+      : `asset_signals signal JOIN asset_dictionary entity ON entity.asset_id=signal.asset_id`;
+  const key = kind === "address" ? "entity.address" : "entity.asset";
   const r = await one<{ trust: number; distrust: number }>(
     db,
-    `SELECT COALESCE(graph_trust,0) trust, COALESCE(graph_distrust,0) distrust FROM ${table} WHERE ${keyCol}=?`,
+    `SELECT COALESCE(signal.graph_trust,0) trust,COALESCE(signal.graph_distrust,0) distrust
+     FROM ${relation} WHERE ${key}=?`,
     id,
   );
   return r ? { trust: r.trust, distrust: r.distrust } : null;
@@ -83,17 +88,20 @@ async function tierCounts(
 // exchanges in the address top-12) — infra is excluded from the address leaderboards.
 function topBy(
   db: D1Database,
-  table: "address_signals" | "asset_signals",
-  keyCol: "address" | "asset",
+  kind: "address" | "asset",
   col: "graph_trust" | "graph_distrust",
   limit = 20,
 ): Promise<GraphTopRow[]> {
-  const infra =
-    keyCol === "address" ? `AND address NOT IN (SELECT key FROM curated WHERE kind IN ('exchange','burn'))` : "";
+  const relation =
+    kind === "address"
+      ? `address_signals signal JOIN address_dictionary entity ON entity.address_id=signal.address_id`
+      : `asset_signals signal JOIN asset_dictionary entity ON entity.asset_id=signal.asset_id`;
+  const key = kind === "address" ? "entity.address" : "entity.asset";
+  const infra = kind === "address" ? `AND NOT EXISTS (SELECT 1 FROM curated WHERE curated.key=entity.address AND curated.kind IN ('exchange','burn'))` : "";
   return q<GraphTopRow>(
     db,
-    `SELECT ${keyCol} key, COALESCE(graph_trust,0) trust, COALESCE(graph_distrust,0) distrust
-     FROM ${table} WHERE ${col} > 0 ${infra} ORDER BY ${col} DESC LIMIT ?`,
+    `SELECT ${key} key,COALESCE(signal.graph_trust,0) trust,COALESCE(signal.graph_distrust,0) distrust
+     FROM ${relation} WHERE signal.${col}>0 ${infra} ORDER BY signal.${col} DESC LIMIT ?`,
     limit,
   );
 }
@@ -108,11 +116,11 @@ export async function graphOverview(db: D1Database): Promise<GraphOverview> {
   const cuts = await graphCuts(db);
   const [aTiers, aTrust, aDistrust, sTiers, sTrust, sDistrust] = await Promise.all([
     tierCounts(db, "address_signals", cuts.address),
-    topBy(db, "address_signals", "address", "graph_trust"),
-    topBy(db, "address_signals", "address", "graph_distrust"),
+    topBy(db, "address", "graph_trust"),
+    topBy(db, "address", "graph_distrust"),
     tierCounts(db, "asset_signals", cuts.asset),
-    topBy(db, "asset_signals", "asset", "graph_trust"),
-    topBy(db, "asset_signals", "asset", "graph_distrust"),
+    topBy(db, "asset", "graph_trust"),
+    topBy(db, "asset", "graph_distrust"),
   ]);
   return {
     cuts,

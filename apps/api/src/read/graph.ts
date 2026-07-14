@@ -24,24 +24,24 @@ const clampLimit = (v: string | undefined, def: number, max: number) =>
 
 graph.get("/v2/graph/address/:address", async (c) => {
   const address = c.req.param("address");
-  const { nodes, edges, stats } = await addressEgo(c.env.DB, address, clampLimit(c.req.query("limit"), 60, 200));
+  const { nodes, edges, stats } = await addressEgo(c.env.CORE_DB, address, clampLimit(c.req.query("limit"), 60, 200));
   return J(c, { result: { center: address, scope: "address-ego", nodes, edges, stats } as GraphSubgraph }, 120);
 });
 
 graph.get("/v2/graph/asset/:asset", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const { nodes, edges, stats } = await assetHolders(c.env.DB, asset, clampLimit(c.req.query("limit"), 80, 300));
+  const { nodes, edges, stats } = await assetHolders(c.env.CORE_DB, asset, clampLimit(c.req.query("limit"), 80, 300));
   return J(c, { result: { center: asset, scope: "asset-holders", nodes, edges, stats } as GraphSubgraph }, 120);
 });
 
 graph.get("/v2/reputation/graph", (c) =>
-  cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.DB) })),
+  cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.CORE_DB) })),
 );
 
 graph.get("/v2/addresses/:address/graph", async (c) => {
   const [s, cuts] = await Promise.all([
-    graphScore(c.env.DB, "address_signals", "address", c.req.param("address")),
-    graphCuts(c.env.DB),
+    graphScore(c.env.CORE_DB, "address", c.req.param("address")),
+    graphCuts(c.env.CORE_DB),
   ]);
   const trust = s?.trust ?? 0,
     distrust = s?.distrust ?? 0;
@@ -50,8 +50,8 @@ graph.get("/v2/addresses/:address/graph", async (c) => {
 
 graph.get("/v2/assets/:asset/graph", async (c) => {
   const [s, cuts] = await Promise.all([
-    graphScore(c.env.DB, "asset_signals", "asset", c.req.param("asset")),
-    graphCuts(c.env.DB),
+    graphScore(c.env.CORE_DB, "asset", c.req.param("asset")),
+    graphCuts(c.env.CORE_DB),
   ]);
   const trust = s?.trust ?? 0,
     distrust = s?.distrust ?? 0;

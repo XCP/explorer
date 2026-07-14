@@ -8,12 +8,6 @@
 import type { GraphNode, GraphEdge, GraphStats } from "@xcp/shared/graph";
 import { q } from "#api/db";
 
-const inList = (ids: string[]) =>
-  ids
-    .filter((s) => /^[a-zA-Z0-9._]+$/.test(s))
-    .map((s) => `'${s}'`)
-    .join(",") || "''";
-
 // Every active address sits in the graph's giant component, so "connected by ANY edge" is trivially true and
 // tells you nothing. Coordination shows up as DENSITY + REPETITION: a wash/sybil ring trades among itself many
 // times. So we headline cohesion (edges per peripheral node) and cluster only on STRONG (repeated) edges.
@@ -79,16 +73,35 @@ export async function addressEgo(
 ): Promise<{ nodes: GraphNode[]; edges: GraphEdge[]; stats: GraphStats }> {
   const nbrs = await q<{ id: string; w: number }>(
     db,
-    `WITH nbr AS (SELECT dst id, w FROM graph_edges WHERE src=?1 UNION ALL SELECT src id, w FROM graph_edges WHERE dst=?1)
-     SELECT id, ROUND(SUM(w),3) w FROM nbr WHERE id<>?1 GROUP BY id ORDER BY w DESC LIMIT ?2`,
+    `WITH active AS (SELECT CAST(value AS INTEGER) generation FROM core_state WHERE key='graph_generation'),
+     center AS (SELECT entity.entity_id FROM entity_dictionary entity
+       WHERE entity.entity_type='address' AND entity.entity_key=?1),
+     neighbour AS (
+       SELECT edge.destination_entity_id entity_id,edge.weight FROM graph_edges edge,active,center
+       WHERE edge.generation=active.generation AND edge.source_entity_id=center.entity_id
+       UNION ALL
+       SELECT edge.source_entity_id entity_id,edge.weight FROM graph_edges edge,active,center
+       WHERE edge.generation=active.generation AND edge.destination_entity_id=center.entity_id
+     )
+     SELECT entity.entity_key id,ROUND(SUM(neighbour.weight),3) w FROM neighbour
+     JOIN entity_dictionary entity ON entity.entity_id=neighbour.entity_id AND entity.entity_type='address'
+     GROUP BY neighbour.entity_id ORDER BY w DESC LIMIT ?2`,
     addr,
     limit,
   );
   const peripheral = nbrs.map((n) => n.id);
-  const set = inList([addr, ...peripheral]);
+  const memberJson = JSON.stringify([addr, ...peripheral]);
   const allEdges = await q<GraphEdge>(
     db,
-    `SELECT src source, dst target, ROUND(w,3) weight FROM graph_edges WHERE src IN (${set}) AND dst IN (${set})`,
+    `WITH active AS (SELECT CAST(value AS INTEGER) generation FROM core_state WHERE key='graph_generation'),
+     member AS (SELECT entity.entity_id,entity.entity_key FROM json_each(?1) input
+       JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=input.value)
+     SELECT source.entity_key source,destination.entity_key target,ROUND(edge.weight,3) weight
+     FROM graph_edges edge,active
+     JOIN member source ON source.entity_id=edge.source_entity_id
+     JOIN member destination ON destination.entity_id=edge.destination_entity_id
+     WHERE edge.generation=active.generation`,
+    memberJson,
   );
   // interlinks = edges NOT touching the center → the diagnostic (do the neighbours know each other?)
   const interlinks = allEdges.filter((e) => e.source !== addr && e.target !== addr);
@@ -121,20 +134,32 @@ export async function assetHolders(
   asset: string,
   limit: number,
 ): Promise<{ nodes: GraphNode[]; edges: GraphEdge[]; stats: GraphStats }> {
-  const holders = await q<{ holder: string; qty: number }>(
+  const holders = await q<{ holder: string; entity_id: number; qty: number }>(
     db,
-    `SELECT holder, CAST(quantity_normalized AS REAL) qty FROM balances
-     WHERE asset=?1 AND holder_type='address' AND CAST(quantity AS INTEGER)>0
-     ORDER BY CAST(quantity AS INTEGER) DESC LIMIT ?2`,
+    `SELECT address.address holder,entity.entity_id,CAST(balance.quantity_normalized AS REAL) qty
+     FROM asset_dictionary asset JOIN balances balance ON balance.asset_id=asset.asset_id
+     JOIN address_dictionary address ON address.address_id=balance.address_id
+     JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=address.address
+     WHERE asset.asset=?1 AND balance.address_id IS NOT NULL AND CAST(balance.quantity AS INTEGER)>0
+     ORDER BY CAST(balance.quantity AS INTEGER) DESC LIMIT ?2`,
     asset,
     limit,
   );
   const ids = holders.map((h) => h.holder);
-  const set = inList(ids);
+  const memberJson = JSON.stringify(holders.map((holder) => holder.entity_id));
   const holderEdges = ids.length
     ? await q<GraphEdge>(
         db,
-        `SELECT src source, dst target, ROUND(w,3) weight FROM graph_edges WHERE src IN (${set}) AND dst IN (${set})`,
+        `WITH active AS (SELECT CAST(value AS INTEGER) generation FROM core_state WHERE key='graph_generation'),
+         member AS (SELECT CAST(value AS INTEGER) entity_id FROM json_each(?1))
+         SELECT source.entity_key source,destination.entity_key target,ROUND(edge.weight,3) weight
+         FROM graph_edges edge,active
+         JOIN member source_member ON source_member.entity_id=edge.source_entity_id
+         JOIN member destination_member ON destination_member.entity_id=edge.destination_entity_id
+         JOIN entity_dictionary source ON source.entity_id=edge.source_entity_id
+         JOIN entity_dictionary destination ON destination.entity_id=edge.destination_entity_id
+         WHERE edge.generation=active.generation`,
+        memberJson,
       )
     : [];
   const { clusterOf, stats } = analyse(ids, holderEdges);
