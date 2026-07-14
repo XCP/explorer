@@ -56,9 +56,20 @@ export function listAddressLedgerPrimary(db: D1Database, address: string, p: Pag
 export function listIssuances(db: D1Database, address: string, p: Page): Promise<AddressIssuanceRow[]> {
   return q<AddressIssuanceRow>(
     db,
-    `SELECT tx_hash, block_index, block_time, asset, asset_longname, quantity_normalized, transfer, issuer, description, asset_events, status
-     FROM issuances WHERE source=? OR issuer=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    address,
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1),
+     candidates AS (
+       SELECT event_index,block_index FROM issuances WHERE source_id=(SELECT address_id FROM identity)
+       UNION
+       SELECT event_index,block_index FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)
+     ), page AS (
+       SELECT event_index FROM candidates ORDER BY block_index DESC,event_index DESC LIMIT ?2 OFFSET ?3
+     )
+     SELECT LOWER(HEX(i.tx_hash)) tx_hash,i.block_index,i.block_time,a.asset,i.asset_longname,
+       i.quantity_normalized,i.transfer,issuer.address issuer,i.description,i.asset_events,i.status
+     FROM page JOIN issuances i ON i.event_index=page.event_index
+     LEFT JOIN asset_dictionary a ON a.asset_id=i.asset_id
+     LEFT JOIN address_dictionary issuer ON issuer.address_id=i.issuer_id
+     ORDER BY i.block_index DESC,i.event_index DESC`,
     address,
     p.limit,
     p.offset,
@@ -69,7 +80,17 @@ export function listIssuances(db: D1Database, address: string, p: Page): Promise
 export function listDispensers(db: D1Database, address: string, p: Page): Promise<AddressDispenserRow[]> {
   return q<AddressDispenserRow>(
     db,
-    `SELECT tx_hash,block_index,block_time,source,asset,give_quantity_normalized,give_remaining_normalized,satoshirate,satoshirate_normalized,dispense_count,status FROM dispensers WHERE source=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1), page AS (
+       SELECT tx_index FROM dispensers WHERE source_id=(SELECT address_id FROM identity)
+       ORDER BY block_index DESC,tx_index DESC LIMIT ?2 OFFSET ?3
+     )
+     SELECT LOWER(HEX(d.tx_hash)) tx_hash,d.block_index,d.block_time,source.address source,asset.asset,
+       d.give_quantity_normalized,d.give_remaining_normalized,d.satoshirate,d.satoshirate_normalized,
+       d.dispense_count,d.status
+     FROM page JOIN dispensers d ON d.tx_index=page.tx_index
+     LEFT JOIN address_dictionary source ON source.address_id=d.source_id
+     LEFT JOIN asset_dictionary asset ON asset.asset_id=d.asset_id
+     ORDER BY d.block_index DESC,d.tx_index DESC`,
     address,
     p.limit,
     p.offset,
@@ -80,10 +101,24 @@ export function listDispensers(db: D1Database, address: string, p: Page): Promis
 export function listDispenses(db: D1Database, address: string, p: Page): Promise<AddressDispenseRow[]> {
   return q<AddressDispenseRow>(
     db,
-    `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.destination,d.asset,d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,t.usd_value
-     FROM dispenses d LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.id AS TEXT)
-     WHERE d.source=? OR d.destination=? ORDER BY d.block_index DESC LIMIT ? OFFSET ?`,
-    address,
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1),
+     candidates AS (
+       SELECT event_index,block_index FROM dispenses WHERE source_id=(SELECT address_id FROM identity)
+       UNION
+       SELECT event_index,block_index FROM dispenses WHERE destination_id=(SELECT address_id FROM identity)
+     ), page AS (
+       SELECT event_index FROM candidates ORDER BY block_index DESC,event_index DESC LIMIT ?2 OFFSET ?3
+     )
+     SELECT LOWER(HEX(d.tx_hash)) tx_hash,d.block_index,d.block_time,source.address source,
+       destination.address destination,asset.asset,d.dispense_quantity_normalized,
+       LOWER(HEX(dispenser.tx_hash)) dispenser_tx_hash,d.btc_amount,t.usd_value
+     FROM page JOIN dispenses d ON d.event_index=page.event_index
+     LEFT JOIN address_dictionary source ON source.address_id=d.source_id
+     LEFT JOIN address_dictionary destination ON destination.address_id=d.destination_id
+     LEFT JOIN asset_dictionary asset ON asset.asset_id=d.asset_id
+     LEFT JOIN dispensers dispenser ON dispenser.tx_index=d.dispenser_tx_index
+     LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.dispense_id AS TEXT)
+     ORDER BY d.block_index DESC,d.event_index DESC`,
     address,
     p.limit,
     p.offset,
@@ -94,9 +129,20 @@ export function listDispenses(db: D1Database, address: string, p: Page): Promise
 export function listIssued(db: D1Database, address: string, p: Page): Promise<AddressIssuedAssetRow[]> {
   return q<AddressIssuedAssetRow>(
     db,
-    `SELECT asset, asset_longname, divisible, locked, issuer, first_issuance_block_index FROM assets
-     WHERE issuer=? OR owner=? ORDER BY first_issuance_block_index DESC LIMIT ? OFFSET ?`,
-    address,
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1),
+     candidates AS (
+       SELECT asset_id,first_issuance_block_index FROM assets WHERE issuer_id=(SELECT address_id FROM identity)
+       UNION
+       SELECT asset_id,first_issuance_block_index FROM assets WHERE owner_id=(SELECT address_id FROM identity)
+     ), page AS (
+       SELECT asset_id FROM candidates ORDER BY first_issuance_block_index DESC,asset_id DESC LIMIT ?2 OFFSET ?3
+     )
+     SELECT dictionary.asset,asset.asset_longname,asset.divisible,asset.locked,issuer.address issuer,
+       asset.first_issuance_block_index
+     FROM page JOIN assets asset ON asset.asset_id=page.asset_id
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+     LEFT JOIN address_dictionary issuer ON issuer.address_id=asset.issuer_id
+     ORDER BY asset.first_issuance_block_index DESC,asset.asset_id DESC`,
     address,
     p.limit,
     p.offset,

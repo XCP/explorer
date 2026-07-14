@@ -71,17 +71,17 @@ addresses.get("/v2/addresses/:address/ledger", async (c) => {
 });
 
 addresses.get("/v2/addresses/:address/issuances", async (c) => {
-  const result = await listIssuances(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  const result = await listIssuances(c.env.CORE_DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:address/dispensers", async (c) => {
-  const result = await listDispensers(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  const result = await listDispensers(c.env.CORE_DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:address/dispenses", async (c) => {
-  const result = await listDispenses(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  const result = await listDispenses(c.env.CORE_DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
@@ -313,7 +313,7 @@ addresses.get("/v2/addresses/:address/summary", async (c) => {
 });
 
 addresses.get("/v2/addresses/:address/issued", async (c) => {
-  const result = await listIssued(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  const result = await listIssued(c.env.CORE_DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
