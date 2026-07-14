@@ -4,7 +4,6 @@ import { hashToBytes, parseUtxoHolder } from "#api/indexer/compact-codec";
 export const CORE_INCREMENTAL_PROJECTIONS = [
   "emblem_listings",
   "emblem_sales",
-  "scarce_city_sales",
   "trades",
 ] as const;
 export type CoreIncrementalProjection = (typeof CORE_INCREMENTAL_PROJECTIONS)[number];
@@ -148,27 +147,6 @@ async function writeRows(
     );
     return;
   }
-  if (table === "scarce_city_sales") {
-    const assets = [...new Set(rows.map((row) => nullableString(row.asset)).filter((asset) => asset != null))];
-    if (assets.length > 0) {
-      await db.batch(
-        assets.map((asset) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES(?)`).bind(asset)),
-      );
-    }
-    await db.batch(
-      rows.map((row) =>
-        db
-          .prepare(
-            `INSERT INTO scarce_city_sales(asset_id,sold_at,price_btc)
-             SELECT asset_id,?,? FROM asset_dictionary WHERE asset=?
-             ON CONFLICT(asset_id,sold_at) DO UPDATE SET price_btc=excluded.price_btc`,
-          )
-          .bind(row.sold_at, row.price_btc, row.asset),
-      ),
-    );
-    return;
-  }
-
   if (table === "trades") {
     const assets = [...new Set(rows.map((row) => nullableString(row.asset)).filter((asset) => asset != null))];
     const addresses = [

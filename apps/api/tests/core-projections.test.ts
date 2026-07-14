@@ -123,7 +123,6 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
   const { source, compact, env } = databases();
   source.exec(`
     INSERT INTO emblem_listings VALUES('live','contract','RAREPEPE','order','market',10,'10','currency','url',999,100);
-    INSERT INTO scarce_city_sales VALUES('RAREPEPE',123,0.25);
     INSERT INTO emblem_sales VALUES('abc',1,'contract','7','10','token','market','buyer','seller',99);
     INSERT INTO trades VALUES('dex','one','RAREPEPE',10,9,2,'XCP',3,4,'buyer','seller','${"ab".repeat(32)}','clean');
     INSERT INTO trades VALUES('external','two',NULL,11,NULL,1,'USD',5,5,NULL,NULL,'provider-id','clean');
@@ -132,22 +131,6 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
     INSERT INTO address_dictionary(address) VALUES('old-contract');
     INSERT INTO emblem_listings VALUES(0,1,'stale',NULL,NULL,'market',1,'1',NULL,'old',999,1);
   `);
-
-  assert.equal((await reconcileCoreProjection(env, "scarce_city_sales")).caught_up, true);
-  assert.deepEqual(
-    {
-      ...compact
-        .prepare(
-          `SELECT a.asset,s.sold_at,s.price_btc FROM scarce_city_sales s JOIN asset_dictionary a USING(asset_id)`,
-        )
-        .get(),
-    },
-    {
-      asset: "RAREPEPE",
-      sold_at: 123,
-      price_btc: 0.25,
-    },
-  );
 
   assert.equal((await reconcileCoreProjection(env, "emblem_sales")).caught_up, true);
   assert.deepEqual(
