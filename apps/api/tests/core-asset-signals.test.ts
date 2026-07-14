@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
+import { coreAssetSignals } from "#api/queries/core-assets";
 
 const migrations = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -22,6 +23,9 @@ class Statement {
   async run() {
     this.db.prepare(this.sql).run(...this.values);
     return { success: true };
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
   }
 }
 
@@ -65,4 +69,9 @@ test("compact asset signals refresh volatile fields from canonical relations", a
     trades: 0,
     dispenses: 0,
   });
+
+  db.exec(`INSERT INTO blocks(block_index,block_hash,block_time) VALUES(201,randomblob(32),2)`);
+  const fresh = await coreAssetSignals(d1(db), "A");
+  assert.equal(fresh?.age_blocks, 101);
+  assert.equal(fresh?.recency_blocks, 201);
 });

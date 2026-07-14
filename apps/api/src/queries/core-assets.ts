@@ -114,11 +114,23 @@ export function coreAssetAccounting(db: D1Database, asset: string): Promise<Asse
 export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSignalsRow | null> {
   return one<AssetSignalsRow>(
     db,
-    `SELECT dictionary.asset,assets.asset_longname,issuer.address issuer,signal.*
+    `SELECT dictionary.asset,assets.asset_longname,issuer.address issuer,
+            assets.divisible,assets.locked,signal.holders,signal.top1_pct,signal.trades,
+            signal.self_trade_pct,signal.first_trade_blk,signal.last_trade_blk,signal.dispenses,
+            signal.dispense_btc,signal.low_quality,signal.holder_breadth,signal.pct_creator_holders,
+            signal.burned_pct,signal.distinct_traders,signal.distinct_dispensers,
+            max(0,tip.block_index-coalesce(assets.first_issuance_block_index,tip.block_index)) age_blocks,
+            signal.avg_holder_dex,signal.recent_events,
+            max(0,tip.block_index-signal.last_trade_blk) recency_blocks,
+            signal.max_dispense_btc,signal.max_trade_xcp,signal.supply,signal.max_realized_usd,
+            signal.distinct_dispense_buyers,signal.max_dispense_btc_clean,signal.emblem_trades,
+            signal.graph_trust,signal.graph_distrust,signal.holder_cohesion,
+            signal.cohesion_edges,signal.cohesion_strong
        FROM asset_signals signal
        JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
        LEFT JOIN assets ON assets.asset_id=signal.asset_id
        LEFT JOIN address_dictionary issuer ON issuer.address_id=signal.issuer_id
+       CROSS JOIN (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip
       WHERE dictionary.asset=?`,
     asset,
   );
