@@ -20,21 +20,20 @@
  *          forward (trust subsets), slot K reverse (distrust). trust = MIN over the k subsets; distrust = slot K.
  */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
 import { q } from "#api/db";
 import {
   K,
   DISTRUST_SLOT,
   PASSES,
-  ASSET_PREFIX,
   seedSubset,
-  passStatements,
-  finalizeStatements,
-  EDGE_INSERTS,
-  BIPARTITE_EDGE_INSERTS,
-  NODE_INSERTS,
-  RANK_INIT,
-  SEED_APPLY,
+  ENTITY_IDENTITY_STATEMENTS,
+  entityEdgeStatements,
+  entityNodeStatements,
+  entityRankInitStatements,
+  entitySeedApplyStatement,
+  entitySeedInsertStatement,
+  entityPassStatements,
+  entityFinalizeStatements,
 } from "#api/indexer/graph-core";
 import { rawSqlExpr } from "#api/reputation/score";
 import { ASSET_FACTORS, ASSET_TIERS } from "#api/reputation/config";
@@ -45,6 +44,16 @@ const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per ad
 const K_PHASE = "graph_phase"; // "build" | "iterate" | "finalize" | "done"
 const K_BUILD = "graph_build_i"; // cursor into the build-op list
 const K_PASS = "graph_pass_i"; // cursor 0..(K+1)*PASSES over the interleaved slot-passes
+const K_GENERATION = "graph_build_generation";
+
+const getState = async (db: D1Database, key: string): Promise<string | null> =>
+  (await db.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null;
+const setState = async (db: D1Database, key: string, value: string | number): Promise<void> => {
+  await db
+    .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+    .bind(key, String(value))
+    .run();
+};
 
 // ---- small state + chunk helpers (same shape as signals.ts) ----
 const chunk = <T>(a: T[], n: number): T[][] => {
@@ -67,8 +76,11 @@ async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
     if (!part.length) continue;
     const ph = part.map(() => "?").join(",");
     const r = await q<{ issuer: string }>(
-      env.DB,
-      `SELECT DISTINCT issuer FROM assets WHERE issuer IS NOT NULL AND asset IN (${ph})`,
+      env.CORE_DB,
+      `SELECT DISTINCT issuer.address issuer FROM assets state
+       JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
+       JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+       WHERE asset.asset IN (${ph})`,
       ...part,
     );
     for (const x of r) if (x.issuer) out.add(x.issuer);
@@ -106,20 +118,27 @@ const NOT_INFRA_OR_SCAM = `sig.is_exchange=0 AND sig.is_burn=0 AND sig.is_deposi
  * creator / prolific_creator / dividend_payer), never infra or a scammer. Seeds are high-precision; the graph
  * propagates from them. Distrust unchanged.
  */
-async function applySeeds(env: Env): Promise<void> {
+async function applySeeds(env: Env, generation: number): Promise<void> {
   const tagPh = COLLECTION_TAGS.map(() => "?").join(",");
   const archPh = TRUST_ARCHETYPES.map(() => "?").join(",");
   const excluded = new Set(
-    (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind IN ('exchange','burn')`)).map((r) => r.key),
+    (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind IN ('exchange','burn')`)).map(
+      (r) => r.key,
+    ),
   );
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const tip =
+    Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
 
   // ---- TRUST ASSETS: grails + curated collections + Established+ by our QUALITY score ----
-  const grails = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='grail'`)).map((r) => r.key);
+  const grails = (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind='grail'`)).map(
+    (r) => r.key,
+  );
   const collAssets = (
     await q<{ a: string }>(
-      env.DB,
-      `SELECT DISTINCT entity_id a FROM tags WHERE entity_type='asset' AND tag IN (${tagPh})`,
+      env.CORE_DB,
+      `SELECT DISTINCT entity.entity_key a FROM tags tag
+       JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
+       WHERE tag.tag IN (${tagPh})`,
       ...COLLECTION_TAGS,
     )
   ).map((r) => r.a);
@@ -129,19 +148,24 @@ async function applySeeds(env: Env): Promise<void> {
   // token can ride real flow to Established), so a flagged asset must NEVER become a trust seed via quality.
   const quality = (
     await q<{ a: string }>(
-      env.DB,
-      `SELECT asset a FROM asset_signals WHERE low_quality=0 AND (trades>0 OR dispenses>0) AND (${qualExpr}) >= ${estCut}`,
+      env.CORE_DB,
+      `SELECT asset.asset a FROM asset_signals signal
+       JOIN asset_dictionary asset ON asset.asset_id=signal.asset_id
+       WHERE signal.low_quality=0 AND (signal.trades>0 OR signal.dispenses>0) AND (${qualExpr}) >= ${estCut}`,
     )
   ).map((r) => r.a);
   const trust = new Set<string>();
-  for (const a of [...grails, ...collAssets, ...quality]) trust.add(ASSET_PREFIX + a);
+  for (const a of [...grails, ...collAssets, ...quality]) trust.add(`asset:${a}`);
 
   // ---- TRUST ADDRESSES: proven-ecosystem archetype tags, never infra/scam (+ grail issuers as axioms) ----
   const trustAddrs = (
     await q<{ address: string }>(
-      env.DB,
-      `SELECT DISTINCT t.entity_id address FROM tags t JOIN address_signals sig ON sig.address=t.entity_id
-      WHERE t.entity_type='address' AND t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`,
+      env.CORE_DB,
+      `SELECT DISTINCT entity.entity_key address FROM tags t
+       JOIN entity_dictionary entity ON entity.entity_id=t.entity_id AND entity.entity_type='address'
+       JOIN address_dictionary address ON address.address=entity.entity_key
+       JOIN address_signals sig ON sig.address_id=address.address_id
+       WHERE t.tag IN (${archPh}) AND ${NOT_INFRA_OR_SCAM}`,
       ...TRUST_ARCHETYPES,
     )
   ).map((r) => r.address);
@@ -149,14 +173,18 @@ async function applySeeds(env: Env): Promise<void> {
   for (const address of [...trustAddrs, ...grailIssuers]) if (!excluded.has(address)) trust.add(address);
 
   // ---- DISTRUST (unchanged): curated lowq + their issuers + derived scam actors ----
-  const lowqs = (await q<{ key: string }>(env.DB, `SELECT key FROM curated WHERE kind='lowq'`)).map((r) => r.key);
+  const lowqs = (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind='lowq'`)).map(
+    (r) => r.key,
+  );
   const distrust = new Set<string>();
-  for (const l of lowqs) distrust.add(ASSET_PREFIX + l);
+  for (const l of lowqs) distrust.add(`asset:${l}`);
   for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
   const scamActors = (
     await q<{ address: string }>(
-      env.DB,
-      `SELECT address FROM address_signals WHERE shell_scams > 0 OR vault_scams > 0 OR dump_scams > 0`,
+      env.CORE_DB,
+      `SELECT address.address FROM address_signals signal
+       JOIN address_dictionary address ON address.address_id=signal.address_id
+       WHERE signal.shell_scams>0 OR signal.vault_scams>0 OR signal.dump_scams>0`,
     )
   ).map((r) => r.address);
   for (const a of scamActors) if (!excluded.has(a)) distrust.add(a);
@@ -165,50 +193,51 @@ async function applySeeds(env: Env): Promise<void> {
   // ---- STAGE: split trust k ways (Min-k), distrust into its slot; batch the ~13k inserts (not one-at-a-time) ----
   const subsets: string[][] = Array.from({ length: K }, () => []);
   for (const key of trust) subsets[seedSubset(key)].push(key);
-  const rows: [string, number, number][] = [];
+  const rows: [string, string, number, number][] = [];
   subsets.forEach((sub, slot) => {
     const s = sub.length ? 1 / sub.length : 0;
-    for (const node of sub) rows.push([node, slot, s]);
+    for (const node of sub) rows.push([node.startsWith("asset:") ? "asset" : "address", node.replace(/^asset:/, ""), slot, s]);
   });
   const dArr = [...distrust];
   const ds = dArr.length ? 1 / dArr.length : 0;
-  for (const node of dArr) rows.push([node, DISTRUST_SLOT, ds]);
+  for (const node of dArr)
+    rows.push([node.startsWith("asset:") ? "asset" : "address", node.replace(/^asset:/, ""), DISTRUST_SLOT, ds]);
 
-  await env.DB.prepare(`DELETE FROM graph_seed`).run();
-  const stmts = chunk(rows, 30)
+  const stmts = chunk(rows, 20)
     .filter((p) => p.length)
     .map((part) =>
-      env.DB.prepare(
-        `INSERT INTO graph_seed (node,slot,s) VALUES ${part.map(() => "(?,?,?)").join(",")}
-         ON CONFLICT(node,slot) DO UPDATE SET s=excluded.s`,
+      env.CORE_DB.prepare(
+        entitySeedInsertStatement(generation, part.length),
       ).bind(...part.flat()),
     );
-  for (const b of chunk(stmts, 20)) await env.DB.batch(b);
-  await env.DB.prepare(SEED_APPLY).run();
+  for (const b of chunk(stmts, 20)) await env.CORE_DB.batch(b);
+  await env.CORE_DB.prepare(entitySeedApplyStatement(generation)).run();
 }
 
 // the ordered build operations (each a bounded unit of work advanced by the cursor). The bipartite flag
 // is captured in indexer_state at reset so every resumed call constructs the SAME deterministic op list.
-function buildOps(bipartite: boolean): { name: string; exec: (env: Env) => Promise<void> }[] {
+function buildOps(generation: number, bipartite: boolean): { name: string; exec: (env: Env) => Promise<void> }[] {
   const runSql = (sql: string) => async (env: Env) => {
-    await env.DB.prepare(sql).run();
+    await env.CORE_DB.prepare(sql).run();
   };
   const ops: { name: string; exec: (env: Env) => Promise<void> }[] = [
     {
       name: "reset",
       exec: async (env) => {
-        await env.DB.prepare(`DELETE FROM graph_edges`).run();
-        await env.DB.prepare(`DELETE FROM graph_node`).run();
-        await env.DB.prepare(`DELETE FROM graph_rank`).run();
-        await env.DB.prepare(`DELETE FROM graph_seed`).run();
+        for (const table of ["graph_inflow", "graph_seed", "graph_rank", "graph_node", "graph_edges"])
+          await env.CORE_DB.prepare(`DELETE FROM ${table} WHERE generation=?`).bind(generation).run();
       },
     },
   ];
-  EDGE_INSERTS.forEach((sql, i) => ops.push({ name: `edges_${i}`, exec: runSql(sql) }));
-  if (bipartite) BIPARTITE_EDGE_INSERTS.forEach((sql, i) => ops.push({ name: `bip_${i}`, exec: runSql(sql) }));
-  NODE_INSERTS.forEach((sql, i) => ops.push({ name: `node_${i}`, exec: runSql(sql) }));
-  RANK_INIT.forEach((sql, i) => ops.push({ name: `rank_init_${i}`, exec: runSql(sql) }));
-  ops.push({ name: "seeds", exec: applySeeds });
+  ENTITY_IDENTITY_STATEMENTS.forEach((sql, i) => ops.push({ name: `identity_${i}`, exec: runSql(sql) }));
+  entityEdgeStatements(generation, bipartite).forEach((sql, i) =>
+    ops.push({ name: `edges_${i}`, exec: runSql(sql) }),
+  );
+  entityNodeStatements(generation).forEach((sql, i) => ops.push({ name: `node_${i}`, exec: runSql(sql) }));
+  entityRankInitStatements(generation).forEach((sql, i) =>
+    ops.push({ name: `rank_init_${i}`, exec: runSql(sql) }),
+  );
+  ops.push({ name: "seeds", exec: (env) => applySeeds(env, generation) });
   return ops;
 }
 
@@ -231,28 +260,31 @@ export async function buildGraphTrust(
 ): Promise<GraphBuildProgress> {
   const work = Math.max(1, Math.min(40, opts.work ?? DEFAULT_WORK));
   if (opts.reset) {
-    await setState(env.DB, K_PHASE, "build");
-    await setState(env.DB, K_BUILD, "0");
-    await setState(env.DB, K_PASS, "0");
+    const active = int(await getState(env.CORE_DB, "graph_generation"), 0);
+    await setState(env.CORE_DB, K_GENERATION, active + 1);
+    await setState(env.CORE_DB, K_PHASE, "build");
+    await setState(env.CORE_DB, K_BUILD, "0");
+    await setState(env.CORE_DB, K_PASS, "0");
     // captured at reset so every resumed call constructs the same deterministic op list
-    await setState(env.DB, "graph_bipartite", opts.bipartite ? "1" : "0");
+    await setState(env.CORE_DB, "graph_bipartite", opts.bipartite ? "1" : "0");
   }
-  const bipartite = (await getState(env.DB, "graph_bipartite")) === "1";
-  let phase = (await getState(env.DB, K_PHASE)) || "build";
+  const generation = int(await getState(env.CORE_DB, K_GENERATION), 1);
+  const bipartite = (await getState(env.CORE_DB, "graph_bipartite")) === "1";
+  let phase = (await getState(env.CORE_DB, K_PHASE)) || "build";
   if (!["build", "iterate", "finalize", "done"].includes(phase)) phase = "build";
 
   if (phase === "build") {
-    const ops = buildOps(bipartite);
-    let i = int(await getState(env.DB, K_BUILD), 0);
+    const ops = buildOps(generation, bipartite);
+    let i = int(await getState(env.CORE_DB, K_BUILD), 0);
     if (i < 0 || i > ops.length) i = 0;
     const ran: string[] = [];
     for (let n = 0; n < work && i < ops.length; n++, i++) {
       await ops[i].exec(env);
       ran.push(ops[i].name);
     }
-    await setState(env.DB, K_BUILD, String(i));
+    await setState(env.CORE_DB, K_BUILD, String(i));
     if (i >= ops.length) {
-      await setState(env.DB, K_PHASE, "iterate");
+      await setState(env.CORE_DB, K_PHASE, "iterate");
       return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> iterate" };
     }
     return { phase: "build", done: false, build: { at: i, of: ops.length, ran } };
@@ -260,17 +292,18 @@ export async function buildGraphTrust(
 
   if (phase === "iterate") {
     const total = (K + 1) * PASSES;
-    let step = int(await getState(env.DB, K_PASS), 0);
+    let step = int(await getState(env.CORE_DB, K_PASS), 0);
     if (step < 0 || step > total) step = 0;
     const ran: string[] = [];
     for (let n = 0; n < work && step < total; n++, step++) {
       const slot = step % (K + 1);
-      for (const sql of passStatements(slot, slot === DISTRUST_SLOT)) await env.DB.prepare(sql).run();
+      for (const sql of entityPassStatements(generation, slot, slot === DISTRUST_SLOT))
+        await env.CORE_DB.prepare(sql).run();
       ran.push(`slot${slot}#${Math.floor(step / (K + 1))}`);
     }
-    await setState(env.DB, K_PASS, String(step));
+    await setState(env.CORE_DB, K_PASS, String(step));
     if (step >= total) {
-      await setState(env.DB, K_PHASE, "finalize");
+      await setState(env.CORE_DB, K_PHASE, "finalize");
       return {
         phase: "iterate",
         done: false,
@@ -282,8 +315,8 @@ export async function buildGraphTrust(
   }
 
   if (phase === "finalize") {
-    for (const sql of finalizeStatements()) await env.DB.prepare(sql).run();
-    await setState(env.DB, K_PHASE, "done");
+    await env.CORE_DB.batch(entityFinalizeStatements(generation).map((sql) => env.CORE_DB.prepare(sql)));
+    await setState(env.CORE_DB, K_PHASE, "done");
     return { phase: "finalize", done: true, finalize: true, note: "graph_trust/graph_distrust written to signals" };
   }
 
@@ -293,7 +326,7 @@ export async function buildGraphTrust(
 // ~7 days of Counterparty blocks — the auto-rebuild cadence (the graph moves slowly; weekly is ample).
 const WEEK_BLOCKS = 1008;
 async function graphTip(env: Env): Promise<number> {
-  return Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  return Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
 }
 
 /**
@@ -303,18 +336,18 @@ async function graphTip(env: Env): Promise<number> {
  * (incl. the freshly-seeded scam actors) trickles to completion over a few hours, once a week, on its own.
  */
 export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
-  const phase = (await getState(env.DB, K_PHASE)) || "done";
+  const phase = (await getState(env.CORE_DB, K_PHASE)) || "done";
   if (phase === "done") {
     const tip = await graphTip(env);
-    const last = int(await getState(env.DB, "graph_rebuilt_block"), 0);
+    const last = int(await getState(env.CORE_DB, "graph_rebuilt_block"), 0);
     if (last === 0) {
-      await setState(env.DB, "graph_rebuilt_block", String(tip));
+      await setState(env.CORE_DB, "graph_rebuilt_block", String(tip));
       return { skipped: "clock started" };
     }
     if (tip - last >= WEEK_BLOCKS) return await buildGraphTrust(env, { reset: true });
     return { skipped: `fresh (${tip - last}/${WEEK_BLOCKS} blocks to next rebuild)` };
   }
   const r = await buildGraphTrust(env, { work: 4 }); // single-driver (cron owns the rebuild); a few units/tick
-  if (r.done) await setState(env.DB, "graph_rebuilt_block", String(await graphTip(env)));
+  if (r.done) await setState(env.CORE_DB, "graph_rebuilt_block", String(await graphTip(env)));
   return r;
 }

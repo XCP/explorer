@@ -380,6 +380,16 @@ export function entitySeedApplyStatement(generation: number): string {
             AND rank.entity_id=seed.entity_id AND rank.slot=seed.slot`;
 }
 
+export function entitySeedInsertStatement(generation: number, rows: number): string {
+  if (!Number.isInteger(rows) || rows < 1) throw new RangeError("graph seed insert requires at least one row");
+  return `INSERT INTO graph_seed(generation,entity_id,slot,score)
+          SELECT ${generation},entity.entity_id,input.column3,input.column4
+          FROM (VALUES ${Array.from({ length: rows }, () => "(?,?,?,?)").join(",")}) input
+          JOIN entity_dictionary entity ON entity.entity_type=input.column1 AND entity.entity_key=input.column2
+          WHERE true
+          ON CONFLICT(generation,entity_id,slot) DO UPDATE SET score=excluded.score`;
+}
+
 export function entityFinalizeStatements(generation: number): string[] {
   const trustSlots = Array.from({ length: K }, (_, index) => index).join(",");
   const cuts: Array<[string, string, string, number]> = [

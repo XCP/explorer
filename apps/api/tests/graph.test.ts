@@ -26,6 +26,7 @@ import {
   entityNodeStatements,
   entityRankInitStatements,
   entitySeedApplyStatement,
+  entitySeedInsertStatement,
   ENTITY_IDENTITY_STATEMENTS,
   entityEdgeStatements,
   K,
@@ -364,5 +365,25 @@ test("normalized edge builder resolves compact relationships through canonical e
     ],
   );
   assert.equal(edges.some((row) => row.source === "exchange"), false, "excluded infrastructure cannot endorse");
+  db.close();
+});
+
+test("normalized seeds resolve polymorphic identities without key collisions", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,
+      UNIQUE(entity_type,entity_key));
+    CREATE TABLE graph_seed(generation INTEGER,entity_id INTEGER,slot INTEGER,score REAL,
+      PRIMARY KEY(generation,entity_id,slot)) WITHOUT ROWID;
+    INSERT INTO entity_dictionary VALUES(1,'address','SAME'),(2,'asset','SAME');
+  `);
+  db.prepare(entitySeedInsertStatement(4, 2)).run("address", "SAME", 0, 0.25, "asset", "SAME", 1, 0.5);
+  assert.deepEqual(
+    db.prepare(`SELECT entity_id,slot,score FROM graph_seed ORDER BY entity_id`).all().map((row) => ({ ...row })),
+    [
+      { entity_id: 1, slot: 0, score: 0.25 },
+      { entity_id: 2, slot: 1, score: 0.5 },
+    ],
+  );
   db.close();
 });
