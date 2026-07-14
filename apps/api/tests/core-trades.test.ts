@@ -144,11 +144,11 @@ test("trade identity migration replaces source-local and lossy references", () =
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
     CREATE TABLE dispenses(event_index INTEGER,dispense_id INTEGER);
     CREATE TABLE emblem_sales(tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT);
-    CREATE TABLE trades(venue TEXT,ref TEXT,PRIMARY KEY(venue,ref));
+    CREATE TABLE trades(venue TEXT,ref TEXT,asset_id INTEGER,PRIMARY KEY(venue,ref));
     INSERT INTO address_dictionary VALUES(3,'0xcontract');
     INSERT INTO dispenses VALUES(77,9001);
     INSERT INTO emblem_sales VALUES('0xeth',9,3,'7'),('0xeth',9,3,'8');
-    INSERT INTO trades VALUES('dispense','9001'),('emblem','0xeth_9');
+    INSERT INTO trades(venue,ref) VALUES('dispense','9001'),('emblem','0xeth_9');
   `);
   db.exec(readFileSync("migrations-core/0020_trade_identities.sql", "utf8"));
   assert.deepEqual(
