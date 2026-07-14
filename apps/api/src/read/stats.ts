@@ -8,11 +8,11 @@ import {
   syncOverview,
   networkCounts,
   networkTotals,
-  metricSeries,
   maxBlock,
   leaderboards,
   type MetricName,
 } from "#api/queries/stats";
+import { coreMetricSeries } from "#api/queries/core-stats";
 
 export const stats = router();
 
@@ -37,7 +37,9 @@ stats.get("/v2/metrics", async (c) => {
   return cached(c, `metrics:${days}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
     // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
     const series = async (name: MetricName) =>
-      (await metricSeries(c.env.DB, name, days)).map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
+      (await coreMetricSeries(c.env.CORE_DB, name, days))
+        .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 }))
+        .reverse();
     const [transactions, issuances, dispenses, trades, sends, btc_fees, xcp_burned] = await Promise.all([
       series("transactions"),
       series("issuances"),

@@ -18,19 +18,6 @@ export interface MetricDayRow {
   v: number;
 }
 
-/**
- * XCP destroyed (deflation): issuance/sweep/dividend fees + explicit XCP destructions. `extra` prefixes
- * each SELECT (e.g. "block_time, ") for the time-series variant. Private to stats — the lifetime total
- * (networkTotals) and the daily burn series (metricSeries('xcp_burned')) are its only two callers.
- */
-function xcpDestroyed(extra = ""): string {
-  return `
-  SELECT ${extra}fee_paid amt FROM issuances WHERE status LIKE 'valid%' AND fee_paid IS NOT NULL
-  UNION ALL SELECT ${extra}fee_paid FROM sweeps WHERE fee_paid IS NOT NULL
-  UNION ALL SELECT ${extra}fee_paid FROM dividends WHERE fee_paid IS NOT NULL
-  UNION ALL SELECT ${extra}quantity FROM destructions WHERE asset='XCP' AND status LIKE 'valid%'`;
-}
-
 /** Home summary — tip, headline counts, indexer cursor. */
 export function homeOverview(db: D1Database): Promise<StatsOverview | null> {
   return one<StatsOverview>(
@@ -69,24 +56,6 @@ export function networkTotals(db: D1Database): Promise<NetworkTotals | null> {
 
 /** The daily chart series the /metrics panel plots. Each is a GROUP BY day on block_time. */
 export type MetricName = "transactions" | "issuances" | "dispenses" | "trades" | "sends" | "btc_fees" | "xcp_burned";
-
-// transactions come from blocks (cheap: 1 row/block carries Counterparty's tx_count); issuances/dispenses/trades/
-// sends by daily count; btc_fees = daily BTC miner fees; xcp_burned = daily XCP destroyed (deflation).
-const METRIC_SQL: Record<MetricName, string> = {
-  transactions: `SELECT block_time/86400 d, SUM(transaction_count) v FROM blocks WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  issuances: `SELECT block_time/86400 d, COUNT(*) v FROM issuances WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  dispenses: `SELECT block_time/86400 d, COUNT(*) v FROM dispenses WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  trades: `SELECT block_time/86400 d, COUNT(*) v FROM order_matches WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  sends: `SELECT block_time/86400 d, COUNT(*) v FROM sends WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  btc_fees: `SELECT block_time/86400 d, SUM(CAST(fee AS REAL))/100000000.0 v FROM transactions WHERE block_time>0 AND fee IS NOT NULL GROUP BY d ORDER BY d DESC LIMIT ?`,
-  xcp_burned: `SELECT block_time/86400 d, SUM(CAST(amt AS REAL))/100000000.0 v
-    FROM (${xcpDestroyed("block_time, ")}) WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-};
-
-/** One daily chart series (newest-first; the handler maps to {t,v} points and reverses). */
-export function metricSeries(db: D1Database, name: MetricName, days: number): Promise<MetricDayRow[]> {
-  return q<MetricDayRow>(db, METRIC_SQL[name], days);
-}
 
 /** MAX(block_index) — the tip, used to age the reputation terms in the leaderboard SQL. */
 export function maxBlock(db: D1Database): Promise<number> {

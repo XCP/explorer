@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { coreHomeOverview, coreNetworkCounts, coreNetworkTotals, coreSyncOverview } from "#api/queries/core-stats";
+import {
+  coreHomeOverview,
+  coreMetricSeries,
+  coreNetworkCounts,
+  coreNetworkTotals,
+  coreSyncOverview,
+} from "#api/queries/core-stats";
 
 class Statement {
   private values: unknown[] = [];
@@ -15,6 +21,9 @@ class Statement {
   }
   async first<T>() {
     return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
   }
 }
 
@@ -67,4 +76,39 @@ test("compact overview reads one snapshot and reports the canonical block positi
     },
   );
   assert.deepEqual({ ...(await coreNetworkTotals(dbBinding)) }, { btc_fees: 1.5, xcp_destroyed: 2.5 });
+});
+
+test("compact daily metrics preserve day buckets and monetary normalization", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
+    INSERT INTO asset_dictionary VALUES(1,'BTC'),(2,'XCP');
+    CREATE TABLE blocks(block_time INTEGER,transaction_count INTEGER);
+    CREATE TABLE transactions(block_time INTEGER,fee TEXT);
+    CREATE TABLE issuances(block_time INTEGER,fee_paid TEXT,status TEXT);
+    CREATE TABLE dispenses(block_time INTEGER); CREATE TABLE order_matches(block_time INTEGER);
+    CREATE TABLE sends(block_time INTEGER); CREATE TABLE sweeps(block_time INTEGER,fee_paid TEXT);
+    CREATE TABLE dividends(block_time INTEGER,fee_paid TEXT);
+    CREATE TABLE destructions(block_time INTEGER,quantity TEXT,asset_id INTEGER,status TEXT);
+    INSERT INTO blocks VALUES(86400,2),(86500,3),(172800,4);
+    INSERT INTO transactions VALUES(86400,'10000000'),(172800,'20000000');
+    INSERT INTO issuances VALUES(86400,'100000000','valid'),(172800,'900000000','invalid');
+    INSERT INTO dispenses VALUES(86400),(172800); INSERT INTO order_matches VALUES(86400),(86401);
+    INSERT INTO sends VALUES(172800); INSERT INTO sweeps VALUES(86400,'200000000');
+    INSERT INTO dividends VALUES(86400,'300000000');
+    INSERT INTO destructions VALUES(86400,'400000000',2,'valid'),(86400,'800000000',1,'valid');
+  `);
+  const binding = d1(db);
+  const series = async (name: Parameters<typeof coreMetricSeries>[1]) =>
+    (await coreMetricSeries(binding, name, 7)).map((row) => ({ ...row }));
+  assert.deepEqual(await series("transactions"), [
+    { d: 2, v: 4 },
+    { d: 1, v: 5 },
+  ]);
+  assert.deepEqual(await series("trades"), [{ d: 1, v: 2 }]);
+  assert.deepEqual(await series("btc_fees"), [
+    { d: 2, v: 0.2 },
+    { d: 1, v: 0.1 },
+  ]);
+  assert.deepEqual(await series("xcp_burned"), [{ d: 1, v: 10 }]);
 });
