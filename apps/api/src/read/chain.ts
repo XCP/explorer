@@ -4,8 +4,7 @@ import { RECORD_KINDS } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
-import { getTransaction, blockTip } from "#api/queries/chain";
-import { listBlocks, getBlock, blockTransactions } from "#api/queries/core";
+import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
   listRecords,
   classifyTx,
@@ -185,10 +184,10 @@ function actionValidity(a: TxAction | null): TxView["protocol"] {
 // 404 only when the hash is in neither. Short TTLs — this page is watched live by both sides of a payment.
 chain.get("/v2/transactions/:hash", async (c) => {
   const hash = c.req.param("hash");
-  const t = await getTransaction(c.env.DB, hash);
+  const t = await getTransaction(c.env.CORE_DB, hash);
   if (t) {
     const [tip, action] = await Promise.all([
-      blockTip(c.env.DB),
+      blockTip(c.env.CORE_DB),
       composeAction(c.env.DB, t.tx_hash, t.block_index).catch((e) => {
         console.log("tx action compose failed:", e instanceof Error ? e.message : String(e));
         return null;

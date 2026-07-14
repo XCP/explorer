@@ -7,11 +7,13 @@ import {
   CORE_BALANCES_BY_ADDRESS_SQL,
   CORE_TOTAL_BY_ASSET_SQL,
   ORDER_MATCH_PUBLIC_ID_SQL,
-  CORE_BLOCK_PAGE_SQL,
-  CORE_BLOCK_BY_INDEX_SQL,
-  CORE_TRANSACTIONS_BY_BLOCK_SQL,
-  CORE_TRANSACTION_BY_HASH_SQL,
 } from "#api/queries/core";
+import {
+  BLOCK_PAGE_SQL,
+  BLOCK_BY_INDEX_SQL,
+  TRANSACTIONS_BY_BLOCK_SQL,
+  TRANSACTION_BY_HASH_SQL,
+} from "#api/queries/chain";
 import {
   auditCoreProjectionPolicies,
   CORE_COLUMN_RULES,
@@ -321,11 +323,11 @@ test("issuances retain one-to-many transaction message identity", () => {
 
 test("compact chain reads restore the public hash, address, and null-only data shape", () => {
   const db = fixture();
-  const blocks = db.prepare(CORE_BLOCK_PAGE_SQL).all(50, 0) as { block_hash: string }[];
+  const blocks = db.prepare(BLOCK_PAGE_SQL).all(50, 0) as { block_hash: string }[];
   assert.equal(blocks[0].block_hash, "aa".repeat(32));
-  const block = db.prepare(CORE_BLOCK_BY_INDEX_SQL).get(100) as { previous_block_hash: string };
+  const block = db.prepare(BLOCK_BY_INDEX_SQL).get(100) as { previous_block_hash: string };
   assert.equal(block.previous_block_hash, "99".repeat(32));
-  const transactions = db.prepare(CORE_TRANSACTIONS_BY_BLOCK_SQL).all(100) as {
+  const transactions = db.prepare(TRANSACTIONS_BY_BLOCK_SQL).all(100) as {
     tx_hash: string;
     source: string;
     destination: string;
@@ -340,7 +342,7 @@ test("compact chain reads restore the public hash, address, and null-only data s
       fee: "10",
     },
   );
-  const transaction = db.prepare(CORE_TRANSACTION_BY_HASH_SQL).get("ab".repeat(32)) as {
+  const transaction = db.prepare(TRANSACTION_BY_HASH_SQL).get("ab".repeat(32)) as {
     data: string | null;
     source: string;
   };
@@ -350,19 +352,19 @@ test("compact chain reads restore the public hash, address, and null-only data s
 
 test("compact chain pages seek their base indexes before decoding", () => {
   const db = fixture();
-  const blockPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_BLOCK_PAGE_SQL}`).all(50, 0) as { detail: string }[];
+  const blockPlan = db.prepare(`EXPLAIN QUERY PLAN ${BLOCK_PAGE_SQL}`).all(50, 0) as { detail: string }[];
   assert.equal(
     blockPlan.some((row) => row.detail.includes("SCAN blocks")),
     true,
   );
-  const txPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_TRANSACTIONS_BY_BLOCK_SQL}`).all(100) as {
+  const txPlan = db.prepare(`EXPLAIN QUERY PLAN ${TRANSACTIONS_BY_BLOCK_SQL}`).all(100) as {
     detail: string;
   }[];
   assert.equal(
     txPlan.some((row) => row.detail.includes("idx_transactions_block")),
     true,
   );
-  const detailPlan = db.prepare(`EXPLAIN QUERY PLAN ${CORE_TRANSACTION_BY_HASH_SQL}`).all("ab".repeat(32)) as {
+  const detailPlan = db.prepare(`EXPLAIN QUERY PLAN ${TRANSACTION_BY_HASH_SQL}`).all("ab".repeat(32)) as {
     detail: string;
   }[];
   assert.equal(
