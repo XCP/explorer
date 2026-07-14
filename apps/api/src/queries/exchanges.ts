@@ -14,7 +14,9 @@ type ExchangeSummary = NonNullable<ExchangesPayload["summary"]>;
 export function exchangeWallets(db: D1Database): Promise<ExchangeWalletRow[]> {
   return q<ExchangeWalletRow>(
     db,
-    `SELECT address, assets_received, in_peers, first_block, last_block FROM address_signals WHERE is_exchange=1 ORDER BY in_peers DESC`,
+    `SELECT dictionary.address,signal.assets_received,signal.in_peers,signal.first_block,signal.last_block
+       FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+      WHERE signal.is_exchange=1 ORDER BY signal.in_peers DESC`,
   );
 }
 
@@ -22,12 +24,12 @@ export function exchangeWallets(db: D1Database): Promise<ExchangeWalletRow[]> {
 export function exchangeTopAssets(db: D1Database): Promise<ExchangeTopAsset[]> {
   return q<ExchangeTopAsset>(
     db,
-    `SELECT asset, asset_longname, depositors
-       FROM exchange_top_assets
-      WHERE generation=COALESCE(
-        (SELECT CAST(value AS INTEGER) FROM indexer_state WHERE key='exchange_top_assets_generation'), 0
-      )
-      ORDER BY depositors DESC, asset ASC`,
+    `SELECT dictionary.asset,asset.asset_longname,top.depositors
+       FROM exchange_top_assets top
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=top.asset_id
+       LEFT JOIN assets asset ON asset.asset_id=top.asset_id
+      WHERE top.generation=(SELECT MAX(generation) FROM exchange_top_assets)
+      ORDER BY top.depositors DESC,dictionary.asset ASC`,
   );
 }
 

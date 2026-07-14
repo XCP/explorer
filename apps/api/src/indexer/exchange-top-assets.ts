@@ -50,6 +50,23 @@ export async function refreshExchangeTopAssets(env: Env): Promise<ExchangeTopAss
     // Retain one prior generation for diagnosis while bounding the table to at most 30 rows.
     env.DB.prepare(`DELETE FROM exchange_top_assets WHERE generation < ?`).bind(generation - 1),
   ]);
+  const published = await env.DB.prepare(
+    `SELECT generation,asset,depositors FROM exchange_top_assets WHERE generation=? ORDER BY asset`,
+  )
+    .bind(generation)
+    .all<{ generation: number; asset: string; depositors: number }>();
+  if (published.results.length) {
+    await env.CORE_DB.batch(
+      published.results.map((row) =>
+        env.CORE_DB.prepare(
+          `INSERT INTO exchange_top_assets(generation,asset_id,depositors)
+           SELECT ?,asset_id,? FROM asset_dictionary WHERE asset=?
+           ON CONFLICT(generation,asset_id) DO UPDATE SET depositors=excluded.depositors`,
+        ).bind(row.generation, row.depositors, row.asset),
+      ),
+    );
+  }
+  await env.CORE_DB.prepare(`DELETE FROM exchange_top_assets WHERE generation < ?`).bind(generation - 1).run();
   return { refreshed: true, generation, rows: results[0]?.meta.changes ?? 0, block };
 }
 

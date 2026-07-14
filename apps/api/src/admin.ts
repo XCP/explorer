@@ -435,7 +435,10 @@ admin.post("/admin/curated", async (c) => {
     .json<{ kind?: string; key?: string; value?: string | null; note?: string | null }>()
     .catch(() => null);
   if (!body?.kind || !body?.key) return c.json({ error: "need {kind,key}" }, 400);
-  await curatedUpsert(c.env.DB, { kind: body.kind, key: body.key, value: body.value, note: body.note });
+  await Promise.all([
+    curatedUpsert(c.env.DB, { kind: body.kind, key: body.key, value: body.value, note: body.note }),
+    curatedUpsert(c.env.CORE_DB, { kind: body.kind, key: body.key, value: body.value, note: body.note }),
+  ]);
   return c.json({ ok: true, kind: body.kind, key: body.key });
 });
 
@@ -443,6 +446,6 @@ admin.delete("/admin/curated", async (c) => {
   const kind = c.req.query("kind"),
     key = c.req.query("key");
   if (!kind || !key) return c.json({ error: "need ?kind= and ?key=" }, 400);
-  const r = await curatedDelete(c.env.DB, kind, key);
+  const [r] = await Promise.all([curatedDelete(c.env.DB, kind, key), curatedDelete(c.env.CORE_DB, kind, key)]);
   return c.json({ ok: true, kind, key, deleted: r.meta?.changes ?? 0 });
 });
