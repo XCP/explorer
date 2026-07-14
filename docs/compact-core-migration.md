@@ -79,7 +79,7 @@ tables receive no writes.
 
 1. Build `trades` directly from compact DEX, dispense, Emblem, and Scarce City relations.
 2. Preserve `(venue, ref)` identity and reconcile changed classification without delete-first publication.
-3. Remove the scheduled `reconcileCoreTrades` copier and its admin projection route.
+3. The scheduled trade copier and its admin projection route are removed in the prepared compact market cut.
 4. Land the price-fidelity schema and compact-only pricing job.
 5. Reconcile trade USD values so an expired derived price clears an old valuation.
 
