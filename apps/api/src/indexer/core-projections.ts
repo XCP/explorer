@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import { parseUtxoHolder } from "#api/indexer/compact-codec";
+import { getCoreState } from "#api/indexer/core-state";
 export const CORE_RECENT_PROJECTIONS = [
   "address_signals",
   "asset_signals",
@@ -133,7 +134,7 @@ async function relationCount(db: D1Database, table: string): Promise<number> {
  * continue to be maintained by event replay; this closes only the snapshot's moving-tail interval.
  */
 export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_DB">, scope: CoreRecentProjection) {
-  const seedBlock = Number.parseInt((await state(env.CORE_DB, "seed_block_index")) ?? "0", 10);
+  const seedBlock = Number.parseInt((await getCoreState(env.CORE_DB, "seed_block_index")) ?? "0", 10);
   if (!Number.isSafeInteger(seedBlock) || seedBlock <= 0) throw new Error("compact seed block is missing");
   const empty = { results: [] as SourceRow[] };
   const addresses =
