@@ -71,7 +71,11 @@ test("compact asset signals refresh volatile fields from canonical relations", a
   });
 
   db.exec(`INSERT INTO blocks(block_index,block_hash,block_time) VALUES(201,randomblob(32),2)`);
+  db.exec(`UPDATE asset_signals SET holders=0,top1_pct=0,burned_pct=0 WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`);
   const fresh = await coreAssetSignals(d1(db), "A");
+  assert.equal(fresh?.holders, 1);
+  assert.equal(fresh?.top1_pct, 100);
+  assert.equal(fresh?.burned_pct, 40);
   assert.equal(fresh?.age_blocks, 101);
   assert.equal(fresh?.recency_blocks, 201);
 });

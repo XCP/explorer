@@ -19,14 +19,6 @@ import {
 import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "#api/reputation/config";
 import {
   featuredAssets,
-  getAsset,
-  holderCount,
-  xcpNativeSupply,
-  assetSignalsRow,
-  assetTags,
-  assetSales,
-  assetCollection,
-  assetArtist,
   chainTip,
   holderTiers,
   holderArchetypes,
@@ -43,8 +35,6 @@ import {
   assetActivityFlows,
   assetActiveUsers,
 } from "#api/queries/assets";
-import { assetAccounting } from "#api/queries/asset-accounting";
-import { readAssetFeedCounts } from "#api/queries/asset-feed-counts";
 import {
   listCoreAssets,
   getCoreAsset,
@@ -67,7 +57,6 @@ import {
   listAssetPoolMatches,
   listAssetFairmints,
 } from "#api/queries/core-assets";
-import { coreReadsEnabled } from "#api/read/core-read-gate";
 import { listAssetOrders } from "#api/queries/core-orders";
 
 export const assets = router();
@@ -96,21 +85,16 @@ assets.get("/v2/featured", async (c) => {
 
 assets.get("/v2/assets/:asset", async (c) => {
   const a = c.req.param("asset");
-  const compact = await coreReadsEnabled(c.env);
-  let r = compact ? await getCoreAsset(c.env.CORE_DB, a) : await getAsset(c.env.DB, a);
+  let r = await getCoreAsset(c.env.CORE_DB, a);
   if (!r) {
     // XCP and BTC are native assets with no issuance row. XCP supply = proof-of-burn minus all XCP
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
     const A = a.toUpperCase();
     if (A === "XCP" || A === "BTC") {
       const [sup, holder_count, feed_counts] = await Promise.all([
-        A === "XCP" ? (compact ? coreXcpSupply(c.env.CORE_DB) : xcpNativeSupply(c.env.DB)) : Promise.resolve(null),
-        compact
-          ? coreAssetAccounting(c.env.CORE_DB, A).then((accounting) => accounting?.holder_count ?? 0)
-          : holderCount(c.env.DB, A),
-        compact
-          ? coreAssetFeedCounts(c.env.CORE_DB, A, null).catch(() => null)
-          : readAssetFeedCounts(c.env.DB, A, null).catch(() => null),
+        A === "XCP" ? coreXcpSupply(c.env.CORE_DB) : Promise.resolve(null),
+        coreAssetAccounting(c.env.CORE_DB, A).then((accounting) => accounting?.holder_count ?? 0),
+        coreAssetFeedCounts(c.env.CORE_DB, A, null).catch(() => null),
       ]);
       const supply_normalized = A === "XCP" ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8) : null;
       const body: AssetDetail = {
@@ -132,34 +116,22 @@ assets.get("/v2/assets/:asset", async (c) => {
     // so a null here is either a genuine miss or a transient empty read (a D1 hiccup, or a read landing mid
     // full-reindex when `assets` is being rebuilt). A retry confirms real absence, so we only ever emit — and
     // let the web cache — a 404 for an asset that truly isn't there.
-    r = compact ? await getCoreAsset(c.env.CORE_DB, a) : await getAsset(c.env.DB, a);
+    r = await getCoreAsset(c.env.CORE_DB, a);
     if (!r) return c.json({ error: "Asset not found" }, 404);
   }
   // These reads are independent — run them concurrently (wall-time = slowest, not the sum;
   // the sequential version was the classic multiple-round-trips D1 anti-pattern).
   const [accounting, sigRes, tagsRes, salesRes, collectionRes, artistRes, feedCountsRes] = await Promise.all([
     // Supply stays exact TEXT across SQLite/JS; holders, supply, burned, and escrow share one trip.
-    compact ? coreAssetAccounting(c.env.CORE_DB, r.asset) : assetAccounting(c.env.DB, r.asset),
-    compact
-      ? coreAssetSignals(c.env.CORE_DB, r.asset).catch(() => null)
-      : assetSignalsRow(c.env.DB, r.asset).catch(() => null),
-    compact
-      ? coreAssetTags(c.env.CORE_DB, r.asset).catch((): string[] => [])
-      : assetTags(c.env.DB, r.asset).catch((): string[] => []),
+    coreAssetAccounting(c.env.CORE_DB, r.asset),
+    coreAssetSignals(c.env.CORE_DB, r.asset).catch(() => null),
+    coreAssetTags(c.env.CORE_DB, r.asset).catch((): string[] => []),
     // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
-    compact
-      ? coreAssetSales(c.env.CORE_DB, r.asset).catch(() => null)
-      : assetSales(c.env.DB, r.asset).catch(() => null),
-    compact
-      ? coreAssetCollection(c.env.CORE_DB, r.asset).catch(() => null)
-      : assetCollection(c.env.DB, r.asset).catch(() => null),
-    compact
-      ? coreAssetArtist(c.env.CORE_DB, r.asset).catch(() => null)
-      : assetArtist(c.env.DB, r.asset).catch(() => null),
+    coreAssetSales(c.env.CORE_DB, r.asset).catch(() => null),
+    coreAssetCollection(c.env.CORE_DB, r.asset).catch(() => null),
+    coreAssetArtist(c.env.CORE_DB, r.asset).catch(() => null),
     // per-feed tab counts (the detail page's tab bar) — same filters as the feed list endpoints
-    compact
-      ? coreAssetFeedCounts(c.env.CORE_DB, r.asset, r.issuer).catch(() => null)
-      : readAssetFeedCounts(c.env.DB, r.asset, r.issuer).catch(() => null),
+    coreAssetFeedCounts(c.env.CORE_DB, r.asset, r.issuer).catch(() => null),
   ]);
   const holder_count = accounting?.holder_count ?? 0;
   const raw = BigInt(accounting?.supply ?? 0);
