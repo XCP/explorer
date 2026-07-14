@@ -18,7 +18,6 @@ import {
 } from "#api/reputation/score";
 import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "#api/reputation/config";
 import {
-  listAssets,
   featuredAssets,
   getAsset,
   holderCount,
@@ -81,9 +80,7 @@ assets.get("/v2/assets", async (c) => {
     sort: c.req.query("sort"),
     dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined,
   } as const;
-  const rows = (await coreReadsEnabled(c.env))
-    ? await listCoreAssets(c.env.CORE_DB, filter)
-    : await listAssets(c.env.DB, filter);
+  const rows = await listCoreAssets(c.env.CORE_DB, filter);
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 

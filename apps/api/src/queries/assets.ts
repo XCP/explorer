@@ -73,7 +73,12 @@ export function listAssets(db: D1Database, f: AssetListFilter): Promise<AssetInd
   if (!query) {
     const col = ASSET_SORTS[f.sort ?? ""] ?? "a.last_issuance_block_index";
     const dir = f.dir === "asc" ? "ASC" : "DESC";
-    return q<AssetIndexRow>(db, `${ASSET_LIST_SELECT} ORDER BY ${col} ${dir} LIMIT ? OFFSET ?`, f.limit, f.offset);
+    return q<AssetIndexRow>(
+      db,
+      `${ASSET_LIST_SELECT} ORDER BY ${col} ${dir},a.asset ASC LIMIT ? OFFSET ?`,
+      f.limit,
+      f.offset,
+    );
   }
   // Three indexed range probes UNIONed: asset (stored uppercase), longname as-typed, longname
   // lowercased — preserving the old LIKE's case-insensitivity for the common all-lower longnames.
@@ -84,7 +89,7 @@ export function listAssets(db: D1Database, f: AssetListFilter): Promise<AssetInd
     `${ASSET_LIST_SELECT} WHERE a.asset >= ?1 AND a.asset < ?2
      UNION ${ASSET_LIST_SELECT} WHERE a.asset_longname >= ?3 AND a.asset_longname < ?4
      UNION ${ASSET_LIST_SELECT} WHERE a.asset_longname >= ?5 AND a.asset_longname < ?6
-     ORDER BY last_issuance_block_index DESC LIMIT ?7 OFFSET ?8`,
+     ORDER BY last_issuance_block_index DESC,asset ASC LIMIT ?7 OFFSET ?8`,
     up,
     nextPrefix(up),
     query,

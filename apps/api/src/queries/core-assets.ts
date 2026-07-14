@@ -30,8 +30,10 @@ const SORTS: Record<string, string> = {
 
 const SELECT = `SELECT dictionary.asset,assets.asset_longname,assets.type,issuer.address issuer,owner.address owner,
   assets.divisible,assets.locked,assets.supply_normalized,substr(assets.description,1,140) description,
-  EXISTS(SELECT 1 FROM entity_dictionary entity JOIN tags ON tags.entity_id=entity.entity_id
-          WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tags.tag='stamp') stamp,
+  (EXISTS(SELECT 1 FROM entity_dictionary entity JOIN tags ON tags.entity_id=entity.entity_id
+          WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tags.tag='stamp')
+   OR EXISTS(SELECT 1 FROM issuances issuance
+          WHERE issuance.asset_id=assets.asset_id AND lower(issuance.description) LIKE 'stamp:%')) stamp,
   assets.first_issuance_block_time,assets.last_issuance_block_index
 FROM assets
 JOIN asset_dictionary dictionary ON dictionary.asset_id=assets.asset_id
@@ -48,7 +50,7 @@ export function listCoreAssets(db: D1Database, filter: CoreAssetListFilter): Pro
     const direction = filter.dir === "asc" ? "ASC" : "DESC";
     return q<AssetIndexRow>(
       db,
-      `${SELECT} ORDER BY ${sort} ${direction} LIMIT ? OFFSET ?`,
+      `${SELECT} ORDER BY ${sort} ${direction},dictionary.asset ASC LIMIT ? OFFSET ?`,
       filter.limit,
       filter.offset,
     );
@@ -60,7 +62,7 @@ export function listCoreAssets(db: D1Database, filter: CoreAssetListFilter): Pro
     `${SELECT} WHERE dictionary.asset>=?1 AND dictionary.asset<?2
      UNION ${SELECT} WHERE assets.asset_longname>=?3 AND assets.asset_longname<?4
      UNION ${SELECT} WHERE assets.asset_longname>=?5 AND assets.asset_longname<?6
-     ORDER BY last_issuance_block_index DESC LIMIT ?7 OFFSET ?8`,
+     ORDER BY last_issuance_block_index DESC,asset ASC LIMIT ?7 OFFSET ?8`,
     upper,
     nextPrefix(upper),
     query,
