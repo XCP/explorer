@@ -180,6 +180,49 @@ LEFT JOIN address_dictionary tx1 ON tx1.address_id=match.tx1_address_id
 LEFT JOIN address_dictionary feed ON feed.address_id=match.feed_address_id
 ORDER BY match.block_index DESC,match.tx0_index DESC,match.tx1_index DESC`;
 
+const RPS_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM rps ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(rps.tx_hash)) tx_hash,rps.block_index,rps.block_time,source.address source,
+  rps.possible_moves,rps.wager,rps.expiration,rps.status
+FROM page JOIN rps ON rps.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=rps.source_id
+ORDER BY rps.block_index DESC,rps.tx_index DESC`;
+
+const RPS_MATCH_FEED_SQL = `WITH page AS (
+  SELECT tx0_index,tx1_index FROM rps_matches
+  ORDER BY block_index DESC,tx0_index DESC,tx1_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(match.tx0_hash)||'_'||HEX(match.tx1_hash)) id,match.block_index,match.block_time,
+  tx0.address tx0_address,tx1.address tx1_address,match.possible_moves,match.wager,match.status
+FROM page JOIN rps_matches match ON match.tx0_index=page.tx0_index AND match.tx1_index=page.tx1_index
+LEFT JOIN address_dictionary tx0 ON tx0.address_id=match.tx0_address_id
+LEFT JOIN address_dictionary tx1 ON tx1.address_id=match.tx1_address_id
+ORDER BY match.block_index DESC,match.tx0_index DESC,match.tx1_index DESC`;
+
+const POOL_FEED_SQL = `WITH page AS (
+  SELECT asset_a_id,asset_b_id FROM pools
+  ORDER BY block_index DESC,asset_a_id DESC,asset_b_id DESC LIMIT ? OFFSET ?
+)
+SELECT pool.lp_asset,pool.pair,asset_a.asset asset_a,asset_b.asset asset_b,pool.reserve_a,
+  pool.reserve_b,pool.lp_supply,pool.price,pool.status,pool.block_index
+FROM page JOIN pools pool ON pool.asset_a_id=page.asset_a_id AND pool.asset_b_id=page.asset_b_id
+LEFT JOIN asset_dictionary asset_a ON asset_a.asset_id=pool.asset_a_id
+LEFT JOIN asset_dictionary asset_b ON asset_b.asset_id=pool.asset_b_id
+ORDER BY pool.block_index DESC,pool.asset_a_id DESC,pool.asset_b_id DESC`;
+
+const POOL_MATCH_FEED_SQL = `WITH page AS (
+  SELECT event_index FROM pool_matches ORDER BY block_index DESC,event_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(match.tx_hash)) tx_hash,match.block_index,match.block_time,source.address source,
+  match.lp_asset,match.pair,forward.asset forward_asset,match.forward_quantity,
+  backward.asset backward_asset,match.backward_quantity,match.fee_quantity,match.fee_bps
+FROM page JOIN pool_matches match ON match.event_index=page.event_index
+LEFT JOIN address_dictionary source ON source.address_id=match.source_id
+LEFT JOIN asset_dictionary forward ON forward.asset_id=match.forward_asset_id
+LEFT JOIN asset_dictionary backward ON backward.asset_id=match.backward_asset_id
+ORDER BY match.block_index DESC,match.event_index DESC`;
+
 export function listTransactions(
   db: D1Database,
   limit: number,
@@ -245,6 +288,22 @@ export function listBets(db: D1Database, limit: number, offset: number): Promise
 
 export function listBetMatches(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["bet_matches"][]> {
   return q<RecordRowMap["bet_matches"]>(db, BET_MATCH_FEED_SQL, limit, offset);
+}
+
+export function listRps(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["rps"][]> {
+  return q<RecordRowMap["rps"]>(db, RPS_FEED_SQL, limit, offset);
+}
+
+export function listRpsMatches(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["rps_matches"][]> {
+  return q<RecordRowMap["rps_matches"]>(db, RPS_MATCH_FEED_SQL, limit, offset);
+}
+
+export function listPools(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["pools"][]> {
+  return q<RecordRowMap["pools"]>(db, POOL_FEED_SQL, limit, offset);
+}
+
+export function listPoolMatches(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["pool_matches"][]> {
+  return q<RecordRowMap["pool_matches"]>(db, POOL_MATCH_FEED_SQL, limit, offset);
 }
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even

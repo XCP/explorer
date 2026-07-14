@@ -6,7 +6,6 @@ import { counterpartyJson } from "#api/integrations/counterparty";
 import { router, J, lim, off, type Ctx } from "#api/read/respond";
 import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
-  listRecords,
   listTransactions,
   listSends,
   listIssuances,
@@ -22,6 +21,10 @@ import {
   listBtcpays,
   listBets,
   listBetMatches,
+  listRps,
+  listRpsMatches,
+  listPools,
+  listPoolMatches,
   classifyTx,
   recordsByTxHash,
   dispensesOfDispenser,
@@ -347,7 +350,10 @@ function recordFeed(c: Ctx, kind: RecordKind, limit: number, offset: number) {
     case "btcpays": return listBtcpays(c.env.CORE_DB, limit, offset);
     case "bets": return listBets(c.env.CORE_DB, limit, offset);
     case "bet_matches": return listBetMatches(c.env.CORE_DB, limit, offset);
-    default: return listRecords(c.env.DB, kind, limit, offset);
+    case "rps": return listRps(c.env.CORE_DB, limit, offset);
+    case "rps_matches": return listRpsMatches(c.env.CORE_DB, limit, offset);
+    case "pools": return listPools(c.env.CORE_DB, limit, offset);
+    case "pool_matches": return listPoolMatches(c.env.CORE_DB, limit, offset);
   }
 }
 
