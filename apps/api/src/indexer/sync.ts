@@ -346,7 +346,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
         await env.DB.prepare(`DELETE FROM ${t}`)
           .run()
           .catch(() => {});
-      for (const k of ["signals_step", "signals_cascade_block"])
+      for (const k of ["signals_step", "signals_step_unit", "signals_cascade_block"])
         await env.DB.prepare(`DELETE FROM indexer_state WHERE key=?`).bind(k).run();
     }
     const tip = await tipEventIndex(api);

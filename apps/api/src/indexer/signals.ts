@@ -739,9 +739,25 @@ const UNITS: FeatureUnit[] = [
  * wrapping to 0 when a cycle completes. On a completed cycle it hands the per-block cascade its starting
  * point (signals_cascade_block = current tip) so the cascade takes over from a known-good full rebuild.
  */
+export function resolveSignalStepCursor(unitNames: readonly string[], named: string | null, legacy: string | null) {
+  if (named != null) {
+    const index = unitNames.indexOf(named);
+    return index >= 0 ? index : 0;
+  }
+  const index = Number.parseInt(legacy ?? "0", 10);
+  return Number.isSafeInteger(index) && index >= 0 && index < unitNames.length ? index : 0;
+}
+
 export async function runSignalsStep(env: Env, max = 3): Promise<Record<string, unknown>> {
-  let i = parseInt((await getState(env.DB, "signals_step")) || "0", 10);
-  if (i >= UNITS.length || i < 0) i = 0;
+  const [namedCursor, legacyCursor] = await Promise.all([
+    getState(env.DB, "signals_step_unit"),
+    getState(env.DB, "signals_step"),
+  ]);
+  let i = resolveSignalStepCursor(
+    UNITS.map((unit) => unit.name),
+    namedCursor,
+    legacyCursor,
+  );
   const tip = (await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number | null }>())?.m ?? 0;
   const ran: Record<string, number> = {};
   const gated: string[] = [];
@@ -767,7 +783,8 @@ export async function runSignalsStep(env: Env, max = 3): Promise<Record<string, 
     ran[u.name] = r?.meta?.rows_written ?? 0;
   }
   const done = i >= UNITS.length;
-  await setState(env.DB, "signals_step", done ? "0" : String(i));
+  await setState(env.DB, "signals_step_unit", done ? UNITS[0].name : UNITS[i].name);
+  if (legacyCursor != null) await env.DB.prepare(`DELETE FROM indexer_state WHERE key='signals_step'`).run();
   if (done) {
     // full rebuild just reproduced the whole feature matrix → anchor the cascade cursor at the current tip.
     await setState(env.DB, "signals_cascade_block", String(tip));
