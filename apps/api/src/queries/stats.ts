@@ -75,7 +75,7 @@ export interface Leaderboards {
 export async function leaderboards(db: D1Database, p: LeaderboardParams): Promise<Leaderboards> {
   const dispCol = p.includeHidden ? "dispense_btc" : "clean_dispense_btc";
   const spendCol = p.includeHidden ? "btc_spent" : "clean_btc_spent";
-  const lowqF = p.includeHidden ? "" : " AND COALESCE(low_quality,0)=0";
+  const lowqF = p.includeHidden ? "" : " AND low_quality=0";
   const { addrExpr, assetExpr } = p;
   const b = (sql: string) => board(db, sql);
   const [
