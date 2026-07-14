@@ -33,7 +33,7 @@ const bindings = (provider: Response | Response[], quote: { usd: number; day: st
       fetch: async () =>
         Array.isArray(provider) ? (provider.shift() ?? Response.json({}, { status: 500 })) : provider,
     } as unknown as Fetcher,
-    DB: {
+    CORE_DB: {
       prepare: () => ({
         bind: () => ({ first: async () => quote }),
       }),

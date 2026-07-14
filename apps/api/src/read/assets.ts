@@ -484,7 +484,7 @@ assets.get("/v2/assets/:asset/market", async (c) => {
     let floor_usd: number | null = null,
       floor_source: string | null = null;
     if (p.best_ask != null) {
-      const rate = await latestUsdRate(c.env.DB, "XCP").catch(() => null);
+      const rate = await latestUsdRate(c.env.CORE_DB, "XCP").catch(() => null);
       if (rate?.usd) {
         floor_usd = p.best_ask * rate.usd;
         floor_source = "Order";

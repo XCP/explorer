@@ -27,6 +27,23 @@ const WINDOWS_PER_CALL = 8; // ~2400 days per currency per admin call → backfi
 
 const isoDay = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10);
 
+type PriceWrite = { day: string; currency: string; usd: number; source: string };
+
+async function upsertCompactPrices(db: D1Database, rows: PriceWrite[]) {
+  for (let i = 0; i < rows.length; i += 100) {
+    await db.batch(
+      rows.slice(i, i + 100).map((row) =>
+        db
+          .prepare(
+            `INSERT INTO prices(day,currency,usd,source) VALUES(?,?,?,?)
+             ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source`,
+          )
+          .bind(row.day, row.currency, row.usd, row.source),
+      ),
+    );
+  }
+}
+
 // One Coinbase window: [[time, low, high, open, close, volume], ...] (close = index 4).
 async function cbWindow(product: string, start: number, end: number) {
   return fetchCoinbaseCandles(product, start, end, DAY);
@@ -53,13 +70,15 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
         break;
       }
       if (rows.length) {
-        const stmts = rows.map((r) =>
+        const prices = rows.map((r) => ({ day: isoDay(r.time), currency: cur, usd: r.close, source: "coinbase" }));
+        const stmts = prices.map((price) =>
           env.DB.prepare(
             `INSERT INTO prices (day,currency,usd) VALUES (?,?,?)
              ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd`,
-          ).bind(isoDay(r.time), cur, r.close),
+          ).bind(price.day, price.currency, price.usd),
         );
         for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
+        await upsertCompactPrices(env.CORE_DB, prices);
         filled += rows.length;
       }
       cursor = end;
@@ -81,6 +100,12 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     WHERE status='completed' AND ((forward_asset='XCP' AND backward_asset='BTC') OR (forward_asset='BTC' AND backward_asset='XCP'))
     GROUP BY date(block_time,'unixepoch')`,
   ).run();
+
+  const recent = await env.DB.prepare(
+    `SELECT day,currency,usd,CASE WHEN currency IN ('BTC','ETH') THEN 'coinbase' ELSE 'derived' END source
+       FROM prices WHERE day>=date('now','-7 days')`,
+  ).all<PriceWrite>();
+  await upsertCompactPrices(env.CORE_DB, recent.results);
   await env.DB.prepare(
     `INSERT INTO prices (day,currency,usd)
     SELECT b.day,'XCP',

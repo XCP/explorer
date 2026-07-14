@@ -32,7 +32,7 @@ markets.get("/markets/:base/:quote", async (c) => {
 });
 
 markets.get("/quotes/XCP/USD", async (c) => {
-  const quote = await latestUsdQuote(c.env.DB, "XCP");
+  const quote = await latestUsdQuote(c.env.CORE_DB, "XCP");
   if (!quote || !Number.isFinite(quote.usd) || quote.usd <= 0) {
     throw new HTTPException(503, { message: "XCP/USD quote is temporarily unavailable" });
   }
