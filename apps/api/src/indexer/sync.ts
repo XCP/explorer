@@ -42,16 +42,6 @@ async function getState(db: D1Database, k: string): Promise<string | null> {
   );
 }
 
-async function compactWritesEnabled(db: D1Database): Promise<boolean> {
-  const required = ["build_complete", "import_complete", "seed_reconciled", "forward_write_ready"];
-  const rows = await db
-    .prepare(`SELECT key,value FROM core_state WHERE key IN (?,?,?,?)`)
-    .bind(...required)
-    .all<{ key: string; value: string }>();
-  const state = Object.fromEntries(rows.results.map((row) => [row.key, row.value]));
-  return required.every((key) => state[key] === "1");
-}
-
 async function getCoreState(db: D1Database, key: string): Promise<string | null> {
   return (
     (await db.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null
@@ -326,7 +316,6 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
   if (lock.meta.changes === 0) return { skipped: "locked" };
 
   try {
-    const writeCompact = await compactWritesEnabled(env.CORE_DB);
     let lastIdx = parseInt((await getState(env.DB, "last_event_index")) || "-1", 10);
     // Full re-index (cursor reset to -1): wipe ALL DERIVED STATE so it recomputes from scratch. The general
     // hazard (learned from the negative-balance bug): any derived store with a per-row high-water or a "done"
@@ -362,7 +351,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       const stored = await getState(env.DB, "last_block_hash");
       const actual = await blockHash(api, ckBlock);
       if (stored && actual && stored !== actual) {
-        await rollback(env, ckBlock - 1, api, writeCompact);
+        await rollback(env, ckBlock - 1, api);
         lastIdx = parseInt((await getState(env.DB, "last_event_index")) || "-1", 10);
       }
     }
@@ -379,7 +368,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
         stmts: [],
         ledgerStmts: [],
         identities: createIdentitySet(),
-        compact: writeCompact ? { stmts: [], identities: createIdentitySet() } : null,
+        compact: { stmts: [], identities: createIdentitySet() },
         balDelta: new Map(),
         maxBlock: lastBlock,
         supplyDirty: new Set(),
@@ -389,24 +378,24 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       await batchAll(env.LEDGER_DB, [...dictionaryStatements(ctx.identities), ...ctx.ledgerStmts]);
       await applyBalances(env, ctx, followingWindow);
       lastBlock = Math.max(lastBlock, ctx.maxBlock);
-      if (ctx.compact) {
-        await batchAll(env.CORE_DB, [
-          ...dictionaryStatements(ctx.compact.identities),
-          ...ctx.compact.stmts,
+      const compact = ctx.compact;
+      if (!compact) throw new Error("compact event context is missing");
+      await batchAll(env.CORE_DB, [
+          ...dictionaryStatements(compact.identities),
+          ...compact.stmts,
           ...ctx.ledgerStmts,
         ]);
-        await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
-        await rebuildCoreAssetSignals(env.CORE_DB, ctx.compact.identities.assets);
-        await reconcileDispenseIdentities(
-          env.DB,
-          env.CORE_DB,
-          evs.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
-        );
-        await env.CORE_DB.batch([
-          setCoreStateStmt(env.CORE_DB, "last_event_index", String(evs[evs.length - 1].event_index)),
-          setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
-        ]);
-      }
+      await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
+      await rebuildCoreAssetSignals(env.CORE_DB, compact.identities.assets);
+      await reconcileDispenseIdentities(
+        env.DB,
+        env.CORE_DB,
+        evs.filter((event) => event.event === "DISPENSE").map((event) => event.event_index),
+      );
+      await env.CORE_DB.batch([
+        setCoreStateStmt(env.CORE_DB, "last_event_index", String(evs[evs.length - 1].event_index)),
+        setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+      ]);
       if (ctx.supplyDirty.size > 0) await enqueueSupply(env.DB, [...ctx.supplyDirty]);
 
       lastIdx = evs[evs.length - 1].event_index;
@@ -620,7 +609,7 @@ async function deleteAbove(db: D1Database, table: string, block: number): Promis
 }
 
 /** cascade delete > rollbackTo across all tables; restore balances from snapshots <= rollbackTo. */
-async function rollback(env: Env, rollbackTo: number, api: string, writeCompact: boolean): Promise<void> {
+async function rollback(env: Env, rollbackTo: number, api: string): Promise<void> {
   const tables = [
     "transactions",
     "sends",
@@ -656,7 +645,7 @@ async function rollback(env: Env, rollbackTo: number, api: string, writeCompact:
   // the main D1 transaction/cascade. Delete its orphaned branch explicitly before replay; otherwise
   // INSERT OR IGNORE on a reused event_index would preserve stale pre-reorg data forever.
   await deleteAbove(env.LEDGER_DB, "ledger_events", rollbackTo);
-  if (writeCompact) await rollbackCompactDatabase(env.CORE_DB, rollbackTo);
+  await rollbackCompactDatabase(env.CORE_DB, rollbackTo);
   // reopen orders/dispensers closed after rollback
   await env.DB.prepare(`UPDATE orders SET status='open', closed_block_index=NULL WHERE closed_block_index > ?`)
     .bind(rollbackTo)
@@ -700,9 +689,7 @@ async function rollback(env: Env, rollbackTo: number, api: string, writeCompact:
     if (firstAfter) {
       const eventIndex = String(firstAfter.event_index - 1);
       await env.DB.batch([setStateStmt(env.DB, "last_event_index", eventIndex)]);
-      if (writeCompact) {
-        await env.CORE_DB.batch([setCoreStateStmt(env.CORE_DB, "last_event_index", eventIndex)]);
-      }
+      await env.CORE_DB.batch([setCoreStateStmt(env.CORE_DB, "last_event_index", eventIndex)]);
       return;
     }
     if (!rows.length) break;
