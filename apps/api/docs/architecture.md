@@ -1,159 +1,62 @@
-# Data architecture — xcp.io API
+# API data architecture
 
-The mental model in one sentence: **boring deterministic capture of Counterparty (Layer 1), features
-derived on top and maintained per-block as we ingest (Layer 2), scoring computed at read time (Layer 3).**
-A short list of genuinely-global computations can't be done per-block; those run periodically.
+The production API has two databases with independent domain ownership:
 
-## System picture
+- `CORE_DB` (`xcpio-core`) is the canonical normalized Counterparty mirror and every explorer-owned
+  projection derived from it.
+- `RECOVERY_DB` (`xcpio-btc`) stores Bitcoin bare-multisig recovery data. It remains separate because its
+  source, lifecycle, and public workflow are independent of the Counterparty mirror.
 
-Three indexers stand side by side. The analytical mirror lives in the primary D1; append-only
-credit/debit provenance lives in the compact `xcpio-ledger` D1 so it can grow independently:
+There is no source-mirror fallback, read adapter, dual writer, or versioned database path.
 
-1. **Counterparty replayer** (`indexer/sync.ts` + `events/`) — the pure 1:1 mirror. Nothing derived
-   ever lands in its tables; re-indexing from genesis reproduces them exactly.
-2. **Emblem Vault crawler** (`indexer/emblem.ts`) — vaults enumerated via Alchemy/Etherscan, resolved
-   to their BTC addresses. Lives *next to* the mirror, never in it.
-3. **Emblem sales crawler** (`indexer/emblem-sales.ts`) — vault sale history, same sidecar rule.
+## Canonical Counterparty store
 
-**Emblem is multi-chain, we index Counterparty.** A vault wraps a BTC address whose contents may be a
-Counterparty card *or* Namecoin / Ordinals / BTC / LTC — invisible to us. `indexer/vault-contents.ts`
-classifies each vault purely from the mirror (sends + balances + sweeps → `emblem_vaults.vault_kind`
-`single`/`multi`/`foreign`, `contents_asset/_qty`, `cracked_at`, `cracker_address`). This drives the
-per-sale `trades.sale_class`: `real` (single Counterparty card, full at sale — the only class that
-carries an attributed asset + true unit quantity), `bundle` (multi-card), `scam_cracked` (card sent OR
-swept out before the sale), `non_counterparty` (empty to us — value on another chain; **NOT a scam**).
-A crack that precedes a later sale flags the receiving BTC address via `address_signals.vault_scams`.
+`CORE_DB` interns repeated assets and addresses in `asset_dictionary` and `address_dictionary`. Transaction
+hashes are stored as 32-byte values. Public query modules resolve an external name to its integer identity,
+filter and paginate indexed base tables, then decode hashes and names at the response boundary.
 
-Derived layers build on top and are always rebuildable from the sources: `asset_signals` /
-`address_signals` / `tags` today, and the planned **unified `trades` projection** (order_matches +
-dispenses + Emblem sales in one queryable surface). The web app consumes all of it through the read
-API's layered caching.
+Balances remain polymorphic in one table. Address balances use `address_id`; UTXO balances use
+`utxo_tx_hash` and `utxo_vout`. This preserves Counterparty's relationship model while allowing aggregate
+supply to remain one sum over one relation.
 
-## Pattern language (name things so code knows where to go)
+`ledger_events` contains credit and debit provenance with a direction flag. It lives in `CORE_DB`, is written
+by the same replay transaction flow, and serves address ledger history through an address-first index.
 
-- **Write side**: event-sourced projections (CQRS read models) maintained by idempotent replay;
-  derived features via dirty-set **recompute-over-delta** (never delta-patching) with a self-healing
-  full-rebuild backstop.
-- **Scoring**: a pure **policy module** (`reputation/score.ts`) over a single config surface
-  (`reputation/config.ts`); no storage, tunable per deploy.
-- **Read side (target)**: **query modules returning DTOs** — named, typed query functions per domain
-  (`src/queries/`), route handlers reduced to parse → query → envelope. SQL is private to the query
-  module that owns it; it is never shared by exporting string fragments.
-- **Contract (target)**: wire types defined once in `packages/shared` and consumed by both apps.
-- There is deliberately **no rich domain model**: the chain enforced every invariant before we saw
-  the data, so entities carry no behavior — the model *is* the schema plus the DTOs.
+## Event replay
 
-See `docs/refactor-proposal.md` (repo root) for the migration plan toward the target patterns.
-See `storage-compaction.md` for the multi-D1 capacity plan and its cutover invariants.
+`indexer/sync.ts` walks Counterparty's global event stream chronologically. Each event is dispatched once;
+only compact statements are committed. The replay cursor advances after every required write succeeds.
+All event writes are idempotent, so an interrupted page is safe to repeat.
 
----
+A D1 lock serializes cron and manual replay. Near the chain tip, the worker compares its checkpoint block hash
+with Counterparty. A mismatch removes the orphan branch, restores affected balances from retained snapshots,
+rewinds the event cursor, and replays the replacement branch.
 
-## The four concerns
+## Derived projections
 
-### A. Ingest — raw 1:1 Counterparty capture (Layer 1)
-The `src/indexer/events/` handlers replay the Counterparty event stream chronologically and write:
-- **One mirror table per event/state type** — `issuances, sends, destructions, burns, dividends, sweeps,
-  broadcasts, btcpays, cancels, orders, order_matches, dispensers, dispenses, dispenser_refills,
-  bets/bet_matches/bet_match_resolutions, rps/rps_matches, fairminters, fairmints, pools/pool_*`, plus
-  `blocks, transactions`.
-- **Canonical current-state tables** the handlers keep live: `balances`, `assets` (supply/divisible/locked/
-  type/stamp/…), and `balance_snapshots` (reorg rollback).
+Explorer features live beside the canonical mirror and are rebuildable from it:
 
-This layer is deterministic and authoritative. **Nothing derived lives here.** The indexer never writes
-features; re-indexing from genesis reproduces it exactly.
+- `asset_signals` and `address_signals` are maintained by compact-native convergent upserts. Event-touched
+  identities refresh immediately; bounded cursor passes repair the whole population.
+- `tags` is a polymorphic categorical projection over canonical entity identities. Protocol and issuer facts
+  are written during ingest; computed behavior receives a periodic full self-heal.
+- `trades`, graph relations, collection metadata, prices, Emblem data, BTC summaries, and feed counts each
+  have one owning builder and one compact storage shape.
 
-### B. Cascade — derived features, maintained per block (Layer 2)
-Features are a pure function of Layer 1. As each block's events apply, the handlers record the **dirty set**
-of entities touched this block (`asset` ids and `address` ids). A maintenance step then recomputes the
-feature rows **for only those entities** and re-evaluates their tags.
+Scoring remains a pure read-time policy over signal rows. Weight changes do not rewrite stored history.
 
-- **Recompute, don't delta-patch.** Each dirty entity is fully recomputed from raw (scoped re-aggregation,
-  `WHERE asset IN (dirty)`), so there is **no incremental drift** — the failure mode of hand-maintained
-  counters. Cost is bounded by what changed, not table size.
-- This is the same dirty-queue pattern `crawlAssetSupply` already uses for supply, generalized to all
-  features + tags. It **replaces** the old batch signals-cursor (`runSignalsStep`), which is retired to a
-  full-rebuild / repair tool only.
-- **Completeness:** every asset and address gets a feature row the first time it is seen (at issuance / first
-  event), so the feature tables are a *complete matrix* — one row per entity, dead ones zero-filled. (Dead =
-  real signal, not absence; and the signal-test harness runs over these tables, so an incomplete table would
-  silently bias every experiment.)
+## Read and extension APIs
 
-Feature tables: `asset_signals`, `address_signals`. Categorical projection: `tags`.
+Public `/v2` handlers use domain query modules and `CORE_DB` exclusively. D1 read sessions may select a nearby
+replica; the API's existing cache headers tolerate bounded replication staleness.
 
-### C. Periodic — the genuinely-global exceptions
-Cannot be per-block because each depends on the *whole* population. Run on a slow cadence (cron):
-- **Percentile anchors** for mapping raw scores → 0–100 (needs the population distribution).
-- **PageRank** (`address_signals.rep_score`) — graph-global.
-- **`low_quality` propagation** — guilt-by-association across an issuer's whole portfolio.
-- **Community averages** — `holder_breadth`, `pct_creator_holders` (average over *other* addresses' features;
-  a cascade would fan out across all co-holders, so batch is cheaper).
+The wallet extension's stable `/api/v1` URLs are implemented in `extension-api.ts`. Asset responses are read
+from the same normalized store. Consolidation requests retain their public contract and proxy to the dedicated
+Bitcoin consolidation service; swap data comes from XCPDEX.
 
-### D. Score — read time (Layer 3)
-`src/reputation/score.ts` + `config.ts`. Turns features → raw score → 0–100 + bands + archetypes, using the
-cached anchors from (C). No storage; weight edits take effect on deploy. Tunable surface = `config.ts`.
+## Schema changes and verification
 
----
-
-## Tags — the rule that keeps them clean
-
-`tags` is the polymorphic categorical layer (`entity_type, entity_id, tag, source`). Tags come from three places, distinguished by `source`:
-
-- **`source='computed'`** — derived from the **feature tables** (Layer 2) by rules in `tags.ts`: behavioral
-  labels like `trader, active_trader, collector, whale, merchant, creator, liquid, broad, durable, wash,
-  vaulted, og`, plus the asset-type labels (`named, subasset, numeric`) read from `assets`. Rebuilt with the
-  same dirty-set discipline as the feature tables (mirrors `signals.ts`' full/scoped pair):
-  - **Per block, dirty-scoped** (`buildTagsScoped`, right after the cascade, over the SAME touched entity
-    sets): for each dirty entity, `DELETE` its behavioral computed tags then re-run every rule scoped to it —
-    so an entity that stops matching a rule loses the tag that tick. Bounded by what changed, not table size
-    (the old every-tick global `DELETE FROM tags WHERE source='computed'` re-wrote ~430k rows per tick).
-  - **Intrinsic asset-type tags** (`named/subasset/numeric`) are **append-only** — an asset's type never
-    changes once issued, so the scoped path never `DELETE`s them; it `INSERT OR IGNORE`s them for the dirty
-    (incl. freshly-issued) assets.
-  - **Daily full self-heal** (`buildTags`, block-delta gated ~144): drops and re-derives all computed tags,
-    reconciling anything the dirty set couldn't have caught — chiefly the emblem-driven tags (`vault`,
-    `vault_funder`, `vault_cracker`, `vaulted`) when a *newly-crawled* vault retroactively re-labels an entity
-    whose own rows didn't change this tick. So a cascade gap is at worst briefly stale, never corrupt.
-- **`source='protocol'`** — stamp classification (`stamp, src20, src721, src101, src20_deploy`), written at
-  **ingest** by the issuance handler. The classifier base64-decodes the issuance description (can't be
-  expressed in SQL), so there's no rebuild rule; these are persisted at ingest and the computed rebuild
-  leaves them untouched. SRC-20/721 are meta-protocols layered on Counterparty — we tag that a CP asset is
-  *used* for one, but we do **not** index the protocol's own token registry (e.g. the SRC-20 tick).
-- **`source='curated'`** — human-owned validation anchors (`grail`, named scams). Sticky; removed by hand.
-- **`source='manual'`** — one-off hand-set. Sticky.
-
-So: **intrinsic/protocol facts → written at ingest, behavior → rebuilt from features.** Either way the
-enhancement is a tag/overlay, never a column added to the raw Counterparty mirror tables.
-
----
-
-## Freshness summary
-
-| data | layer | freshness | mechanism |
-|---|---|---|---|
-| raw mirror, `balances`, `assets` | 1 | per block | event handlers |
-| `asset_signals`, `address_signals` (dirty entities) | 2 | per block (dirty-scoped) | cascade maintenance |
-| `tags` — computed (dirty entities) | 2 | per block (dirty-scoped) | `buildTagsScoped` after the cascade |
-| `tags` — computed (full self-heal) | 2 | daily (block-delta gate) | `buildTags` |
-| heavy full-population scans (any unit whose `.full` aggregates a >1M-row mirror table: sends/balances/transactions) | 2 (global) | daily (block-delta gate) | `runSignalsStep` (per-unit `heavyEveryBlocks`); cascade `.scoped` keeps dirty entities fresh every tick |
-| percentile anchors, `rep_score`, propagation, other periodic globals | 2 (global) | periodic | cron |
-| scores / bands / archetypes | 3 | read time | `score.ts` + config |
-
----
-
-## Migration path (from today's batch model)
-
-1. **Doc + tag rule** (this file): classification tags from `assets`, behavioral from features. ✅
-2. **Feature completeness**: create a feature row per entity at first-seen, so the matrix is complete (fixes
-   harness bias + SRC-20 absence at the source). ✅
-3. **Dirty-set cascade** ✅ (`signals.ts`): the analytic SQL is organized into documented **FEATURE UNITS**,
-   each declaring `scope` / `reads` / `dependsOn` / `periodic` + a `full` and a dirty-`scoped` SQL. Two drivers
-   over the same units: `runSignalsCascade` derives the entities touched per block range straight from the
-   mirror tables (a block cursor — no per-handler annotation to miss) and recomputes only those via `.scoped`;
-   `runSignalsStep` remains the canonical full rebuild / repair tool and keeps cycling on cron as a self-healing
-   backstop (so a cascade gap is at worst briefly stale, never corrupt). `/admin/verify-signals` diffs the two
-   for an entity as the safety gate.
-4. **Isolate the periodic globals** (C) ✅: units that are whole-population or fan-out (community averages,
-   `low_quality` propagation, the trailing-window `recent_events`, tip-relative ages/recency, infra flags,
-   `rep_score`, percentile anchors) are marked `periodic` and run ONLY in `runSignalsStep`/cron — never the
-   per-block cascade, because their inputs change for entities the block didn't touch.
-5. **Resume the testing regime** over the now-complete, always-fresh feature matrix. ✅ (signal-test harness)
+All canonical schema changes are numbered migrations in `migrations-core/`; recovery changes use
+`migrations-recovery/`. Migration-backed SQLite tests exercise normalized queries, event replay, rollback,
+signals, and extension contracts. Deployment runs live wire-contract checks against production after Wrangler
+publishes the Worker.

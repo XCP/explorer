@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Bitcoin-side address summaries -> POST /admin/btc-stats (see migrations/0027_btc_signals.sql).
+ * Bitcoin-side address summaries -> POST /admin/btc-stats.
  * The Counterparty mirror is blind to plain BTC activity; this bridges it from an address-indexed source.
  *
  * Source modes:

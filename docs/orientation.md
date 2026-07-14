@@ -30,15 +30,15 @@ The moat is the **judgment layer** on top of the mirror, not the mirror itself:
 ## Repo shape (the 60-second map)
 
 ```
-apps/api        Cloudflare Worker (Hono) + D1 "xcpio" — api.xcp.io / xcp-api.me-bbe.workers.dev
+apps/api        Cloudflare Worker (Hono) + canonical D1 "xcpio-core" — api.xcp.io
   src/read/     thin route modules (parse → query → envelope)
   src/queries/  ALL SQL, typed functions, one file per domain (SQL never crosses modules)
   src/indexer/  the mirrors + derived builders: Counterparty replayer (events/), Emblem stack
                 (emblem*.ts, vault-contents, seaport), signals, tags, collections, trades, prices,
                 graph (PageRank→graph_trust), holder-cohesion
   src/reputation/ pure scoring: config.ts (every weight/threshold) + score.ts + persona.ts
-  migrations/   numbered DDL — every new table/index gets one
-apps/web        Next.js 15 on OpenNext/Cloudflare — xcp.io / xcp-web.me-bbe.workers.dev
+  migrations-core/ numbered canonical DDL; migrations-recovery/ owns the Bitcoin recovery store
+apps/web        Next.js 16 on OpenNext/Cloudflare — xcp.io / xcp-web.me-bbe.workers.dev
   src/lib/      api.ts, registry.tsx (record catalog → columns per kind), cells.tsx (v20 cell
                 grammar), format.ts, art.ts (CDN image URLs), tx.ts
   src/components/ flat; RecordTable renders every table on the v20 grammar
@@ -53,13 +53,11 @@ design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — p
   at your own screenshots, fix what you see BEFORE showing the owner).
 - **Think → test → repeat.** State product bets as falsifiable data tests; probe prod D1 before
   believing any claim (several "obvious" cut/keep calls this quarter were wrong until tested).
-- **Verify on the real origins.** www.xcp.io serves a STALE deployment — always check
-  `xcp-web.me-bbe.workers.dev` / `xcp-api.me-bbe.workers.dev`. Web builds with `next build
-  --webpack` (OpenNext can't load Turbopack chunks). Expect brief chunk-skew after web deploys.
+- **Verify both the public and Worker origins.** Deployments run live API contract checks; browser work
+  should still probe `xcp-web.me-bbe.workers.dev` for origin-specific failures.
 - **Prod deploys are owner-gated.** The permission classifier blocks `wrangler deploy` per-change;
   get an explicit go. Admin/backfill ops run through `wrangler dev --remote` + gitignored
-  `.dev.vars` (never touch prod secrets). Full reindexes require the cron PAUSED
-  (`indexer_state.cron_paused='1'`) — two write drivers ⇒ D1 SQLITE_NOMEM.
+  `.dev.vars` (never commit production secrets). The compact replay lock serializes scheduled and manual sync.
 - **D1 quirks:** compound SELECT term cap (use `db.batch` for probe fans); check indexes before
   point-probing big tables (block-scope rides `idx_*_block` when tx_hash isn't indexed); `cached()`
   in read/respond.ts gives D1-backed response caching with stale-while-revalidate — long `swr` for

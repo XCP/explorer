@@ -3,8 +3,7 @@
 Counterparty explorer. `apps/api` = Cloudflare Worker + D1 (api.xcp.io). `apps/web` = Next.js 15 on
 OpenNext/Cloudflare (xcp.io). `packages/shared` = the wire contract. Read
 `docs/orientation.md` FIRST (project state: shipped / in-progress / slated + how we work),
-`apps/api/docs/architecture.md` (data architecture) and `docs/refactor-proposal.md` (target
-structure + roadmap) before structural work.
+and `apps/api/docs/architecture.md` (data architecture) before structural work.
 
 ## Hard rules — violations are defects, not style choices
 
@@ -26,7 +25,7 @@ structure + roadmap) before structural work.
    parse → query → envelope only.
 7. **The Counterparty mirror stays pure.** Indexer event handlers write raw 1:1 capture only.
    Derived data (signals, tags, trades, reputation) lives in its own tables, rebuildable from raw.
-8. **New tables get numbered migrations** (`apps/api/migrations/`), not just DDL-in-code.
+8. **New tables get numbered migrations** (`apps/api/migrations-core/`), not just DDL-in-code.
 
 ## Definition of done (every change)
 
@@ -50,6 +49,5 @@ structure + roadmap) before structural work.
 
 - Worker `xcp-api`, D1 db `xcpio`, live at https://xcp-api.me-bbe.workers.dev; web reads it via
   `NEXT_PUBLIC_API_BASE`. Cron ticks every 2 min (`src/index.ts` scheduled handler).
-- Full reindexes are driven manually with the cron PAUSED (`indexer_state.cron_paused='1'`) — two
-  concurrent write drivers cause D1 SQLITE_NOMEM. See `apps/api/ops/SESSION-HANDOFF.md`.
+- The compact replay lock serializes scheduled and manual sync invocations.
 - Never commit token files (`.tt`, `.salestok` are gitignored admin tokens).

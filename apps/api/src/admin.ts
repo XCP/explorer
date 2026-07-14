@@ -43,7 +43,7 @@ admin.route("/", recoveryAdmin);
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
 
-// Bitcoin-side address summaries ingest (see migrations/0027 + ops/export-btc-stats.mjs — the mirror
+// Bitcoin-side address summaries ingest (see ops/export-btc-stats.mjs — the Counterparty mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).
 // Body: JSON array of rows (max 100/call); upserted atomically via batch.
 interface BtcStatsRow {
