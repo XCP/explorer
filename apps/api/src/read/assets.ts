@@ -27,9 +27,6 @@ import {
   assetReviewTop,
   assetValidation,
   latestUsdRate,
-  assetActivityVenues,
-  assetActivityFlows,
-  assetActiveUsers,
 } from "#api/queries/assets";
 import {
   listCoreAssets,
@@ -56,6 +53,9 @@ import {
   coreAssetCohort,
   coreAssetCollectionCohort,
   coreAssetQualitySignals,
+  coreAssetActivityVenues,
+  coreAssetActivityFlows,
+  coreAssetActiveUsers,
 } from "#api/queries/core-assets";
 import { listAssetOrders } from "#api/queries/core-orders";
 
@@ -360,8 +360,8 @@ assets.get("/v2/assets/:asset/activity", async (c) => {
   // D1 accounts concurrent statements against one request's database CPU budget.
   // Run these independently indexed aggregates in sequence: in parallel, a busy
   // venue scan can reset the cheap flow query and the old fallback cached `[]`.
-  const venues = await assetActivityVenues(c.env.DB, a);
-  const flows = await assetActivityFlows(c.env.DB, a);
+  const venues = await coreAssetActivityVenues(c.env.CORE_DB, a);
+  const flows = await coreAssetActivityFlows(c.env.CORE_DB, a);
   const byMonth = new Map<string, AssetActivityMonth>();
   const row = (m: string) => byMonth.get(m) ?? { month: m, orders: 0, dispensers: 0, sends: 0, supply: 0 };
   for (const v of venues) byMonth.set(v.month, { ...row(v.month), orders: v.orders, dispensers: v.dispensers });
@@ -373,7 +373,7 @@ assets.get("/v2/assets/:asset/activity", async (c) => {
 // Most active users of the asset — addresses ranked by lifetime credits + debits (how much they've USED it,
 // not their balance). From the credits/debits ledger.
 assets.get("/v2/assets/:asset/active-users", async (c) => {
-  const result = await assetActiveUsers(c.env.DB, c.req.param("asset").toUpperCase(), lim(c, 15, 50));
+  const result = await coreAssetActiveUsers(c.env.CORE_DB, c.req.param("asset").toUpperCase(), lim(c, 15, 50));
   return J(c, { result }, 300);
 });
 

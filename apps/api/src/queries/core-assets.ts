@@ -1,4 +1,4 @@
-import type { AssetCohortRow, AssetFeedCounts, AssetIndexRow, AssetListRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
+import type { AssetActiveUser, AssetCohortRow, AssetFeedCounts, AssetIndexRow, AssetListRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
 import type {
   DestructionRow,
   DispenseRow,
@@ -201,6 +201,69 @@ export function coreAssetCollectionCohort(
     asset,
     asset,
     collection,
+    limit,
+  );
+}
+
+export function coreAssetActivityVenues(
+  db: D1Database,
+  asset: string,
+): Promise<{ month: string; orders: number; dispensers: number }[]> {
+  return q(
+    db,
+    `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+     SELECT month,SUM(CASE WHEN kind IN ('match','order') THEN n ELSE 0 END) orders,
+       SUM(CASE WHEN kind IN ('dispense','dispenser') THEN n ELSE 0 END) dispensers
+     FROM (
+       SELECT strftime('%Y-%m',block_time,'unixepoch') month,'match' kind,COUNT(*) n FROM order_matches
+        WHERE forward_asset_id=(SELECT asset_id FROM identity) OR backward_asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'order',COUNT(*) FROM orders
+        WHERE give_asset_id=(SELECT asset_id FROM identity) OR get_asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'dispense',COUNT(*) FROM dispenses
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'dispenser',COUNT(*) FROM dispensers
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+     ) GROUP BY month`,
+    asset,
+  );
+}
+
+export function coreAssetActivityFlows(
+  db: D1Database,
+  asset: string,
+): Promise<{ month: string; sends: number; supply: number }[]> {
+  return q(
+    db,
+    `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+     SELECT month,SUM(CASE WHEN kind='send' THEN n ELSE 0 END) sends,
+       SUM(CASE WHEN kind IN ('issuance','fairmint','destruction','dividend') THEN n ELSE 0 END) supply
+     FROM (
+       SELECT strftime('%Y-%m',block_time,'unixepoch') month,'send' kind,COUNT(*) n FROM sends
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'issuance',COUNT(*) FROM issuances
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'fairmint',COUNT(*) FROM fairmints
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'destruction',COUNT(*) FROM destructions
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'),'dividend',COUNT(*) FROM dividends
+        WHERE asset_id=(SELECT asset_id FROM identity) GROUP BY 1
+     ) GROUP BY month`,
+    asset,
+  );
+}
+
+export function coreAssetActiveUsers(db: D1Database, asset: string, limit: number): Promise<AssetActiveUser[]> {
+  return q<AssetActiveUser>(
+    db,
+    `SELECT address.address,
+       SUM(CASE WHEN event.direction=1 THEN 1 ELSE 0 END) credits,
+       SUM(CASE WHEN event.direction=0 THEN 1 ELSE 0 END) debits,
+       COUNT(*) activity
+     FROM ledger_events event JOIN address_dictionary address ON address.address_id=event.address_id
+     WHERE event.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+     GROUP BY event.address_id ORDER BY activity DESC,address.address ASC LIMIT ?2`,
+    asset,
     limit,
   );
 }

@@ -328,6 +328,25 @@ test("contract: GET /v2/assets/RAREPEPE/quality — compact quality signals", as
   assert.ok(j.result.holders > 0, "RAREPEPE should have holders");
 });
 
+test("contract: GET /v2/assets/RAREPEPE/activity — compact monthly history", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson("/v2/assets/RAREPEPE/activity");
+  assert.ok(Array.isArray(j.result) && j.result.length >= 114, "RAREPEPE activity history is incomplete");
+  assert.deepEqual(j.result[0], { month: "2016-09", orders: 232, dispensers: 0, sends: 17, supply: 6 });
+});
+
+test("contract: GET /v2/assets/RAREPEPE/active-users — compact ledger ranking", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson("/v2/assets/RAREPEPE/active-users?limit=15");
+  assert.ok(Array.isArray(j.result) && j.result.length === 15, "active-user ranking is incomplete");
+  assert.deepEqual(j.result[0], {
+    address: "17sn9SqZFtWEdyBKsiVoxpWS3nD2nw5k1r",
+    credits: 37,
+    debits: 60,
+    activity: 97,
+  });
+});
+
 test("contract: GET /v2/assets/XCP — AssetDetail native reduced path", async (t) => {
   if (skipUnlessLive(t)) return;
   // Native assets cache for five minutes; bust that cache so a post-deploy contract run validates the

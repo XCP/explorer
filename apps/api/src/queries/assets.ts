@@ -18,7 +18,6 @@ import type {
   AssetReviewDistribution,
   AssetReviewTopRow,
   AssetSales,
-  AssetActiveUser,
 } from "@xcp/shared/assets";
 import type {
   SendRow,
@@ -482,55 +481,10 @@ export async function assetArtist(
 /** Monthly activity, DEX + BTC venues (order matches + orders opened / dispenses + dispensers opened). One of
  *  the two comprehensive-activity reads — split so each stays under D1's compound-SELECT term cap; the handler
  *  merges the pair by month. */
-export function assetActivityVenues(
-  db: D1Database,
-  asset: string,
-): Promise<{ month: string; orders: number; dispensers: number }[]> {
-  return q<{ month: string; orders: number; dispensers: number }>(
-    db,
-    `SELECT month, SUM(CASE WHEN k IN ('om','ord') THEN n ELSE 0 END) orders, SUM(CASE WHEN k IN ('dsp','dspr') THEN n ELSE 0 END) dispensers FROM (
-       SELECT strftime('%Y-%m',block_time,'unixepoch') month, 'om' k, COUNT(*) n FROM order_matches WHERE forward_asset=?1 OR backward_asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'ord', COUNT(*) FROM orders WHERE give_asset=?1 OR get_asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'dsp', COUNT(*) FROM dispenses WHERE asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'dspr', COUNT(*) FROM dispensers WHERE asset=?1 GROUP BY 1
-     ) GROUP BY month`,
-    asset,
-  );
-}
-
 /** Monthly activity, transfers + supply events (sends / issuances + fairmints + destructions + dividends).
  *  The companion to assetActivityVenues — merged by month in the read handler. */
-export function assetActivityFlows(
-  db: D1Database,
-  asset: string,
-): Promise<{ month: string; sends: number; supply: number }[]> {
-  return q<{ month: string; sends: number; supply: number }>(
-    db,
-    `SELECT month, SUM(CASE WHEN k='snd' THEN n ELSE 0 END) sends, SUM(CASE WHEN k IN ('iss','fm','dst','div') THEN n ELSE 0 END) supply FROM (
-       SELECT strftime('%Y-%m',block_time,'unixepoch') month, 'snd' k, COUNT(*) n FROM sends WHERE asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'iss', COUNT(*) FROM issuances WHERE asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'fm', COUNT(*) FROM fairmints WHERE asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'dst', COUNT(*) FROM destructions WHERE asset=?1 GROUP BY 1
-       UNION ALL SELECT strftime('%Y-%m',block_time,'unixepoch'), 'div', COUNT(*) FROM dividends WHERE asset=?1 GROUP BY 1
-     ) GROUP BY month`,
-    asset,
-  );
-}
-
 /** Most active users: addresses ranked by lifetime credits + debits of the asset — who USED it most, not who
  *  holds most. Rides idx_credits/debits_asset_address (migration 0039); the union splits the two ledgers. */
-export function assetActiveUsers(db: D1Database, asset: string, limit: number): Promise<AssetActiveUser[]> {
-  return q<AssetActiveUser>(
-    db,
-    `SELECT address, SUM(cr) credits, SUM(db) debits, SUM(cr)+SUM(db) activity FROM (
-       SELECT address, COUNT(*) cr, 0 db FROM credits WHERE asset=?1 AND address IS NOT NULL GROUP BY address
-       UNION ALL SELECT address, 0, COUNT(*) FROM debits WHERE asset=?1 AND address IS NOT NULL GROUP BY address
-     ) GROUP BY address ORDER BY activity DESC LIMIT ?2`,
-    asset,
-    limit,
-  );
-}
-
 /** Latest daily USD rate for a currency (XCP/BTC/ETH) from the prices calendar — the newest priced day. */
 export function latestUsdRate(db: D1Database, currency: string): Promise<{ usd: number } | null> {
   return one<{ usd: number }>(db, `SELECT usd FROM prices WHERE currency=? ORDER BY day DESC LIMIT 1`, currency);
