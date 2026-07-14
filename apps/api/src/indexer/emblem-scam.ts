@@ -1,140 +1,121 @@
-/**
- * Emblem empty-shell SCAM attribution → reputation. Ties genuine empty-shell vaults (which name a real
- * Counterparty card but hold nothing) to an on-chain BTC identity, and docks that identity's reputation.
- *
- * The bridge: a shell's SELLER is an ETH address (out of our BTC scoring domain). But a scammer who mints
- * empty shells is usually the same person who minted REAL vaults — and a real vault's card was deposited
- * from the creator's own BTC wallet. So the BTC address that CONSISTENTLY funds a scam-seller's real vaults
- * (≥2 of them — a lone shared funder rules out resellers, who touch many unrelated owners) is that scammer's
- * Counterparty identity. We sum each identity's genuine-shell count into address_signals.shell_scams and let
- * the (negative, log-scaled) reputation factor dock them: a dedicated scammer is hit hard, a prolific creator
- * with one stray shell gets a nudge their real work outweighs. Nothing is excluded by fiat — magnitude does
- * the discriminating (see docs/reputation.md; the collision filter is is_scam_shell, set below).
- *
- * Rebuildable from the mirror + Emblem metadata. Periodic (daily gate) — the whole cohort is tiny & stable.
- */
+/** Emblem empty-shell and high-supply dump attribution, derived entirely from compact relations. */
 import type { Env } from "#api/env";
-import { getIndexerState as getState, setIndexerState as setState } from "#api/indexer/state";
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
-const HEAVY_DAILY = 144; // ~1 day of Counterparty blocks
-const HIGH_SUPPLY_DUMP = 1_000_000; // a card whose supply is ≥ this: one unit is a fungible fraction, not a collectible
+const HEAVY_DAILY = 144;
+const HIGH_SUPPLY_DUMP = 1_000_000;
 
-interface Edge {
-  sel: string;
-  scams: number;
-  funder: string;
-  nv: number;
-}
+export const CLASSIFY_SCAM_SHELLS_SQL = `UPDATE emblem_vaults AS vault SET is_scam_shell=CASE WHEN
+  vault.vault_kind='foreign' AND vault.claimed_asset_id IS NOT NULL AND COALESCE(vault.has_contents,0)=0
+  AND EXISTS(SELECT 1 FROM emblem_vaults real
+    WHERE real.vault_kind='single' AND real.contents_asset_id=vault.claimed_asset_id)
+  THEN 1 ELSE 0 END
+WHERE vault.is_scam_shell IS NOT CASE WHEN
+  vault.vault_kind='foreign' AND vault.claimed_asset_id IS NOT NULL AND COALESCE(vault.has_contents,0)=0
+  AND EXISTS(SELECT 1 FROM emblem_vaults real
+    WHERE real.vault_kind='single' AND real.contents_asset_id=vault.claimed_asset_id)
+  THEN 1 ELSE 0 END`;
 
-/** Full rebuild of the shell-scam attribution. Gated to ~daily unless force=true (admin). */
+export const REFRESH_SCAM_SELLERS_SQL = `INSERT INTO emblem_scam_sellers(seller_id,scams)
+  SELECT sale.seller_id,COUNT(DISTINCT vault.token_id)
+  FROM emblem_sales sale JOIN emblem_vaults vault
+    ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
+  WHERE vault.is_scam_shell=1 AND sale.seller_id IS NOT NULL GROUP BY sale.seller_id
+  ON CONFLICT(seller_id) DO UPDATE SET scams=excluded.scams`;
+
+export const CLEAR_STALE_SCAM_SELLERS_SQL = `UPDATE emblem_scam_sellers AS seller SET scams=0
+  WHERE scams<>0 AND NOT EXISTS(
+    SELECT 1 FROM emblem_sales sale JOIN emblem_vaults vault
+      ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
+    WHERE vault.is_scam_shell=1 AND sale.seller_id=seller.seller_id)`;
+
+const ATTRIBUTION_CTE = `WITH edges AS (
+    SELECT seller.seller_id,seller.scams,send.source_address_id funder_id,
+      COUNT(DISTINCT vault.btc_address_id) funded_vaults
+    FROM emblem_scam_sellers seller
+    JOIN emblem_sales sale ON sale.seller_id=seller.seller_id
+    JOIN emblem_vaults vault ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
+      AND vault.vault_kind='single' AND vault.btc_address_id IS NOT NULL
+    JOIN sends send ON send.destination_address_id=vault.btc_address_id
+    JOIN asset_dictionary asset ON asset.asset_id=send.asset_id AND asset.asset<>'XCP'
+    WHERE seller.scams>0 AND send.source_address_id IS NOT NULL
+    GROUP BY seller.seller_id,send.source_address_id
+  ), ranked AS (
+    SELECT *,ROW_NUMBER() OVER(PARTITION BY seller_id ORDER BY funded_vaults DESC,funder_id) position
+    FROM edges
+  ), attribution AS (
+    SELECT funder_id,SUM(scams) scams FROM ranked WHERE position=1 AND funded_vaults>=2 GROUP BY funder_id
+  )`;
+
+export const ENSURE_SHELL_SIGNAL_ROWS_SQL = `${ATTRIBUTION_CTE}
+  INSERT OR IGNORE INTO address_signals(address_id) SELECT funder_id FROM attribution`;
+
+export const REFRESH_SHELL_SIGNALS_SQL = `${ATTRIBUTION_CTE}
+  UPDATE address_signals AS signal SET shell_scams=COALESCE(
+    (SELECT attribution.scams FROM attribution WHERE attribution.funder_id=signal.address_id),0)
+  WHERE signal.shell_scams IS NOT COALESCE(
+    (SELECT attribution.scams FROM attribution WHERE attribution.funder_id=signal.address_id),0)`;
+
+export const CLASSIFY_DUMP_VAULTS_SQL = `UPDATE emblem_vaults AS vault SET is_dump=CASE WHEN
+  vault.vault_kind='single' AND COALESCE(vault.contents_qty,1)<=1
+  AND EXISTS(SELECT 1 FROM asset_signals signal
+    WHERE signal.asset_id=vault.contents_asset_id AND signal.supply>=${HIGH_SUPPLY_DUMP})
+  AND EXISTS(SELECT 1 FROM emblem_sales sale
+    WHERE sale.token_id=vault.token_id AND sale.contract_id=vault.contract_id)
+  THEN 1 ELSE 0 END
+WHERE vault.is_dump IS NOT CASE WHEN
+  vault.vault_kind='single' AND COALESCE(vault.contents_qty,1)<=1
+  AND EXISTS(SELECT 1 FROM asset_signals signal
+    WHERE signal.asset_id=vault.contents_asset_id AND signal.supply>=${HIGH_SUPPLY_DUMP})
+  AND EXISTS(SELECT 1 FROM emblem_sales sale
+    WHERE sale.token_id=vault.token_id AND sale.contract_id=vault.contract_id)
+  THEN 1 ELSE 0 END`;
+
+const DUMP_CTE = `WITH attribution AS (
+    SELECT send.source_address_id address_id,COUNT(DISTINCT vault.token_id) scams
+    FROM emblem_vaults vault JOIN sends send
+      ON send.destination_address_id=vault.btc_address_id AND send.asset_id=vault.contents_asset_id
+    JOIN asset_dictionary asset ON asset.asset_id=send.asset_id AND asset.asset<>'XCP'
+    WHERE vault.is_dump=1 AND send.source_address_id IS NOT NULL GROUP BY send.source_address_id
+  )`;
+
+export const ENSURE_DUMP_SIGNAL_ROWS_SQL = `${DUMP_CTE}
+  INSERT OR IGNORE INTO address_signals(address_id) SELECT address_id FROM attribution`;
+
+export const REFRESH_DUMP_SIGNALS_SQL = `${DUMP_CTE}
+  UPDATE address_signals AS signal SET dump_scams=COALESCE(
+    (SELECT attribution.scams FROM attribution WHERE attribution.address_id=signal.address_id),0)
+  WHERE signal.dump_scams IS NOT COALESCE(
+    (SELECT attribution.scams FROM attribution WHERE attribution.address_id=signal.address_id),0)`;
+
 export async function buildScamAttribution(env: Env, force = false): Promise<Record<string, unknown>> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt((await getState(env.DB, "scam_attrib_block")) || "0", 10);
+  const tip = Number(
+    (await env.CORE_DB.prepare(`SELECT MAX(block_index) block FROM blocks`).first<{ block: number }>())?.block ?? 0,
+  );
+  const last = await getCoreStateInt(env.CORE_DB, "scam_attrib_block");
   if (!force && tip - last < HEAVY_DAILY) return { skipped: "not due", tip, last };
 
-  // 1) is_scam_shell = genuine empty shell: foreign + claims a card + holds nothing + the claimed card is
-  //    ACTUALLY wrapped by ≥1 real vault (collision filter — kills the Ordinals/name-collision false positives).
-  await env.DB.prepare(`UPDATE emblem_vaults SET is_scam_shell=0 WHERE is_scam_shell=1`).run();
-  await env.DB.prepare(
-    `UPDATE emblem_vaults SET is_scam_shell=1
-      WHERE vault_kind='foreign' AND claimed_asset IS NOT NULL AND COALESCE(has_contents,0)=0
-        AND claimed_asset IN (SELECT contents_asset FROM emblem_vaults WHERE vault_kind='single' AND contents_asset IS NOT NULL)`,
-  ).run();
+  await env.CORE_DB.batch([
+    env.CORE_DB.prepare(CLASSIFY_SCAM_SHELLS_SQL),
+    env.CORE_DB.prepare(REFRESH_SCAM_SELLERS_SQL),
+    env.CORE_DB.prepare(CLEAR_STALE_SCAM_SELLERS_SQL),
+  ]);
+  await env.CORE_DB.prepare(ENSURE_SHELL_SIGNAL_ROWS_SQL).run();
+  await env.CORE_DB.prepare(REFRESH_SHELL_SIGNALS_SQL).run();
+  await env.CORE_DB.prepare(CLASSIFY_DUMP_VAULTS_SQL).run();
+  await env.CORE_DB.prepare(ENSURE_DUMP_SIGNAL_ROWS_SQL).run();
+  await env.CORE_DB.prepare(REFRESH_DUMP_SIGNALS_SQL).run();
+  await setCoreState(env.CORE_DB, "scam_attrib_block", tip);
 
-  // 2) Refresh the scam-seller rollup without an empty generation: upsert the complete fresh set first,
-  // then remove sellers that are no longer derived from any flagged vault.
-  await env.DB.prepare(
-    `INSERT INTO emblem_scam_sellers (seller, scams)
-     SELECT es.seller, COUNT(DISTINCT ev.token_id) FROM emblem_sales es
-       JOIN emblem_vaults ev ON ev.token_id=es.token_id AND ev.contract=es.contract
-      WHERE ev.is_scam_shell=1 AND es.seller IS NOT NULL GROUP BY es.seller
-     ON CONFLICT(seller) DO UPDATE SET scams=excluded.scams`,
-  ).run();
-  await env.DB.prepare(
-    `DELETE FROM emblem_scam_sellers WHERE seller NOT IN (
-       SELECT DISTINCT es.seller FROM emblem_sales es
-       JOIN emblem_vaults ev ON ev.token_id=es.token_id AND ev.contract=es.contract
-       WHERE ev.is_scam_shell=1 AND es.seller IS NOT NULL
-     )`,
-  ).run();
-
-  // 3) (seller, funder, #real-vaults-funded) edges off the small rollup table.
-  const edges =
-    (
-      await env.DB.prepare(
-        `SELECT ss.seller sel, ss.scams scams, s.source funder, COUNT(DISTINCT ev.btc_address) nv
-       FROM emblem_scam_sellers ss
-       JOIN emblem_sales es ON es.seller = ss.seller
-       JOIN emblem_vaults ev ON ev.token_id=es.token_id AND ev.contract=es.contract AND ev.vault_kind='single' AND ev.btc_address IS NOT NULL
-       JOIN sends s ON s.destination = ev.btc_address AND s.asset <> 'XCP'
-      GROUP BY ss.seller, s.source`,
-      ).all<Edge>()
-    ).results || [];
-
-  // 4) Dominant funder (≥2) per seller ⇒ their BTC identity; sum shell counts to it.
-  const bySeller = new Map<string, { scams: number; best: string | null; bestN: number }>();
-  for (const e of edges) {
-    const cur = bySeller.get(e.sel) ?? { scams: e.scams, best: null, bestN: 0 };
-    if (e.nv > cur.bestN) {
-      cur.best = e.funder;
-      cur.bestN = e.nv;
-    }
-    bySeller.set(e.sel, cur);
-  }
-  const attrib = new Map<string, number>();
-  for (const { scams, best, bestN } of bySeller.values()) {
-    if (bestN >= 2 && best) attrib.set(best, (attrib.get(best) ?? 0) + scams);
-  }
-
-  // 5) Reset then write shell_scams on the BTC identities.
-  await env.DB.prepare(`UPDATE address_signals SET shell_scams=0 WHERE shell_scams>0`).run();
-  const stmts = [...attrib.entries()].map(([address, n]) =>
-    env.DB.prepare(
-      `INSERT INTO address_signals (address, shell_scams) VALUES (?,?) ON CONFLICT(address) DO UPDATE SET shell_scams=excluded.shell_scams`,
-    ).bind(address, n),
-  );
-  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-
-  // 6) DUMP scams: a SOLD single-unit vault of a very-high-supply card (one fungible unit of a $0.0004 token
-  //    sold as a $40 "collectible" NFT). The BTC funder who deposited the unit to dump it IS the actor —
-  //    direct attribution, no consistency test needed. Count-scaled so the 300-dump factories get crushed and
-  //    a one-off memento sale is a rounding error.
-  await env.DB.prepare(`UPDATE emblem_vaults SET is_dump=0 WHERE is_dump=1`).run();
-  await env.DB.prepare(
-    `UPDATE emblem_vaults SET is_dump=1
-      WHERE vault_kind='single' AND COALESCE(contents_qty,1)<=1
-        AND contents_asset IN (SELECT asset FROM asset_signals WHERE supply>=${HIGH_SUPPLY_DUMP})
-        AND EXISTS (SELECT 1 FROM emblem_sales es WHERE es.token_id=emblem_vaults.token_id AND es.contract=emblem_vaults.contract)`,
-  ).run();
-  await env.DB.prepare(`UPDATE address_signals SET dump_scams=0 WHERE dump_scams>0`).run();
-  const dumps =
-    (
-      await env.DB.prepare(
-        `SELECT s.source address, COUNT(DISTINCT ev.token_id) n FROM emblem_vaults ev
-       JOIN sends s ON s.destination=ev.btc_address AND s.asset=ev.contents_asset AND s.asset<>'XCP'
-      WHERE ev.is_dump=1 AND s.source IS NOT NULL GROUP BY s.source`,
-      ).all<{ address: string; n: number }>()
-    ).results || [];
-  const dumpStmts = dumps.map((r) =>
-    env.DB.prepare(
-      `INSERT INTO address_signals (address, dump_scams) VALUES (?,?) ON CONFLICT(address) DO UPDATE SET dump_scams=excluded.dump_scams`,
-    ).bind(r.address, r.n),
-  );
-  for (let i = 0; i < dumpStmts.length; i += 50) await env.DB.batch(dumpStmts.slice(i, i + 50));
-
-  await setState(env.DB, "scam_attrib_block", String(tip));
-  const shells =
-    (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE is_scam_shell=1`).first<{ c: number }>())?.c ?? 0;
-  const dumpVaults =
-    (await env.DB.prepare(`SELECT COUNT(*) c FROM emblem_vaults WHERE is_dump=1`).first<{ c: number }>())?.c ?? 0;
-  return {
-    tip,
-    genuine_shells: shells,
-    scam_sellers: bySeller.size,
-    btc_identities: attrib.size,
-    attributed_shells: [...attrib.values()].reduce((a, b) => a + b, 0),
-    dump_vaults: dumpVaults,
-    dump_actors: dumps.length,
-    attributed_dumps: dumps.reduce((a, r) => a + r.n, 0),
-  };
+  const summary = await env.CORE_DB.prepare(
+    `SELECT
+      (SELECT COUNT(*) FROM emblem_vaults WHERE is_scam_shell=1) genuine_shells,
+      (SELECT COUNT(*) FROM emblem_scam_sellers WHERE scams>0) scam_sellers,
+      (SELECT COUNT(*) FROM address_signals WHERE shell_scams>0) btc_identities,
+      (SELECT COALESCE(SUM(shell_scams),0) FROM address_signals) attributed_shells,
+      (SELECT COUNT(*) FROM emblem_vaults WHERE is_dump=1) dump_vaults,
+      (SELECT COUNT(*) FROM address_signals WHERE dump_scams>0) dump_actors,
+      (SELECT COALESCE(SUM(dump_scams),0) FROM address_signals) attributed_dumps`,
+  ).first<Record<string, number>>();
+  return { tip, ...(summary ?? {}) };
 }
