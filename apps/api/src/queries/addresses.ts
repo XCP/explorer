@@ -9,8 +9,6 @@
  * (config-derived, not user input) and passed in — the query owns the surrounding SQL.
  */
 import type {
-  AddressBalanceRow,
-  AddressSendRow,
   AddressIssuanceRow,
   AddressDispenserRow,
   AddressDispenseRow,
@@ -48,34 +46,6 @@ export function listAddressLedgerPrimary(db: D1Database, address: string, p: Pag
      UNION ALL
      SELECT 'out' direction, block_index, tx_hash, asset, quantity, calling_function FROM debits WHERE address=?1
      ORDER BY block_index DESC, tx_hash LIMIT ?2 OFFSET ?3`,
-    address,
-    p.limit,
-    p.offset,
-  );
-}
-
-/** Held assets (real, non-dust), with divisibility + stamp flag, asset-sorted. */
-export function listBalances(db: D1Database, address: string, p: Page): Promise<AddressBalanceRow[]> {
-  return q<AddressBalanceRow>(
-    db,
-    `SELECT b.asset, b.quantity, b.quantity_normalized, a.divisible, a.asset_longname,
-            EXISTS(SELECT 1 FROM tags t WHERE t.entity_type='asset' AND t.entity_id=b.asset AND t.tag='stamp') stamp
-     FROM balances b LEFT JOIN assets a ON a.asset=b.asset
-     WHERE b.holder=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0
-     ORDER BY b.asset LIMIT ? OFFSET ?`,
-    address,
-    p.limit,
-    p.offset,
-  );
-}
-
-/** Sends where the address is source or destination, newest first. */
-export function listSends(db: D1Database, address: string, p: Page): Promise<AddressSendRow[]> {
-  return q<AddressSendRow>(
-    db,
-    `SELECT tx_hash, block_index, block_time, source, destination, asset, quantity_normalized, send_type, status
-     FROM sends WHERE source=? OR destination=? ORDER BY block_index DESC LIMIT ? OFFSET ?`,
-    address,
     address,
     p.limit,
     p.offset,
