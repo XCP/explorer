@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { coreTradeVenueStats, listCoreTrades } from "#api/queries/core-trades";
+import { listTrades, tradeVenueStats } from "#api/queries/trades";
 
 class Statement {
   private values: unknown[] = [];
@@ -40,7 +40,7 @@ test("compact trades restore public identities, filters, and venue totals", asyn
       VALUES('emblem','2',2,10,9,1,'ETH',3,6000,'ethereum-hash');
   `);
 
-  const rows = (await listCoreTrades(d1(db), { asset: "xcp", limit: 10, offset: 0 })).map((row) => ({ ...row }));
+  const rows = (await listTrades(d1(db), { asset: "xcp", limit: 10, offset: 0 })).map((row) => ({ ...row }));
   assert.deepEqual(rows, [
     {
       venue: "dispense",
@@ -58,7 +58,7 @@ test("compact trades restore public identities, filters, and venue totals", asyn
     },
   ]);
   assert.deepEqual(
-    (await coreTradeVenueStats(d1(db))).map((row) => ({ ...row })),
+    (await tradeVenueStats(d1(db))).map((row) => ({ ...row })),
     [
       { venue: "dispense", trades: 1, assets: 1, last_time: 20, usd_known: 30000 },
       { venue: "emblem", trades: 1, assets: 1, last_time: 10, usd_known: 6000 },
