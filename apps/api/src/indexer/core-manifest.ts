@@ -77,6 +77,60 @@ export const CORE_TABLE_MANIFEST = [
 
 export const GENERATED_CORE_TABLES = ["address_dictionary", "asset_dictionary", "cache", "entity_dictionary"] as const;
 
+export type CoreProjectionStrategy = "append" | "upsert" | "snapshot" | "generation";
+
+export interface CoreProjectionPolicy {
+  table: string;
+  strategy: CoreProjectionStrategy;
+  owner: "external" | "explorer";
+}
+
+/** Maintenance semantics for every non-protocol relation retained in the compact database. This list is
+ * deliberately exhaustive: append-only feeds, mutable state, and atomic generations require different updates. */
+export const CORE_PROJECTION_POLICIES = [
+  { table: "address_signals", strategy: "upsert", owner: "explorer" },
+  { table: "asset_feed_counts", strategy: "upsert", owner: "explorer" },
+  { table: "asset_signals", strategy: "upsert", owner: "explorer" },
+  { table: "btc_signals", strategy: "upsert", owner: "explorer" },
+  { table: "curated", strategy: "upsert", owner: "explorer" },
+  { table: "emblem_listings", strategy: "snapshot", owner: "external" },
+  { table: "emblem_sales", strategy: "append", owner: "external" },
+  { table: "emblem_scam_sellers", strategy: "upsert", owner: "explorer" },
+  { table: "emblem_vaults", strategy: "upsert", owner: "external" },
+  { table: "exchange_top_assets", strategy: "generation", owner: "explorer" },
+  { table: "graph_baseline", strategy: "generation", owner: "explorer" },
+  { table: "graph_edges", strategy: "generation", owner: "explorer" },
+  { table: "graph_inflow", strategy: "generation", owner: "explorer" },
+  { table: "graph_node", strategy: "generation", owner: "explorer" },
+  { table: "graph_rank", strategy: "generation", owner: "explorer" },
+  { table: "graph_seed", strategy: "generation", owner: "explorer" },
+  { table: "network_stats_snapshot", strategy: "snapshot", owner: "explorer" },
+  { table: "prices", strategy: "upsert", owner: "external" },
+  { table: "pr_edges", strategy: "generation", owner: "explorer" },
+  { table: "scarce_city_sales", strategy: "append", owner: "external" },
+  { table: "tags", strategy: "snapshot", owner: "explorer" },
+  { table: "trades", strategy: "upsert", owner: "explorer" },
+  { table: "xcp_btc_daily", strategy: "upsert", owner: "external" },
+] as const satisfies readonly CoreProjectionPolicy[];
+
+export function auditCoreProjectionPolicies() {
+  const preserved = CORE_TABLE_MANIFEST.filter((entry) => entry.disposition === "preserve")
+    .flatMap((entry) => (entry.target == null ? [] : [entry.target]))
+    .sort();
+  const classified = CORE_PROJECTION_POLICIES.map((policy) => policy.table).sort();
+  const preservedSet = new Set<string>(preserved);
+  const classifiedSet = new Set<string>(classified);
+  return {
+    complete:
+      classified.length === classifiedSet.size &&
+      preserved.every((table) => classifiedSet.has(table)) &&
+      classified.every((table) => preservedSet.has(table)),
+    missing: preserved.filter((table) => !classifiedSet.has(table)),
+    unexpected: classified.filter((table) => !preservedSet.has(table)),
+    duplicates: classified.filter((table, index) => classified.indexOf(table) !== index),
+  };
+}
+
 interface CoreColumnRule {
   targets: readonly string[];
   invariant?: "null_only";

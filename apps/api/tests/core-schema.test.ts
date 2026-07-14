@@ -13,6 +13,7 @@ import {
   CORE_TRANSACTION_BY_HASH_SQL,
 } from "#api/queries/core";
 import {
+  auditCoreProjectionPolicies,
   CORE_COLUMN_RULES,
   CORE_SNAPSHOT_TABLES,
   CORE_TABLE_MANIFEST,
@@ -41,6 +42,15 @@ test("core manifest classifies the complete live source schema exactly once", ()
     CORE_TABLE_MANIFEST.filter((entry) => entry.disposition === "merge").map((entry) => entry.source),
     ["credits", "debits"],
   );
+});
+
+test("every retained projection has one explicit maintenance strategy", () => {
+  assert.deepEqual(auditCoreProjectionPolicies(), {
+    complete: true,
+    missing: [],
+    unexpected: [],
+    duplicates: [],
+  });
 });
 
 test("the reusable snapshot includes every source relation that belongs in the final database", () => {
