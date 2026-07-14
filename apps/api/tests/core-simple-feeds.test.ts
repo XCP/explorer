@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { listBroadcasts, listBurns, listDestructions, listDividends, listSweeps } from "#api/queries/records";
+import {
+  listBroadcasts,
+  listBurns,
+  listDestructions,
+  listDividends,
+  listFairminters,
+  listFairmints,
+  listSweeps,
+} from "#api/queries/records";
 
 class Statement {
   private values: unknown[] = [];
@@ -22,6 +30,9 @@ test("compact simple record feeds restore address and asset identities", async (
     CREATE TABLE burns(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,burned_normalized TEXT,earned_normalized TEXT,status TEXT);
     CREATE TABLE dividends(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,asset_id INTEGER,dividend_asset_id INTEGER,quantity_per_unit_normalized TEXT,status TEXT);
     CREATE TABLE broadcasts(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,timestamp INTEGER,value TEXT,text TEXT,locked INTEGER,mime_type TEXT,status TEXT);
+    CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,divisible INTEGER);
+    CREATE TABLE fairminters(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,asset_id INTEGER,asset_longname TEXT,price TEXT,quantity_by_price TEXT,hard_cap TEXT,soft_cap TEXT,pool_quantity TEXT,lp_asset TEXT,divisible INTEGER,earned_quantity TEXT,paid_quantity TEXT,status TEXT);
+    CREATE TABLE fairmints(event_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,fairminter_tx_index INTEGER,asset_id INTEGER,earn_quantity TEXT,paid_quantity TEXT,status TEXT);
     INSERT INTO address_dictionary VALUES(1,'source'),(2,'destination');
     INSERT INTO asset_dictionary VALUES(1,'CARD'),(2,'XCP');
     INSERT INTO sweeps VALUES(1,zeroblob(32),10,100,1,2,3,'memo','5','valid');
@@ -29,6 +40,9 @@ test("compact simple record feeds restore address and asset identities", async (
     INSERT INTO burns VALUES(3,zeroblob(32),12,102,1,'1.0','1000.0','valid');
     INSERT INTO dividends VALUES(4,zeroblob(32),13,103,1,1,2,'0.5','valid');
     INSERT INTO broadcasts VALUES(5,zeroblob(32),14,104,1,99,'1.25','hello',1,'text/plain','valid');
+    INSERT INTO assets VALUES(1,1);
+    INSERT INTO fairminters VALUES(6,zeroblob(32),15,105,1,1,'PARENT.CARD','10','2','100','50','20','CARD-XCP',1,'40','200','open');
+    INSERT INTO fairmints VALUES(7,zeroblob(32),16,106,2,6,1,'2','10','valid');
   `);
   const dbBinding = d1(db);
 
@@ -42,5 +56,11 @@ test("compact simple record feeds restore address and asset identities", async (
   assert.deepEqual({ ...(await listBroadcasts(dbBinding, 1, 0))[0] }, {
     tx_hash: "0".repeat(64),block_index: 14,block_time: 104,source: "source",timestamp: 99,
     value: "1.25",text: "hello",locked: 1,mime_type: "text/plain",status: "valid",
+  });
+  assert.equal((await listFairminters(dbBinding, 1, 0))[0].asset_longname, "PARENT.CARD");
+  assert.deepEqual({ ...(await listFairmints(dbBinding, 1, 0))[0] }, {
+    tx_hash: "0".repeat(64),block_index: 16,block_time: 106,source: "destination",
+    fairminter_tx_hash: "0".repeat(64),asset: "CARD",earn_quantity: "2",paid_quantity: "10",
+    divisible: 1,status: "valid",
   });
 });

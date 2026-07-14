@@ -115,6 +115,33 @@ FROM page JOIN broadcasts broadcast ON broadcast.tx_index=page.tx_index
 LEFT JOIN address_dictionary source ON source.address_id=broadcast.source_id
 ORDER BY broadcast.block_index DESC,broadcast.tx_index DESC`;
 
+const FAIRMINTER_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM fairminters ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(fairminter.tx_hash)) tx_hash,fairminter.block_index,fairminter.block_time,
+  source.address source,asset.asset,fairminter.asset_longname,fairminter.price,
+  fairminter.quantity_by_price,fairminter.hard_cap,fairminter.soft_cap,fairminter.pool_quantity,
+  fairminter.lp_asset,fairminter.divisible,fairminter.earned_quantity,fairminter.paid_quantity,
+  fairminter.status
+FROM page JOIN fairminters fairminter ON fairminter.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=fairminter.source_id
+LEFT JOIN asset_dictionary asset ON asset.asset_id=fairminter.asset_id
+ORDER BY fairminter.block_index DESC,fairminter.tx_index DESC`;
+
+const FAIRMINT_FEED_SQL = `WITH page AS (
+  SELECT event_index FROM fairmints ORDER BY block_index DESC,event_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(fairmint.tx_hash)) tx_hash,fairmint.block_index,fairmint.block_time,
+  source.address source,LOWER(HEX(fairminter.tx_hash)) fairminter_tx_hash,asset.asset,
+  fairmint.earn_quantity,fairmint.paid_quantity,COALESCE(asset_state.divisible,0) divisible,
+  fairmint.status
+FROM page JOIN fairmints fairmint ON fairmint.event_index=page.event_index
+LEFT JOIN address_dictionary source ON source.address_id=fairmint.source_id
+LEFT JOIN fairminters fairminter ON fairminter.tx_index=fairmint.fairminter_tx_index
+LEFT JOIN asset_dictionary asset ON asset.asset_id=fairmint.asset_id
+LEFT JOIN assets asset_state ON asset_state.asset_id=fairmint.asset_id
+ORDER BY fairmint.block_index DESC,fairmint.event_index DESC`;
+
 export function listTransactions(
   db: D1Database,
   limit: number,
@@ -160,6 +187,14 @@ export function listDividends(db: D1Database, limit: number, offset: number): Pr
 
 export function listBroadcasts(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["broadcasts"][]> {
   return q<RecordRowMap["broadcasts"]>(db, BROADCAST_FEED_SQL, limit, offset);
+}
+
+export function listFairminters(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["fairminters"][]> {
+  return q<RecordRowMap["fairminters"]>(db, FAIRMINTER_FEED_SQL, limit, offset);
+}
+
+export function listFairmints(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["fairmints"][]> {
+  return q<RecordRowMap["fairmints"]>(db, FAIRMINT_FEED_SQL, limit, offset);
 }
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even
