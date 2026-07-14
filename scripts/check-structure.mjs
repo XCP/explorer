@@ -38,6 +38,14 @@ function walk(dir) {
 
 for (const root of ROOTS) walk(root);
 
+const recoveryConfig = readFileSync("apps/api/wrangler.recovery.toml", "utf8");
+if (!/binding\s*=\s*"CORE_DB"/.test(recoveryConfig)) {
+  failures.push("recovery Worker: canonical database must use the CORE_DB binding");
+}
+if (/0aa317ef-600f-4908-b7e3-fb8df8c71104|database_name\s*=\s*"xcpio"|binding\s*=\s*"DB"/.test(recoveryConfig)) {
+  failures.push("recovery Worker: retired source-database binding is forbidden");
+}
+
 if (failures.length) {
   console.error("STRUCTURE CHECK FAILED:\n" + failures.map((f) => `  - ${f}`).join("\n"));
   process.exit(1);

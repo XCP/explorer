@@ -9,10 +9,10 @@ preview_urls = false
 cpu_ms = 300000
 
 [[d1_databases]]
-binding = "DB"
-database_name = "xcpio"
-database_id = "0aa317ef-600f-4908-b7e3-fb8df8c71104"
-migrations_dir = "migrations"
+binding = "CORE_DB"
+database_name = "xcpio-core"
+database_id = "17b7d589-7076-4ea1-851a-0de10964ab16"
+migrations_dir = "migrations-core"
 
 [[d1_databases]]
 binding = "RECOVERY_DB"
