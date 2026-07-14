@@ -81,6 +81,16 @@ function databases() {
       total REAL,usd_value REAL,buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,
       sale_class TEXT,PRIMARY KEY(venue,ref)
     );
+    CREATE TABLE asset_feed_counts(
+      asset_id INTEGER PRIMARY KEY,sales INTEGER DEFAULT 0,issuances INTEGER DEFAULT 0,
+      dispensers INTEGER DEFAULT 0,dispenses INTEGER DEFAULT 0,orders INTEGER DEFAULT 0,
+      sends INTEGER DEFAULT 0,fairmints INTEGER DEFAULT 0,dividends INTEGER DEFAULT 0,
+      destructions INTEGER DEFAULT 0,pools INTEGER DEFAULT 0,subassets INTEGER DEFAULT 0,updated_at INTEGER);
+    CREATE TABLE issuances(asset_id INTEGER); CREATE TABLE dispensers(asset_id INTEGER);
+    CREATE TABLE dispenses(asset_id INTEGER); CREATE TABLE orders(give_asset_id INTEGER,get_asset_id INTEGER);
+    CREATE TABLE sends(asset_id INTEGER); CREATE TABLE fairmints(asset_id INTEGER);
+    CREATE TABLE dividends(asset_id INTEGER,dividend_asset_id INTEGER); CREATE TABLE destructions(asset_id INTEGER);
+    CREATE TABLE pools(asset_a_id INTEGER,asset_b_id INTEGER,lp_asset TEXT); CREATE TABLE assets(asset_longname TEXT);
   `);
   return { source, compact, env: { DB: d1(source), CORE_DB: d1(compact) } };
 }

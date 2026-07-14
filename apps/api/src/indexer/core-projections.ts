@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import { hashToBytes, parseUtxoHolder } from "#api/indexer/compact-codec";
+import { rebuildCoreAssetFeedCounts } from "#api/indexer/core-feed-counts";
 
 export const CORE_INCREMENTAL_PROJECTIONS = [
   "emblem_listings",
@@ -218,6 +219,7 @@ async function writeRows(
           );
       }),
     );
+    await rebuildCoreAssetFeedCounts(db, assets);
     return;
   }
 
