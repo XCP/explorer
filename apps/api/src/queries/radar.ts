@@ -14,25 +14,30 @@ import { CONVICTION_FACTORS, CONVICTION_PCT } from "#api/reputation/config";
 const CONVICTION = rawSqlExpr(CONVICTION_FACTORS, 0);
 
 // The base "grail-shaped" population: real, network-trusted, broadly held, named (not numeric stamps).
-const ELIGIBLE = `low_quality=0 AND graph_trust>graph_distrust AND holders>=15
-   AND asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag='numeric')`;
+const ELIGIBLE = `signal.low_quality=0 AND signal.graph_trust>signal.graph_distrust AND signal.holders>=15
+   AND NOT EXISTS (
+     SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
+      WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tag.tag='numeric'
+   )`;
 
 /** Undervalued: high Conviction, low realized value, real holder base, network-trusted, not spam/numeric. */
 export function radarUndervalued(db: D1Database, marketMax = 500, limit = 40): Promise<RadarAsset[]> {
   return q<RadarAsset>(
     db,
     `WITH conv AS (
-       SELECT asset, (${CONVICTION}) conviction, COALESCE(max_realized_usd,0) market_usd,
-              holders, supply, avg_holder_dex, pct_creator_holders
-         FROM asset_signals
-        WHERE ${ELIGIBLE} AND COALESCE(max_realized_usd,0) < ${marketMax}
+       SELECT signal.asset_id,dictionary.asset, (${CONVICTION}) conviction,
+              COALESCE(signal.max_realized_usd,0) market_usd,
+              signal.holders,signal.supply,signal.avg_holder_dex,signal.pct_creator_holders
+         FROM asset_signals signal
+         JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+        WHERE ${ELIGIBLE} AND COALESCE(signal.max_realized_usd,0) < ${marketMax}
      )
-     SELECT c.asset, a.asset_longname,
+     SELECT c.asset,state.asset_longname,
             ROUND(c.conviction,2) conviction, ROUND(c.market_usd) market_usd,
             c.holders, CAST(ROUND(c.supply) AS INTEGER) supply,
             ROUND(c.avg_holder_dex,1) holder_dex, ROUND(c.pct_creator_holders) creator_pct
-       FROM conv c LEFT JOIN assets a ON a.asset=c.asset
-      ORDER BY c.conviction DESC LIMIT ${limit}`,
+       FROM conv c LEFT JOIN assets state ON state.asset_id=c.asset_id
+      ORDER BY c.conviction DESC,c.asset ASC LIMIT ${limit}`,
   );
 }
 
@@ -47,26 +52,32 @@ export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]
     `WITH px AS (SELECT usd FROM prices WHERE currency='BTC' ORDER BY day DESC LIMIT 1),
      disp AS ( -- cheapest open dispenser per asset, per UNIT of the card (satoshirate is priced per dispense,
                -- which can hand out give_quantity>1 units, so divide to get the effective one-unit BTC price)
-       SELECT asset, MIN(CAST(satoshirate_normalized AS REAL) / NULLIF(CAST(give_quantity_normalized AS REAL), 0)) ask_btc
+       SELECT asset_id,MIN(CAST(satoshirate_normalized AS REAL)
+              / NULLIF(CAST(give_quantity_normalized AS REAL),0)) ask_btc
          FROM dispensers
         WHERE status=0 AND CAST(give_remaining_normalized AS REAL) > 0
-        GROUP BY asset
+        GROUP BY asset_id
      ),
-     emb AS ( -- cheapest live Emblem listing per wrapped asset (USD), with its marketplace + deep link
-       SELECT asset, MIN(price_usd) ask_usd,
-              (SELECT e2.marketplace FROM emblem_listings e2 WHERE e2.asset=el.asset ORDER BY e2.price_usd LIMIT 1) marketplace,
-              (SELECT e3.url        FROM emblem_listings e3 WHERE e3.asset=el.asset ORDER BY e3.price_usd LIMIT 1) url
-         FROM emblem_listings el
-        WHERE el.asset IS NOT NULL AND el.price_usd IS NOT NULL
-        GROUP BY asset
+     emb_ranked AS ( -- cheapest current-generation listing, keeping venue and URL from the same order
+       SELECT asset_id,price_usd ask_usd,marketplace,url,
+              ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY price_usd,order_id) rank
+         FROM emblem_listings
+        WHERE generation=COALESCE((SELECT CAST(value AS INTEGER) FROM core_state
+                                    WHERE key='emblem_listings_generation'),0)
+          AND asset_id IS NOT NULL AND price_usd IS NOT NULL
+     ),
+     emb AS (
+       SELECT asset_id,ask_usd,marketplace,url FROM emb_ranked WHERE rank=1
      ),
      conv AS (
-       SELECT asset, (${CONVICTION}) conviction, COALESCE(max_realized_usd,0) market_usd,
-              holders, supply, avg_holder_dex, pct_creator_holders
-         FROM asset_signals
+       SELECT signal.asset_id,dictionary.asset, (${CONVICTION}) conviction,
+              COALESCE(signal.max_realized_usd,0) market_usd,
+              signal.holders,signal.supply,signal.avg_holder_dex,signal.pct_creator_holders
+         FROM asset_signals signal
+         JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
         WHERE ${ELIGIBLE} AND (${CONVICTION}) >= ${CONVICTION_PCT.p90}
      )
-     SELECT c.asset, a.asset_longname,
+     SELECT c.asset,state.asset_longname,
             ROUND(c.conviction,2) conviction, ROUND(c.market_usd) market_usd,
             c.holders, CAST(ROUND(c.supply) AS INTEGER) supply,
             ROUND(c.avg_holder_dex,1) holder_dex, ROUND(c.pct_creator_holders) creator_pct,
@@ -81,10 +92,10 @@ export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]
             CASE WHEN emb.ask_usd IS NOT NULL AND (disp.ask_btc IS NULL OR emb.ask_usd < disp.ask_btc*(SELECT usd FROM px))
                  THEN emb.url ELSE NULL END listing_url
        FROM conv c
-       LEFT JOIN disp ON disp.asset=c.asset
-       LEFT JOIN emb  ON emb.asset=c.asset
-       LEFT JOIN assets a ON a.asset=c.asset
-      WHERE disp.asset IS NOT NULL OR emb.asset IS NOT NULL
-      ORDER BY c.conviction DESC LIMIT ${limit}`,
+       LEFT JOIN disp ON disp.asset_id=c.asset_id
+       LEFT JOIN emb ON emb.asset_id=c.asset_id
+       LEFT JOIN assets state ON state.asset_id=c.asset_id
+      WHERE disp.asset_id IS NOT NULL OR emb.asset_id IS NOT NULL
+      ORDER BY c.conviction DESC,c.asset ASC LIMIT ${limit}`,
   );
 }

@@ -13,11 +13,8 @@ import { convictionScore } from "#api/reputation/score";
 export const radar = router();
 
 radar.get("/v2/radar", (c) =>
-  cached(c, "radar", { ttl: 600, edge: 120 }, async (): Promise<Envelope<RadarPayload>> => {
-    const [under, buy] = await Promise.all([
-      radarUndervalued(c.env.DB).catch(() => []),
-      radarBuyable(c.env.DB).catch(() => []),
-    ]);
+  cached(c, "radar:conviction", { ttl: 600, edge: 120 }, async (): Promise<Envelope<RadarPayload>> => {
+    const [under, buy] = await Promise.all([radarUndervalued(c.env.CORE_DB), radarBuyable(c.env.CORE_DB)]);
     // Rows arrive ranked by RAW conviction (SQL); map each raw to the calibrated 0-100 score for display.
     const undervalued = under.map((r) => ({ ...r, conviction: convictionScore(r.conviction) }));
     const buyable = buy.map((r) => ({ ...r, conviction: convictionScore(r.conviction) }));

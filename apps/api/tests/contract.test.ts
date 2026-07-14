@@ -324,7 +324,11 @@ test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (
 test("contract: GET /v2/assets/RAREPEPE/quality — compact quality signals", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/assets/RAREPEPE/quality");
-  assertShape(j.result, { holders: "number", trades: "number", low_quality: "number", wash_suspect: "boolean" }, "quality.");
+  assertShape(
+    j.result,
+    { holders: "number", trades: "number", low_quality: "number", wash_suspect: "boolean" },
+    "quality.",
+  );
   assert.ok(j.result.holders > 0, "RAREPEPE should have holders");
 });
 
@@ -455,6 +459,36 @@ test("contract: GET /v2/emblem/vaults?limit=2 - EmblemVaultRow list", async (t) 
     { token_id: "string", contract: "string|null", btc_address: "string|null", held_assets: "number" },
     2,
     "emblem/vaults",
+  );
+});
+
+test("contract: GET /v2/radar - non-empty compact conviction rankings", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/radar")).result;
+  const asset = {
+    asset: "string",
+    asset_longname: "string|null",
+    conviction: "number",
+    market_usd: "number",
+    holders: "number",
+    supply: "number",
+    holder_dex: "number",
+    creator_pct: "number",
+  };
+  assert.ok(Array.isArray(result.undervalued) && result.undervalued.length > 0, "radar undervalued rows required");
+  assert.ok(Array.isArray(result.buyable) && result.buyable.length > 0, "radar buyable rows required");
+  assertRows(result.undervalued, asset, "radar.undervalued");
+  assertRows(
+    result.buyable,
+    {
+      ...asset,
+      venue: "string",
+      ask_usd: "number",
+      ask_btc: "number|null",
+      marketplace: "string|null",
+      listing_url: "string|null",
+    },
+    "radar.buyable",
   );
 });
 
