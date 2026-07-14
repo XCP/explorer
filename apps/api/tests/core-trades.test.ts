@@ -119,6 +119,10 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     INSERT INTO dispenses VALUES
       (78,10,0,3,1002,102,'1','60000000',1,2,x'${"44".repeat(32)}'),
       (79,10,1,4,1002,102,'2','60000000',1,2,x'${"44".repeat(32)}');
+    INSERT INTO transactions VALUES(11,x'${"55".repeat(32)}');
+    INSERT INTO dispenses VALUES
+      (80,11,0,3,1003,103,'3','70000000',1,2,x'${"55".repeat(32)}'),
+      (81,11,1,4,1003,103,'5','70000000',1,2,x'${"55".repeat(32)}');
     INSERT INTO emblem_sales VALUES
       ('0xeth',9,3,'7','1000000000000000000',4,1,2,16000000),
       ('0xeth',9,3,'8','2000000000000000000',4,1,2,16000000);
@@ -154,6 +158,14 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
         currency: "BTC",
         total: 0.6,
       },
+      {
+        venue: "dispense",
+        ref: `${"55".repeat(32)}:e80`,
+        asset_id: null,
+        quantity: null,
+        currency: "BTC",
+        total: 0.7,
+      },
       { venue: "emblem", ref: "0xeth_9_0xcontract_7", asset_id: 3, quantity: 1, currency: "ETH", total: 1 },
       { venue: "emblem", ref: "0xeth_9_0xcontract_8", asset_id: 3, quantity: 1, currency: "ETH", total: 2 },
       { venue: "scarce.city", ref: "CARD_2000", asset_id: 3, quantity: 1, currency: "BTC", total: 0.25 },
@@ -170,6 +182,19 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     [
       { leg_index: 0, asset_id: 3, quantity: 1 },
       { leg_index: 1, asset_id: 4, quantity: 2 },
+    ],
+  );
+  assert.deepEqual(
+    db
+      .prepare(
+        `SELECT leg_index,asset_id,quantity FROM trade_legs
+         WHERE venue='dispense' AND trade_ref=? ORDER BY leg_index`,
+      )
+      .all(`${"55".repeat(32)}:e80`)
+      .map((row) => ({ ...row })),
+    [
+      { leg_index: 0, asset_id: 3, quantity: 3 },
+      { leg_index: 1, asset_id: 4, quantity: 5 },
     ],
   );
 });

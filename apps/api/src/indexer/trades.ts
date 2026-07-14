@@ -42,8 +42,12 @@ export function compactDexTradesSql(): string {
       buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash`;
 }
 
-const DISPENSE_PAYMENTS = `WITH payment AS (
-    SELECT output.tx_index,output.destination_id seller_id,output.btc_amount,
+const DISPENSE_PAYMENTS = `WITH output_payment AS (
+    SELECT output.tx_index,output.destination_id seller_id,
+      (SELECT MIN(d.destination_id) FROM dispenses d
+       WHERE d.tx_index=output.tx_index AND d.source_id=output.destination_id
+         AND d.btc_amount=output.btc_amount) buyer_id,
+      output.btc_amount,
       MIN(output.out_index) first_out,MAX(output.out_index) last_out,COUNT(*) output_count,
       SUM(CAST(output.btc_amount AS REAL)) total_sats,MIN(output.block_index) block_index,
       lower(hex(tx.tx_hash)) || ':' || MIN(output.out_index) ||
@@ -51,8 +55,22 @@ const DISPENSE_PAYMENTS = `WITH payment AS (
       tx.tx_hash
     FROM transaction_outputs output
     JOIN transactions tx ON tx.tx_index=output.tx_index
-    WHERE output.block_index>? AND output.block_index<=?
+    WHERE output.block_index>?1 AND output.block_index<=?2
     GROUP BY output.tx_index,output.destination_id,output.btc_amount
+  ), event_payment AS (
+    SELECT dispense.tx_index,dispense.source_id seller_id,dispense.destination_id buyer_id,
+      dispense.btc_amount,MIN(dispense.event_index) first_out,MAX(dispense.event_index) last_out,
+      1 output_count,CAST(dispense.btc_amount AS REAL) total_sats,MIN(dispense.block_index) block_index,
+      lower(hex(tx.tx_hash)) || ':e' || MIN(dispense.event_index) trade_ref,tx.tx_hash
+    FROM dispenses dispense
+    JOIN transactions tx ON tx.tx_index=dispense.tx_index
+    WHERE dispense.block_index>?1 AND dispense.block_index<=?2
+      AND NOT EXISTS (SELECT 1 FROM transaction_outputs output WHERE output.tx_index=dispense.tx_index)
+    GROUP BY dispense.tx_index,dispense.source_id,dispense.destination_id,dispense.btc_amount
+  ), payment AS (
+    SELECT * FROM output_payment
+    UNION ALL
+    SELECT * FROM event_payment
   )`;
 
 export const DISPENSE_TRADES_SQL = `${DISPENSE_PAYMENTS}
@@ -68,7 +86,8 @@ export const DISPENSE_TRADES_SQL = `${DISPENSE_PAYMENTS}
     CASE WHEN payment.output_count=1 AND COUNT(*)=1 THEN 'single' ELSE 'bundle' END
   FROM payment
   JOIN dispenses dispense ON dispense.tx_index=payment.tx_index
-    AND dispense.source_id=payment.seller_id AND dispense.btc_amount=payment.btc_amount
+    AND dispense.source_id=payment.seller_id AND dispense.destination_id=payment.buyer_id
+    AND dispense.btc_amount=payment.btc_amount
   GROUP BY payment.tx_index,payment.trade_ref,payment.output_count,payment.block_index,
     payment.total_sats,payment.seller_id,payment.tx_hash
   ON CONFLICT(venue,ref) DO UPDATE SET
@@ -83,7 +102,8 @@ export const DISPENSE_TRADE_LEGS_SQL = `${DISPENSE_PAYMENTS}
     CAST(dispense.dispense_quantity_normalized AS REAL)
   FROM payment
   JOIN dispenses dispense ON dispense.tx_index=payment.tx_index
-    AND dispense.source_id=payment.seller_id AND dispense.btc_amount=payment.btc_amount
+    AND dispense.source_id=payment.seller_id AND dispense.destination_id=payment.buyer_id
+    AND dispense.btc_amount=payment.btc_amount
   ON CONFLICT(venue,trade_ref,leg_index) DO UPDATE SET
     asset_id=excluded.asset_id,quantity=excluded.quantity`;
 
