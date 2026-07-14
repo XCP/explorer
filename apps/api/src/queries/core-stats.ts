@@ -31,28 +31,20 @@ export function coreNetworkTotals(db: D1Database): Promise<NetworkTotals | null>
 }
 
 const CORE_METRICS: Record<MetricName, string> = {
-  transactions: `SELECT block_time/86400 d,SUM(transaction_count) v FROM blocks
-    WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  issuances: `SELECT block_time/86400 d,COUNT(*) v FROM issuances
-    WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  dispenses: `SELECT block_time/86400 d,COUNT(*) v FROM dispenses
-    WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  trades: `SELECT block_time/86400 d,COUNT(*) v FROM order_matches
-    WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  sends: `SELECT block_time/86400 d,COUNT(*) v FROM sends
-    WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
-  btc_fees: `SELECT block_time/86400 d,SUM(CAST(fee AS REAL))/100000000.0 v FROM transactions
-    WHERE block_time>0 AND fee IS NOT NULL GROUP BY d ORDER BY d DESC LIMIT ?`,
-  xcp_burned: `SELECT block_time/86400 d,SUM(CAST(amount AS REAL))/100000000.0 v FROM (
-      SELECT block_time,fee_paid amount FROM issuances WHERE status LIKE 'valid%' AND fee_paid IS NOT NULL
-      UNION ALL SELECT block_time,fee_paid FROM sweeps WHERE fee_paid IS NOT NULL
-      UNION ALL SELECT block_time,fee_paid FROM dividends WHERE fee_paid IS NOT NULL
-      UNION ALL SELECT destruction.block_time,destruction.quantity FROM destructions destruction
-        WHERE destruction.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
-          AND destruction.status LIKE 'valid%'
-    ) WHERE block_time>0 GROUP BY d ORDER BY d DESC LIMIT ?`,
+  transactions: "transactions",
+  issuances: "issuances",
+  dispenses: "dispenses",
+  trades: "trades",
+  sends: "sends",
+  btc_fees: "btc_fees",
+  xcp_burned: "xcp_burned",
 };
 
 export function coreMetricSeries(db: D1Database, name: MetricName, days: number): Promise<MetricDayRow[]> {
-  return q<MetricDayRow>(db, CORE_METRICS[name], days);
+  const column = CORE_METRICS[name];
+  return q<MetricDayRow>(
+    db,
+    `SELECT day d,${column} v FROM daily_metrics WHERE ${column} IS NOT NULL ORDER BY day DESC LIMIT ?`,
+    days,
+  );
 }

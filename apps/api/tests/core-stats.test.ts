@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
@@ -8,6 +9,8 @@ import {
   coreNetworkTotals,
   coreSyncOverview,
 } from "#api/queries/core-stats";
+
+const DAILY_METRICS_MIGRATION = readFileSync("migrations-core/0012_daily_metrics.sql", "utf8");
 
 class Statement {
   private values: unknown[] = [];
@@ -98,6 +101,7 @@ test("compact daily metrics preserve day buckets and monetary normalization", as
     INSERT INTO dividends VALUES(86400,'300000000');
     INSERT INTO destructions VALUES(86400,'400000000',2,'valid'),(86400,'800000000',1,'valid');
   `);
+  db.exec(DAILY_METRICS_MIGRATION);
   const binding = d1(db);
   const series = async (name: Parameters<typeof coreMetricSeries>[1]) =>
     (await coreMetricSeries(binding, name, 7)).map((row) => ({ ...row }));
@@ -106,9 +110,17 @@ test("compact daily metrics preserve day buckets and monetary normalization", as
     { d: 1, v: 5 },
   ]);
   assert.deepEqual(await series("trades"), [{ d: 1, v: 2 }]);
+  assert.deepEqual(await series("dispenses"), [
+    { d: 2, v: 1 },
+    { d: 1, v: 1 },
+  ]);
+  assert.deepEqual(await series("sends"), [{ d: 2, v: 1 }]);
   assert.deepEqual(await series("btc_fees"), [
     { d: 2, v: 0.2 },
     { d: 1, v: 0.1 },
   ]);
   assert.deepEqual(await series("xcp_burned"), [{ d: 1, v: 10 }]);
+
+  db.exec(`INSERT INTO sends VALUES(259200); DELETE FROM sends WHERE block_time=172800;`);
+  assert.deepEqual(await series("sends"), [{ d: 3, v: 1 }]);
 });
