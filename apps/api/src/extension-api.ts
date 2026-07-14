@@ -81,13 +81,19 @@ extensionApi.get("/api/v1/search", async (c) => {
 extensionApi.get("/api/v1/asset/:asset", async (c) => {
   const asset = c.req.param("asset");
   const r = await c.env.CORE_DB.prepare(
-    `SELECT dictionary.asset,asset.type,asset.description,asset.supply_normalized,asset.locked,
+    `WITH identity AS (
+       SELECT coalesce(
+         (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+         (SELECT asset_id FROM assets WHERE asset_longname=?2)
+       ) asset_id
+     )
+     SELECT dictionary.asset,asset.type,asset.description,asset.supply_normalized,asset.locked,
        asset.divisible,asset.first_issuance_block_time,asset.asset_longname,asset.mime_type,
        issuer.address issuer,owner.address owner
-     FROM assets asset JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+     FROM identity JOIN assets asset ON asset.asset_id=identity.asset_id
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
      LEFT JOIN address_dictionary issuer ON issuer.address_id=asset.issuer_id
-     LEFT JOIN address_dictionary owner ON owner.address_id=asset.owner_id
-     WHERE dictionary.asset=? OR asset.asset_longname=?`,
+     LEFT JOIN address_dictionary owner ON owner.address_id=asset.owner_id`,
   )
     .bind(asset.toUpperCase(), asset)
     .first<{

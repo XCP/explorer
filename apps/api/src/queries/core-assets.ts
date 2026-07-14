@@ -83,15 +83,21 @@ export function listCoreAssets(db: D1Database, filter: CoreAssetListFilter): Pro
 export function getCoreAsset(db: D1Database, asset: string): Promise<AssetRow | null> {
   return one<AssetRow>(
     db,
-    `SELECT dictionary.asset,assets.asset_longname,assets.numeric_asset_id asset_id,assets.type,
+    `WITH identity AS (
+       SELECT coalesce(
+         (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+         (SELECT asset_id FROM assets WHERE asset_longname=?2)
+       ) asset_id
+     )
+     SELECT dictionary.asset,assets.asset_longname,assets.numeric_asset_id asset_id,assets.type,
             issuer.address issuer,owner.address owner,assets.divisible,assets.locked,
             assets.description_locked,assets.supply,assets.supply_normalized,assets.description,assets.mime_type,
             assets.first_issuance_block_index,assets.last_issuance_block_index,
             assets.first_issuance_block_time,assets.last_issuance_block_time,assets.updated_at
-       FROM assets JOIN asset_dictionary dictionary ON dictionary.asset_id=assets.asset_id
+       FROM identity JOIN assets ON assets.asset_id=identity.asset_id
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=assets.asset_id
        LEFT JOIN address_dictionary issuer ON issuer.address_id=assets.issuer_id
-       LEFT JOIN address_dictionary owner ON owner.address_id=assets.owner_id
-      WHERE dictionary.asset=? OR assets.asset_longname=?`,
+       LEFT JOIN address_dictionary owner ON owner.address_id=assets.owner_id`,
     asset.toUpperCase(),
     asset,
   );
@@ -103,9 +109,14 @@ export function coreAssetBrief(
 ): Promise<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null } | null> {
   return one<{ supply_normalized: string | null; divisible: 0 | 1 | null; locked: 0 | 1 | null }>(
     db,
-    `SELECT state.supply_normalized,state.divisible,state.locked
-       FROM assets state JOIN asset_dictionary dictionary ON dictionary.asset_id=state.asset_id
-      WHERE dictionary.asset=?1 OR state.asset_longname=?2`,
+    `WITH identity AS (
+       SELECT coalesce(
+         (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+         (SELECT asset_id FROM assets WHERE asset_longname=?2)
+       ) asset_id
+     )
+     SELECT state.supply_normalized,state.divisible,state.locked
+       FROM identity JOIN assets state ON state.asset_id=identity.asset_id`,
     asset.toUpperCase(),
     asset,
   );
