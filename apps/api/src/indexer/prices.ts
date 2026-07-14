@@ -163,11 +163,17 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
 
   // Fold order matches once into a tiny indexed daily series. The former non-materialized CTE was searched
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
-  await env.CORE_DB.prepare(BUILD_XCP_BTC_DAILY_SQL).run();
-  await env.CORE_DB.prepare(PRUNE_XCP_BTC_DAILY_SQL).run();
+  const xcpBtcUpsert = await env.CORE_DB.prepare(BUILD_XCP_BTC_DAILY_SQL).run();
+  const xcpBtcPrune = await env.CORE_DB.prepare(PRUNE_XCP_BTC_DAILY_SQL).run();
 
-  await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
-  await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
+  const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
+  const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
+  out.derived = {
+    xcp_btc_upserted: xcpBtcUpsert.meta.rows_written ?? 0,
+    xcp_btc_pruned: xcpBtcPrune.meta.rows_written ?? 0,
+    xcp_usd_upserted: xcpUsdUpsert.meta.rows_written ?? 0,
+    xcp_usd_pruned: xcpUsdPrune.meta.rows_written ?? 0,
+  };
 
   const c = await env.CORE_DB.prepare(
     `SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`,
