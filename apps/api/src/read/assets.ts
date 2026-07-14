@@ -231,12 +231,12 @@ assets.get("/v2/assets/:asset", async (c) => {
 // (Exchange/Deposit/Vault/Burn/Service), never a generic bucket. Rows sort by supply share, high→low.
 assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const a = c.req.param("asset").toUpperCase();
-  const tip = await chainTip(c.env.DB);
+  const tip = await chainTip(c.env.CORE_DB);
   const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
   const [og, est, act] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const rows = await holderTiers(c.env.DB, a, expr, og, est, act).catch(() => []);
-  const arche = await holderArchetypes(c.env.DB, a).catch(() => null);
-  const top1 = await assetTop1Pct(c.env.DB, a).catch(() => null);
+  const rows = await holderTiers(c.env.CORE_DB, a, expr, og, est, act);
+  const arche = await holderArchetypes(c.env.CORE_DB, a);
+  const top1 = await assetTop1Pct(c.env.CORE_DB, a);
   const tiers = rows.sort((x, y) => y.pct_supply - x.pct_supply);
   return J(
     c,

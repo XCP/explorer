@@ -153,8 +153,9 @@ export function holderTiers(
     `WITH h AS (
        SELECT CAST(b.quantity AS REAL) q, sg.is_exchange xch, sg.is_deposit dep,
          sg.is_emblem_vault vlt, sg.is_burn brn, sg.likely_service svc, (${expr}) raw
-       FROM balances b JOIN address_signals sg ON sg.address=b.holder
-       WHERE b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0),
+       FROM balances b JOIN address_signals sg ON sg.address_id=b.address_id
+       WHERE b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+         AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0),
      tot AS (SELECT SUM(q) s FROM h)
      SELECT CASE WHEN xch=1 THEN 'Exchange' WHEN dep=1 THEN 'Deposit' WHEN vlt=1 THEN 'Vault'
                  WHEN brn=1 THEN 'Burn' WHEN svc=1 THEN 'Service'
@@ -174,15 +175,21 @@ export function holderArchetypes(db: D1Database, asset: string): Promise<HolderA
             SUM(CASE WHEN sg.assets_held>=500 THEN 1 ELSE 0 END) whales,
             SUM(CASE WHEN sg.assets_held>=100 THEN 1 ELSE 0 END) collectors,
             COUNT(*) holders
-     FROM balances b JOIN address_signals sg ON sg.address=b.holder
-     WHERE b.asset=? AND b.holder_type='address' AND CAST(b.quantity AS INTEGER)>0`,
+     FROM balances b JOIN address_signals sg ON sg.address_id=b.address_id
+     WHERE b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+       AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0`,
     asset,
   );
 }
 
 /** Top-holder concentration (top1_pct from the precomputed signal). */
 export function assetTop1Pct(db: D1Database, asset: string): Promise<{ t: number } | null> {
-  return one<{ t: number }>(db, `SELECT ROUND(top1_pct,1) t FROM asset_signals WHERE asset=?`, asset);
+  return one<{ t: number }>(
+    db,
+    `SELECT ROUND(signal.top1_pct,1) t FROM asset_signals signal
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id WHERE dictionary.asset=?`,
+    asset,
+  );
 }
 
 /* ---------- asset-quality calibration (parallel to /v2/reputation/review) ---------- */

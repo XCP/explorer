@@ -340,6 +340,24 @@ test("contract: GET /v2/assets/RAREPEPE/quality — compact quality signals", as
   assert.ok(j.result.holders > 0, "RAREPEPE should have holders");
 });
 
+test("contract: GET /v2/assets/RAREPEPE/holder-makeup - compact holder accounting", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/assets/RAREPEPE/holder-makeup")).result;
+  assertShape(
+    result,
+    { asset: "string", holders: "number", tiers: "array", archetypes: "object", top_holder_pct: "number|null" },
+    "holder-makeup.",
+  );
+  assertRows(result.tiers, { tier: "string", holders: "number", pct_supply: "number" }, "holder-makeup.tiers");
+  assertShape(result.archetypes, { creators: "number", collectors: "number", whales: "number" }, "archetypes.");
+  assert.equal(result.holders, 208, "RAREPEPE holder population changed");
+  assert.equal(
+    result.tiers.reduce((sum: number, row: { holders: number }) => sum + row.holders, 0),
+    result.holders,
+    "tier buckets must account for every holder exactly once",
+  );
+});
+
 test("contract: GET /v2/assets/RAREPEPE/activity — compact monthly history", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/assets/RAREPEPE/activity");
