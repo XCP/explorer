@@ -1,0 +1,171 @@
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
+
+const UPSERT = `INSERT INTO address_signals(
+  address_id,first_block,last_block,out_peers,in_peers,dispense_btc,dispenses,dividends,
+  assets_issued,locked_assets,btc_spent,btc_fees,assets_held,assets_received,
+  survived_assets,assets_distributed,assets_hits,clean_dispense_btc,clean_btc_spent,
+  is_exchange,is_deposit,is_burn,assets_burned,disp_trust,likely_service,dex_trades,
+  stamps_created,stamps_collected,src20_deploys,is_btns_user)
+WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1),
+seen AS (
+  SELECT block_index FROM sends WHERE source_address_id=(SELECT address_id FROM identity) OR destination_address_id=(SELECT address_id FROM identity)
+  UNION ALL SELECT block_index FROM dispenses WHERE source_id=(SELECT address_id FROM identity) OR destination_id=(SELECT address_id FROM identity)
+  UNION ALL SELECT block_index FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)
+  UNION ALL SELECT block_index FROM fairmints WHERE source_id=(SELECT address_id FROM identity)
+  UNION ALL SELECT block_index FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)
+  UNION ALL SELECT block_index FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)
+),
+holding AS (SELECT count(DISTINCT asset_id) assets_held FROM balances
+  WHERE address_id=(SELECT address_id FROM identity) AND CAST(quantity AS INTEGER)>0),
+creator AS (
+  SELECT sum(CASE WHEN holders>=2 THEN 1 ELSE 0 END) distributed,
+    sum(CASE WHEN holders>=10 THEN 1 ELSE 0 END) survived,
+    sum(CASE WHEN holders>=50 THEN 1 ELSE 0 END) hits,
+    sum(CASE WHEN asset.locked=1 AND holders>=2 THEN 1 ELSE 0 END) locked_assets
+  FROM assets asset LEFT JOIN asset_signals signal ON signal.asset_id=asset.asset_id
+  WHERE asset.issuer_id=(SELECT address_id FROM identity)
+),
+earned AS (
+  SELECT count(*) dispenses,coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) btc,
+    coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.btc_amount AS REAL) END)/1e8,0) clean
+  FROM dispenses item LEFT JOIN dispensers dispenser ON dispenser.tx_index=item.dispenser_tx_index
+  LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
+  WHERE coalesce(dispenser.origin_id,item.source_id)=(SELECT address_id FROM identity)
+),
+spent AS (
+  SELECT coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) btc,
+    coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.btc_amount AS REAL) END)/1e8,0) clean
+  FROM dispenses item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
+  WHERE item.destination_id=(SELECT address_id FROM identity)
+),
+infra AS (SELECT
+  EXISTS(SELECT 1 FROM curated item JOIN address_dictionary address ON address.address=item.key
+    WHERE item.kind='exchange' AND address.address_id=(SELECT address_id FROM identity)) exchange_flag,
+  EXISTS(SELECT 1 FROM curated item JOIN address_dictionary address ON address.address=item.key
+    WHERE item.kind='burn' AND address.address_id=(SELECT address_id FROM identity)) burn_flag),
+stamp AS (SELECT
+  count(DISTINCT CASE WHEN tag.tag='stamp' THEN asset.asset_id END) created,
+  count(DISTINCT CASE WHEN tag.tag='src20_deploy' THEN asset.asset_id END) src20
+  FROM assets asset JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+  JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+  JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag IN('stamp','src20_deploy')
+  WHERE asset.issuer_id=(SELECT address_id FROM identity)),
+collected AS (SELECT count(DISTINCT balance.asset_id) stamps FROM balances balance
+  JOIN asset_dictionary dictionary ON dictionary.asset_id=balance.asset_id
+  JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+  JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='stamp'
+  WHERE balance.address_id=(SELECT address_id FROM identity) AND CAST(balance.quantity AS INTEGER)>0)
+SELECT identity.address_id,(SELECT min(block_index) FROM seen),coalesce((SELECT max(block_index) FROM seen),0),
+  (SELECT count(DISTINCT destination_address_id) FROM sends WHERE source_address_id=identity.address_id),
+  (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id),
+  earned.btc,earned.dispenses,
+  (SELECT count(*) FROM dividends WHERE source_id=identity.address_id),
+  (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id),coalesce(creator.locked_assets,0),
+  spent.btc,coalesce((SELECT sum(CAST(fee AS REAL))/1e8 FROM transactions WHERE source_id=identity.address_id),0),
+  holding.assets_held,(SELECT count(DISTINCT asset_id) FROM sends WHERE destination_address_id=identity.address_id),
+  coalesce(creator.survived,0),coalesce(creator.distributed,0),coalesce(creator.hits,0),earned.clean,spent.clean,
+  infra.exchange_flag,
+  CASE WHEN infra.exchange_flag=0 AND holding.assets_held=0
+    AND (SELECT count(DISTINCT destination_address_id) FROM sends WHERE source_address_id=identity.address_id)=1
+    AND EXISTS(SELECT 1 FROM sends send JOIN address_signals signal ON signal.address_id=send.destination_address_id
+      WHERE send.source_address_id=identity.address_id AND signal.is_exchange=1) THEN 1 ELSE 0 END,
+  infra.burn_flag,
+  (SELECT count(DISTINCT send.asset_id) FROM sends send JOIN address_signals burn ON burn.address_id=send.destination_address_id
+    LEFT JOIN asset_signals asset ON asset.asset_id=send.asset_id
+    WHERE send.source_address_id=identity.address_id AND burn.is_burn=1 AND coalesce(asset.low_quality,0)=0),
+  coalesce((SELECT 2*ln(1+(max(block_index)-min(block_index))/4320.0)+1.5*ln(1+count(*))
+    FROM dispensers WHERE coalesce(origin_id,source_id)=identity.address_id),0),
+  CASE WHEN infra.exchange_flag=0 AND infra.burn_flag=0
+    AND NOT EXISTS(SELECT 1 FROM emblem_vaults WHERE btc_address_id=identity.address_id)
+    AND (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id)=0
+    AND (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id)>=500
+    THEN 1 ELSE 0 END,
+  (SELECT count(*) FROM (SELECT tx0_index FROM order_matches WHERE tx0_address_id=identity.address_id
+    UNION ALL SELECT tx1_index FROM order_matches WHERE tx1_address_id=identity.address_id)),
+  stamp.created,collected.stamps,stamp.src20,
+  EXISTS(SELECT 1 FROM broadcasts WHERE source_id=identity.address_id AND btns=1)
+FROM identity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
+WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
+  first_block=excluded.first_block,last_block=excluded.last_block,out_peers=excluded.out_peers,in_peers=excluded.in_peers,
+  dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses,dividends=excluded.dividends,
+  assets_issued=excluded.assets_issued,locked_assets=excluded.locked_assets,btc_spent=excluded.btc_spent,
+  btc_fees=excluded.btc_fees,assets_held=excluded.assets_held,assets_received=excluded.assets_received,
+  survived_assets=excluded.survived_assets,assets_distributed=excluded.assets_distributed,assets_hits=excluded.assets_hits,
+  clean_dispense_btc=excluded.clean_dispense_btc,clean_btc_spent=excluded.clean_btc_spent,
+  is_exchange=excluded.is_exchange,is_deposit=excluded.is_deposit,is_burn=excluded.is_burn,
+  assets_burned=excluded.assets_burned,disp_trust=excluded.disp_trust,likely_service=excluded.likely_service,
+  dex_trades=excluded.dex_trades,stamps_created=excluded.stamps_created,stamps_collected=excluded.stamps_collected,
+  src20_deploys=excluded.src20_deploys,is_btns_user=excluded.is_btns_user`;
+
+export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
+  const unique = [...new Set(addresses)].filter(Boolean);
+  for (let index = 0; index < unique.length; index += 40)
+    await db.batch(unique.slice(index, index + 40).map((address) => db.prepare(UPSERT).bind(address)));
+  return unique.length;
+}
+
+async function queuedIds(db: D1Database): Promise<number[]> {
+  try {
+    const value = await db
+      .prepare(`SELECT value FROM core_state WHERE key='address_signals_queue'`)
+      .first<{ value: string }>();
+    const parsed: unknown = JSON.parse(value?.value ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((id): id is number => Number.isSafeInteger(id) && id > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function enqueueCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<void> {
+  const names = [...new Set(addresses)].filter(Boolean);
+  if (names.length === 0) return;
+  const placeholders = names.map(() => "?").join(",");
+  const rows = await db
+    .prepare(`SELECT address_id FROM address_dictionary WHERE address IN (${placeholders})`)
+    .bind(...names)
+    .all<{ address_id: number }>();
+  await setCoreState(
+    db,
+    "address_signals_queue",
+    JSON.stringify([...new Set([...(await queuedIds(db)), ...rows.results.map((row) => row.address_id)])]),
+  );
+}
+
+export async function runCoreAddressSignalsStep(db: D1Database, limit = 40) {
+  const queue = await queuedIds(db);
+  if (queue.length > 0) {
+    const todo = queue.slice(0, limit),
+      placeholders = todo.map(() => "?").join(",");
+    const rows = await db
+      .prepare(`SELECT address FROM address_dictionary WHERE address_id IN (${placeholders})`)
+      .bind(...todo)
+      .all<{ address: string }>();
+    await rebuildCoreAddressSignals(
+      db,
+      rows.results.map((row) => row.address),
+    );
+    await setCoreState(db, "address_signals_queue", JSON.stringify(queue.slice(todo.length)));
+    return {
+      processed: rows.results.length,
+      queueRemaining: Math.max(0, queue.length - todo.length),
+      cycleComplete: false,
+    };
+  }
+  const cursor = await getCoreStateInt(db, "address_signals_cursor");
+  const rows = await db
+    .prepare(`SELECT address_id,address FROM address_dictionary WHERE address_id>? ORDER BY address_id LIMIT ?`)
+    .bind(cursor, limit)
+    .all<{ address_id: number; address: string }>();
+  if (rows.results.length === 0) {
+    await setCoreState(db, "address_signals_cursor", 0);
+    await setCoreState(db, "address_signals_cycles", (await getCoreStateInt(db, "address_signals_cycles")) + 1);
+    return { processed: 0, cursor: 0, cycleComplete: true };
+  }
+  await rebuildCoreAddressSignals(
+    db,
+    rows.results.map((row) => row.address),
+  );
+  const next = rows.results.at(-1)?.address_id ?? cursor;
+  await setCoreState(db, "address_signals_cursor", next);
+  return { processed: rows.results.length, cursor: next, cycleComplete: false };
+}

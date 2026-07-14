@@ -26,6 +26,7 @@ import { getIndexerStateStringArray } from "#api/indexer/state";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
 import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
 import { enqueueCoreSupply } from "#api/indexer/asset-supply";
+import { enqueueCoreAddressSignals } from "#api/indexer/core-address-signals";
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 
 const CHUNK = 1000; // events per API page
@@ -383,6 +384,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
       await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
       await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
       await rebuildCoreAssetSignals(env.CORE_DB, compact.identities.assets);
+      await enqueueCoreAddressSignals(env.CORE_DB, compact.identities.addresses);
       await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
       await env.CORE_DB.batch([
         setCoreStateStmt(env.CORE_DB, "last_event_index", String(evs[evs.length - 1].event_index)),
@@ -470,6 +472,8 @@ export async function syncCompactEvents(
       if (!compact) throw new Error("compact replay context is missing");
       await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
       await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
+      await rebuildCoreAssetSignals(env.CORE_DB, compact.identities.assets);
+      await enqueueCoreAddressSignals(env.CORE_DB, compact.identities.addresses);
       await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
       lastIndex = events[events.length - 1].event_index;
       lastBlock = Math.max(lastBlock, ctx.maxBlock);

@@ -38,6 +38,7 @@ import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
+import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
@@ -222,6 +223,7 @@ export default {
           // flags) AND self-heals any cascade gap — so a scoped-SQL miss is at worst briefly stale, never corrupt.
           await runScheduledJob("runSignalsStep", () => runSignalsStep(env, 2));
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
+          await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
           // Publish the expensive exchange depositor aggregate off the request path (~daily). The first build
           // scans historical sends, so do not compete with the one-time compact-ledger backfill.
           const ledgerBackfill = await env.LEDGER_DB.prepare(
