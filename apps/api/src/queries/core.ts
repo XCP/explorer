@@ -1,7 +1,6 @@
 // Indexed read plans for the canonical compact schema.
 import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
-import type { BalanceRow } from "@xcp/shared/assets";
-import type { SendRow } from "@xcp/shared/records";
+import type { AddressBalanceRow, AddressSendRow } from "@xcp/shared/addresses";
 import { one, q } from "#api/db";
 
 export const CORE_SENDS_BY_ADDRESS_SQL = `WITH candidates AS (
@@ -33,8 +32,14 @@ export const CORE_BALANCES_BY_ADDRESS_SQL = `WITH page AS (
   WHERE address_id=?1 AND CAST(quantity AS INTEGER)>0
   ORDER BY asset_id LIMIT ?2 OFFSET ?3
 )
-SELECT assets.asset,page.quantity,page.quantity_normalized
-FROM page JOIN asset_dictionary assets ON assets.asset_id=page.asset_id
+SELECT dictionary.asset,page.quantity,page.quantity_normalized,assets.divisible,assets.asset_longname,
+       EXISTS(
+         SELECT 1 FROM entity_dictionary entity JOIN tags ON tags.entity_id=entity.entity_id
+          WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tags.tag='stamp'
+       ) stamp
+FROM page
+JOIN asset_dictionary dictionary ON dictionary.asset_id=page.asset_id
+LEFT JOIN assets ON assets.asset_id=page.asset_id
 ORDER BY page.asset_id`;
 
 export const CORE_TOTAL_BY_ASSET_SQL = `SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) total
@@ -89,9 +94,9 @@ export async function listAddressSends(
   address: string,
   limit: number,
   offset: number,
-): Promise<SendRow[]> {
+): Promise<AddressSendRow[]> {
   const id = await addressId(db, address);
-  return id == null ? [] : q<SendRow>(db, CORE_SENDS_BY_ADDRESS_SQL, id, limit, offset);
+  return id == null ? [] : q<AddressSendRow>(db, CORE_SENDS_BY_ADDRESS_SQL, id, limit, offset);
 }
 
 export async function listAddressBalances(
@@ -99,9 +104,9 @@ export async function listAddressBalances(
   address: string,
   limit: number,
   offset: number,
-): Promise<BalanceRow[]> {
+): Promise<AddressBalanceRow[]> {
   const id = await addressId(db, address);
-  return id == null ? [] : q<BalanceRow>(db, CORE_BALANCES_BY_ADDRESS_SQL, id, limit, offset);
+  return id == null ? [] : q<AddressBalanceRow>(db, CORE_BALANCES_BY_ADDRESS_SQL, id, limit, offset);
 }
 
 export async function assetBalanceTotal(db: D1Database, asset: string): Promise<string> {

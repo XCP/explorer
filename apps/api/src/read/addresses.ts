@@ -3,6 +3,8 @@
  *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
  *  reputation logic, not SQL. */
 import { router, J, lim, off, round, cached } from "#api/read/respond";
+import { listAddressBalances as listCoreBalances, listAddressSends as listCoreSends } from "#api/queries/core";
+import { coreReadsEnabled } from "#api/read/core-read-gate";
 import {
   scoreAddress,
   addressScore,
@@ -46,12 +48,18 @@ export const addresses = router();
 const NOT_INFRA = `is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 AND (first_block IS NOT NULL OR in_peers>0 OR out_peers>0 OR COALESCE(btc_spent,0)>0 OR assets_held>0 OR survived_assets>0 OR dex_trades>0 OR dispenses>0 OR btc_fees>0 OR assets_issued>0 OR dividends>0)`;
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
-  const result = await listBalances(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  const page = { limit: lim(c), offset: off(c) };
+  const result = (await coreReadsEnabled(c.env))
+    ? await listCoreBalances(c.env.CORE_DB, c.req.param("address"), page.limit, page.offset)
+    : await listBalances(c.env.DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 addresses.get("/v2/addresses/:address/sends", async (c) => {
-  const result = await listSends(c.env.DB, c.req.param("address"), { limit: lim(c), offset: off(c) });
+  const page = { limit: lim(c), offset: off(c) };
+  const result = (await coreReadsEnabled(c.env))
+    ? await listCoreSends(c.env.CORE_DB, c.req.param("address"), page.limit, page.offset)
+    : await listSends(c.env.DB, c.req.param("address"), page);
   return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
 });
 
