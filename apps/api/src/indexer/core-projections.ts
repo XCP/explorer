@@ -4,10 +4,8 @@ import { hashToBytes, parseUtxoHolder } from "#api/indexer/compact-codec";
 export const CORE_INCREMENTAL_PROJECTIONS = [
   "emblem_listings",
   "emblem_sales",
-  "prices",
   "scarce_city_sales",
   "trades",
-  "xcp_btc_daily",
 ] as const;
 export type CoreIncrementalProjection = (typeof CORE_INCREMENTAL_PROJECTIONS)[number];
 export const CORE_RECENT_PROJECTIONS = [
@@ -146,32 +144,6 @@ async function writeRows(
             row.expiry,
             row.updated_at,
           ),
-      ),
-    );
-    return;
-  }
-  if (table === "prices") {
-    await db.batch(
-      rows.map((row) =>
-        db
-          .prepare(
-            `INSERT INTO prices(day,currency,usd,source) VALUES(?,?,?,?)
-             ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source`,
-          )
-          .bind(row.day, row.currency, row.usd, row.source),
-      ),
-    );
-    return;
-  }
-  if (table === "xcp_btc_daily") {
-    await db.batch(
-      rows.map((row) =>
-        db
-          .prepare(
-            `INSERT INTO xcp_btc_daily(day,xcpbtc) VALUES(?,?)
-             ON CONFLICT(day) DO UPDATE SET xcpbtc=excluded.xcpbtc`,
-          )
-          .bind(row.day, row.xcpbtc),
       ),
     );
     return;

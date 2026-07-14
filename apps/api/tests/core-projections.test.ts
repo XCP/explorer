@@ -123,33 +123,15 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
   const { source, compact, env } = databases();
   source.exec(`
     INSERT INTO emblem_listings VALUES('live','contract','RAREPEPE','order','market',10,'10','currency','url',999,100);
-    INSERT INTO prices VALUES('2026-07-12','BTC',100000,'coinbase');
-    INSERT INTO prices VALUES('2026-07-13','BTC',101000,'coinbase');
     INSERT INTO scarce_city_sales VALUES('RAREPEPE',123,0.25);
     INSERT INTO emblem_sales VALUES('abc',1,'contract','7','10','token','market','buyer','seller',99);
     INSERT INTO trades VALUES('dex','one','RAREPEPE',10,9,2,'XCP',3,4,'buyer','seller','${"ab".repeat(32)}','clean');
     INSERT INTO trades VALUES('external','two',NULL,11,NULL,1,'USD',5,5,NULL,NULL,'provider-id','clean');
   `);
-  compact.exec(`INSERT INTO prices VALUES('2026-07-12','BTC',1,'stale')`);
   compact.exec(`
     INSERT INTO address_dictionary(address) VALUES('old-contract');
     INSERT INTO emblem_listings VALUES(0,1,'stale',NULL,NULL,'market',1,'1',NULL,'old',999,1);
   `);
-
-  const first = await reconcileCoreProjection(env, "prices", 1);
-  const second = await reconcileCoreProjection(env, "prices", 1);
-  assert.deepEqual(first, { table: "prices", processed: 1, cursor: 1, high_water: 2, caught_up: false });
-  assert.equal(second.caught_up, true);
-  assert.deepEqual(
-    compact
-      .prepare(`SELECT day,usd,source FROM prices ORDER BY day`)
-      .all()
-      .map((row) => ({ ...row })),
-    [
-      { day: "2026-07-12", usd: 100000, source: "coinbase" },
-      { day: "2026-07-13", usd: 101000, source: "coinbase" },
-    ],
-  );
 
   assert.equal((await reconcileCoreProjection(env, "scarce_city_sales")).caught_up, true);
   assert.deepEqual(
@@ -242,8 +224,8 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
 test("projection reconciliation remains closed before the compact import completes", async () => {
   const { compact, env } = databases();
   compact.exec(`UPDATE core_state SET value='0' WHERE key='import_complete'`);
-  assert.deepEqual(await reconcileCoreProjection(env, "prices"), {
-    table: "prices",
+  assert.deepEqual(await reconcileCoreProjection(env, "trades"), {
+    table: "trades",
     skipped: "compact import is incomplete",
   });
   let error: unknown;

@@ -112,12 +112,12 @@ export const CORE_PROJECTION_POLICIES = [
   { table: "graph_node", strategy: "generation", owner: "explorer" },
   { table: "graph_rank", strategy: "generation", owner: "explorer" },
   { table: "graph_seed", strategy: "generation", owner: "explorer" },
-  { table: "prices", strategy: "upsert", owner: "external" },
+  { table: "prices", strategy: "upsert", owner: "explorer" },
   { table: "pr_edges", strategy: "generation", owner: "explorer" },
   { table: "scarce_city_sales", strategy: "append", owner: "external" },
   { table: "tags", strategy: "snapshot", owner: "explorer" },
   { table: "trades", strategy: "upsert", owner: "explorer" },
-  { table: "xcp_btc_daily", strategy: "upsert", owner: "external" },
+  { table: "xcp_btc_daily", strategy: "upsert", owner: "explorer" },
 ] as const satisfies readonly CoreProjectionPolicy[];
 
 export function auditCoreProjectionPolicies() {

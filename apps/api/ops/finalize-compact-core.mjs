@@ -13,10 +13,8 @@ const projectionRows = boundedInteger(process.env.CORE_PROJECTION_ROWS ?? "100",
 const incrementalProjections = [
   "emblem_listings",
   "emblem_sales",
-  "prices",
   "scarce_city_sales",
   "trades",
-  "xcp_btc_daily",
 ];
 const token = process.env.ADMIN_TOKEN ?? readLocalAdminToken();
 

@@ -39,7 +39,8 @@ the longer stale window only ensures that a user never waits on a multi-second c
 period. Refresh runs in `waitUntil` behind the last known-good response.
 
 The all-tags aggregate refreshes daily, matching its source tables' full self-heal cadence (it previously
-recomputed an unchanged 8.5M-row/14s population hourly). Migration 0046 materializes daily XCP/BTC VWAP;
+recomputed an unchanged 8.5M-row/14s population hourly). The price job materializes daily XCP/BTC
+volume-weighted medians;
 the price calendar now scans order matches once and performs indexed day seeks instead of re-running a CTE
 for every BTC day (~8.3M rows per refresh before the change).
 

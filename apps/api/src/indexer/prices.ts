@@ -3,18 +3,12 @@
  * in dollars across venues (XCP/BTC/ETH), on top of the USDC rows already priced at ingest.
  *
  *   BTC/USD, ETH/USD  ← Coinbase Exchange daily candles (no key; resumable backfill to 2015/2016)
- *   XCP/USD           ← per-day VWAP XCP/BTC from our own DEX order_matches (forward-filled) × BTC/USD
+ *   XCP/USD           ← daily volume-weighted-median XCP/BTC, carried at most seven days × BTC/USD
  *
  * `prices(day, currency, usd)` is the calendar; `applyTradeUsd` maps each trade's day+currency onto it.
  */
 import type { Env } from "#api/env";
 import { fetchCoinbaseCandles } from "#api/integrations/coinbase";
-import { getIndexerStateInt as getState, setIndexerState as setState } from "#api/indexer/state";
-
-export const PRICES_DDL = `CREATE TABLE IF NOT EXISTS prices (
-  day TEXT NOT NULL, currency TEXT NOT NULL, usd REAL, PRIMARY KEY (day, currency))`;
-const PRICES_IDX = `CREATE INDEX IF NOT EXISTS idx_prices_cur_day ON prices(currency, day)`;
-const XCP_BTC_DDL = `CREATE TABLE IF NOT EXISTS xcp_btc_daily (day TEXT PRIMARY KEY, xcpbtc REAL NOT NULL)`;
 
 // Coinbase product + first-listed day (unix sec) per currency.
 const COINS: Record<string, { product: string; start: number }> = {
@@ -27,18 +21,78 @@ const WINDOWS_PER_CALL = 8; // ~2400 days per currency per admin call → backfi
 
 const isoDay = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10);
 
-type PriceWrite = { day: string; currency: string; usd: number; source: string };
+type PriceWrite = {
+  day: string;
+  currency: string;
+  usd: number;
+  source: string;
+  observedDay: string;
+  fidelity: number;
+};
 
-async function upsertCompactPrices(db: D1Database, rows: PriceWrite[]) {
+const DERIVED_FRESH_DAYS = 7;
+
+export const BUILD_XCP_BTC_DAILY_SQL = `INSERT INTO xcp_btc_daily(day,xcpbtc,volume_xcp,trades)
+  WITH observations AS (
+    SELECT date(match.block_time,'unixepoch') day,
+      CASE WHEN forward_asset.asset='XCP'
+        THEN CAST(match.backward_quantity AS REAL)/CAST(match.forward_quantity AS REAL)
+        ELSE CAST(match.forward_quantity AS REAL)/CAST(match.backward_quantity AS REAL) END price,
+      CASE WHEN forward_asset.asset='XCP' THEN CAST(match.forward_quantity AS INTEGER)
+        ELSE CAST(match.backward_quantity AS INTEGER) END volume_xcp
+    FROM order_matches match
+    JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
+    JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
+    WHERE match.status='completed' AND CAST(match.forward_quantity AS INTEGER)>0
+      AND CAST(match.backward_quantity AS INTEGER)>0
+      AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
+        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+  ), ranked AS (
+    SELECT day,price,volume_xcp,
+      SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
+      SUM(volume_xcp) OVER(PARTITION BY day) total_volume,
+      COUNT(*) OVER(PARTITION BY day) trades
+    FROM observations
+  )
+  SELECT day,MIN(price),CAST(MAX(total_volume) AS TEXT),MAX(trades)
+  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day`;
+
+export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+  SELECT btc.day,'XCP',edge.xcpbtc*btc.usd,'dex_vwm',edge.day,1
+  FROM prices btc
+  JOIN xcp_btc_daily edge ON edge.day=(
+    SELECT recent.day FROM xcp_btc_daily recent
+    WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
+    ORDER BY recent.day DESC LIMIT 1)
+  WHERE btc.currency='BTC'
+  ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity
+  WHERE prices.fidelity<=excluded.fidelity`;
+
+async function getState(db: D1Database, key: string): Promise<number> {
+  const row = await db.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>();
+  return Number.parseInt(row?.value ?? "0", 10) || 0;
+}
+
+async function setState(db: D1Database, key: string, value: number): Promise<void> {
+  await db
+    .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+    .bind(key, String(value))
+    .run();
+}
+
+async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
   for (let i = 0; i < rows.length; i += 100) {
     await db.batch(
       rows.slice(i, i + 100).map((row) =>
         db
           .prepare(
-            `INSERT INTO prices(day,currency,usd,source) VALUES(?,?,?,?)
-             ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source`,
+            `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity) VALUES(?,?,?,?,?,?)
+             ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+               observed_day=excluded.observed_day,fidelity=excluded.fidelity
+             WHERE prices.fidelity<=excluded.fidelity`,
           )
-          .bind(row.day, row.currency, row.usd, row.source),
+          .bind(row.day, row.currency, row.usd, row.source, row.observedDay, row.fidelity),
       ),
     );
   }
@@ -51,14 +105,11 @@ async function cbWindow(product: string, start: number, end: number) {
 
 /** Backfill BTC/ETH from Coinbase (resumable per-currency cursor), then re-derive XCP from our DEX × BTC. */
 export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
-  await env.DB.prepare(PRICES_DDL).run();
-  await env.DB.prepare(PRICES_IDX).run();
-  await env.DB.prepare(XCP_BTC_DDL).run();
   const now = Math.floor(Date.now() / 1000);
   const out: Record<string, unknown> = {};
 
   for (const [cur, cfg] of Object.entries(COINS)) {
-    let cursor = (await getState(env.DB, `prices_cur_${cur}`)) || cfg.start;
+    let cursor = (await getState(env.CORE_DB, `prices_cur_${cur}`)) || cfg.start;
     let filled = 0;
     for (let w = 0; w < WINDOWS_PER_CALL && cursor < now; w++) {
       const end = Math.min(cursor + WIN, now);
@@ -70,52 +121,33 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
         break;
       }
       if (rows.length) {
-        const prices = rows.map((r) => ({ day: isoDay(r.time), currency: cur, usd: r.close, source: "coinbase" }));
-        const stmts = prices.map((price) =>
-          env.DB.prepare(
-            `INSERT INTO prices (day,currency,usd) VALUES (?,?,?)
-             ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd`,
-          ).bind(price.day, price.currency, price.usd),
-        );
-        for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
-        await upsertCompactPrices(env.CORE_DB, prices);
+        const prices = rows.map((r) => ({
+          day: isoDay(r.time),
+          currency: cur,
+          usd: r.close,
+          source: "coinbase",
+          observedDay: isoDay(r.time),
+          fidelity: 3,
+        }));
+        await upsertPrices(env.CORE_DB, prices);
         filled += rows.length;
       }
       cursor = end;
     }
     // don't pin the cursor at `now` while backfilling incompletely; leave a 2-day lip so the tail refreshes
-    await setState(env.DB, `prices_cur_${cur}`, Math.min(cursor, now - 2 * DAY));
+    await setState(env.CORE_DB, `prices_cur_${cur}`, Math.min(cursor, now - 2 * DAY));
     out[cur] = filled;
   }
 
   // Fold order matches once into a tiny indexed daily series. The former non-materialized CTE was searched
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
-  await env.DB.prepare(`DELETE FROM xcp_btc_daily`).run();
-  await env.DB.prepare(
-    `INSERT INTO xcp_btc_daily (day,xcpbtc)
-    SELECT date(block_time,'unixepoch'),
-      SUM(CASE WHEN forward_asset='BTC' THEN forward_quantity ELSE backward_quantity END) * 1.0
-      / NULLIF(SUM(CASE WHEN forward_asset='XCP' THEN forward_quantity ELSE backward_quantity END), 0)
-    FROM order_matches
-    WHERE status='completed' AND ((forward_asset='XCP' AND backward_asset='BTC') OR (forward_asset='BTC' AND backward_asset='XCP'))
-    GROUP BY date(block_time,'unixepoch')`,
-  ).run();
+  await env.CORE_DB.prepare(`DELETE FROM xcp_btc_daily`).run();
+  await env.CORE_DB.prepare(BUILD_XCP_BTC_DAILY_SQL).run();
 
-  const recent = await env.DB.prepare(
-    `SELECT day,currency,usd,CASE WHEN currency IN ('BTC','ETH') THEN 'coinbase' ELSE 'derived' END source
-       FROM prices WHERE day>=date('now','-7 days')`,
-  ).all<PriceWrite>();
-  await upsertCompactPrices(env.CORE_DB, recent.results);
-  await env.DB.prepare(
-    `INSERT INTO prices (day,currency,usd)
-    SELECT b.day,'XCP',
-      (SELECT x.xcpbtc FROM xcp_btc_daily x WHERE x.day<=b.day ORDER BY x.day DESC LIMIT 1)*b.usd
-    FROM prices b WHERE b.currency='BTC'
-      AND EXISTS (SELECT 1 FROM xcp_btc_daily x WHERE x.day<=b.day)
-    ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd`,
-  ).run();
+  await env.CORE_DB.prepare(`DELETE FROM prices WHERE currency='XCP' AND source='dex_vwm'`).run();
+  await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
 
-  const c = await env.DB.prepare(
+  const c = await env.CORE_DB.prepare(
     `SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`,
   ).all();
   out.calendar = c.results ?? [];
@@ -124,25 +156,22 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
 
 const USD_WINDOW = 200_000; // rows per apply call (rowid-windowed — contiguous across venues)
 
-/** Map each (day, currency) trade onto the price calendar. Windowed by rowid (venue-agnostic and gap-free,
- *  unlike block_index which mixes Counterparty blocks with huge ETH block numbers). Leaves USDC (already set) and any
- *  day with no price untouched. Resumable via usd_cur; wraps to re-sweep for late prices / freshly added rows. */
+export const APPLY_TRADE_USD_SQL = `UPDATE trades SET usd_value=total*(
+    SELECT price.usd FROM prices price
+    WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))
+  WHERE currency IN ('BTC','ETH','XCP') AND rowid>? AND rowid<=?
+    AND usd_value IS NOT total*(SELECT price.usd FROM prices price
+      WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`;
+
+/** Reconcile each derived trade value against the admitted price calendar in bounded rowid windows. */
 export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
-  let cur = await getState(env.DB, "usd_cur");
+  const tip = Number((await env.CORE_DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
+  let cur = await getState(env.CORE_DB, "usd_cur");
   if (cur >= tip) cur = 0; // wrap: re-sweep for late-arriving prices / new NULLs
   const hi = Math.min(cur + USD_WINDOW, tip);
-  const result = await env.DB.prepare(
-    `
-    UPDATE trades SET usd_value = total * (
-      SELECT p.usd FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
-    WHERE currency IN ('BTC','ETH','XCP') AND usd_value IS NULL
-      AND rowid > ? AND rowid <= ?
-      AND EXISTS (SELECT 1 FROM prices p WHERE p.currency = trades.currency AND p.day = date(trades.block_time,'unixepoch'))
-  `,
-  )
+  const result = await env.CORE_DB.prepare(APPLY_TRADE_USD_SQL)
     .bind(cur, hi)
     .run();
-  await setState(env.DB, "usd_cur", hi);
+  await setState(env.CORE_DB, "usd_cur", hi);
   return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip };
 }
