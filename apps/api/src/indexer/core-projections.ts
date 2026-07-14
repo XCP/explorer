@@ -442,6 +442,19 @@ function upsertSet(columns: readonly string[]): string {
   return columns.map((column) => `${column}=excluded.${column}`).join(",");
 }
 
+function addressSignalValue(row: SourceRow, column: (typeof ADDRESS_SIGNAL_COLUMNS)[number]): unknown {
+  if (column === "first_block") return row[column] ?? null;
+  if (column === "rep_score") return row[column] ?? 1;
+  return row[column] ?? 0;
+}
+
+function assetSignalValue(row: SourceRow, column: (typeof ASSET_SIGNAL_COLUMNS)[number]): unknown {
+  if (["divisible", "locked", "holder_cohesion", "cohesion_edges", "cohesion_strong"].includes(column)) {
+    return row[column] ?? null;
+  }
+  return row[column] ?? 0;
+}
+
 async function relationCount(db: D1Database, table: string): Promise<number> {
   return Number((await db.prepare(`SELECT COUNT(*) count FROM ${table}`).first<{ count: number }>())?.count ?? 0);
 }
@@ -512,7 +525,7 @@ export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_
         .map((row) =>
           env.CORE_DB.prepare(addressSql).bind(
             row.address,
-            ...ADDRESS_SIGNAL_COLUMNS.map((column) => row[column] ?? null),
+            ...ADDRESS_SIGNAL_COLUMNS.map((column) => addressSignalValue(row, column)),
           ),
         ),
     );
@@ -529,7 +542,7 @@ export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_
           env.CORE_DB.prepare(assetSql).bind(
             row.asset,
             row.issuer ?? null,
-            ...ASSET_SIGNAL_COLUMNS.map((column) => row[column] ?? null),
+            ...ASSET_SIGNAL_COLUMNS.map((column) => assetSignalValue(row, column)),
           ),
         ),
     );
@@ -541,9 +554,7 @@ export async function reconcileRecentCoreProjection(env: Pick<Env, "DB" | "CORE_
     await env.CORE_DB.batch(
       feeds.results
         .slice(index, index + 80)
-        .map((row) =>
-          env.CORE_DB.prepare(feedSql).bind(row.asset, ...FEED_COLUMNS.map((column) => row[column] ?? null)),
-        ),
+        .map((row) => env.CORE_DB.prepare(feedSql).bind(row.asset, ...FEED_COLUMNS.map((column) => row[column] ?? 0))),
     );
 
   for (let index = 0; index < exchange.results.length; index += 80)
