@@ -39,7 +39,7 @@ function dexSql(lo: number, hi: number) {
       CASE WHEN ${money} THEN om.tx0_address ELSE om.tx1_address END,   -- buyer = money-giver
       CASE WHEN ${money} THEN om.tx1_address ELSE om.tx0_address END,   -- seller = asset-giver
       om.tx1_hash
-    FROM order_matches om
+    FROM order_matches AS om INDEXED BY idx_om_block
     LEFT JOIN assets a ON a.asset = (CASE WHEN ${money} THEN om.backward_asset ELSE om.forward_asset END)
     WHERE om.status='completed' AND (om.forward_asset IN ('XCP','BTC') OR om.backward_asset IN ('XCP','BTC'))
       AND om.block_index > ${lo} AND om.block_index <= ${hi}`;
