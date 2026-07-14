@@ -4,7 +4,7 @@
  * pass in the config-driven reputation SQL; every DB read and every SQL string lives here. The
  * counts/totals row shapes are the wire contract (@xcp/shared/stats).
  */
-import type { StatsOverview, SyncOverview, NetworkStats } from "@xcp/shared/stats";
+import type { NetworkStats } from "@xcp/shared/stats";
 import { q, one } from "#api/db";
 
 /** The lifetime-counts half of NetworkStats (everything the totals query does not supply). */
@@ -16,42 +16,6 @@ export type NetworkTotals = Pick<NetworkStats, "btc_fees" | "xcp_destroyed">;
 export interface MetricDayRow {
   d: number;
   v: number;
-}
-
-/** Home summary — tip, headline counts, indexer cursor. */
-export function homeOverview(db: D1Database): Promise<StatsOverview | null> {
-  return one<StatsOverview>(
-    db,
-    `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            s.assets,s.transactions,s.balances,
-            (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block
-       FROM network_stats_snapshot s WHERE s.singleton=1`,
-  );
-}
-
-/** Live sync heartbeat. Unlike homeOverview, this never scans assets/transactions/balances. */
-export function syncOverview(db: D1Database): Promise<SyncOverview | null> {
-  return one<SyncOverview>(
-    db,
-    `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            (SELECT value FROM indexer_state WHERE key='last_block_index') indexed_block`,
-  );
-}
-
-/** Lifetime network counts — O(n) covering-index scans (cached by the handler). */
-export function networkCounts(db: D1Database): Promise<NetworkCounts | null> {
-  return one<NetworkCounts>(
-    db,
-    `SELECT (SELECT MAX(block_index) FROM blocks) tip,
-            assets,transactions,sends,issuances,dispensers,dispenses,orders,order_matches,
-            sweeps,broadcasts,dividends,fairmints,destructions,holders
-       FROM network_stats_snapshot WHERE singleton=1`,
-  );
-}
-
-/** Lifetime totals — BTC miner fees paid and XCP destroyed (deflation). */
-export function networkTotals(db: D1Database): Promise<NetworkTotals | null> {
-  return one<NetworkTotals>(db, `SELECT btc_fees,xcp_destroyed FROM network_stats_snapshot WHERE singleton=1`);
 }
 
 /** The daily chart series the /metrics panel plots. Each is a GROUP BY day on block_time. */

@@ -3,16 +3,14 @@ import { router, cached, J } from "#api/read/respond";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "#api/reputation/score";
 import { ASSET_PENALTY } from "#api/reputation/config";
 import { boundedInteger } from "#api/http/numbers";
+import { maxBlock, leaderboards, type MetricName } from "#api/queries/stats";
 import {
-  homeOverview,
-  syncOverview,
-  networkCounts,
-  networkTotals,
-  maxBlock,
-  leaderboards,
-  type MetricName,
-} from "#api/queries/stats";
-import { coreMetricSeries } from "#api/queries/core-stats";
+  coreHomeOverview,
+  coreMetricSeries,
+  coreNetworkCounts,
+  coreNetworkTotals,
+  coreSyncOverview,
+} from "#api/queries/core-stats";
 
 export const stats = router();
 
@@ -20,14 +18,14 @@ export const stats = router();
 // Home summary is a singleton lookup; edge stays short so `tip`/`indexed_block` feel live.
 stats.get("/v2/", async (c) =>
   cached(c, "home", { ttl: 3600, edge: 120, swr: 86400 }, async () => ({
-    result: await homeOverview(c.env.DB),
+    result: await coreHomeOverview(c.env.CORE_DB),
   })),
 );
 
 // Live footer/status-strip heartbeat. This intentionally excludes global row counts: D1 Insights showed
 // the old 60-second home query scanning ~5.2m rows per refresh (~20bn rows/week) for counts the heartbeat
 // consumers never render.
-stats.get("/v2/status", async (c) => J(c, { result: await syncOverview(c.env.DB) }, 15));
+stats.get("/v2/status", async (c) => J(c, { result: await coreSyncOverview(c.env.CORE_DB) }, 15));
 
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
@@ -56,8 +54,8 @@ stats.get("/v2/metrics", async (c) => {
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) =>
   cached(c, "stats", { ttl: 3600, edge: 120, swr: 86400 }, async () => {
-    const counts = await networkCounts(c.env.DB);
-    const totals = await networkTotals(c.env.DB);
+    const counts = await coreNetworkCounts(c.env.CORE_DB);
+    const totals = await coreNetworkTotals(c.env.CORE_DB);
     return { result: { ...counts, ...totals } };
   }),
 );

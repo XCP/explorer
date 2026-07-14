@@ -34,7 +34,6 @@ import {
   feedCountWriteSql,
   type FeedCountColumn,
 } from "#api/indexer/asset-feed-counts";
-import { NETWORK_STATS_REBUILD_SQL } from "#api/indexer/network-stats";
 
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
   address TEXT PRIMARY KEY, first_block INTEGER, last_block INTEGER DEFAULT 0, out_peers INTEGER DEFAULT 0,
@@ -699,32 +698,6 @@ const UNITS: FeatureUnit[] = [
     periodic: true,
     full: `INSERT INTO indexer_state (key,value) VALUES ('asset_feed_counts_ready','1')
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-  },
-
-  // Exact global counts/totals are retained for overview metadata, but request-time full scans are not.
-  // This singleton rebuild is daily; the separately-read chain tip remains live.
-  {
-    name: "network_stats_snapshot",
-    scope: "global",
-    reads: [
-      "assets",
-      "transactions",
-      "balances",
-      "sends",
-      "issuances",
-      "dispensers",
-      "dispenses",
-      "orders",
-      "order_matches",
-      "sweeps",
-      "broadcasts",
-      "dividends",
-      "fairmints",
-      "destructions",
-    ],
-    periodic: true,
-    heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: NETWORK_STATS_REBUILD_SQL,
   },
 
   {
