@@ -38,65 +38,26 @@ import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
+import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
 async function maybeAnalyze(env: Env): Promise<void> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt(
-    (await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='last_analyze_blk'`).first<{ value: string }>())
-      ?.value || "0",
-    10,
-  );
-  if (tip - last < 1008) return; // ~1 week of blocks
-  await env.DB.prepare(`ANALYZE`).run();
-  await env.DB.prepare(
-    `INSERT INTO indexer_state (key,value) VALUES ('last_analyze_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-  )
-    .bind(String(tip))
-    .run();
+  await runCoreBlockGated(env.CORE_DB, "last_analyze_blk", 1008, async () => {
+    await env.CORE_DB.prepare(`ANALYZE`).run();
+  });
 }
 
 // Refresh collection-membership tags (Rare Pepe / Fake Rare / …) from pepe.wtf ~daily. Gated by block-delta
 // like ANALYZE — collections change rarely, and each run is ~11 fetches, so once a day is ample.
 async function maybeCrawlCollections(env: Env): Promise<void> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt(
-    (
-      await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='collections_synced_blk'`).first<{
-        value: string;
-      }>()
-    )?.value || "0",
-    10,
-  );
-  if (tip - last < 144) return; // ~1 day of blocks
-  await crawlCollections(env);
-  await env.DB.prepare(
-    `INSERT INTO indexer_state (key,value) VALUES ('collections_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-  )
-    .bind(String(tip))
-    .run();
+  await runCoreBlockGated(env.CORE_DB, "collections_synced_blk", 144, () => crawlCollections(env));
 }
 
 // Refresh the tokenscan collection directory (~60 projects + sites) → source='tokenscan' tags. A single
 // static-file fetch; the directory changes rarely, so ~weekly is plenty.
 async function maybeCrawlTokenscan(env: Env): Promise<void> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt(
-    (
-      await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='tokenscan_synced_blk'`).first<{
-        value: string;
-      }>()
-    )?.value || "0",
-    10,
-  );
-  if (tip - last < 1008) return; // ~1 week of blocks
-  await crawlTokenscanCollections(env);
-  await env.DB.prepare(
-    `INSERT INTO indexer_state (key,value) VALUES ('tokenscan_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-  )
-    .bind(String(tip))
-    .run();
+  await runCoreBlockGated(env.CORE_DB, "tokenscan_synced_blk", 1008, () => crawlTokenscanCollections(env));
 }
 
 // Continue the Emblem-sales backfill a bounded step, gated to ~hourly so we crawl Alchemy getNFTSales
@@ -174,19 +135,7 @@ async function maybeRebuildTags(env: Env): Promise<void> {
 // Refresh the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP) ~daily. Gated by block-delta:
 // daily candles only change once a day, and a full run is a handful of fetches.
 async function maybeCrawlPrices(env: Env): Promise<void> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt(
-    (await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='prices_synced_blk'`).first<{ value: string }>())
-      ?.value || "0",
-    10,
-  );
-  if (tip - last < 144) return; // ~1 day of blocks
-  await crawlPrices(env);
-  await env.DB.prepare(
-    `INSERT INTO indexer_state (key,value) VALUES ('prices_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-  )
-    .bind(String(tip))
-    .run();
+  await runCoreBlockGated(env.CORE_DB, "prices_synced_blk", 144, () => crawlPrices(env));
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -199,8 +148,8 @@ const app = new Hono<{ Bindings: Env }>();
 // would defeat replica-local reads (the docs call this out for replicated resources).
 // The cast bridges workers-types predating withSession; D1DatabaseSession shares prepare()/batch().
 app.use("/v2/*", async (c, next) => {
-  const db = c.env.DB as unknown as { withSession?: (mode?: string) => D1Database };
-  if (typeof db.withSession === "function") c.env = { ...c.env, DB: db.withSession("first-unconstrained") };
+  const db = c.env.CORE_DB as unknown as { withSession?: (mode?: string) => D1Database };
+  if (typeof db.withSession === "function") c.env = { ...c.env, CORE_DB: db.withSession("first-unconstrained") };
   await next();
 });
 
