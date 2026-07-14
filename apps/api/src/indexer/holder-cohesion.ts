@@ -1,65 +1,54 @@
-/**
- * Holder cohesion as a stored signal — interaction edges among an asset's top holders ÷ holder count. A wash /
- * sybil / clique ring runs many× an organic asset because the same wallets trade among themselves; an organic
- * crowd sits under ~1. Batch-computed per asset (one COUNT over graph_edges scoped to the top holders) and
- * upserted onto asset_signals so the whole dataset is sortable by it, no graph render needed.
- *
- * Cursored (asset-name) so a driver can walk the candidate set across calls without a per-run timeout.
- */
+/** Interaction density among each asset's largest address holders. */
 import type { Env } from "#api/env";
 
-const inList = (ids: string[]) =>
-  ids
-    .filter((s) => /^[a-zA-Z0-9._]+$/.test(s))
-    .map((s) => `'${s}'`)
-    .join(",") || "''";
-const STRONG_W = 1.6; // ln(1+n) ≥ 1.6 ⇔ ~4+ repeated interactions between the pair
+const STRONG_WEIGHT = 1.6;
 
 export async function buildHolderCohesion(
   env: Env,
   after: string,
   limit: number,
 ): Promise<{ processed: number; next: string | null; sample: unknown[] }> {
-  // Candidate = a measurable holder base (15–800) that has TRADED — that's where coordination/wash is meaningful
-  // and it keeps the batch tractable (untraded cards don't need a wash signal). Cursor on asset name.
-  const cands =
-    (
-      await env.DB.prepare(
-        `SELECT asset FROM asset_signals WHERE asset > ? AND holders BETWEEN 15 AND 800 AND COALESCE(max_realized_usd,0) > 0 ORDER BY asset LIMIT ?`,
-      )
-        .bind(after, limit)
-        .all<{ asset: string }>()
-    ).results || [];
+  const cursor = Number.parseInt(after, 10) || 0;
+  const candidates = await env.CORE_DB.prepare(
+    `SELECT signal.asset_id,dictionary.asset FROM asset_signals signal
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+     WHERE signal.asset_id>? AND signal.holders BETWEEN 15 AND 800 AND signal.max_realized_usd>0
+     ORDER BY signal.asset_id LIMIT ?`,
+  )
+    .bind(cursor, limit)
+    .all<{ asset_id: number; asset: string }>();
 
   const sample: unknown[] = [];
-  for (const { asset } of cands) {
-    const holders =
-      (
-        await env.DB.prepare(
-          `SELECT holder FROM balances WHERE asset=? AND holder_type='address' AND CAST(quantity AS INTEGER)>0 ORDER BY CAST(quantity AS INTEGER) DESC LIMIT 60`,
-        )
-          .bind(asset)
-          .all<{ holder: string }>()
-      ).results || [];
-    const ids = holders.map((h) => h.holder);
-    let cohesion = 0,
-      edges = 0,
-      strong = 0;
-    if (ids.length >= 2) {
-      const set = inList(ids);
-      const e = await env.DB.prepare(
-        `SELECT COUNT(*) e, COALESCE(SUM(CASE WHEN w>=${STRONG_W} THEN 1 ELSE 0 END),0) s FROM graph_edges WHERE src IN (${set}) AND dst IN (${set}) AND src<>dst`,
-      ).first<{ e: number; s: number }>();
-      edges = e?.e ?? 0;
-      strong = e?.s ?? 0;
-      cohesion = Math.round((edges / ids.length) * 100) / 100;
-    }
-    await env.DB.prepare(
-      `UPDATE asset_signals SET holder_cohesion=?, cohesion_edges=?, cohesion_strong=? WHERE asset=?`,
+  for (const candidate of candidates.results) {
+    const result = await env.CORE_DB.prepare(
+      `WITH holders AS (
+         SELECT address_id FROM balances
+         WHERE asset_id=? AND address_id IS NOT NULL AND CAST(quantity AS INTEGER)>0
+         ORDER BY CAST(quantity AS INTEGER) DESC LIMIT 60
+       ), active AS (
+         SELECT CAST(value AS INTEGER) generation FROM core_state WHERE key='graph_generation'
+       )
+       SELECT COUNT(*) edges,
+         COALESCE(SUM(CASE WHEN edge.weight>=? THEN 1 ELSE 0 END),0) strong,
+         (SELECT COUNT(*) FROM holders) holders
+       FROM graph_edges edge,active
+       WHERE edge.generation=active.generation
+         AND edge.source_entity_id IN (SELECT address_id FROM holders)
+         AND edge.destination_entity_id IN (SELECT address_id FROM holders)
+         AND edge.source_entity_id<>edge.destination_entity_id`,
     )
-      .bind(cohesion, edges, strong, asset)
+      .bind(candidate.asset_id, STRONG_WEIGHT)
+      .first<{ edges: number; strong: number; holders: number }>();
+    const edges = result?.edges ?? 0;
+    const strong = result?.strong ?? 0;
+    const cohesion = result?.holders ? Math.round((edges / result.holders) * 100) / 100 : 0;
+    await env.CORE_DB.prepare(
+      `UPDATE asset_signals SET holder_cohesion=?,cohesion_edges=?,cohesion_strong=? WHERE asset_id=?`,
+    )
+      .bind(cohesion, edges, strong, candidate.asset_id)
       .run();
-    if (sample.length < 4) sample.push({ asset, cohesion, edges, strong });
+    if (sample.length < 4) sample.push({ asset: candidate.asset, cohesion, edges, strong });
   }
-  return { processed: cands.length, next: cands.length ? cands[cands.length - 1].asset : null, sample };
+  const last = candidates.results.at(-1);
+  return { processed: candidates.results.length, next: last ? String(last.asset_id) : null, sample };
 }
