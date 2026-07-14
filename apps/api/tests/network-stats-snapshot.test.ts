@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import { CORE_NETWORK_STATS_REBUILD_SQL, NETWORK_STATS_REBUILD_SQL } from "#api/indexer/network-stats";
+
+const INCREMENTAL_STATS_MIGRATION = readFileSync("migrations-core/0013_incremental_network_stats.sql", "utf8");
 
 test("network stats snapshot matches exact source counts and totals", () => {
   const db = new DatabaseSync(":memory:");
@@ -78,4 +81,29 @@ test("compact network stats derive the same totals through normalized asset iden
   assert.equal(row.xcp_destroyed, 1);
   assert.equal(row.xcp_supply, "400000000");
   assert.ok(row.updated_at > 0);
+
+  db.exec(INCREMENTAL_STATS_MIGRATION);
+  const baseline = { ...(db.prepare("SELECT * FROM network_stats_snapshot WHERE singleton=1").get() as object) };
+  db.exec(`
+    INSERT INTO sends VALUES(4); INSERT INTO balances VALUES('5'); INSERT INTO transactions VALUES('25000000');
+    INSERT INTO burns VALUES('100000000'); INSERT INTO issuances VALUES('5000000','valid');
+  `);
+  const changed = db.prepare("SELECT * FROM network_stats_snapshot WHERE singleton=1").get() as Record<string, number>;
+  assert.equal(changed.sends, 4);
+  assert.equal(changed.balances, 5);
+  assert.equal(changed.holders, 3);
+  assert.equal(changed.transactions, 4);
+  assert.equal(changed.btc_fees, 1.75);
+  assert.equal(changed.xcp_destroyed, 1.05);
+  assert.equal(changed.xcp_supply, "495000000");
+  db.exec(`
+    DELETE FROM sends WHERE x=4; DELETE FROM balances WHERE quantity='5';
+    DELETE FROM transactions WHERE fee='25000000'; DELETE FROM burns WHERE earned='100000000';
+    DELETE FROM issuances WHERE fee_paid='5000000' AND status='valid';
+  `);
+  const restored = {
+    ...(db.prepare("SELECT * FROM network_stats_snapshot WHERE singleton=1").get() as object),
+  } as Record<string, unknown>;
+  restored.updated_at = (baseline as Record<string, unknown>).updated_at;
+  assert.deepEqual(restored, baseline);
 });

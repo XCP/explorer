@@ -54,7 +54,7 @@ export const CORE_TABLE_MANIFEST = [
   { source: "graph_seed", target: "graph_seed", disposition: "preserve" },
   { source: "indexer_state", target: "core_state", disposition: "seed" },
   { source: "issuances", target: "issuances", disposition: "compact" },
-  { source: "network_stats_snapshot", target: "network_stats_snapshot", disposition: "preserve" },
+  { source: "network_stats_snapshot", target: null, disposition: "discard" },
   { source: "order_matches", target: "order_matches", disposition: "compact" },
   { source: "orders", target: "orders", disposition: "compact" },
   { source: "pool_liquidity", target: "pool_liquidity", disposition: "compact" },
@@ -81,6 +81,7 @@ export const GENERATED_CORE_TABLES = [
   "cache",
   "daily_metrics",
   "entity_dictionary",
+  "network_stats_snapshot",
 ] as const;
 
 export type CoreProjectionStrategy = "append" | "upsert" | "snapshot" | "generation";
@@ -110,7 +111,6 @@ export const CORE_PROJECTION_POLICIES = [
   { table: "graph_node", strategy: "generation", owner: "explorer" },
   { table: "graph_rank", strategy: "generation", owner: "explorer" },
   { table: "graph_seed", strategy: "generation", owner: "explorer" },
-  { table: "network_stats_snapshot", strategy: "snapshot", owner: "explorer" },
   { table: "prices", strategy: "upsert", owner: "external" },
   { table: "pr_edges", strategy: "generation", owner: "explorer" },
   { table: "scarce_city_sales", strategy: "append", owner: "external" },
