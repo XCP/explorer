@@ -11,7 +11,6 @@
 import type {
   AssetIndexRow,
   FeaturedAsset,
-  AssetCohortRow,
   BalanceRow,
   AssetListRow,
   HolderTierRow,
@@ -454,34 +453,6 @@ export function listSubassets(db: D1Database, asset: string, limit: number, offs
  *  feed (source='collection') and the broader tokenscan directory (source='tokenscan', whose meta carries
  *  the project site) — preferring pepe.wtf when an asset is in both. This is what lights the green
  *  "Part of …" band, so tokenscan-only projects (Rare Pigeons, Age of Chains, …) now show it too. */
-export async function assetCollection(
-  db: D1Database,
-  asset: string,
-): Promise<{ tag: string; site: string | null; series: number | null; card: number | null } | null> {
-  const r = await one<{ tag: string; meta: string | null }>(
-    db,
-    `SELECT tag, meta FROM tags WHERE entity_type='asset' AND entity_id=? AND source IN ('manual','collection','tokenscan','digirare','issuer','discovered')
-     ORDER BY CASE source WHEN 'manual' THEN 0 WHEN 'collection' THEN 1 WHEN 'tokenscan' THEN 2 WHEN 'digirare' THEN 3 WHEN 'issuer' THEN 4 ELSE 5 END LIMIT 1`,
-    asset,
-  );
-  if (!r) return null;
-  // pepe.wtf collection meta = {serie,card}; tokenscan meta = {site}. Parse whichever this row carries.
-  let site: string | null = null,
-    series: number | null = null,
-    card: number | null = null;
-  try {
-    const m = r.meta ? (JSON.parse(r.meta) as { site?: string; series?: number; card?: number }) : null;
-    if (m) {
-      site = m.site ?? null;
-      series = m.series ?? null;
-      card = m.card ?? null;
-    }
-  } catch {
-    /* non-JSON meta */
-  }
-  return { tag: r.tag, site, series, card };
-}
-
 /** The card's artist, from the pepe.wtf-sourced source='artist' tag (its slug powers /tags/<artist-slug>). */
 export async function assetArtist(
   db: D1Database,
@@ -505,57 +476,9 @@ export async function assetArtist(
  *  side is filtered to real, non-dust address holders. `pct` = shared holders as a share of the subject's
  *  own holders (the Related tab's "why it's related" line). `excludeCollection` drops same-collection
  *  siblings so the cohort strip complements (never repeats) the collection strip. */
-export function assetCohort(
-  db: D1Database,
-  asset: string,
-  limit: number,
-  excludeCollection: string | null = null,
-): Promise<AssetCohortRow[]> {
-  const excl = excludeCollection
-    ? `AND b2.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag=?3)`
-    : "";
-  const binds = excludeCollection ? [asset, asset, excludeCollection, limit] : [asset, asset, limit];
-  return q<AssetCohortRow>(
-    db,
-    `WITH hc AS (SELECT COUNT(*) n FROM balances WHERE asset=?1 AND holder_type='address' AND CAST(quantity AS INTEGER)>0)
-     SELECT b2.asset, a.asset_longname, COUNT(*) shared,
-            ROUND(100.0*COUNT(*)/NULLIF((SELECT n FROM hc),0),1) pct
-     FROM balances b1 JOIN balances b2 ON b1.holder=b2.holder
-     LEFT JOIN assets a ON a.asset=b2.asset
-     WHERE b1.asset=?1 AND b1.holder_type='address' AND CAST(b1.quantity AS INTEGER)>0
-       AND b2.asset<>?2 AND b2.asset<>'XCP' AND CAST(b2.quantity AS INTEGER)>0 ${excl}
-     GROUP BY b2.asset ORDER BY shared DESC LIMIT ?${excludeCollection ? "4" : "3"}`,
-    ...binds,
-  );
-}
-
 /** Same-collection siblings ranked by how strongly they overlap the subject's holders — the "Same
  *  collection" strip on the Related tab. Same co-hold math as assetCohort, but b2 is constrained to the
  *  collection's members (a small tagged set), so this surfaces the *most related* siblings first. */
-export function assetCollectionCohort(
-  db: D1Database,
-  asset: string,
-  collection: string,
-  limit: number,
-): Promise<AssetCohortRow[]> {
-  return q<AssetCohortRow>(
-    db,
-    `WITH hc AS (SELECT COUNT(*) n FROM balances WHERE asset=?1 AND holder_type='address' AND CAST(quantity AS INTEGER)>0)
-     SELECT b2.asset, a.asset_longname, COUNT(*) shared,
-            ROUND(100.0*COUNT(*)/NULLIF((SELECT n FROM hc),0),1) pct
-     FROM balances b1 JOIN balances b2 ON b1.holder=b2.holder
-     JOIN tags t ON t.entity_type='asset' AND t.entity_id=b2.asset AND t.tag=?3
-     LEFT JOIN assets a ON a.asset=b2.asset
-     WHERE b1.asset=?1 AND b1.holder_type='address' AND CAST(b1.quantity AS INTEGER)>0
-       AND b2.asset<>?2 AND CAST(b2.quantity AS INTEGER)>0
-     GROUP BY b2.asset ORDER BY shared DESC LIMIT ?4`,
-    asset,
-    asset,
-    collection,
-    limit,
-  );
-}
-
 /** Monthly activity, DEX + BTC venues (order matches + orders opened / dispenses + dispensers opened). One of
  *  the two comprehensive-activity reads — split so each stays under D1's compound-SELECT term cap; the handler
  *  merges the pair by month. */

@@ -26,9 +26,6 @@ import {
   assetReviewDistribution,
   assetReviewTop,
   assetValidation,
-  assetCohort,
-  assetCollection,
-  assetCollectionCohort,
   assetQualitySignals,
   latestUsdRate,
   assetActivityVenues,
@@ -57,6 +54,8 @@ import {
   listAssetPoolMatches,
   listAssetFairmints,
   listCoreSubassets,
+  coreAssetCohort,
+  coreAssetCollectionCohort,
 } from "#api/queries/core-assets";
 import { listAssetOrders } from "#api/queries/core-orders";
 
@@ -519,7 +518,7 @@ assets.get("/v2/assets/:asset/subassets", async (c) => {
 // Collector cohort: "holders of X also collect…" — the holders-also-hold graph. Excludes XCP (currency,
 // held by everyone). Returns related assets ranked by shared-holder count, with art-ready names.
 assets.get("/v2/assets/:asset/cohort", async (c) => {
-  const rows = await assetCohort(c.env.DB, c.req.param("asset").toUpperCase(), lim(c, 18, 36));
+  const rows = await coreAssetCohort(c.env.CORE_DB, c.req.param("asset").toUpperCase(), lim(c, 18, 36));
   return J(c, { result: rows }, 3600);
 });
 
@@ -529,11 +528,11 @@ assets.get("/v2/assets/:asset/cohort", async (c) => {
 // resolved server-side, so the tab needs only the asset.
 assets.get("/v2/assets/:asset/related", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const coll = await assetCollection(c.env.DB, asset).catch(() => null);
+  const coll = await coreAssetCollection(c.env.CORE_DB, asset).catch(() => null);
   const tag = coll?.tag ?? null;
   const [collection, cohort] = await Promise.all([
-    tag ? assetCollectionCohort(c.env.DB, asset, tag, 12).catch(() => []) : Promise.resolve([]),
-    assetCohort(c.env.DB, asset, 6, tag).catch(() => []),
+    tag ? coreAssetCollectionCohort(c.env.CORE_DB, asset, tag, 12).catch(() => []) : Promise.resolve([]),
+    coreAssetCohort(c.env.CORE_DB, asset, 6, tag).catch(() => []),
   ]);
   return J(c, { result: { collection, cohort } }, 3600);
 });

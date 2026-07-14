@@ -1,4 +1,4 @@
-import type { AssetFeedCounts, AssetIndexRow, AssetListRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
+import type { AssetCohortRow, AssetFeedCounts, AssetIndexRow, AssetListRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
 import type {
   DestructionRow,
   DispenseRow,
@@ -134,6 +134,74 @@ export function listCoreSubassets(
     `${parent}/`,
     limit,
     offset,
+  );
+}
+
+export function coreAssetCohort(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  excludeCollection: string | null = null,
+): Promise<AssetCohortRow[]> {
+  const collectionFilter = excludeCollection
+    ? `AND NOT EXISTS (
+         SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
+          WHERE entity.entity_type='asset' AND entity.entity_key=other_dictionary.asset AND tag.tag=?3
+       )`
+    : "";
+  const limitBind = excludeCollection ? "?4" : "?3";
+  const args = excludeCollection ? [asset, asset, excludeCollection, limit] : [asset, asset, limit];
+  return q<AssetCohortRow>(
+    db,
+    `WITH subject AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+     holder_count AS (
+       SELECT COUNT(*) n FROM balances WHERE asset_id=(SELECT asset_id FROM subject)
+         AND address_id IS NOT NULL AND CAST(quantity AS INTEGER)>0
+     )
+     SELECT other_dictionary.asset,other_state.asset_longname,COUNT(*) shared,
+       ROUND(100.0*COUNT(*)/NULLIF((SELECT n FROM holder_count),0),1) pct
+     FROM balances subject_balance
+     JOIN balances other_balance ON other_balance.address_id=subject_balance.address_id
+     JOIN asset_dictionary other_dictionary ON other_dictionary.asset_id=other_balance.asset_id
+     LEFT JOIN assets other_state ON other_state.asset_id=other_balance.asset_id
+     WHERE subject_balance.asset_id=(SELECT asset_id FROM subject)
+       AND subject_balance.address_id IS NOT NULL AND CAST(subject_balance.quantity AS INTEGER)>0
+       AND other_dictionary.asset<>?2 AND other_dictionary.asset<>'XCP'
+       AND CAST(other_balance.quantity AS INTEGER)>0 ${collectionFilter}
+     GROUP BY other_balance.asset_id ORDER BY shared DESC LIMIT ${limitBind}`,
+    ...args,
+  );
+}
+
+export function coreAssetCollectionCohort(
+  db: D1Database,
+  asset: string,
+  collection: string,
+  limit: number,
+): Promise<AssetCohortRow[]> {
+  return q<AssetCohortRow>(
+    db,
+    `WITH subject AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+     holder_count AS (
+       SELECT COUNT(*) n FROM balances WHERE asset_id=(SELECT asset_id FROM subject)
+         AND address_id IS NOT NULL AND CAST(quantity AS INTEGER)>0
+     )
+     SELECT other_dictionary.asset,other_state.asset_longname,COUNT(*) shared,
+       ROUND(100.0*COUNT(*)/NULLIF((SELECT n FROM holder_count),0),1) pct
+     FROM balances subject_balance
+     JOIN balances other_balance ON other_balance.address_id=subject_balance.address_id
+     JOIN asset_dictionary other_dictionary ON other_dictionary.asset_id=other_balance.asset_id
+     JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=other_dictionary.asset
+     JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag=?3
+     LEFT JOIN assets other_state ON other_state.asset_id=other_balance.asset_id
+     WHERE subject_balance.asset_id=(SELECT asset_id FROM subject)
+       AND subject_balance.address_id IS NOT NULL AND CAST(subject_balance.quantity AS INTEGER)>0
+       AND other_dictionary.asset<>?2 AND CAST(other_balance.quantity AS INTEGER)>0
+     GROUP BY other_balance.asset_id ORDER BY shared DESC LIMIT ?4`,
+    asset,
+    asset,
+    collection,
+    limit,
   );
 }
 

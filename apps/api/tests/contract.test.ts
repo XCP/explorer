@@ -299,6 +299,15 @@ test("contract: GET /v2/collections/candidates — compact discovery projection"
   assert.ok(Array.isArray(j.result.candidates[0].samples), "candidate samples must be an array");
 });
 
+test("contract: GET /v2/assets/RAREPEPE/related — compact holder overlap", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson(`/v2/assets/RAREPEPE/related?contract=${Date.now()}`);
+  assert.ok(Array.isArray(j.result?.collection) && j.result.collection.length > 0, "collection overlap is required");
+  assert.ok(Array.isArray(j.result?.cohort) && j.result.cohort.length > 0, "holder cohort is required");
+  assert.equal(j.result.collection[0].asset, "PEPECASH", "Rare Pepe's strongest collection overlap changed");
+  assert.equal(j.result.cohort[0].asset, "A363989999577646312", "Rare Pepe's strongest cohort overlap changed");
+});
+
 test("contract: GET /v2/assets?limit=2 — AssetIndexRow list", async (t) => {
   if (skipUnlessLive(t)) return;
   assertListEnvelope(await getJson("/v2/assets?limit=2"), ASSET_INDEX_ROW, 2, "assets");
