@@ -51,9 +51,7 @@ function d1(database: DatabaseSync): D1Database {
 function context(): Ctx {
   return {
     stmts: [],
-    ledgerStmts: [],
     identities: createIdentitySet(),
-    compact: { stmts: [], identities: createIdentitySet() },
     balDelta: new Map(),
     maxBlock: 0,
     supplyDirty: new Set(),
@@ -66,9 +64,8 @@ async function execute(database: DatabaseSync, statements: Stmt[]) {
 }
 
 async function executeCompact(database: DatabaseSync, ctx: Ctx) {
-  if (!ctx.compact) throw new Error("compact test context missing");
-  await execute(database, dictionaryStatements(ctx.compact.identities));
-  await execute(database, ctx.compact.stmts);
+  await execute(database, dictionaryStatements(ctx.identities));
+  await execute(database, ctx.stmts);
 }
 
 function event(event: string, params: Record<string, unknown>, eventIndex: number): Ev {
@@ -127,14 +124,10 @@ test("compact foundational writes preserve identities and converge on replay", a
     ctx,
   );
 
-  const compact = ctx.compact;
-  if (!compact) throw new Error("compact test context missing");
-  await execute(database, dictionaryStatements(compact.identities));
-  await execute(database, compact.stmts);
-  await execute(database, ctx.ledgerStmts);
+  await execute(database, dictionaryStatements(ctx.identities));
+  await execute(database, ctx.stmts);
   await applyCompactBalanceDeltas(d1(database), ctx.balDelta, true);
-  await execute(database, compact.stmts);
-  await execute(database, ctx.ledgerStmts);
+  await execute(database, ctx.stmts);
   await applyCompactBalanceDeltas(d1(database), ctx.balDelta, true);
 
   const transaction = database

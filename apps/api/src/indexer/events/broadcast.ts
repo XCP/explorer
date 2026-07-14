@@ -4,35 +4,10 @@
 import { type Handler, str, cap } from "#api/indexer/events/context";
 import { classifyBtns } from "#api/indexer/events/btns";
 import { hashToBytes } from "#api/indexer/compact-codec";
-
 const broadcast: Handler = ({ p, b, bt }, ctx) => {
   const bn = classifyBtns(p.text);
+  if (p.source) ctx.identities.addresses.add(String(p.source));
   ctx.stmts.push((db) =>
-    db
-      .prepare(
-        `INSERT INTO broadcasts (tx_hash,block_index,block_time,source,timestamp,value,fee_fraction_int,text,locked,mime_type,status,btns,btns_op,btns_tick) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,timestamp=excluded.timestamp,value=excluded.value,fee_fraction_int=excluded.fee_fraction_int,text=excluded.text,locked=excluded.locked,mime_type=excluded.mime_type,status=excluded.status,btns=excluded.btns,btns_op=excluded.btns_op,btns_tick=excluded.btns_tick`,
-      )
-      .bind(
-        p.tx_hash,
-        b,
-        bt,
-        p.source ?? null,
-        p.timestamp ?? null,
-        str(p.value),
-        str(p.fee_fraction_int),
-        cap(p.text),
-        p.locked ? 1 : 0,
-        p.mime_type ?? null,
-        p.status ?? "valid",
-        bn ? 1 : null,
-        bn?.op ?? null,
-        bn?.tick ?? null,
-      ),
-  );
-  if (!ctx.compact) return;
-  if (p.source) ctx.compact.identities.addresses.add(String(p.source));
-  ctx.compact.stmts.push((db) =>
     db
       .prepare(
         `INSERT INTO broadcasts
@@ -64,5 +39,4 @@ const broadcast: Handler = ({ p, b, bt }, ctx) => {
       ),
   );
 };
-
 export const broadcasts: Record<string, Handler> = { BROADCAST: broadcast };

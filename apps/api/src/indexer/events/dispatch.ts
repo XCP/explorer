@@ -20,7 +20,6 @@ import { broadcasts } from "#api/indexer/events/broadcast";
 import { fairminters } from "#api/indexer/events/fairminter";
 import { bets } from "#api/indexer/events/bet";
 import { rps } from "#api/indexer/events/rps";
-
 const HANDLERS: Record<string, Handler> = {
   ...block,
   ...transaction,
@@ -39,7 +38,6 @@ const HANDLERS: Record<string, Handler> = {
   ...bets,
   ...rps,
 };
-
 export function dispatch(ev: Ev, ctx: Ctx): void {
   const p = ev.params || {};
   const b = ev.block_index ?? p.block_index;
@@ -47,6 +45,5 @@ export function dispatch(ev: Ev, ctx: Ctx): void {
   const h = HANDLERS[ev.event];
   if (h) h({ ev, p, b, bt: p.block_time ?? null, div: !!(p.asset_info && p.asset_info.divisible) }, ctx);
 }
-
 // Every event name we have a handler for — used to build the stream fetch filter (single source of truth).
 export const HANDLED_EVENTS = Object.keys(HANDLERS);

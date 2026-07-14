@@ -3,31 +3,11 @@
  *  record the sweep row (flags/memo/fee). */
 import { type Handler, str } from "#api/indexer/events/context";
 import { hashToBytes } from "#api/indexer/compact-codec";
-
 const sweep: Handler = ({ p, b, bt }, ctx) => {
-  ctx.stmts.push((db) =>
-    db
-      .prepare(
-        `INSERT INTO sweeps (tx_hash,block_index,block_time,source,destination,flags,memo,fee_paid,status) VALUES (?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,destination=excluded.destination,flags=excluded.flags,memo=excluded.memo,fee_paid=excluded.fee_paid,status=excluded.status`,
-      )
-      .bind(
-        p.tx_hash,
-        b,
-        bt,
-        p.source ?? null,
-        p.destination ?? null,
-        p.flags ?? null,
-        p.memo ?? null,
-        str(p.fee_paid),
-        p.status ?? "valid",
-      ),
-  );
-  if (!ctx.compact) return;
   for (const address of [p.source, p.destination]) {
-    if (address) ctx.compact.identities.addresses.add(String(address));
+    if (address) ctx.identities.addresses.add(String(address));
   }
-  ctx.compact.stmts.push((db) =>
+  ctx.stmts.push((db) =>
     db
       .prepare(
         `INSERT INTO sweeps
@@ -53,5 +33,4 @@ const sweep: Handler = ({ p, b, bt }, ctx) => {
       ),
   );
 };
-
 export const sweeps: Record<string, Handler> = { SWEEP: sweep, INVALID_SWEEP: sweep };

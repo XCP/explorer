@@ -146,20 +146,16 @@ export async function syncCompactEvents(
       if (events.length === 0) break;
       const ctx: Ctx = {
         stmts: [],
-        ledgerStmts: [],
         identities: createIdentitySet(),
-        compact: { stmts: [], identities: createIdentitySet() },
         balDelta: new Map(),
         maxBlock: lastBlock,
         supplyDirty: new Set(),
       };
       for (const event of events) dispatch(event, ctx);
-      const compact = ctx.compact;
-      if (!compact) throw new Error("compact replay context is missing");
-      await batchAll(env.CORE_DB, [...dictionaryStatements(compact.identities), ...compact.stmts, ...ctx.ledgerStmts]);
+      await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
       await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
-      await rebuildCoreAssetSignals(env.CORE_DB, compact.identities.assets);
-      await enqueueCoreAddressSignals(env.CORE_DB, compact.identities.addresses);
+      await rebuildCoreAssetSignals(env.CORE_DB, ctx.identities.assets);
+      await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses);
       await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
       lastIndex = events[events.length - 1].event_index;
       lastBlock = Math.max(lastBlock, ctx.maxBlock);

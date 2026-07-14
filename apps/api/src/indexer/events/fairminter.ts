@@ -3,52 +3,12 @@
  *  the asset for recompute); FAIRMINTER_UPDATE flips status. */
 import { type Handler, str, cap } from "#api/indexer/events/context";
 import { hashToBytes } from "#api/indexer/compact-codec";
-
 const newFairminter: Handler = ({ p, b, bt }, ctx) => {
-  ctx.stmts.push((db) =>
-    db
-      .prepare(
-        `INSERT INTO fairminters (tx_hash,block_index,block_time,source,asset,asset_longname,price,hard_cap,soft_cap,soft_cap_deadline_block,max_mint_per_tx,start_block,end_block,divisible,status,quantity_by_price,premint_quantity,pre_minted,minted_asset_commission_int,max_mint_per_address,burn_payment,lock_description,lock_quantity,description,mime_type,asset_parent,pool_quantity,lp_asset)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,asset=excluded.asset,asset_longname=excluded.asset_longname,price=excluded.price,hard_cap=excluded.hard_cap,soft_cap=excluded.soft_cap,soft_cap_deadline_block=excluded.soft_cap_deadline_block,max_mint_per_tx=excluded.max_mint_per_tx,start_block=excluded.start_block,end_block=excluded.end_block,divisible=excluded.divisible,status=excluded.status,quantity_by_price=excluded.quantity_by_price,premint_quantity=excluded.premint_quantity,pre_minted=excluded.pre_minted,minted_asset_commission_int=excluded.minted_asset_commission_int,max_mint_per_address=excluded.max_mint_per_address,burn_payment=excluded.burn_payment,lock_description=excluded.lock_description,lock_quantity=excluded.lock_quantity,description=excluded.description,mime_type=excluded.mime_type,asset_parent=excluded.asset_parent,pool_quantity=excluded.pool_quantity,lp_asset=excluded.lp_asset`,
-      )
-      .bind(
-        p.tx_hash,
-        b,
-        bt,
-        p.source ?? null,
-        p.asset ?? null,
-        p.asset_longname ?? null,
-        str(p.price),
-        str(p.hard_cap),
-        str(p.soft_cap),
-        p.soft_cap_deadline_block ?? null,
-        str(p.max_mint_per_tx),
-        p.start_block ?? null,
-        p.end_block ?? null,
-        p.divisible ? 1 : 0,
-        p.status ?? "open",
-        str(p.quantity_by_price),
-        str(p.premint_quantity),
-        p.pre_minted ? 1 : 0,
-        str(p.minted_asset_commission_int),
-        str(p.max_mint_per_address),
-        p.burn_payment ? 1 : 0,
-        p.lock_description ? 1 : 0,
-        p.lock_quantity ? 1 : 0,
-        cap(p.description),
-        p.mime_type ?? null,
-        p.asset_parent ?? null,
-        str(p.pool_quantity),
-        p.lp_asset ?? null,
-      ),
-  );
-  if (!ctx.compact) return;
-  if (p.source) ctx.compact.identities.addresses.add(String(p.source));
+  if (p.source) ctx.identities.addresses.add(String(p.source));
   for (const asset of [p.asset, p.asset_parent]) {
-    if (asset) ctx.compact.identities.assets.add(String(asset));
+    if (asset) ctx.identities.assets.add(String(asset));
   }
-  ctx.compact.stmts.push((db) =>
+  ctx.stmts.push((db) =>
     db
       .prepare(
         `INSERT INTO fairminters
@@ -106,32 +66,11 @@ const newFairminter: Handler = ({ p, b, bt }, ctx) => {
       ),
   );
 };
-
 const newFairmint: Handler = ({ ev, p, b, bt }, ctx) => {
-  ctx.stmts.push((db) =>
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO fairmints (event_index,tx_hash,block_index,block_time,source,fairminter_tx_hash,asset,earn_quantity,paid_quantity,commission,status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .bind(
-        ev.event_index,
-        p.tx_hash ?? null,
-        b,
-        bt,
-        p.source ?? null,
-        p.fairminter_tx_hash ?? null,
-        p.asset ?? null,
-        str(p.earn_quantity),
-        str(p.paid_quantity),
-        str(p.commission),
-        p.status ?? "valid",
-      ),
-  );
-  if (ctx.compact) {
-    if (p.source) ctx.compact.identities.addresses.add(String(p.source));
-    if (p.asset) ctx.compact.identities.assets.add(String(p.asset));
-    ctx.compact.stmts.push((db) =>
+  {
+    if (p.source) ctx.identities.addresses.add(String(p.source));
+    if (p.asset) ctx.identities.assets.add(String(p.asset));
+    ctx.stmts.push((db) =>
       db
         .prepare(
           `INSERT INTO fairmints
@@ -165,20 +104,15 @@ const newFairmint: Handler = ({ ev, p, b, bt }, ctx) => {
   }
   if (p.asset && (p.status ?? "valid") === "valid") ctx.supplyDirty.add(p.asset);
 };
-
 const fairminterUpdate: Handler = ({ p }, ctx) => {
-  ctx.stmts.push((db) =>
-    db.prepare(`UPDATE fairminters SET status=COALESCE(?,status) WHERE tx_hash=?`).bind(p.status ?? null, p.tx_hash),
-  );
-  if (ctx.compact && p.tx_hash) {
-    ctx.compact.stmts.push((db) =>
+  if (p.tx_hash) {
+    ctx.stmts.push((db) =>
       db
         .prepare(`UPDATE fairminters SET status=coalesce(?,status) WHERE tx_hash=?`)
         .bind(p.status ?? null, hashToBytes(p.tx_hash)),
     );
   }
 };
-
 export const fairminters: Record<string, Handler> = {
   NEW_FAIRMINTER: newFairminter,
   NEW_FAIRMINT: newFairmint,

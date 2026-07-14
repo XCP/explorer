@@ -5,10 +5,8 @@
  * onto it. The engine (sync.ts) flushes them. This mirrors counterparty-core's lib/messages/<type>.py:
  * one file per message type, each self-contained, routed by dispatch.ts.
  */
-
 // A statement is a thunk so it can be bound against the live DB inside the batcher.
 export type Stmt = (db: D1Database) => D1PreparedStatement;
-
 // One Counterparty event from the verbose event stream.
 export interface Ev {
   event_index: number;
@@ -20,23 +18,14 @@ export interface Ev {
   tx_hash: string | null;
   block_index: number;
 }
-
 // Per-chunk accumulator the engine flushes: row statements, netted balance deltas, the high-water block,
 // and the set of assets whose supply changed (recomputed deterministically — see asset-supply.ts).
 export interface Ctx {
   stmts: Stmt[];
-  ledgerStmts: Stmt[];
   identities: {
     addresses: Set<string>;
     assets: Set<string>;
   };
-  compact: {
-    stmts: Stmt[];
-    identities: {
-      addresses: Set<string>;
-      assets: Set<string>;
-    };
-  } | null;
   balDelta: Map<
     string,
     {
@@ -59,7 +48,6 @@ export interface Ctx {
   maxBlock: number;
   supplyDirty: Set<string>;
 }
-
 // A decoded event handed to a handler: the raw event plus the fields every handler pulls off it.
 export interface Msg {
   ev: Ev;
@@ -70,20 +58,15 @@ export interface Msg {
   bt: number | null; // block_time
   div: boolean; // asset_info.divisible (for normalizing this event's quantities)
 }
-
 export type Handler = (m: Msg, ctx: Ctx) => void;
-
 // Tag for SQL template literals. Identity at runtime (composes the string for db.prepare), but lets
 // prettier-plugin-sql pretty-print the embedded SQL and editors syntax-highlight it.
 export const sql = (strings: TemplateStringsArray, ...values: unknown[]): string =>
   strings.reduce((acc, s, i) => acc + s + (i < values.length ? String(values[i]) : ""), "");
-
 /* ---------- value helpers ---------- */
-
 export function str(v: unknown): string | null {
   return v == null ? null : String(v);
 }
-
 export function bi(v: unknown): bigint {
   try {
     return BigInt(typeof v === "string" ? v.split(".")[0] : Math.trunc(Number(v || 0)));
@@ -91,7 +74,6 @@ export function bi(v: unknown): bigint {
     return 0n;
   }
 }
-
 // Cap free-text fields to avoid D1 SQLITE_TOOBIG (asset descriptions can embed base64 image data — MBs).
 // Images live in R2; the explorer doesn't need megabyte descriptions. 16KB is plenty for legit content.
 export function cap(v: unknown, max = 16384): string | null {
@@ -99,7 +81,6 @@ export function cap(v: unknown, max = 16384): string | null {
   const s = typeof v === "string" ? v : String(v);
   return s.length > max ? s.slice(0, max) : s;
 }
-
 // Accumulate a (holder,asset) balance delta for the chunk. Netted so a credit+debit in one chunk collapses.
 export function addDelta(
   ctx: Ctx,

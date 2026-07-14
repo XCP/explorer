@@ -6,12 +6,10 @@
  * `bt:DEPLOY|TICK|...`, `bt:MINT|TICK|...`, `bt:TRANSFER|TICK|...`. (Version rides in the broadcast `value`.)
  * We only TAG — identify that a broadcast is BTNS and capture its op/tick — we do NOT implement BTNS.
  */
-
 export interface BtnsInfo {
   op: string | null; // DEPLOY | MINT | TRANSFER | LIST | ... (uppercased)
   tick: string | null; // token ticker (field after op for DEPLOY/MINT/TRANSFER)
 }
-
 export function classifyBtns(text: string | null | undefined): BtnsInfo | null {
   if (!text) return null;
   const t = text.replace(/^\s+/, "");

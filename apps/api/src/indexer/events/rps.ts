@@ -3,35 +3,12 @@
  *  conclusion (that arrives via RPS_MATCH_UPDATE), so it must not write rps_matches.status. */
 import { type Handler, str } from "#api/indexer/events/context";
 import { hashToBytes, parseMatchId } from "#api/indexer/compact-codec";
-
 function matchId(p: Record<string, unknown>): string {
   return String(p.rps_match_id ?? p.id ?? `${p.tx0_hash}_${p.tx1_hash}`);
 }
-
 const openRps: Handler = ({ p, b, bt }, ctx) => {
+  if (p.source) ctx.identities.addresses.add(String(p.source));
   ctx.stmts.push((db) =>
-    db
-      .prepare(
-        `INSERT INTO rps (tx_hash,block_index,block_time,source,possible_moves,wager,move_random_hash,expiration,expire_index,status)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(tx_hash) DO UPDATE SET block_index=excluded.block_index,block_time=excluded.block_time,source=excluded.source,possible_moves=excluded.possible_moves,wager=excluded.wager,move_random_hash=excluded.move_random_hash,expiration=excluded.expiration,expire_index=excluded.expire_index,status=excluded.status`,
-      )
-      .bind(
-        p.tx_hash,
-        b,
-        bt,
-        p.source ?? null,
-        p.possible_moves ?? null,
-        str(p.wager),
-        p.move_random_hash ?? null,
-        p.expiration ?? null,
-        p.expire_index ?? null,
-        p.status ?? "open",
-      ),
-  );
-  if (!ctx.compact) return;
-  if (p.source) ctx.compact.identities.addresses.add(String(p.source));
-  ctx.compact.stmts.push((db) =>
     db
       .prepare(
         `INSERT INTO rps
@@ -58,49 +35,21 @@ const openRps: Handler = ({ p, b, bt }, ctx) => {
       ),
   );
 };
-
 const rpsUpdate: Handler = ({ ev, p }, ctx) => {
-  ctx.stmts.push((db) =>
-    db
-      .prepare(`UPDATE rps SET status=? WHERE tx_hash=?`)
-      .bind(ev.event === "RPS_EXPIRATION" ? "expired" : (p.status ?? "updated"), p.tx_hash ?? p.rps_hash),
-  );
   const hash = p.tx_hash ?? p.rps_hash;
-  if (ctx.compact && hash) {
-    ctx.compact.stmts.push((db) =>
+  if (hash) {
+    ctx.stmts.push((db) =>
       db
         .prepare(`UPDATE rps SET status=? WHERE tx_hash=?`)
         .bind(ev.event === "RPS_EXPIRATION" ? "expired" : (p.status ?? "updated"), hashToBytes(hash)),
     );
   }
 };
-
 const rpsMatch: Handler = ({ p, b, bt }, ctx) => {
-  ctx.stmts.push((db) =>
-    db
-      .prepare(
-        `INSERT INTO rps_matches (id,tx0_hash,tx0_address,tx1_hash,tx1_address,possible_moves,wager,block_index,block_time,status)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET tx0_hash=excluded.tx0_hash,tx0_address=excluded.tx0_address,tx1_hash=excluded.tx1_hash,tx1_address=excluded.tx1_address,possible_moves=excluded.possible_moves,wager=excluded.wager,block_index=excluded.block_index,block_time=excluded.block_time,status=excluded.status`,
-      )
-      .bind(
-        p.id ?? `${p.tx0_hash}_${p.tx1_hash}`,
-        p.tx0_hash ?? null,
-        p.tx0_address ?? null,
-        p.tx1_hash ?? null,
-        p.tx1_address ?? null,
-        p.possible_moves ?? null,
-        str(p.wager),
-        b,
-        bt,
-        p.status ?? "pending",
-      ),
-  );
-  if (!ctx.compact) return;
   for (const address of [p.tx0_address, p.tx1_address]) {
-    if (address) ctx.compact.identities.addresses.add(String(address));
+    if (address) ctx.identities.addresses.add(String(address));
   }
-  ctx.compact.stmts.push((db) =>
+  ctx.stmts.push((db) =>
     db
       .prepare(
         `INSERT INTO rps_matches
@@ -131,17 +80,10 @@ const rpsMatch: Handler = ({ p, b, bt }, ctx) => {
       ),
   );
 };
-
 const rpsMatchUpdate: Handler = ({ p }, ctx) => {
-  // carries only {id, status} (the match conclusion)
-  ctx.stmts.push((db) =>
-    db
-      .prepare(`UPDATE rps_matches SET status=? WHERE id=?`)
-      .bind(p.status ?? "pending", p.id ?? p.rps_match_id ?? `${p.tx0_hash}_${p.tx1_hash}`),
-  );
-  if (ctx.compact) {
+  {
     const { tx0Hash, tx1Hash } = parseMatchId(matchId(p));
-    ctx.compact.stmts.push((db) =>
+    ctx.stmts.push((db) =>
       db
         .prepare(
           `UPDATE rps_matches SET status=?
@@ -152,16 +94,10 @@ const rpsMatchUpdate: Handler = ({ p }, ctx) => {
     );
   }
 };
-
 const rpsMatchExpire: Handler = ({ p }, ctx) => {
-  ctx.stmts.push((db) =>
-    db
-      .prepare(`UPDATE rps_matches SET status='expired' WHERE id=?`)
-      .bind(p.rps_match_id ?? p.id ?? `${p.tx0_hash}_${p.tx1_hash}`),
-  );
-  if (ctx.compact) {
+  {
     const { tx0Hash, tx1Hash } = parseMatchId(matchId(p));
-    ctx.compact.stmts.push((db) =>
+    ctx.stmts.push((db) =>
       db
         .prepare(
           `UPDATE rps_matches SET status='expired'
@@ -172,11 +108,7 @@ const rpsMatchExpire: Handler = ({ p }, ctx) => {
     );
   }
 };
-
-const rpsResolve: Handler = () => {
-  /* see note above — intentionally no-op on rps_matches.status */
-};
-
+const rpsResolve: Handler = () => {};
 export const rps: Record<string, Handler> = {
   OPEN_RPS: openRps,
   RPS_UPDATE: rpsUpdate,
