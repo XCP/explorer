@@ -1,3 +1,5 @@
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
+
 const UPSERT = `INSERT INTO asset_signals(
   asset_id,issuer_id,divisible,locked,holders,top1_pct,burned_pct,trades,self_trade_pct,
   first_trade_blk,last_trade_blk,dispenses,dispense_btc,distinct_traders,distinct_dispensers,
@@ -95,4 +97,32 @@ export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<s
     await db.batch(unique.slice(index, index + 40).map((asset) => db.prepare(UPSERT).bind(asset)));
   }
   return unique.length;
+}
+
+/** Bounded full-population repair cycle using the same convergent per-identity writer as event maintenance. */
+export async function runCoreAssetSignalsStep(
+  db: D1Database,
+  limit = 400,
+): Promise<{ processed: number; cursor: number; cycleComplete: boolean }> {
+  const cursor = await getCoreStateInt(db, "asset_signals_cursor");
+  const rows = await db
+    .prepare(
+      `SELECT dictionary.asset_id,dictionary.asset FROM asset_dictionary dictionary
+       JOIN assets asset ON asset.asset_id=dictionary.asset_id
+       WHERE dictionary.asset_id>? ORDER BY dictionary.asset_id LIMIT ?`,
+    )
+    .bind(cursor, limit)
+    .all<{ asset_id: number; asset: string }>();
+  if (rows.results.length === 0) {
+    await setCoreState(db, "asset_signals_cursor", 0);
+    await setCoreState(db, "asset_signals_cycles", (await getCoreStateInt(db, "asset_signals_cycles")) + 1);
+    return { processed: 0, cursor: 0, cycleComplete: true };
+  }
+  await rebuildCoreAssetSignals(
+    db,
+    rows.results.map((row) => row.asset),
+  );
+  const next = rows.results.at(-1)?.asset_id ?? cursor;
+  await setCoreState(db, "asset_signals_cursor", next);
+  return { processed: rows.results.length, cursor: next, cycleComplete: false };
 }

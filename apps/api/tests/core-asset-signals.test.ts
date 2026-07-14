@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
+import { rebuildCoreAssetSignals, runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { coreAssetSignals } from "#api/queries/core-assets";
 
 const migrations = readdirSync("migrations-core")
@@ -26,6 +26,9 @@ class Statement {
   }
   async first<T>() {
     return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
   }
 }
 
@@ -57,8 +60,10 @@ test("compact asset signals refresh volatile fields from canonical relations", a
   assert.equal(await rebuildCoreAssetSignals(d1(db), ["A", "A"]), 1);
   const row = {
     ...(db
-      .prepare(`SELECT holders,top1_pct,burned_pct,age_blocks,trades,dispenses FROM asset_signals
-        WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`)
+      .prepare(
+        `SELECT holders,top1_pct,burned_pct,age_blocks,trades,dispenses FROM asset_signals
+        WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`,
+      )
       .get() as Record<string, number>),
   };
   assert.deepEqual(row, {
@@ -71,11 +76,36 @@ test("compact asset signals refresh volatile fields from canonical relations", a
   });
 
   db.exec(`INSERT INTO blocks(block_index,block_hash,block_time) VALUES(201,randomblob(32),2)`);
-  db.exec(`UPDATE asset_signals SET holders=0,top1_pct=0,burned_pct=0 WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`);
+  db.exec(
+    `UPDATE asset_signals SET holders=0,top1_pct=0,burned_pct=0 WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`,
+  );
   const fresh = await coreAssetSignals(d1(db), "A");
   assert.equal(fresh?.holders, 1);
   assert.equal(fresh?.top1_pct, 100);
   assert.equal(fresh?.burned_pct, 40);
   assert.equal(fresh?.age_blocks, 101);
   assert.equal(fresh?.recency_blocks, 201);
+});
+
+test("compact asset signal repair walks every identity and durably completes a cycle", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO asset_dictionary(asset) VALUES('A'),('B');
+    INSERT INTO blocks(block_index,block_hash,block_time) VALUES(200,zeroblob(32),1);
+    INSERT INTO assets(asset_id,type,divisible,locked,supply_normalized,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,'1',100 FROM asset_dictionary;
+  `);
+  const core = d1(db);
+  let processed = 0;
+  let complete = await runCoreAssetSignalsStep(core, 1);
+  for (let calls = 0; !complete.cycleComplete && calls < 10; calls++) {
+    processed += complete.processed;
+    complete = await runCoreAssetSignalsStep(core, 1);
+  }
+  assert.deepEqual(complete, { processed: 0, cursor: 0, cycleComplete: true });
+  const assets = db.prepare(`SELECT COUNT(*) count FROM assets`).get()?.count;
+  assert.equal(processed, assets);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signals`).get()?.count, assets);
+  assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='asset_signals_cycles'`).get()?.value, "1");
 });
