@@ -38,7 +38,6 @@ import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { reconcileCoreProjection } from "#api/indexer/core-projections";
-import { maybeRebuildCoreNetworkStats } from "#api/indexer/network-stats";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
@@ -246,9 +245,6 @@ export default {
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {
-          // Keep the compact database's singleton overview owned by compact data. Run this early: the remaining
-          // maintenance fan-out is deliberately best-effort and can outlive a scheduled invocation's budget.
-          await runScheduledJob("rebuildCoreNetworkStats", () => maybeRebuildCoreNetworkStats(env.CORE_DB));
           // One-off historical credit/debit ledger backfill (migration 0038): while indexer_state
           // 'ledger_backfill_active'='1', walk a bounded batch of the event stream and insert only CREDIT/DEBIT
           // rows (isolated — never touches balances/mirror/signals, so no contention risk). Runs FIRST so it gets

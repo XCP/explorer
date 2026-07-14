@@ -54,23 +54,3 @@ export const CORE_NETWORK_STATS_REBUILD_SQL = `UPDATE network_stats_snapshot SET
         UNION ALL SELECT fee_paid FROM dividends WHERE fee_paid IS NOT NULL
       )) AS TEXT),
   updated_at=unixepoch() WHERE singleton=1`;
-
-export async function maybeRebuildCoreNetworkStats(db: D1Database): Promise<{ rebuilt: boolean; block: number }> {
-  const [tipRow, stateRow] = await Promise.all([
-    db.prepare(`SELECT coalesce(MAX(block_index),0) block FROM blocks`).first<{ block: number }>(),
-    db.prepare(`SELECT value FROM core_state WHERE key='network_stats_block'`).first<{ value: string }>(),
-  ]);
-  const block = Number(tipRow?.block ?? 0);
-  const previous = Number.parseInt(stateRow?.value ?? "0", 10) || 0;
-  if (block === 0 || block - previous < 144) return { rebuilt: false, block };
-  await db.batch([
-    db.prepare(CORE_NETWORK_STATS_REBUILD_SQL),
-    db
-      .prepare(
-        `INSERT INTO core_state(key,value) VALUES('network_stats_block',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .bind(block),
-  ]);
-  return { rebuilt: true, block };
-}
