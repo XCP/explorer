@@ -56,7 +56,24 @@ export const BUILD_XCP_BTC_DAILY_SQL = `INSERT INTO xcp_btc_daily(day,xcpbtc,vol
     FROM observations
   )
   SELECT day,MIN(price),CAST(MAX(total_volume) AS TEXT),MAX(trades)
-  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day`;
+  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day
+  ON CONFLICT(day) DO UPDATE SET xcpbtc=excluded.xcpbtc,
+    volume_xcp=excluded.volume_xcp,trades=excluded.trades
+  WHERE xcp_btc_daily.xcpbtc IS NOT excluded.xcpbtc
+    OR xcp_btc_daily.volume_xcp IS NOT excluded.volume_xcp
+    OR xcp_btc_daily.trades IS NOT excluded.trades`;
+
+export const PRUNE_XCP_BTC_DAILY_SQL = `DELETE FROM xcp_btc_daily
+  WHERE day NOT IN (
+    SELECT DISTINCT date(match.block_time,'unixepoch')
+    FROM order_matches match
+    JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
+    JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
+    WHERE match.status='completed' AND match.block_time IS NOT NULL
+      AND CAST(match.forward_quantity AS INTEGER)>0 AND CAST(match.backward_quantity AS INTEGER)>0
+      AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
+        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+  )`;
 
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
   SELECT btc.day,'XCP',edge.xcpbtc*btc.usd,'dex_vwm',edge.day,1
@@ -68,7 +85,20 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
   WHERE btc.currency='BTC'
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity
-  WHERE prices.fidelity<=excluded.fidelity`;
+  WHERE prices.fidelity<=excluded.fidelity AND (
+    prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
+    OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
+  )`;
+
+export const PRUNE_XCP_USD_SQL = `DELETE FROM prices
+  WHERE currency='XCP' AND source='dex_vwm' AND NOT EXISTS (
+    SELECT 1 FROM prices btc
+    JOIN xcp_btc_daily edge ON edge.day=(
+      SELECT recent.day FROM xcp_btc_daily recent
+      WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
+      ORDER BY recent.day DESC LIMIT 1)
+    WHERE btc.currency='BTC' AND btc.day=prices.day
+  )`;
 
 async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
   for (let i = 0; i < rows.length; i += 100) {
@@ -79,7 +109,10 @@ async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
             `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity) VALUES(?,?,?,?,?,?)
              ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
                observed_day=excluded.observed_day,fidelity=excluded.fidelity
-             WHERE prices.fidelity<=excluded.fidelity`,
+             WHERE prices.fidelity<=excluded.fidelity AND (
+               prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
+               OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
+             )`,
           )
           .bind(row.day, row.currency, row.usd, row.source, row.observedDay, row.fidelity),
       ),
@@ -130,11 +163,11 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
 
   // Fold order matches once into a tiny indexed daily series. The former non-materialized CTE was searched
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
-  await env.CORE_DB.prepare(`DELETE FROM xcp_btc_daily`).run();
   await env.CORE_DB.prepare(BUILD_XCP_BTC_DAILY_SQL).run();
+  await env.CORE_DB.prepare(PRUNE_XCP_BTC_DAILY_SQL).run();
 
-  await env.CORE_DB.prepare(`DELETE FROM prices WHERE currency='XCP' AND source='dex_vwm'`).run();
   await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
+  await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
 
   const c = await env.CORE_DB.prepare(
     `SELECT currency, COUNT(*) n, MIN(day) lo, MAX(day) hi FROM prices GROUP BY currency`,

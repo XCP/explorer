@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { APPLY_TRADE_USD_SQL, BUILD_XCP_BTC_DAILY_SQL, BUILD_XCP_USD_SQL, tradeUsdWindow } from "#api/indexer/prices";
+import {
+  APPLY_TRADE_USD_SQL,
+  BUILD_XCP_BTC_DAILY_SQL,
+  BUILD_XCP_USD_SQL,
+  PRUNE_XCP_BTC_DAILY_SQL,
+  PRUNE_XCP_USD_SQL,
+  tradeUsdWindow,
+} from "#api/indexer/prices";
 
 test("USD reconciliation advances new rows without wrapping when caught up", () => {
   assert.deepEqual(tradeUsdWindow(10, 20), { from: 10, to: 20 });
@@ -47,6 +54,26 @@ test("XCP pricing uses completed-trade volume-weighted medians", () => {
   db.close();
 });
 
+test("XCP/BTC materialization is idempotent and prunes only obsolete source days", () => {
+  const db = fixture();
+  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  const beforeReplay = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
+  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - beforeReplay, 0);
+
+  db.exec(`INSERT INTO xcp_btc_daily VALUES('2025-12-31',9,'1',1)`);
+  db.exec(PRUNE_XCP_BTC_DAILY_SQL);
+  assert.deepEqual(
+    db.prepare(`SELECT day FROM xcp_btc_daily ORDER BY day`).all().map((row) => row.day),
+    ["2026-01-01"],
+  );
+
+  db.exec(`UPDATE order_matches SET backward_quantity='30000000' WHERE rowid=2`);
+  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  assert.equal(db.prepare(`SELECT xcpbtc FROM xcp_btc_daily WHERE day='2026-01-01'`).get()?.xcpbtc, 0.003);
+  db.close();
+});
+
 test("derived XCP/USD expires after seven days and records provenance", () => {
   const db = fixture();
   db.exec(BUILD_XCP_BTC_DAILY_SQL);
@@ -72,6 +99,30 @@ test("a higher-fidelity observed price wins over a derived price", () => {
   assert.deepEqual(
     { ...db.prepare(`SELECT usd,source,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get() },
     { usd: 250, source: "market", fidelity: 3 },
+  );
+  db.close();
+});
+
+test("derived XCP/USD replay is idempotent and stale pruning preserves observed prices", () => {
+  const db = fixture();
+  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  const beforeReplay = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
+  db.exec(BUILD_XCP_USD_SQL);
+  assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - beforeReplay, 0);
+
+  db.exec(`
+    INSERT INTO prices VALUES('2025-12-31','XCP',1,'dex_vwm','2025-12-31',1);
+    INSERT INTO prices VALUES('2026-01-09','XCP',250,'market','2026-01-09',3);
+  `);
+  db.exec(PRUNE_XCP_USD_SQL);
+  assert.deepEqual(
+    db.prepare(`SELECT day,source FROM prices WHERE currency='XCP' ORDER BY day`).all().map((row) => ({ ...row })),
+    [
+      { day: "2026-01-01", source: "dex_vwm" },
+      { day: "2026-01-08", source: "dex_vwm" },
+      { day: "2026-01-09", source: "market" },
+    ],
   );
   db.close();
 });
