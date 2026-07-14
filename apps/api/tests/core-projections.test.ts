@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { reconcileCoreProjection } from "#api/indexer/core-projections";
 import { upsertEmblemVaultIdentities } from "#api/indexer/emblem";
+import { upsertEmblemListingContract } from "#api/indexer/emblem-listings";
 import { priceOf, upsertEmblemSales } from "#api/indexer/emblem-sales";
 
 class PreparedStatement {
@@ -215,58 +216,42 @@ test("compact Emblem sales preserve exact prices and converge provider correctio
   );
 });
 
-test("incremental projection reconciliation upserts bounded pages and dictionary identities", async () => {
+test("compact listing generations converge asks and remove observed delistings", async () => {
+  const { compact } = databases();
+  compact.exec(`
+    INSERT INTO address_dictionary(address) VALUES('contract');
+    INSERT INTO asset_dictionary(asset) VALUES('RAREPEPE');
+  `);
+  const assetId = compact.prepare(`SELECT asset_id FROM asset_dictionary WHERE asset='RAREPEPE'`).get()
+    ?.asset_id as number;
+  const ask = (tokenId: string, priceUsd: number) => ({
+    tokenId,
+    orderId: `order-${tokenId}`,
+    marketplace: "market",
+    priceUsd,
+    priceAmount: String(priceUsd),
+    currency: "eth",
+    expiry: 999,
+    assetId,
+  });
+  await upsertEmblemListingContract(d1(compact), 1, "contract", [ask("7", 10), ask("8", 20)], 100);
+  await upsertEmblemListingContract(d1(compact), 1, "contract", [ask("8", 22)], 101);
+  assert.deepEqual(
+    compact
+      .prepare(`SELECT token_id,price_usd,updated_at FROM emblem_listings ORDER BY token_id`)
+      .all()
+      .map((row) => ({ ...row })),
+    [{ token_id: "8", price_usd: 22, updated_at: 101 }],
+  );
+});
+
+test("incremental trade projection reconciliation upserts bounded pages and dictionary identities", async () => {
   const { source, compact, env } = databases();
   source.exec(`
-    INSERT INTO emblem_listings VALUES('live','contract','RAREPEPE','order','market',10,'10','currency','url',999,100);
     INSERT INTO emblem_sales VALUES('abc',1,'contract','7','10','token','market','buyer','seller',99);
     INSERT INTO trades VALUES('dex','one','RAREPEPE',10,9,2,'XCP',3,4,'buyer','seller','${"ab".repeat(32)}','clean');
     INSERT INTO trades VALUES('external','two',NULL,11,NULL,1,'USD',5,5,NULL,NULL,'provider-id','clean');
   `);
-  compact.exec(`
-    INSERT INTO address_dictionary(address) VALUES('old-contract');
-    INSERT INTO emblem_listings VALUES(0,1,'stale',NULL,NULL,'market',1,'1',NULL,'old',999,1);
-  `);
-
-  assert.equal((await reconcileCoreProjection(env, "emblem_listings")).caught_up, true);
-  assert.equal(
-    compact.prepare(`SELECT value FROM core_state WHERE key='emblem_listings_generation'`).get()?.value,
-    "1",
-  );
-  assert.deepEqual(
-    compact
-      .prepare(
-        `SELECT a.asset,l.token_id,l.price_usd
-           FROM emblem_listings l JOIN asset_dictionary a ON a.asset_id=l.asset_id
-          WHERE l.generation=CAST((SELECT value FROM core_state WHERE key='emblem_listings_generation') AS INTEGER)`,
-      )
-      .all()
-      .map((row) => ({ ...row })),
-    [{ asset: "RAREPEPE", token_id: "live", price_usd: 10 }],
-  );
-  assert.equal(compact.prepare(`SELECT count(*) count FROM emblem_listings`).get()?.count, 2);
-
-  source.exec(`
-    DELETE FROM emblem_listings WHERE token_id='live';
-    INSERT INTO emblem_listings VALUES('replacement','contract','RAREPEPE','next','market',12,'12','currency','next-url',999,101);
-  `);
-  assert.equal((await reconcileCoreProjection(env, "emblem_listings")).caught_up, true);
-  assert.equal(
-    compact.prepare(`SELECT value FROM core_state WHERE key='emblem_listings_generation'`).get()?.value,
-    "2",
-  );
-  assert.deepEqual(
-    compact
-      .prepare(
-        `SELECT token_id,price_usd FROM emblem_listings
-          WHERE generation=CAST((SELECT value FROM core_state WHERE key='emblem_listings_generation') AS INTEGER)`,
-      )
-      .all()
-      .map((row) => ({ ...row })),
-    [{ token_id: "replacement", price_usd: 12 }],
-  );
-  assert.equal(compact.prepare(`SELECT count(*) count FROM emblem_listings`).get()?.count, 3);
-
   assert.equal((await reconcileCoreProjection(env, "trades")).caught_up, true);
   assert.deepEqual(
     compact

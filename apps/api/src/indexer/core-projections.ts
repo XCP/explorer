@@ -1,7 +1,7 @@
 import type { Env } from "#api/env";
 import { hashToBytes, parseUtxoHolder } from "#api/indexer/compact-codec";
 
-export const CORE_INCREMENTAL_PROJECTIONS = ["emblem_listings", "trades"] as const;
+export const CORE_INCREMENTAL_PROJECTIONS = ["trades"] as const;
 export type CoreIncrementalProjection = (typeof CORE_INCREMENTAL_PROJECTIONS)[number];
 export const CORE_RECENT_PROJECTIONS = [
   "address_signals",
@@ -38,72 +38,8 @@ function nullableString(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
-async function writeRows(
-  db: D1Database,
-  table: CoreIncrementalProjection,
-  rows: SourceRow[],
-  generation: number | null,
-): Promise<void> {
+async function writeRows(db: D1Database, table: CoreIncrementalProjection, rows: SourceRow[]): Promise<void> {
   if (rows.length === 0) return;
-  if (table === "emblem_listings") {
-    if (generation == null) throw new Error("listing reconciliation generation is missing");
-    const addresses = [
-      ...new Set(
-        rows
-          .flatMap((row) => [row.contract, row.currency])
-          .map(nullableString)
-          .filter((address) => address != null),
-      ),
-    ];
-    const assets = [...new Set(rows.map((row) => nullableString(row.asset)).filter((asset) => asset != null))];
-    if (addresses.length > 0) {
-      await db.batch(
-        addresses.map((address) =>
-          db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address),
-        ),
-      );
-    }
-    if (assets.length > 0) {
-      await db.batch(
-        assets.map((asset) => db.prepare(`INSERT OR IGNORE INTO asset_dictionary(asset) VALUES(?)`).bind(asset)),
-      );
-    }
-    await db.batch(
-      rows.map((row) =>
-        db
-          .prepare(
-            `INSERT INTO emblem_listings(
-               generation,contract_id,token_id,asset_id,order_id,marketplace,price_usd,
-               price_amount,currency_id,url,expiry,updated_at
-             ) VALUES(
-               ?,(SELECT address_id FROM address_dictionary WHERE address=?),?,
-               (SELECT asset_id FROM asset_dictionary WHERE asset=?),?,?,?,?,
-               (SELECT address_id FROM address_dictionary WHERE address=?),?,?,?
-             )
-             ON CONFLICT(generation,contract_id,token_id) DO UPDATE SET
-               asset_id=excluded.asset_id,order_id=excluded.order_id,marketplace=excluded.marketplace,
-               price_usd=excluded.price_usd,price_amount=excluded.price_amount,
-               currency_id=excluded.currency_id,url=excluded.url,expiry=excluded.expiry,
-               updated_at=excluded.updated_at`,
-          )
-          .bind(
-            generation,
-            row.contract,
-            row.token_id,
-            row.asset,
-            row.order_id,
-            row.marketplace,
-            row.price_usd,
-            row.price_amount,
-            row.currency,
-            row.url,
-            row.expiry,
-            row.updated_at,
-          ),
-      ),
-    );
-    return;
-  }
   if (table === "trades") {
     const assets = [...new Set(rows.map((row) => nullableString(row.asset)).filter((asset) => asset != null))];
     const addresses = [
@@ -188,27 +124,6 @@ export async function reconcileCoreProjection(
   if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(highWater) || highWater < 0) {
     throw new Error(`invalid reconciliation state for ${table}`);
   }
-  let generation: number | null = null;
-  if (table === "emblem_listings") {
-    const previouslyComplete = (await state(env.CORE_DB, `${prefix}:complete`)) === "1";
-    if (previouslyComplete) {
-      cursor = 0;
-      highWater = 0;
-    }
-    const savedGeneration = previouslyComplete ? null : await state(env.CORE_DB, `${prefix}:generation`);
-    generation =
-      savedGeneration == null
-        ? Number.parseInt((await state(env.CORE_DB, "emblem_listings_generation")) ?? "0", 10) + 1
-        : Number.parseInt(savedGeneration, 10);
-    if (!Number.isSafeInteger(generation) || generation < 1) throw new Error("invalid listing generation");
-    if (savedGeneration == null)
-      await env.CORE_DB.batch([
-        setState(env.CORE_DB, `${prefix}:generation`, generation),
-        setState(env.CORE_DB, `${prefix}:cursor`, 0),
-        setState(env.CORE_DB, `${prefix}:high_water`, 0),
-        setState(env.CORE_DB, `${prefix}:complete`, 0),
-      ]);
-  }
   if (highWater === 0 || cursor >= highWater) {
     highWater = Number(
       (
@@ -222,7 +137,6 @@ export async function reconcileCoreProjection(
         setState(env.CORE_DB, `${prefix}:high_water`, highWater),
         setState(env.CORE_DB, `${prefix}:complete`, 1),
       ];
-      if (generation != null) completed.push(setState(env.CORE_DB, "emblem_listings_generation", generation));
       await env.CORE_DB.batch(completed);
       return { table, processed: 0, cursor, high_water: highWater, caught_up: true };
     }
@@ -235,14 +149,13 @@ export async function reconcileCoreProjection(
   const page = await env.DB.prepare(`SELECT rowid,* FROM "${table}" WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT ?`)
     .bind(cursor, highWater, Math.max(1, Math.min(rowsPerPage, 500)))
     .all<SourceRow>();
-  await writeRows(env.CORE_DB, table, page.results, generation);
+  await writeRows(env.CORE_DB, table, page.results);
   cursor = page.results.length > 0 ? Number(page.results.at(-1)?.rowid ?? cursor) : highWater;
   const caughtUp = cursor >= highWater;
   const progress = [
     setState(env.CORE_DB, `${prefix}:cursor`, cursor),
     setState(env.CORE_DB, `${prefix}:complete`, caughtUp ? 1 : 0),
   ];
-  if (caughtUp && generation != null) progress.push(setState(env.CORE_DB, "emblem_listings_generation", generation));
   await env.CORE_DB.batch(progress);
   return { table, processed: page.results.length, cursor, high_water: highWater, caught_up: caughtUp };
 }

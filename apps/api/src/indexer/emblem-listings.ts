@@ -1,26 +1,13 @@
-/**
- * Emblem-vault LISTINGS — the live Ethereum asks for the NFTs that wrap Counterparty cards, so the Radar can
- * say "buyable now on ETH." Source: the Sequence Marketplace API (ListCollectiblesWithLowestListing), which
- * aggregates OpenSea / Blur / Magic Eden orders for our registered Emblem collections and prices each in USD
- * directly (priceUSD). Each listed token maps to its wrapped Counterparty asset via emblem_vaults(token_id →
- * contents_asset). Bounded + resumable: a rotating subset of contracts per call, upsert live asks, prune
- * stale/expired ones. Requires SEQUENCE_ACCESS_KEY; no-ops without it (so the rest of the cron is unaffected).
- */
+/** Live asks for Ethereum NFTs that wrap Counterparty assets, sourced from Sequence Marketplace. */
 import type { Env } from "#api/env";
 import { fetchSequenceListingsPage } from "#api/integrations/sequence";
-import {
-  getIndexerState as getState,
-  getIndexerStateStringArray,
-  setIndexerState as setState,
-} from "#api/indexer/state";
+import { getCoreStateInt, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
 
-const MAX_PAGES_PER_CONTRACT = 5; // includeEmpty=false returns only listed tokens, so this is plenty
-const CONTRACTS_PER_RUN = 6; // rotate through all ~36 Emblem contracts over several hourly runs
-const MAP_CHUNK = 90; // stay under D1's 100 bound-param cap on the token_id IN-list
+const MAX_PAGES_PER_CONTRACT = 5;
+const CONTRACTS_PER_RUN = 6;
+const MAP_CHUNK = 90;
 
-// The lowest-listing order fields we read (Sequence webrpc Order — services/marketplace/marketplace.gen.go).
-// A live ask flattened to what emblem_listings stores (asset resolved separately, in a batched lookup).
-interface Ask {
+export interface Ask {
   tokenId: string;
   orderId: string | null;
   marketplace: string;
@@ -30,108 +17,159 @@ interface Ask {
   expiry: number;
 }
 
-/** Sweep one contract's active listings across pages; returns the flattened live asks. */
+export interface ListingRow extends Ask {
+  assetId: number | null;
+}
+
+/** A contract sweep is accepted only when every provider page is present. */
 async function sweepContract(key: string, contract: string): Promise<Ask[]> {
   const asks: Ask[] = [];
   for (let page = 1; page <= MAX_PAGES_PER_CONTRACT; page++) {
-    const resp = await fetchSequenceListingsPage(key, contract, page);
-    for (const it of resp.collectibles ?? []) {
-      const o = it.listing ?? it.order;
-      const tokenId = o?.tokenId ?? it.metadata?.tokenId;
-      if (!o || !tokenId || o.priceUSD == null) continue;
-      const expiry = o.validUntil ? Math.floor(new Date(o.validUntil).getTime() / 1000) : 0;
+    const response = await fetchSequenceListingsPage(key, contract, page);
+    for (const item of response.collectibles ?? []) {
+      const order = item.listing ?? item.order;
+      const tokenId = order?.tokenId ?? item.metadata?.tokenId;
+      if (!order || !tokenId || order.priceUSD == null) continue;
+      const expiry = order.validUntil ? Math.floor(new Date(order.validUntil).getTime() / 1000) : 0;
       asks.push({
         tokenId: String(tokenId),
-        orderId: o.orderId ?? null,
-        marketplace: String(o.marketplace ?? ""),
-        priceUsd: o.priceUSD,
-        priceAmount: o.priceAmount ?? null,
-        currency: (o.priceCurrencyAddress ?? "").toLowerCase(),
+        orderId: order.orderId ?? null,
+        marketplace: String(order.marketplace ?? ""),
+        priceUsd: order.priceUSD,
+        priceAmount: order.priceAmount ?? null,
+        currency: (order.priceCurrencyAddress ?? "").toLowerCase(),
         expiry: Number.isFinite(expiry) ? expiry : 0,
       });
     }
-    if (!resp.page?.more) break;
+    if (!response.page?.more) return asks;
   }
-  return asks;
+  throw new Error(`Sequence listing sweep exceeded ${MAX_PAGES_PER_CONTRACT} pages for ${contract}`);
 }
 
-/** Resolve each token to its wrapped Counterparty asset (emblem_vaults), in bound-param-safe chunks. */
-async function mapAssets(env: Env, contract: string, tokenIds: string[]): Promise<Map<string, string | null>> {
-  const map = new Map<string, string | null>();
-  for (let i = 0; i < tokenIds.length; i += MAP_CHUNK) {
-    const chunk = tokenIds.slice(i, i + MAP_CHUNK);
-    const rows = await env.DB.prepare(
-      `SELECT token_id, contents_asset FROM emblem_vaults WHERE contract=? AND token_id IN (${chunk.map(() => "?").join(",")})`,
-    )
+async function resolveAssets(db: D1Database, contract: string, asks: Ask[]): Promise<ListingRow[]> {
+  const assetByToken = new Map<string, number>();
+  const tokenIds = [...new Set(asks.map((ask) => ask.tokenId))];
+  for (let index = 0; index < tokenIds.length; index += MAP_CHUNK) {
+    const chunk = tokenIds.slice(index, index + MAP_CHUNK);
+    const rows = await db
+      .prepare(
+        `SELECT vault.token_id,vault.contents_asset_id
+         FROM emblem_vaults vault
+         JOIN address_dictionary contract ON contract.address_id=vault.contract_id
+        WHERE contract.address=? AND vault.token_id IN (${chunk.map(() => "?").join(",")})`,
+      )
       .bind(contract, ...chunk)
-      .all<{ token_id: string; contents_asset: string | null }>();
-    for (const r of rows.results ?? []) map.set(String(r.token_id), r.contents_asset ?? null);
+      .all<{ token_id: string; contents_asset_id: number | null }>();
+    for (const row of rows.results)
+      if (row.contents_asset_id != null) assetByToken.set(row.token_id, row.contents_asset_id);
   }
-  return map;
+  return asks.map((ask) => ({ ...ask, assetId: assetByToken.get(ask.tokenId) ?? null }));
 }
 
-/** One bounded step: sweep the next rotating batch of Emblem contracts and refresh their live asks. */
-export async function crawlEmblemListings(env: Env): Promise<Record<string, unknown>> {
-  const key = (env as { SEQUENCE_ACCESS_KEY?: string }).SEQUENCE_ACCESS_KEY;
-  if (!key) return { skipped: "no SEQUENCE_ACCESS_KEY" };
-  const contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
-  if (!contracts.length) return { skipped: "no contracts" };
+/** Reconcile one fully observed contract inside an unpublished generation. */
+export async function upsertEmblemListingContract(
+  db: D1Database,
+  generation: number,
+  contract: string,
+  rows: ListingRow[],
+  observedAt: number,
+): Promise<void> {
+  const addresses = [...new Set([contract, ...rows.map((row) => row.currency)].filter((value) => value !== ""))];
+  for (let index = 0; index < addresses.length; index += 80)
+    await db.batch(
+      addresses
+        .slice(index, index + 80)
+        .map((address) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address)),
+    );
+  for (let index = 0; index < rows.length; index += 50)
+    await db.batch(
+      rows.slice(index, index + 50).map((row) =>
+        db
+          .prepare(
+            `INSERT INTO emblem_listings(
+         generation,contract_id,token_id,asset_id,order_id,marketplace,price_usd,
+         price_amount,currency_id,url,expiry,updated_at
+       ) VALUES(
+         ?,(SELECT address_id FROM address_dictionary WHERE address=?),?,?,?,?,?,?,
+         (SELECT address_id FROM address_dictionary WHERE address=?),?,?,?
+       )
+       ON CONFLICT(generation,contract_id,token_id) DO UPDATE SET
+         asset_id=excluded.asset_id,order_id=excluded.order_id,marketplace=excluded.marketplace,
+         price_usd=excluded.price_usd,price_amount=excluded.price_amount,
+         currency_id=excluded.currency_id,url=excluded.url,expiry=excluded.expiry,
+         updated_at=excluded.updated_at`,
+          )
+          .bind(
+            generation,
+            contract,
+            row.tokenId,
+            row.assetId,
+            row.orderId,
+            row.marketplace,
+            row.priceUsd,
+            row.priceAmount,
+            row.currency || null,
+            `https://opensea.io/assets/ethereum/${contract}/${row.tokenId}`,
+            row.expiry,
+            observedAt,
+          ),
+      ),
+    );
+  // Rows not observed in this complete sweep are genuine delistings. The generation is not public yet.
+  await db
+    .prepare(
+      `DELETE FROM emblem_listings
+      WHERE generation=? AND contract_id=(SELECT address_id FROM address_dictionary WHERE address=?)
+        AND updated_at<>?`,
+    )
+    .bind(generation, contract, observedAt)
+    .run();
+}
 
-  const now = Math.floor(Date.now() / 1000);
-  const start = parseInt((await getState(env.DB, "emblem_listings_ci")) || "0", 10) % contracts.length;
-  let upserts = 0,
-    live = 0,
-    failed = 0;
+/** Advance a complete generation in bounded contract groups; publish only after every contract succeeds. */
+export async function crawlEmblemListings(env: Env): Promise<Record<string, unknown>> {
+  if (!env.SEQUENCE_ACCESS_KEY) return { skipped: "no SEQUENCE_ACCESS_KEY" };
+  const contracts = await getCoreStateStringArray(env.CORE_DB, "emblem_contracts");
+  if (contracts.length === 0) return { skipped: "no contracts" };
+
+  const published = await getCoreStateInt(env.CORE_DB, "emblem_listings_generation");
+  const generation = published + 1;
+  let cursor = await getCoreStateInt(env.CORE_DB, "emblem_listings_contract_cursor");
+  if (cursor < 0 || cursor >= contracts.length) cursor = 0;
+  let live = 0;
+  let upserts = 0;
   const processed: string[] = [];
 
-  for (let n = 0; n < CONTRACTS_PER_RUN; n++) {
-    const contract = contracts[(start + n) % contracts.length].toLowerCase();
+  for (let count = 0; count < CONTRACTS_PER_RUN && cursor < contracts.length; count++) {
+    const contract = contracts[cursor].toLowerCase();
     let asks: Ask[];
     try {
-      asks = await sweepContract(key, contract);
-    } catch {
-      // Preserve the last known rows for a contract when its refresh fails. Pruning here would
-      // turn a transient upstream outage into false delistings for every token in the contract.
-      failed++;
-      continue;
+      asks = await sweepContract(env.SEQUENCE_ACCESS_KEY, contract);
+    } catch (error) {
+      return { generation, processed: processed.length, failed: contract, error: String(error).slice(0, 120) };
     }
-    live += asks.length;
-    if (asks.length) {
-      const assetOf = await mapAssets(
-        env,
-        contract,
-        asks.map((a) => a.tokenId),
-      );
-      const stmts = asks.map((a) =>
-        env.DB.prepare(
-          `INSERT INTO emblem_listings (token_id,contract,asset,order_id,marketplace,price_usd,price_amount,currency,url,expiry,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(contract,token_id) DO UPDATE SET asset=excluded.asset, order_id=excluded.order_id,
-           marketplace=excluded.marketplace, price_usd=excluded.price_usd, price_amount=excluded.price_amount,
-           currency=excluded.currency, url=excluded.url, expiry=excluded.expiry, updated_at=excluded.updated_at`,
-        ).bind(
-          a.tokenId,
-          contract,
-          assetOf.get(a.tokenId) ?? null,
-          a.orderId,
-          a.marketplace,
-          a.priceUsd,
-          a.priceAmount,
-          a.currency,
-          `https://opensea.io/assets/ethereum/${contract}/${a.tokenId}`,
-          a.expiry,
-          now,
-        ),
-      );
-      await env.DB.batch(stmts);
-      upserts += stmts.length;
-    }
-    // prune this contract's delisted rows (not refreshed this sweep)
-    await env.DB.prepare(`DELETE FROM emblem_listings WHERE contract=? AND updated_at < ?`).bind(contract, now).run();
+    const observedAt = Date.now();
+    const rows = await resolveAssets(env.CORE_DB, contract, asks);
+    await upsertEmblemListingContract(env.CORE_DB, generation, contract, rows, observedAt);
+    cursor++;
+    await setCoreState(env.CORE_DB, "emblem_listings_contract_cursor", cursor);
+    live += rows.length;
+    upserts += rows.length;
     processed.push(contract);
   }
-  // global expiry sweep
-  await env.DB.prepare(`DELETE FROM emblem_listings WHERE expiry > 0 AND expiry < ?`).bind(now).run();
-  await setState(env.DB, "emblem_listings_ci", String((start + CONTRACTS_PER_RUN) % contracts.length));
-  return { processed: processed.length, failed, live, upserts };
+
+  if (cursor >= contracts.length) {
+    await env.CORE_DB.batch([
+      env.CORE_DB.prepare(
+        `INSERT INTO core_state(key,value) VALUES('emblem_listings_generation',?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ).bind(String(generation)),
+      env.CORE_DB.prepare(
+        `INSERT INTO core_state(key,value) VALUES('emblem_listings_contract_cursor','0')
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ),
+      env.CORE_DB.prepare(`DELETE FROM emblem_listings WHERE generation<?`).bind(generation),
+    ]);
+  }
+  return { generation, published: cursor >= contracts.length, processed: processed.length, live, upserts };
 }

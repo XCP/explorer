@@ -127,19 +127,22 @@ async function maybeCrawlEmblemSales(env: Env): Promise<void> {
 // Emblem contracts per call, so a full listings refresh completes over a handful of hours without hammering
 // the API. No-ops until SEQUENCE_ACCESS_KEY is set / Sequence has indexed orders for a contract.
 async function maybeCrawlEmblemListings(env: Env): Promise<void> {
-  const tip = Number((await env.DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-  const last = parseInt(
+  const tip =
+    Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
+  const last = Number.parseInt(
     (
-      await env.DB.prepare(`SELECT value FROM indexer_state WHERE key='emblem_listings_synced_blk'`).first<{
+      await env.CORE_DB.prepare(`SELECT value FROM core_state WHERE key='emblem_listings_synced_blk'`).first<{
         value: string;
       }>()
-    )?.value || "0",
+    )?.value ?? "0",
     10,
   );
   if (tip - last < 6) return; // ~1 hour of blocks
-  await crawlEmblemListings(env);
-  await env.DB.prepare(
-    `INSERT INTO indexer_state (key,value) VALUES ('emblem_listings_synced_blk',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+  const result = await crawlEmblemListings(env);
+  if ("failed" in result || "skipped" in result) return;
+  await env.CORE_DB.prepare(
+    `INSERT INTO core_state(key,value) VALUES('emblem_listings_synced_blk',?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   )
     .bind(String(tip))
     .run();

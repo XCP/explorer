@@ -65,6 +65,7 @@ export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]
         WHERE generation=COALESCE((SELECT CAST(value AS INTEGER) FROM core_state
                                     WHERE key='emblem_listings_generation'),0)
           AND asset_id IS NOT NULL AND price_usd IS NOT NULL
+          AND (expiry=0 OR expiry>=unixepoch())
      ),
      emb AS (
        SELECT asset_id,ask_usd,marketplace,url FROM emb_ranked WHERE rank=1
