@@ -3,6 +3,7 @@ import type {
   DestructionRow,
   DispenserRow,
   DividendRow,
+  FairmintRow,
   IssuanceRow,
   PoolMatchRow,
   PoolRow,
@@ -394,6 +395,30 @@ export function listCoreAssetPoolMatches(
       WHERE match.forward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
          OR match.backward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
       ORDER BY match.block_index DESC,match.event_index DESC LIMIT ?2 OFFSET ?3`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetFairmints(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<FairmintRow[]> {
+  return q<FairmintRow>(
+    db,
+    `SELECT lower(hex(fairmint.tx_hash)) tx_hash,fairmint.block_index,fairmint.block_time,
+            source.address source,lower(hex(parent.tx_hash)) fairminter_tx_hash,dictionary.asset,
+            fairmint.earn_quantity,fairmint.paid_quantity,coalesce(details.divisible,0) divisible,fairmint.status
+       FROM fairmints fairmint
+       LEFT JOIN transactions parent ON parent.tx_index=fairmint.fairminter_tx_index
+       LEFT JOIN address_dictionary source ON source.address_id=fairmint.source_id
+       LEFT JOIN asset_dictionary dictionary ON dictionary.asset_id=fairmint.asset_id
+       LEFT JOIN assets details ON details.asset_id=fairmint.asset_id
+      WHERE fairmint.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+      ORDER BY fairmint.block_index DESC,fairmint.event_index DESC LIMIT ? OFFSET ?`,
     asset,
     limit,
     offset,

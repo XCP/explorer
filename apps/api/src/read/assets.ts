@@ -76,6 +76,7 @@ import {
   listCoreAssetDestructions,
   listCoreAssetPools,
   listCoreAssetPoolMatches,
+  listCoreAssetFairmints,
 } from "#api/queries/core-assets";
 import { coreReadsEnabled } from "#api/read/core-read-gate";
 import { listCoreAssetOrders } from "#api/queries/core-orders";
@@ -372,7 +373,10 @@ assets.get("/v2/assets/:asset/orders", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/fairmints", async (c) => {
-  const rows = await listAssetFairmints(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetFairmints(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetFairmints(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
