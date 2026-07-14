@@ -19,7 +19,6 @@ const sourceRoot = fileURLToPath(new URL("../src", import.meta.url));
 const oldDatabaseBudget = new Map([
   ["admin.ts", 16],
   ["index.ts", 21],
-  ["indexer/asset-supply.ts", 18],
   ["indexer/core-manifest.ts", 2],
   ["indexer/core-parity.ts", 3],
   ["indexer/core-projections.ts", 5],
