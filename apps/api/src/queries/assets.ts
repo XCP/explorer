@@ -535,24 +535,3 @@ export function assetActiveUsers(db: D1Database, asset: string, limit: number): 
 export function latestUsdRate(db: D1Database, currency: string): Promise<{ usd: number } | null> {
   return one<{ usd: number }>(db, `SELECT usd FROM prices WHERE currency=? ORDER BY day DESC LIMIT 1`, currency);
 }
-
-/** The "is this cap table real?" signal subset. */
-export type AssetQualitySignals = Pick<
-  AssetSignalsRow,
-  | "holders"
-  | "top1_pct"
-  | "trades"
-  | "self_trade_pct"
-  | "low_quality"
-  | "holder_breadth"
-  | "pct_creator_holders"
-  | "burned_pct"
->;
-
-export function assetQualitySignals(db: D1Database, asset: string): Promise<AssetQualitySignals | null> {
-  return one<AssetQualitySignals>(
-    db,
-    `SELECT holders, top1_pct, trades, self_trade_pct, low_quality, holder_breadth, pct_creator_holders, burned_pct FROM asset_signals WHERE asset=?`,
-    asset,
-  );
-}

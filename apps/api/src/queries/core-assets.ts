@@ -265,6 +265,20 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
   );
 }
 
+export function coreAssetQualitySignals(
+  db: D1Database,
+  asset: string,
+): Promise<Pick<AssetSignalsRow, "holders" | "top1_pct" | "trades" | "self_trade_pct" | "low_quality" | "holder_breadth" | "pct_creator_holders" | "burned_pct"> | null> {
+  return one(
+    db,
+    `SELECT signal.holders,signal.top1_pct,signal.trades,signal.self_trade_pct,signal.low_quality,
+      signal.holder_breadth,signal.pct_creator_holders,signal.burned_pct
+      FROM asset_dictionary dictionary JOIN asset_signals signal ON signal.asset_id=dictionary.asset_id
+      WHERE dictionary.asset=?1`,
+    asset,
+  );
+}
+
 export async function coreAssetTags(db: D1Database, asset: string): Promise<string[]> {
   const rows = await q<{ tag: string }>(
     db,

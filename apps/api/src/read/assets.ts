@@ -26,7 +26,6 @@ import {
   assetReviewDistribution,
   assetReviewTop,
   assetValidation,
-  assetQualitySignals,
   latestUsdRate,
   assetActivityVenues,
   assetActivityFlows,
@@ -56,6 +55,7 @@ import {
   listCoreSubassets,
   coreAssetCohort,
   coreAssetCollectionCohort,
+  coreAssetQualitySignals,
 } from "#api/queries/core-assets";
 import { listAssetOrders } from "#api/queries/core-orders";
 
@@ -542,7 +542,7 @@ assets.get("/v2/assets/:asset/related", async (c) => {
 // low-quality flag (self-trade% wash + curated), NOT trades-per-trader (which mistakes genuine liquidity
 // like PEPECASH/XCP for manipulation).
 assets.get("/v2/assets/:asset/quality", async (c) => {
-  const r = await assetQualitySignals(c.env.DB, c.req.param("asset").toUpperCase());
+  const r = await coreAssetQualitySignals(c.env.CORE_DB, c.req.param("asset").toUpperCase());
   if (!r) return J(c, { result: { holders: 0, trades: 0, low_quality: 0 } }, 300);
   return J(
     c,

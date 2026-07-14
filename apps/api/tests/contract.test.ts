@@ -321,6 +321,13 @@ test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (
   assert.ok(!("tags" in j.result) || Array.isArray(j.result.tags), "RAREPEPE.tags must be an array when present");
 });
 
+test("contract: GET /v2/assets/RAREPEPE/quality — compact quality signals", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const j = await getJson("/v2/assets/RAREPEPE/quality");
+  assertShape(j.result, { holders: "number", trades: "number", low_quality: "number", wash_suspect: "boolean" }, "quality.");
+  assert.ok(j.result.holders > 0, "RAREPEPE should have holders");
+});
+
 test("contract: GET /v2/assets/XCP — AssetDetail native reduced path", async (t) => {
   if (skipUnlessLive(t)) return;
   // Native assets cache for five minutes; bust that cache so a post-deploy contract run validates the
