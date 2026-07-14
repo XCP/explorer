@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { reconcileCoreProjection } from "#api/indexer/core-projections";
 import { upsertEmblemVaultIdentities } from "#api/indexer/emblem";
+import { priceOf, upsertEmblemSales } from "#api/indexer/emblem-sales";
 
 class PreparedStatement {
   private binds: unknown[] = [];
@@ -111,12 +112,79 @@ test("compact Emblem identity writes converge without erasing resolved fields", 
     { tokenId: "7", contract: "contract", btcAddress: null, resolved: 0, firstSeen: 200 },
   ]);
   assert.deepEqual(
-    { ...compact.prepare(
-      `SELECT vault.token_id,contract.address contract,btc.address btc_address,vault.resolved,vault.first_seen
+    {
+      ...compact
+        .prepare(
+          `SELECT vault.token_id,contract.address contract,btc.address btc_address,vault.resolved,vault.first_seen
        FROM emblem_vaults vault LEFT JOIN address_dictionary contract ON contract.address_id=vault.contract_id
        LEFT JOIN address_dictionary btc ON btc.address_id=vault.btc_address_id`,
-    ).get() },
+        )
+        .get(),
+    },
     { token_id: "7", contract: "contract", btc_address: "btc", resolved: 1, first_seen: 100 },
+  );
+});
+
+test("compact Emblem sales preserve exact prices and converge provider corrections", async () => {
+  const { compact } = databases();
+  assert.deepEqual(
+    priceOf({
+      sellerFee: { amount: "9007199254740993" },
+      protocolFee: { amount: "7", tokenAddress: "0xTOKEN" },
+    }),
+    { raw: "9007199254741000", token: "0xtoken" },
+  );
+  await upsertEmblemSales(d1(compact), [
+    {
+      transactionHash: "0xabc",
+      logIndex: 1,
+      contract: "contract",
+      tokenId: "7",
+      priceRaw: "10",
+      tokenAddress: "eth",
+      marketplace: "old",
+      buyer: "buyer",
+      seller: "seller",
+      blockNumber: 99,
+    },
+  ]);
+  await upsertEmblemSales(d1(compact), [
+    {
+      transactionHash: "0xabc",
+      logIndex: 1,
+      contract: "contract",
+      tokenId: "7",
+      priceRaw: "12",
+      tokenAddress: "eth",
+      marketplace: "corrected",
+      buyer: "buyer",
+      seller: null,
+      blockNumber: 100,
+    },
+  ]);
+  assert.deepEqual(
+    {
+      ...compact
+        .prepare(
+          `SELECT sale.price_raw,sale.marketplace,sale.block_number,contract.address contract,
+            token.address token,buyer.address buyer,seller.address seller
+       FROM emblem_sales sale
+       JOIN address_dictionary contract ON contract.address_id=sale.contract_id
+       JOIN address_dictionary token ON token.address_id=sale.token_address_id
+       LEFT JOIN address_dictionary buyer ON buyer.address_id=sale.buyer_id
+       LEFT JOIN address_dictionary seller ON seller.address_id=sale.seller_id`,
+        )
+        .get(),
+    },
+    {
+      price_raw: "12",
+      marketplace: "corrected",
+      block_number: 100,
+      contract: "contract",
+      token: "eth",
+      buyer: "buyer",
+      seller: null,
+    },
   );
 });
 
@@ -132,23 +200,6 @@ test("incremental projection reconciliation upserts bounded pages and dictionary
     INSERT INTO address_dictionary(address) VALUES('old-contract');
     INSERT INTO emblem_listings VALUES(0,1,'stale',NULL,NULL,'market',1,'1',NULL,'old',999,1);
   `);
-
-  assert.equal((await reconcileCoreProjection(env, "emblem_sales")).caught_up, true);
-  assert.deepEqual(
-    {
-      ...compact
-        .prepare(
-          `SELECT c.address contract,t.address token,b.address buyer,v.address seller
-           FROM emblem_sales e
-           JOIN address_dictionary c ON c.address_id=e.contract_id
-           JOIN address_dictionary t ON t.address_id=e.token_address_id
-           JOIN address_dictionary b ON b.address_id=e.buyer_id
-           JOIN address_dictionary v ON v.address_id=e.seller_id`,
-        )
-        .get(),
-    },
-    { contract: "contract", token: "token", buyer: "buyer", seller: "seller" },
-  );
 
   assert.equal((await reconcileCoreProjection(env, "emblem_listings")).caught_up, true);
   assert.equal(

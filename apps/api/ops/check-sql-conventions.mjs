@@ -18,13 +18,12 @@ const violations = [];
 const sourceRoot = fileURLToPath(new URL("../src", import.meta.url));
 const oldDatabaseBudget = new Map([
   ["admin.ts", 17],
-  ["index.ts", 24],
+  ["index.ts", 21],
   ["indexer/asset-supply.ts", 18],
   ["indexer/core-manifest.ts", 2],
   ["indexer/core-parity.ts", 3],
   ["indexer/core-projections.ts", 7],
   ["indexer/emblem-listings.ts", 8],
-  ["indexer/emblem-sales.ts", 9],
   ["indexer/emblem-transfers.ts", 11],
   ["indexer/graph-eval.ts", 2],
   ["indexer/holder-cohesion.ts", 4],

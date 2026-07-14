@@ -1,27 +1,11 @@
-/**
- * Emblem vault SALES history — the full secondary-market history of the Ethereum NFTs that wrap Counterparty
- * cards. Source: Alchemy getNFTSales per Emblem contract (every ETH-marketplace sale, not just the last one).
- * Each sale is attributed to the wrapped Counterparty asset via emblem_vaults(token_id -> btc_address -> its balance).
- * Feeds the unified sales stream as the 'emblem' venue (priced in ETH). Resumable per-contract pageKey cursor.
- */
+/** Compact-native Emblem Vault secondary-market history from Alchemy. */
 import type { Env } from "#api/env";
 import { fetchAlchemyNftSales } from "#api/integrations/alchemy-sales";
-import {
-  getIndexerState as getState,
-  getIndexerStateStringArray,
-  setIndexerState as setState,
-} from "#api/indexer/state";
+import { getCoreState, getCoreStateInt, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
 
-const MAX_PAGES_PER_RUN = 25; // big contracts need ~46 pages; complete them in fewer cron cycles
+const MAX_PAGES_PER_RUN = 25;
 
-export const EMBLEM_SALES_DDL = `CREATE TABLE IF NOT EXISTS emblem_sales (
-  tx_hash TEXT, log_index INTEGER, contract TEXT, token_id TEXT,
-  price_raw TEXT, token_addr TEXT, marketplace TEXT,
-  buyer TEXT, seller TEXT, block_number INTEGER, PRIMARY KEY (tx_hash, log_index))`;
-export const EMBLEM_SALES_IDX = `CREATE INDEX IF NOT EXISTS idx_emblem_sales_token ON emblem_sales(contract, token_id)`;
-
-// Minimal shape of an Alchemy getNFTSales row — only the fields this crawler reads.
-interface NftSale {
+export interface NftSale {
   sellerFee?: { amount?: string; tokenAddress?: string };
   protocolFee?: { amount?: string; tokenAddress?: string };
   royaltyFee?: { amount?: string; tokenAddress?: string };
@@ -34,88 +18,137 @@ interface NftSale {
   blockNumber?: number;
 }
 
-// Total paid = seller proceeds + protocol + royalty fees, kept as the RAW integer string in the payment
-// token's own units (Alchemy leaves symbol/decimals blank, so we normalize downstream with a token map).
-// Native-ETH sales report no tokenAddress -> label 'ETH'. BigInt so we never lose precision.
-function priceOf(s: NftSale): { raw: string; token: string } {
-  let amt = 0n;
-  for (const f of [s?.sellerFee, s?.protocolFee, s?.royaltyFee]) {
-    try {
-      if (f?.amount) amt += BigInt(f.amount);
-    } catch {
-      /* skip */
-    }
-  }
-  const token = (s?.sellerFee?.tokenAddress || s?.protocolFee?.tokenAddress || "ETH").toLowerCase();
-  return { raw: amt.toString(), token };
+export interface EmblemSaleRow {
+  transactionHash: string;
+  logIndex: number;
+  contract: string;
+  tokenId: string;
+  priceRaw: string;
+  tokenAddress: string;
+  marketplace: string | null;
+  buyer: string | null;
+  seller: string | null;
+  blockNumber: number | null;
 }
 
-/** One bounded, resumable step: pull the next pages of getNFTSales for the active Emblem contract. */
-export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown>> {
-  const key = (env as { ALCHEMY_KEY?: string }).ALCHEMY_KEY;
-  if (!key) return { skipped: "no ALCHEMY_KEY" };
-  await env.DB.prepare(EMBLEM_SALES_DDL).run();
-  await env.DB.prepare(EMBLEM_SALES_IDX).run();
-
-  const contracts = await getIndexerStateStringArray(env.DB, "emblem_contracts");
-  if (!contracts.length) return { skipped: "no contracts" };
-  let ci = parseInt((await getState(env.DB, "emblem_sales_idx")) || "0", 10);
-  if (ci >= contracts.length) ci = 0;
-  const contract = contracts[ci];
-  let cursor = (await getState(env.DB, `emblem_sales_cur_${contract}`)) || "";
-
-  const out: {
-    contract: string;
-    inserted: number;
-    pages: number;
-    err?: string;
-    sample?: NftSale;
-    contract_done?: boolean;
-  } = { contract, inserted: 0, pages: 0 };
-  for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
-    let d: { nftSales?: NftSale[]; pageKey?: string };
+/** Sum Alchemy's exact integer fee components without floating-point loss. */
+export function priceOf(sale: NftSale): { raw: string; token: string } {
+  let amount = 0n;
+  for (const fee of [sale.sellerFee, sale.protocolFee, sale.royaltyFee]) {
     try {
-      d = await fetchAlchemyNftSales(key, contract, cursor);
-    } catch (e) {
-      out.err = String(e).slice(0, 80);
+      if (fee?.amount) amount += BigInt(fee.amount);
+    } catch {
+      // One malformed optional fee must not discard an otherwise valid sale.
+    }
+  }
+  const token = (sale.sellerFee?.tokenAddress || sale.protocolFee?.tokenAddress || "ETH").toLowerCase();
+  return { raw: amount.toString(), token };
+}
+
+/** Store normalized identities and converge mutable provider fields on replay. */
+export async function upsertEmblemSales(db: D1Database, rows: EmblemSaleRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const addresses = [
+    ...new Set(
+      rows
+        .flatMap((row) => [row.contract, row.tokenAddress, row.buyer, row.seller])
+        .filter((value): value is string => value != null),
+    ),
+  ];
+  for (let index = 0; index < addresses.length; index += 80)
+    await db.batch(
+      addresses
+        .slice(index, index + 80)
+        .map((address) => db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address)),
+    );
+  for (let index = 0; index < rows.length; index += 50)
+    await db.batch(
+      rows.slice(index, index + 50).map((row) =>
+        db
+          .prepare(
+            `INSERT INTO emblem_sales(
+         tx_hash,log_index,contract_id,token_id,price_raw,token_address_id,marketplace,
+         buyer_id,seller_id,block_number
+       ) VALUES(
+         ?,?,(SELECT address_id FROM address_dictionary WHERE address=?),?,?,
+         (SELECT address_id FROM address_dictionary WHERE address=?),?,
+         (SELECT address_id FROM address_dictionary WHERE address=?),
+         (SELECT address_id FROM address_dictionary WHERE address=?),?
+       )
+       ON CONFLICT(tx_hash,log_index) DO UPDATE SET
+         contract_id=excluded.contract_id,token_id=excluded.token_id,price_raw=excluded.price_raw,
+         token_address_id=excluded.token_address_id,marketplace=excluded.marketplace,
+         buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,block_number=excluded.block_number`,
+          )
+          .bind(
+            row.transactionHash,
+            row.logIndex,
+            row.contract,
+            row.tokenId,
+            row.priceRaw,
+            row.tokenAddress,
+            row.marketplace,
+            row.buyer,
+            row.seller,
+            row.blockNumber,
+          ),
+      ),
+    );
+}
+
+function normalizeSales(contract: string, sales: NftSale[]): EmblemSaleRow[] {
+  return sales.flatMap((sale) => {
+    if (typeof sale.transactionHash !== "string" || sale.transactionHash === "" || sale.tokenId == null) return [];
+    const price = priceOf(sale);
+    return [
+      {
+        transactionHash: sale.transactionHash,
+        logIndex: sale.logIndex ?? 0,
+        contract,
+        tokenId: String(sale.tokenId),
+        priceRaw: price.raw,
+        tokenAddress: price.token,
+        marketplace: sale.marketplace ?? null,
+        buyer: sale.buyerAddress ?? null,
+        seller: sale.sellerAddress ?? null,
+        blockNumber: sale.blockNumber ?? null,
+      },
+    ];
+  });
+}
+
+/** Pull a bounded set of pages for the active contract and resume from compact-owned state. */
+export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown>> {
+  if (!env.ALCHEMY_KEY) return { skipped: "no ALCHEMY_KEY" };
+  const contracts = await getCoreStateStringArray(env.CORE_DB, "emblem_contracts");
+  if (contracts.length === 0) return { skipped: "no contracts" };
+  let contractIndex = await getCoreStateInt(env.CORE_DB, "emblem_sales_idx");
+  if (contractIndex < 0 || contractIndex >= contracts.length) contractIndex = 0;
+  const contract = contracts[contractIndex];
+  let cursor = (await getCoreState(env.CORE_DB, `emblem_sales_cur_${contract}`)) ?? "";
+  const out: Record<string, unknown> & { inserted: number; pages: number } = {
+    contract,
+    inserted: 0,
+    pages: 0,
+  };
+  for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
+    let page: { nftSales?: NftSale[]; pageKey?: string };
+    try {
+      page = await fetchAlchemyNftSales(env.ALCHEMY_KEY, contract, cursor);
+    } catch (error) {
+      out.err = String(error).slice(0, 80);
       break;
     }
-    const sales: NftSale[] = d?.nftSales || [];
-    if (!out.sample && sales[0]) out.sample = sales[0]; // surface the raw shape on the first run
-    // Alchemy's asc pagination CAN return an empty page mid-stream with a valid pageKey — do NOT
-    // treat empty as end-of-contract (that bug capped the main contract at 30k of its 45k sales).
-    // Only a MISSING pageKey means we've reached the end.
-    if (!sales.length) {
-      cursor = d?.pageKey || "";
-      if (!cursor) break;
-      continue;
-    }
-    const stmts = sales.map((s) => {
-      const p = priceOf(s);
-      return env.DB.prepare(
-        `INSERT OR IGNORE INTO emblem_sales (tx_hash,log_index,contract,token_id,price_raw,token_addr,marketplace,buyer,seller,block_number)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(
-        s.transactionHash,
-        s.logIndex ?? 0,
-        contract,
-        String(s.tokenId),
-        p.raw,
-        p.token,
-        s.marketplace ?? null,
-        s.buyerAddress ?? null,
-        s.sellerAddress ?? null,
-        s.blockNumber ?? null,
-      );
-    });
-    for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-    out.inserted += sales.length;
-    cursor = d?.pageKey || "";
+    const rows = normalizeSales(contract, page.nftSales ?? []);
+    await upsertEmblemSales(env.CORE_DB, rows);
+    out.inserted += rows.length;
+    // Alchemy can return an empty intermediate page with a valid cursor; only a missing cursor is terminal.
+    cursor = page.pageKey ?? "";
     if (!cursor) break;
   }
-  await setState(env.DB, `emblem_sales_cur_${contract}`, cursor);
+  await setCoreState(env.CORE_DB, `emblem_sales_cur_${contract}`, cursor);
   if (!cursor) {
-    await setState(env.DB, "emblem_sales_idx", String((ci + 1) % contracts.length));
+    await setCoreState(env.CORE_DB, "emblem_sales_idx", (contractIndex + 1) % contracts.length);
     out.contract_done = true;
   }
   return out;

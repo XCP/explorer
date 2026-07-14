@@ -1,11 +1,7 @@
 import type { Env } from "#api/env";
 import { hashToBytes, parseUtxoHolder } from "#api/indexer/compact-codec";
 
-export const CORE_INCREMENTAL_PROJECTIONS = [
-  "emblem_listings",
-  "emblem_sales",
-  "trades",
-] as const;
+export const CORE_INCREMENTAL_PROJECTIONS = ["emblem_listings", "trades"] as const;
 export type CoreIncrementalProjection = (typeof CORE_INCREMENTAL_PROJECTIONS)[number];
 export const CORE_RECENT_PROJECTIONS = [
   "address_signals",
@@ -170,54 +166,6 @@ async function writeRows(
     );
     return;
   }
-
-  const addresses = [
-    ...new Set(
-      rows
-        .flatMap((row) => [row.contract, row.token_addr, row.buyer, row.seller])
-        .map(nullableString)
-        .filter((address) => address != null),
-    ),
-  ];
-  if (addresses.length > 0) {
-    await db.batch(
-      addresses.map((address) =>
-        db.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(address),
-      ),
-    );
-  }
-  await db.batch(
-    rows.map((row) =>
-      db
-        .prepare(
-          `INSERT INTO emblem_sales(
-             tx_hash,log_index,contract_id,token_id,price_raw,token_address_id,marketplace,
-             buyer_id,seller_id,block_number
-           ) VALUES(
-             ?,?,(SELECT address_id FROM address_dictionary WHERE address=?),?,?,
-             (SELECT address_id FROM address_dictionary WHERE address=?),?,
-             (SELECT address_id FROM address_dictionary WHERE address=?),
-             (SELECT address_id FROM address_dictionary WHERE address=?),?
-           )
-           ON CONFLICT(tx_hash,log_index) DO UPDATE SET
-             contract_id=excluded.contract_id,token_id=excluded.token_id,price_raw=excluded.price_raw,
-             token_address_id=excluded.token_address_id,marketplace=excluded.marketplace,
-             buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,block_number=excluded.block_number`,
-        )
-        .bind(
-          row.tx_hash,
-          row.log_index,
-          row.contract,
-          row.token_id,
-          row.price_raw,
-          row.token_addr,
-          row.marketplace,
-          row.buyer,
-          row.seller,
-          row.block_number,
-        ),
-    ),
-  );
 }
 
 /** Reconcile one immutable-high-water page. Source rows are never deleted; mutable keys converge through UPSERT. */
