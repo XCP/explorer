@@ -48,45 +48,36 @@ export async function buildIssuerCollections(env: Env): Promise<Record<string, u
   let tagged = 0;
   for (const c of ISSUER_COLLECTIONS) {
     const meta = issuerCollectionMeta(c);
-    const res = await env.DB.prepare(
-      `INSERT INTO tags (entity_type,entity_id,tag,source,meta)
-       SELECT 'asset', asset, ?, 'issuer', ? FROM assets WHERE issuer=?
-       ON CONFLICT(entity_type,entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+    await env.CORE_DB.prepare(
+      `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
+       SELECT 'asset',asset.asset FROM assets state
+       JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
+       JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+       WHERE issuer.address=?`,
+    )
+      .bind(c.issuer)
+      .run();
+    const res = await env.CORE_DB.prepare(
+      `INSERT INTO tags(entity_id,tag,source,meta)
+       SELECT entity.entity_id,?,'issuer',? FROM assets state
+       JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
+       JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+       JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=asset.asset
+       WHERE issuer.address=?
+       ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
     )
       .bind(c.tag, meta, c.issuer)
       .run();
     tagged += res?.meta?.rows_written ?? 0;
-    const compactReady = await env.CORE_DB.prepare(
-      `SELECT count(*) ready FROM core_state WHERE key IN ('build_complete','import_complete') AND value='1'`,
-    ).first<{ ready: number }>();
-    if (Number(compactReady?.ready ?? 0) === 2) {
-      const assets = await env.DB.prepare(`SELECT asset FROM assets WHERE issuer=? ORDER BY asset`)
-        .bind(c.issuer)
-        .all<{ asset: string }>();
-      for (let index = 0; index < assets.results.length; index += 80) {
-        const page = assets.results.slice(index, index + 80);
-        await env.CORE_DB.batch(
-          page.map((row) =>
-            env.CORE_DB.prepare(
-              `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`,
-            ).bind(row.asset),
-          ),
-        );
-        await env.CORE_DB.batch(
-          page.map((row) =>
-            env.CORE_DB.prepare(
-              `INSERT INTO tags(entity_id,tag,source,meta)
-               SELECT entity_id,?,'issuer',? FROM entity_dictionary
-                WHERE entity_type='asset' AND entity_key=?
-               ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
-            ).bind(c.tag, meta, row.asset),
-          ),
-        );
-      }
-    }
     // reconcile removals (e.g. an asset transferred away) — scoped to this issuer's assets, so never a full wipe.
-    await env.DB.prepare(
-      `DELETE FROM tags WHERE source='issuer' AND tag=? AND entity_id NOT IN (SELECT asset FROM assets WHERE issuer=?)`,
+    await env.CORE_DB.prepare(
+      `DELETE FROM tags AS tag WHERE tag.source='issuer' AND tag.tag=? AND NOT EXISTS (
+         SELECT 1 FROM entity_dictionary entity
+         JOIN asset_dictionary asset ON asset.asset=entity.entity_key
+         JOIN assets state ON state.asset_id=asset.asset_id
+         JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+         WHERE entity.entity_id=tag.entity_id AND entity.entity_type='asset' AND issuer.address=?
+       )`,
     )
       .bind(c.tag, c.issuer)
       .run();
