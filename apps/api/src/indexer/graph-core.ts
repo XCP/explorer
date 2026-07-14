@@ -441,3 +441,153 @@ export function entityFinalizeStatements(generation: number): string[] {
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ];
 }
+
+const ENTITY_EXCLUDED = (addressId: string) => `(
+  EXISTS (SELECT 1 FROM address_signals signal WHERE signal.address_id=${addressId}
+           AND (signal.is_exchange=1 OR signal.is_burn=1 OR signal.is_deposit=1
+                OR signal.is_emblem_vault=1 OR signal.likely_service=1))
+  OR EXISTS (SELECT 1 FROM address_dictionary address JOIN curated
+              ON curated.key=address.address AND curated.kind IN ('exchange','burn')
+             WHERE address.address_id=${addressId})
+)`;
+
+const entityCountEdges = (
+  generation: number,
+  select: (lo: number, hi: number) => string,
+): string[] =>
+  blockWindows.map(
+    ([lo, hi]) =>
+      `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight,edge_block)
+       ${select(lo, hi)}
+       ON CONFLICT(generation,source_entity_id,destination_entity_id) DO UPDATE SET
+         weight=graph_edges.weight+excluded.weight,
+         edge_block=MAX(graph_edges.edge_block,excluded.edge_block)`,
+  );
+
+/** Ensure every canonical address and asset has the polymorphic identity consumed by graph relations. */
+export const ENTITY_IDENTITY_STATEMENTS = [
+  `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
+   SELECT 'address',address FROM address_dictionary`,
+  `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
+   SELECT 'asset',asset FROM asset_dictionary`,
+] as const;
+
+/** Build one isolated normalized edge generation from the compact protocol tables. */
+export function entityEdgeStatements(generation: number, bipartite = false): string[] {
+  const statements: string[] = [
+    ...entityCountEdges(
+      generation,
+      (lo, hi) => `SELECT ${generation},source.entity_id,destination.entity_id,COUNT(*),MAX(send.block_index)
+       FROM sends send
+       JOIN address_dictionary source_address ON source_address.address_id=send.source_id
+       JOIN entity_dictionary source ON source.entity_type='address'
+         AND source.entity_key=source_address.address
+       JOIN address_dictionary destination_address ON destination_address.address_id=send.destination_id
+       JOIN entity_dictionary destination ON destination.entity_type='address'
+         AND destination.entity_key=destination_address.address
+       WHERE send.block_index>${lo} AND send.block_index<=${hi}
+         AND send.source_id IS NOT NULL AND send.destination_id IS NOT NULL
+         AND send.source_id<>send.destination_id AND NOT ${ENTITY_EXCLUDED("send.source_id")}
+         AND NOT EXISTS (SELECT 1 FROM dispensers dispenser
+                          WHERE dispenser.source_id=send.destination_id AND dispenser.origin_id=send.source_id)
+       GROUP BY source.entity_id,destination.entity_id`,
+    ),
+    ...entityCountEdges(
+      generation,
+      (lo, hi) => `SELECT ${generation},source.entity_id,destination.entity_id,COUNT(*),MAX(match.block_index)
+       FROM order_matches match
+       JOIN address_dictionary source_address ON source_address.address_id=match.tx0_address_id
+       JOIN entity_dictionary source ON source.entity_type='address' AND source.entity_key=source_address.address
+       JOIN address_dictionary destination_address ON destination_address.address_id=match.tx1_address_id
+       JOIN entity_dictionary destination ON destination.entity_type='address'
+         AND destination.entity_key=destination_address.address
+       WHERE match.block_index>${lo} AND match.block_index<=${hi}
+         AND match.tx0_address_id IS NOT NULL AND match.tx1_address_id IS NOT NULL
+         AND match.tx0_address_id<>match.tx1_address_id AND NOT ${ENTITY_EXCLUDED("match.tx0_address_id")}
+       GROUP BY source.entity_id,destination.entity_id`,
+    ),
+    ...entityCountEdges(
+      generation,
+      (lo, hi) => `SELECT ${generation},source.entity_id,destination.entity_id,COUNT(*),MAX(match.block_index)
+       FROM order_matches match
+       JOIN address_dictionary source_address ON source_address.address_id=match.tx1_address_id
+       JOIN entity_dictionary source ON source.entity_type='address' AND source.entity_key=source_address.address
+       JOIN address_dictionary destination_address ON destination_address.address_id=match.tx0_address_id
+       JOIN entity_dictionary destination ON destination.entity_type='address'
+         AND destination.entity_key=destination_address.address
+       WHERE match.block_index>${lo} AND match.block_index<=${hi}
+         AND match.tx0_address_id IS NOT NULL AND match.tx1_address_id IS NOT NULL
+         AND match.tx0_address_id<>match.tx1_address_id AND NOT ${ENTITY_EXCLUDED("match.tx1_address_id")}
+       GROUP BY source.entity_id,destination.entity_id`,
+    ),
+    ...entityCountEdges(
+      generation,
+      (lo, hi) => `SELECT ${generation},buyer.entity_id,operator.entity_id,COUNT(*),MAX(dispense.block_index)
+       FROM dispenses dispense LEFT JOIN dispensers dispenser ON dispenser.tx_index=dispense.dispenser_tx_index
+       JOIN address_dictionary buyer_address ON buyer_address.address_id=dispense.destination_id
+       JOIN entity_dictionary buyer ON buyer.entity_type='address' AND buyer.entity_key=buyer_address.address
+       JOIN address_dictionary operator_address
+         ON operator_address.address_id=COALESCE(dispenser.origin_id,dispense.source_id)
+       JOIN entity_dictionary operator ON operator.entity_type='address' AND operator.entity_key=operator_address.address
+       WHERE dispense.block_index>${lo} AND dispense.block_index<=${hi}
+         AND dispense.destination_id IS NOT NULL AND COALESCE(dispenser.origin_id,dispense.source_id) IS NOT NULL
+         AND dispense.destination_id<>COALESCE(dispenser.origin_id,dispense.source_id)
+         AND NOT ${ENTITY_EXCLUDED("dispense.destination_id")}
+       GROUP BY buyer.entity_id,operator.entity_id`,
+    ),
+  ];
+  for (const [lo, hi] of entityWindows)
+    statements.push(
+      `UPDATE graph_edges SET weight=LN(1+weight) WHERE generation=${generation}
+       AND source_entity_id>${lo} AND source_entity_id<=${hi}`,
+    );
+  statements.push(
+    `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight)
+     SELECT ${generation},asset_entity.entity_id,issuer_entity.entity_id,${BIP_W}
+     FROM assets state
+     JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
+     JOIN entity_dictionary asset_entity ON asset_entity.entity_type='asset' AND asset_entity.entity_key=asset.asset
+     JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+     JOIN entity_dictionary issuer_entity ON issuer_entity.entity_type='address' AND issuer_entity.entity_key=issuer.address
+     WHERE state.issuer_id IS NOT NULL
+     ON CONFLICT(generation,source_entity_id,destination_entity_id) DO NOTHING`,
+    `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight)
+     SELECT ${generation},issuer_entity.entity_id,asset_entity.entity_id,${BIP_W}
+     FROM assets state
+     JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
+     JOIN entity_dictionary asset_entity ON asset_entity.entity_type='asset' AND asset_entity.entity_key=asset.asset
+     JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
+     JOIN entity_dictionary issuer_entity ON issuer_entity.entity_type='address' AND issuer_entity.entity_key=issuer.address
+     WHERE state.issuer_id IS NOT NULL AND NOT ${ENTITY_EXCLUDED("state.issuer_id")}
+     ON CONFLICT(generation,source_entity_id,destination_entity_id) DO NOTHING`,
+  );
+  if (bipartite)
+    for (const [lo, hi] of balWindows) {
+      statements.push(
+        `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight)
+         SELECT ${generation},holder_entity.entity_id,asset_entity.entity_id,${BIP_W}
+         FROM balances balance
+         JOIN address_dictionary holder ON holder.address_id=balance.address_id
+         JOIN entity_dictionary holder_entity ON holder_entity.entity_type='address'
+           AND holder_entity.entity_key=holder.address
+         JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id
+         JOIN entity_dictionary asset_entity ON asset_entity.entity_type='asset' AND asset_entity.entity_key=asset.asset
+         WHERE balance.balance_id>${lo} AND balance.balance_id<=${hi}
+           AND balance.address_id IS NOT NULL AND CAST(balance.quantity AS INTEGER)>0
+           AND NOT ${ENTITY_EXCLUDED("balance.address_id")}
+         ON CONFLICT(generation,source_entity_id,destination_entity_id) DO NOTHING`,
+        `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight)
+         SELECT ${generation},asset_entity.entity_id,holder_entity.entity_id,${BIP_W}
+         FROM balances balance
+         JOIN address_dictionary holder ON holder.address_id=balance.address_id
+         JOIN entity_dictionary holder_entity ON holder_entity.entity_type='address'
+           AND holder_entity.entity_key=holder.address
+         JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id
+         JOIN entity_dictionary asset_entity ON asset_entity.entity_type='asset' AND asset_entity.entity_key=asset.asset
+         WHERE balance.balance_id>${lo} AND balance.balance_id<=${hi}
+           AND balance.address_id IS NOT NULL AND CAST(balance.quantity AS INTEGER)>0
+         ON CONFLICT(generation,source_entity_id,destination_entity_id) DO NOTHING`,
+      );
+    }
+  return statements;
+}

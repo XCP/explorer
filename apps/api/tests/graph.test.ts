@@ -26,6 +26,8 @@ import {
   entityNodeStatements,
   entityRankInitStatements,
   entitySeedApplyStatement,
+  ENTITY_IDENTITY_STATEMENTS,
+  entityEdgeStatements,
   K,
   DISTRUST_SLOT,
   PASSES,
@@ -309,5 +311,58 @@ test("normalized entity graph preserves Min-k sybil resistance within one genera
   assert.ok(trust("T2") > 0, "held-out connected node is reached from every seed subset");
   assert.equal(trust("A0"), 0, "single-subset attacker still receives zero Min-k trust");
   assert.equal(trust("P1"), 0, "unseeded petal receives zero trust");
+  db.close();
+});
+
+test("normalized edge builder resolves compact relationships through canonical entities", () => {
+  const generation = 3;
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
+    CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,
+      UNIQUE(entity_type,entity_key));
+    CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY,is_exchange INTEGER DEFAULT 0,
+      is_burn INTEGER DEFAULT 0,is_deposit INTEGER DEFAULT 0,is_emblem_vault INTEGER DEFAULT 0,
+      likely_service INTEGER DEFAULT 0);
+    CREATE TABLE curated(kind TEXT,key TEXT,PRIMARY KEY(kind,key));
+    CREATE TABLE sends(source_id INTEGER,destination_id INTEGER,block_index INTEGER);
+    CREATE TABLE order_matches(tx0_address_id INTEGER,tx1_address_id INTEGER,block_index INTEGER);
+    CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,source_id INTEGER,origin_id INTEGER);
+    CREATE TABLE dispenses(dispenser_tx_index INTEGER,source_id INTEGER,destination_id INTEGER,block_index INTEGER);
+    CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,issuer_id INTEGER);
+    CREATE TABLE balances(balance_id INTEGER PRIMARY KEY,address_id INTEGER,asset_id INTEGER,quantity TEXT);
+    CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,
+      weight REAL,edge_block INTEGER,PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
+    INSERT INTO address_dictionary VALUES(1,'alice'),(2,'bob'),(3,'buyer'),(4,'operator'),(5,'exchange');
+    INSERT INTO asset_dictionary VALUES(10,'CARD');
+    INSERT INTO address_signals(address_id,is_exchange) VALUES(5,1);
+    INSERT INTO sends VALUES(1,2,100),(1,2,101),(5,2,102);
+    INSERT INTO order_matches VALUES(1,3,103);
+    INSERT INTO dispensers VALUES(40,4,4);
+    INSERT INTO dispenses VALUES(40,4,3,104);
+    INSERT INTO assets VALUES(10,1);
+  `);
+  for (const sql of ENTITY_IDENTITY_STATEMENTS) db.exec(sql);
+  for (const sql of entityEdgeStatements(generation)) db.exec(sql);
+  const edges = db
+    .prepare(`SELECT source.entity_key source,destination.entity_key destination,ROUND(edge.weight,6) weight
+      FROM graph_edges edge
+      JOIN entity_dictionary source ON source.entity_id=edge.source_entity_id
+      JOIN entity_dictionary destination ON destination.entity_id=edge.destination_entity_id
+      WHERE edge.generation=? ORDER BY source.entity_key,destination.entity_key`)
+    .all(generation);
+  assert.deepEqual(
+    edges.map((row) => ({ ...row })),
+    [
+      { source: "CARD", destination: "alice", weight: 0.693147 },
+      { source: "alice", destination: "CARD", weight: 0.693147 },
+      { source: "alice", destination: "bob", weight: 1.098612 },
+      { source: "alice", destination: "buyer", weight: 0.693147 },
+      { source: "buyer", destination: "alice", weight: 0.693147 },
+      { source: "buyer", destination: "operator", weight: 0.693147 },
+    ],
+  );
+  assert.equal(edges.some((row) => row.source === "exchange"), false, "excluded infrastructure cannot endorse");
   db.close();
 });
