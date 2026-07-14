@@ -24,6 +24,7 @@ import { counterpartyJson } from "#api/integrations/counterparty";
 import { hashToBytes } from "#api/indexer/compact-codec";
 import { getIndexerStateStringArray } from "#api/indexer/state";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
+import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
 import { applyCompactBalanceDeltas } from "#api/indexer/balance-store";
 import { reconcileDispenseIdentities } from "#api/indexer/dispense-identity";
 
@@ -394,6 +395,7 @@ export async function syncEvents(env: Env, opts: { maxEvents?: number } = {}): P
           ...ctx.ledgerStmts,
         ]);
         await applyCompactBalanceDeltas(env.CORE_DB, ctx.balDelta, followingWindow);
+        await rebuildCoreAssetSignals(env.CORE_DB, ctx.compact.identities.assets);
         await reconcileDispenseIdentities(
           env.DB,
           env.CORE_DB,

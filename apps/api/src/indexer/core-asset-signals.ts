@@ -1,0 +1,98 @@
+const UPSERT = `INSERT INTO asset_signals(
+  asset_id,issuer_id,divisible,locked,holders,top1_pct,burned_pct,trades,self_trade_pct,
+  first_trade_blk,last_trade_blk,dispenses,dispense_btc,distinct_traders,distinct_dispensers,
+  age_blocks,recent_events,recency_blocks,max_dispense_btc,max_trade_xcp,supply,
+  max_realized_usd,distinct_dispense_buyers,max_dispense_btc_clean,emblem_trades
+)
+WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+  tip AS (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1),
+  holding AS (
+    SELECT count(CASE WHEN coalesce(signal.is_burn,0)=0 THEN 1 END) holders,
+      coalesce(max(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END)
+        *100.0/nullif(sum(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END),0),0) top1_pct,
+      coalesce(sum(CASE WHEN signal.is_burn=1 THEN CAST(balance.quantity AS REAL) ELSE 0 END)
+        *100.0/nullif(sum(CAST(balance.quantity AS REAL)),0),0) burned_pct
+    FROM balances balance LEFT JOIN address_signals signal ON signal.address_id=balance.address_id
+    WHERE balance.asset_id=(SELECT asset_id FROM identity) AND balance.address_id IS NOT NULL
+      AND CAST(balance.quantity AS INTEGER)>0
+  ),
+  matches AS (
+    SELECT tx0_address_id a0,tx1_address_id a1,block_index,
+      CASE WHEN backward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+           THEN CAST(backward_quantity AS REAL) END xcp
+    FROM order_matches WHERE forward_asset_id=(SELECT asset_id FROM identity)
+    UNION ALL
+    SELECT tx0_address_id,tx1_address_id,block_index,
+      CASE WHEN forward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+           THEN CAST(forward_quantity AS REAL) END
+    FROM order_matches WHERE backward_asset_id=(SELECT asset_id FROM identity)
+  ),
+  market AS (
+    SELECT count(*) trades,
+      coalesce(sum(CASE WHEN a0=a1 THEN 1.0 ELSE 0 END)*100.0/nullif(count(*),0),0) self_trade_pct,
+      coalesce(min(block_index),0) first_trade_blk,coalesce(max(block_index),0) last_trade_blk,
+      (SELECT count(DISTINCT address_id) FROM (
+        SELECT a0 address_id FROM matches UNION ALL SELECT a1 FROM matches
+      )) distinct_traders,
+      coalesce(max(xcp)/1e8,0) max_trade_xcp
+    FROM matches
+  ),
+  dispense AS (
+    SELECT count(*) dispenses,coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) dispense_btc,
+      coalesce(max(CAST(item.btc_amount AS REAL))/1e8,0) max_dispense_btc,
+      count(DISTINCT CASE WHEN item.destination_id<>item.source_id
+        AND item.destination_id<>coalesce(dispenser.origin_id,item.source_id) THEN item.destination_id END)
+        distinct_dispense_buyers,
+      coalesce(max(CASE WHEN item.destination_id<>item.source_id
+        AND item.destination_id<>coalesce(dispenser.origin_id,item.source_id)
+        THEN CAST(item.btc_amount AS REAL) END)/1e8,0) max_dispense_btc_clean
+    FROM dispenses item LEFT JOIN dispensers dispenser ON dispenser.tx_index=item.dispenser_tx_index
+    WHERE item.asset_id=(SELECT asset_id FROM identity)
+  ),
+  recent AS (
+    SELECT count(*) recent_events FROM (
+      SELECT block_index FROM matches WHERE block_index>=(SELECT block_index-52560 FROM tip)
+      UNION ALL SELECT block_index FROM dispenses
+        WHERE asset_id=(SELECT asset_id FROM identity) AND block_index>=(SELECT block_index-52560 FROM tip)
+    )
+  ),
+  sales AS (
+    SELECT coalesce(max(usd_value),0) max_realized_usd,
+      coalesce(sum(CASE WHEN venue='emblem' THEN 1 ELSE 0 END),0) emblem_trades
+    FROM trades WHERE asset_id=(SELECT asset_id FROM identity)
+  )
+SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,
+  holding.holders,holding.top1_pct,holding.burned_pct,
+  market.trades,market.self_trade_pct,market.first_trade_blk,market.last_trade_blk,
+  dispense.dispenses,dispense.dispense_btc,market.distinct_traders,
+  (SELECT count(DISTINCT coalesce(origin_id,source_id)) FROM dispensers
+    WHERE asset_id=identity.asset_id),
+  coalesce((SELECT block_index FROM tip)-asset.first_issuance_block_index,0),recent.recent_events,
+  coalesce((SELECT block_index FROM tip)-market.last_trade_blk,0),dispense.max_dispense_btc,
+  market.max_trade_xcp,coalesce(CAST(asset.supply_normalized AS REAL),0),sales.max_realized_usd,
+  dispense.distinct_dispense_buyers,dispense.max_dispense_btc_clean,sales.emblem_trades
+FROM identity LEFT JOIN assets asset ON asset.asset_id=identity.asset_id
+CROSS JOIN holding CROSS JOIN market CROSS JOIN dispense CROSS JOIN recent CROSS JOIN sales
+WHERE 1
+ON CONFLICT(asset_id) DO UPDATE SET
+  issuer_id=excluded.issuer_id,divisible=excluded.divisible,locked=excluded.locked,
+  holders=excluded.holders,top1_pct=excluded.top1_pct,burned_pct=excluded.burned_pct,
+  trades=excluded.trades,self_trade_pct=excluded.self_trade_pct,
+  first_trade_blk=excluded.first_trade_blk,last_trade_blk=excluded.last_trade_blk,
+  dispenses=excluded.dispenses,dispense_btc=excluded.dispense_btc,
+  distinct_traders=excluded.distinct_traders,distinct_dispensers=excluded.distinct_dispensers,
+  age_blocks=excluded.age_blocks,recent_events=excluded.recent_events,
+  recency_blocks=excluded.recency_blocks,max_dispense_btc=excluded.max_dispense_btc,
+  max_trade_xcp=excluded.max_trade_xcp,supply=excluded.supply,
+  max_realized_usd=excluded.max_realized_usd,
+  distinct_dispense_buyers=excluded.distinct_dispense_buyers,
+  max_dispense_btc_clean=excluded.max_dispense_btc_clean,emblem_trades=excluded.emblem_trades`;
+
+/** Refresh volatile asset features from canonical compact relations for identities touched by an event batch. */
+export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<string>): Promise<number> {
+  const unique = [...new Set(assets)];
+  for (let index = 0; index < unique.length; index += 40) {
+    await db.batch(unique.slice(index, index + 40).map((asset) => db.prepare(UPSERT).bind(asset)));
+  }
+  return unique.length;
+}
