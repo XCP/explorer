@@ -142,6 +142,44 @@ LEFT JOIN asset_dictionary asset ON asset.asset_id=fairmint.asset_id
 LEFT JOIN assets asset_state ON asset_state.asset_id=fairmint.asset_id
 ORDER BY fairmint.block_index DESC,fairmint.event_index DESC`;
 
+const BTCPAY_FEED_SQL = `WITH page AS (
+  SELECT event_index FROM btcpays ORDER BY block_index DESC,event_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(btcpay.tx_hash)) tx_hash,btcpay.block_index,btcpay.block_time,
+  source.address source,destination.address destination,
+  LOWER(HEX(match.tx0_hash)||'_'||HEX(match.tx1_hash)) order_match_id,
+  btcpay.btc_amount_normalized,btcpay.status
+FROM page JOIN btcpays btcpay ON btcpay.event_index=page.event_index
+LEFT JOIN address_dictionary source ON source.address_id=btcpay.source_id
+LEFT JOIN address_dictionary destination ON destination.address_id=btcpay.destination_id
+LEFT JOIN order_matches match ON match.tx0_index=btcpay.order_match_tx0_index
+  AND match.tx1_index=btcpay.order_match_tx1_index
+ORDER BY btcpay.block_index DESC,btcpay.event_index DESC`;
+
+const BET_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM bets ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(bet.tx_hash)) tx_hash,bet.block_index,bet.block_time,source.address source,
+  feed.address feed_address,bet.bet_type,bet.deadline,bet.wager_quantity,bet.counterwager_quantity,
+  bet.target_value,bet.leverage,bet.status
+FROM page JOIN bets bet ON bet.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=bet.source_id
+LEFT JOIN address_dictionary feed ON feed.address_id=bet.feed_address_id
+ORDER BY bet.block_index DESC,bet.tx_index DESC`;
+
+const BET_MATCH_FEED_SQL = `WITH page AS (
+  SELECT tx0_index,tx1_index FROM bet_matches
+  ORDER BY block_index DESC,tx0_index DESC,tx1_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(match.tx0_hash)||'_'||HEX(match.tx1_hash)) id,match.block_index,match.block_time,
+  tx0.address tx0_address,tx1.address tx1_address,feed.address feed_address,
+  match.forward_quantity,match.backward_quantity,match.status
+FROM page JOIN bet_matches match ON match.tx0_index=page.tx0_index AND match.tx1_index=page.tx1_index
+LEFT JOIN address_dictionary tx0 ON tx0.address_id=match.tx0_address_id
+LEFT JOIN address_dictionary tx1 ON tx1.address_id=match.tx1_address_id
+LEFT JOIN address_dictionary feed ON feed.address_id=match.feed_address_id
+ORDER BY match.block_index DESC,match.tx0_index DESC,match.tx1_index DESC`;
+
 export function listTransactions(
   db: D1Database,
   limit: number,
@@ -195,6 +233,18 @@ export function listFairminters(db: D1Database, limit: number, offset: number): 
 
 export function listFairmints(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["fairmints"][]> {
   return q<RecordRowMap["fairmints"]>(db, FAIRMINT_FEED_SQL, limit, offset);
+}
+
+export function listBtcpays(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["btcpays"][]> {
+  return q<RecordRowMap["btcpays"]>(db, BTCPAY_FEED_SQL, limit, offset);
+}
+
+export function listBets(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["bets"][]> {
+  return q<RecordRowMap["bets"]>(db, BET_FEED_SQL, limit, offset);
+}
+
+export function listBetMatches(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["bet_matches"][]> {
+  return q<RecordRowMap["bet_matches"]>(db, BET_MATCH_FEED_SQL, limit, offset);
 }
 
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even

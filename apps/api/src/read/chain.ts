@@ -19,6 +19,9 @@ import {
   listBroadcasts,
   listFairminters,
   listFairmints,
+  listBtcpays,
+  listBets,
+  listBetMatches,
   classifyTx,
   recordsByTxHash,
   dispensesOfDispenser,
@@ -341,6 +344,9 @@ function recordFeed(c: Ctx, kind: RecordKind, limit: number, offset: number) {
     case "broadcasts": return listBroadcasts(c.env.CORE_DB, limit, offset);
     case "fairminters": return listFairminters(c.env.CORE_DB, limit, offset);
     case "fairmints": return listFairmints(c.env.CORE_DB, limit, offset);
+    case "btcpays": return listBtcpays(c.env.CORE_DB, limit, offset);
+    case "bets": return listBets(c.env.CORE_DB, limit, offset);
+    case "bet_matches": return listBetMatches(c.env.CORE_DB, limit, offset);
     default: return listRecords(c.env.DB, kind, limit, offset);
   }
 }
