@@ -57,17 +57,22 @@ import {
 } from "#api/queries/assets";
 import { assetAccounting } from "#api/queries/asset-accounting";
 import { readAssetFeedCounts } from "#api/queries/asset-feed-counts";
+import { listCoreAssets } from "#api/queries/core-assets";
+import { coreReadsEnabled } from "#api/read/core-read-gate";
 
 export const assets = router();
 
 assets.get("/v2/assets", async (c) => {
-  const rows = await listAssets(c.env.DB, {
+  const filter = {
     query: c.req.query("query"),
     limit: lim(c),
     offset: off(c),
     sort: c.req.query("sort"),
     dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined,
-  });
+  } as const;
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssets(c.env.CORE_DB, filter)
+    : await listAssets(c.env.DB, filter);
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
