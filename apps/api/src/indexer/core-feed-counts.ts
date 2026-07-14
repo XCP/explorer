@@ -12,7 +12,9 @@ SELECT identity.asset_id,
   (SELECT COUNT(*) FROM dividends WHERE asset_id=identity.asset_id OR dividend_asset_id=identity.asset_id),
   (SELECT COUNT(*) FROM destructions WHERE asset_id=identity.asset_id),
   (SELECT COUNT(*) FROM pools WHERE asset_a_id=identity.asset_id OR asset_b_id=identity.asset_id OR lp_asset=identity.asset),
-  (SELECT COUNT(*) FROM assets WHERE asset_longname LIKE identity.asset||'.%'),
+  (SELECT COUNT(*) FROM assets
+   WHERE asset_longname>=identity.asset||'.'
+     AND asset_longname<identity.asset||'/'),
   unixepoch()
 FROM asset_dictionary identity WHERE identity.asset=?
 ON CONFLICT(asset_id) DO UPDATE SET

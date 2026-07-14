@@ -49,7 +49,12 @@ export const CORE_PARITY_RELATIONS: readonly CoreParityRelation[] = [
 ].sort((left, right) => left.target.localeCompare(right.target));
 
 function frontierSql(table: string, identity: string): string {
-  return `SELECT coalesce(CAST(min(${identity}) AS TEXT),'')||':'||coalesce(CAST(max(${identity}) AS TEXT),'')||':'||coalesce(CAST(min(block_index) AS TEXT),'')||':'||coalesce(CAST(max(block_index) AS TEXT),'') fingerprint FROM ${quote(table)}`;
+  const relation = quote(table);
+  return `SELECT
+    coalesce(CAST((SELECT ${identity} FROM ${relation} ORDER BY ${identity} ASC LIMIT 1) AS TEXT),'')||':'||
+    coalesce(CAST((SELECT ${identity} FROM ${relation} ORDER BY ${identity} DESC LIMIT 1) AS TEXT),'')||':'||
+    coalesce(CAST((SELECT block_index FROM ${relation} ORDER BY block_index ASC LIMIT 1) AS TEXT),'')||':'||
+    coalesce(CAST((SELECT block_index FROM ${relation} ORDER BY block_index DESC LIMIT 1) AS TEXT),'') fingerprint`;
 }
 
 /** Bounded identity checks for the canonical streams that drive replay. Counts alone cannot reveal an equal-sized
