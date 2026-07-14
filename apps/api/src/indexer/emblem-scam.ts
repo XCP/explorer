@@ -5,6 +5,42 @@ import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 const HEAVY_DAILY = 144;
 const HIGH_SUPPLY_DUMP = 1_000_000;
 
+export const ENSURE_VAULT_SIGNAL_ROWS_SQL = `INSERT OR IGNORE INTO address_signals(address_id)
+  SELECT btc_address_id FROM emblem_vaults WHERE btc_address_id IS NOT NULL
+  UNION SELECT cracker_address_id FROM emblem_vaults WHERE cracker_address_id IS NOT NULL`;
+
+export const REFRESH_VAULT_FLAGS_SQL = `UPDATE address_signals AS signal
+  SET is_emblem_vault=EXISTS(SELECT 1 FROM emblem_vaults vault WHERE vault.btc_address_id=signal.address_id)
+  WHERE signal.is_emblem_vault IS NOT
+    EXISTS(SELECT 1 FROM emblem_vaults vault WHERE vault.btc_address_id=signal.address_id)`;
+
+const VAULT_SCAM_CTE = `WITH attribution AS (
+  SELECT cracker_id,COUNT(*) scams FROM (
+    SELECT DISTINCT vault.cracker_address_id cracker_id,vault.contract_id,vault.token_id
+    FROM emblem_vaults vault
+    WHERE vault.cracker_address_id IS NOT NULL AND vault.cracked_at IS NOT NULL
+      AND EXISTS(SELECT 1 FROM emblem_sales sale
+        WHERE sale.contract_id=vault.contract_id AND sale.token_id=vault.token_id
+          AND (CASE WHEN sale.block_number>=15537394
+            THEN 1663224162+(sale.block_number-15537394)*12
+            ELSE CAST(1438269973+sale.block_number*13.15 AS INTEGER) END)>=vault.cracked_at)
+  ) GROUP BY cracker_id
+)`;
+
+export const ENSURE_VAULT_SCAM_SIGNAL_ROWS_SQL = `${VAULT_SCAM_CTE}
+  INSERT OR IGNORE INTO address_signals(address_id) SELECT cracker_id FROM attribution`;
+
+export const REFRESH_VAULT_SCAM_SIGNALS_SQL = `${VAULT_SCAM_CTE}
+  UPDATE address_signals AS signal SET vault_scams=COALESCE(
+    (SELECT scams FROM attribution WHERE cracker_id=signal.address_id),0)
+  WHERE signal.vault_scams IS NOT COALESCE(
+    (SELECT scams FROM attribution WHERE cracker_id=signal.address_id),0)`;
+
+export const REFRESH_LIKELY_SERVICE_SQL = `UPDATE address_signals SET likely_service=CASE
+  WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END
+  WHERE likely_service IS NOT CASE
+    WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END`;
+
 export const CLASSIFY_SCAM_SHELLS_SQL = `UPDATE emblem_vaults AS vault SET is_scam_shell=CASE WHEN
   vault.vault_kind='foreign' AND vault.claimed_asset_id IS NOT NULL AND COALESCE(vault.has_contents,0)=0
   AND EXISTS(SELECT 1 FROM emblem_vaults real
@@ -96,6 +132,8 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
   if (!force && tip - last < HEAVY_DAILY) return { skipped: "not due", tip, last };
 
   await env.CORE_DB.batch([
+    env.CORE_DB.prepare(ENSURE_VAULT_SIGNAL_ROWS_SQL),
+    env.CORE_DB.prepare(REFRESH_VAULT_FLAGS_SQL),
     env.CORE_DB.prepare(CLASSIFY_SCAM_SHELLS_SQL),
     env.CORE_DB.prepare(REFRESH_SCAM_SELLERS_SQL),
     env.CORE_DB.prepare(CLEAR_STALE_SCAM_SELLERS_SQL),
@@ -105,6 +143,9 @@ export async function buildScamAttribution(env: Env, force = false): Promise<Rec
   await env.CORE_DB.prepare(CLASSIFY_DUMP_VAULTS_SQL).run();
   await env.CORE_DB.prepare(ENSURE_DUMP_SIGNAL_ROWS_SQL).run();
   await env.CORE_DB.prepare(REFRESH_DUMP_SIGNALS_SQL).run();
+  await env.CORE_DB.prepare(ENSURE_VAULT_SCAM_SIGNAL_ROWS_SQL).run();
+  await env.CORE_DB.prepare(REFRESH_VAULT_SCAM_SIGNALS_SQL).run();
+  await env.CORE_DB.prepare(REFRESH_LIKELY_SERVICE_SQL).run();
   await setCoreState(env.CORE_DB, "scam_attrib_block", tip);
 
   const summary = await env.CORE_DB.prepare(

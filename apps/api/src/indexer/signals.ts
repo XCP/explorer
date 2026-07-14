@@ -34,7 +34,6 @@ import {
   type FeedCountColumn,
 } from "#api/indexer/asset-feed-counts";
 
-const EMBLEM_DDL = `CREATE TABLE IF NOT EXISTS emblem_vaults (token_id TEXT PRIMARY KEY, contract TEXT, btc_address TEXT, resolved INTEGER DEFAULT 0, first_seen INTEGER)`;
 const ADDR_DDL = `CREATE TABLE IF NOT EXISTS address_signals (
   address TEXT PRIMARY KEY, first_block INTEGER, last_block INTEGER DEFAULT 0, out_peers INTEGER DEFAULT 0,
   in_peers INTEGER DEFAULT 0, dispense_btc REAL DEFAULT 0, dispenses INTEGER DEFAULT 0,
@@ -469,57 +468,6 @@ const UNITS: FeatureUnit[] = [
     full: `INSERT INTO address_signals (address,disp_trust) SELECT COALESCE(o.origin,o.source) address, 2*LN(1+(MAX(o.block_index)-MIN(o.block_index))/4320.0)+1.5*LN(1+COUNT(DISTINCT o.tx_hash))+LN(1+COALESCE(MAX(b.buyers),0))+0.5*LN(1+COALESCE(MAX(b.dx),0)) FROM dispensers o LEFT JOIN (SELECT source,COUNT(*) dx,COUNT(DISTINCT destination) buyers FROM dispenses WHERE source IS NOT NULL GROUP BY source) b ON b.source=o.source WHERE COALESCE(o.origin,o.source) IS NOT NULL GROUP BY COALESCE(o.origin,o.source) ON CONFLICT(address) DO UPDATE SET disp_trust=excluded.disp_trust`,
     scoped: (ph) =>
       `INSERT INTO address_signals (address,disp_trust) SELECT COALESCE(o.origin,o.source) address, 2*LN(1+(MAX(o.block_index)-MIN(o.block_index))/4320.0)+1.5*LN(1+COUNT(DISTINCT o.tx_hash))+LN(1+COALESCE(MAX(b.buyers),0))+0.5*LN(1+COALESCE(MAX(b.dx),0)) FROM dispensers o LEFT JOIN (SELECT source,COUNT(*) dx,COUNT(DISTINCT destination) buyers FROM dispenses WHERE source IS NOT NULL GROUP BY source) b ON b.source=o.source WHERE COALESCE(o.origin,o.source) IN (${ph}) GROUP BY COALESCE(o.origin,o.source) ON CONFLICT(address) DO UPDATE SET disp_trust=excluded.disp_trust`,
-  },
-
-  // ===== ADDRESS · Emblem vault + service heuristic (crawler/heuristic driven → PERIODIC) =====
-  { name: "ddl_emblem", scope: "global", reads: [], periodic: true, full: EMBLEM_DDL },
-  {
-    name: "addr_is_emblem",
-    scope: "address",
-    reads: [],
-    periodic: true,
-    heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: `UPDATE address_signals SET is_emblem_vault = CASE WHEN address IN (SELECT btc_address FROM emblem_vaults) THEN 1 ELSE 0 END`,
-  },
-  // vault_scams: BAD-ACTOR count. A Counterparty Emblem vault is only a real sale if the card was still
-  // inside at sale time. When someone CRACKS one (sends OR sweeps the card back out — cracker_address, set
-  // by vault-contents.ts) and an Emblem sale then happens AFTER the crack, a buyer paid for an empty shell.
-  // We attribute that to the one on-chain identity we can see: the BTC address that received the cracked
-  // card. (Scope: only COUNTERPARTY-funded vaults. 'foreign' vaults — value on another chain — have no
-  // Counterparty crack and aren't counted.) Cracking to redeem your OWN card is fine — the EXISTS gate
-  // requires a post-crack sale, so an honest redeemer scores 0.
-  // Counts DISTINCT vaults (one scam op = one vault), reset-then-set so a reclassification can clear it.
-  {
-    name: "addr_vault_scam_reset",
-    scope: "address",
-    reads: [],
-    periodic: true,
-    full: `UPDATE address_signals SET vault_scams = 0 WHERE vault_scams > 0`,
-  },
-  {
-    name: "addr_vault_scams",
-    scope: "address",
-    reads: ["emblem_vaults", "emblem_sales"],
-    dependsOn: ["addr_vault_scam_reset"],
-    periodic: true,
-    full: `INSERT INTO address_signals (address,vault_scams)
-      SELECT ev.cracker_address, COUNT(DISTINCT ev.token_id) FROM emblem_vaults ev
-      WHERE ev.cracker_address IS NOT NULL AND ev.cracked_at IS NOT NULL
-        AND EXISTS (SELECT 1 FROM emblem_sales es WHERE es.token_id = ev.token_id AND es.contract = ev.contract
-          AND (CASE WHEN es.block_number >= 15537394 THEN 1663224162 + (es.block_number - 15537394) * 12
-                    ELSE CAST(1438269973 + es.block_number * 13.15 AS INTEGER) END) >= ev.cracked_at)
-      GROUP BY ev.cracker_address
-      ON CONFLICT(address) DO UPDATE SET vault_scams = excluded.vault_scams`,
-  },
-  // likely_service: HEURISTIC flag for service-like addresses (huge inbound, no creation, not already infra).
-  {
-    name: "addr_likely_service",
-    scope: "address",
-    reads: [],
-    dependsOn: ["addr_is_exchange", "addr_is_burn", "addr_is_emblem", "addr_iss", "addr_send_in"],
-    periodic: true,
-    heavyEveryBlocks: HEAVY_DAILY_BLOCKS,
-    full: `UPDATE address_signals SET likely_service = CASE WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END`,
   },
 
   // ===== ADDRESS · cross-protocol cohorts (stamps / SRC-20 / BTNS) =====
