@@ -1,4 +1,5 @@
-import type { AssetFeedCounts, AssetIndexRow, AssetSales } from "@xcp/shared/assets";
+import type { AssetFeedCounts, AssetIndexRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
+import type { DispenserRow, IssuanceRow, SendRow } from "@xcp/shared/records";
 import type { AssetRow, AssetSignalsRow } from "#api/storage-types";
 import type { AssetAccounting } from "#api/queries/asset-accounting";
 import { one, q } from "#api/db";
@@ -211,4 +212,94 @@ export async function coreAssetArtist(
   } catch {
     return null;
   }
+}
+
+export function listCoreAssetBalances(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<BalanceRow[]> {
+  return q<BalanceRow>(
+    db,
+    `SELECT CASE WHEN balance.address_id IS NOT NULL THEN address.address
+                 ELSE lower(hex(balance.utxo_tx_hash))||':'||balance.utxo_vout END holder,
+            balance.holder_type,balance.quantity,balance.quantity_normalized,
+            CASE WHEN signal.is_burn=1 THEN 'burn' WHEN signal.is_exchange=1 THEN 'exchange'
+                 WHEN signal.is_emblem_vault=1 THEN 'vault' WHEN signal.is_deposit=1 THEN 'deposit'
+                 WHEN signal.likely_service=1 THEN 'service' WHEN signal.survived_assets>=20 THEN 'creator'
+                 WHEN signal.assets_held>=500 THEN 'whale' WHEN signal.assets_held>=100 THEN 'collector' END role
+       FROM balances balance
+       LEFT JOIN address_dictionary address ON address.address_id=balance.address_id
+       LEFT JOIN address_signals signal ON signal.address_id=balance.address_id
+      WHERE balance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+        AND CAST(balance.quantity AS INTEGER)>0
+      ORDER BY CAST(balance.quantity AS INTEGER) DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetIssuances(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<IssuanceRow[]> {
+  return q<IssuanceRow>(
+    db,
+    `SELECT lower(hex(issuance.tx_hash)) tx_hash,issuance.block_index,issuance.block_time,
+            source.address source,issuer.address issuer,issuance.transfer,issuance.quantity_normalized,
+            issuance.description,issuance.asset_events,issuance.status
+       FROM issuances issuance
+       LEFT JOIN address_dictionary source ON source.address_id=issuance.source_id
+       LEFT JOIN address_dictionary issuer ON issuer.address_id=issuance.issuer_id
+      WHERE issuance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+      ORDER BY issuance.block_index DESC,issuance.event_index DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetSends(db: D1Database, asset: string, limit: number, offset: number): Promise<SendRow[]> {
+  return q<SendRow>(
+    db,
+    `SELECT lower(hex(send.tx_hash)) tx_hash,send.block_index,send.block_time,source.address source,
+            destination.address destination,dictionary.asset,send.quantity_normalized,send.send_type,send.status
+       FROM sends send
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=send.asset_id
+       LEFT JOIN address_dictionary source ON source.address_id=send.source_id
+       LEFT JOIN address_dictionary destination ON destination.address_id=send.destination_id
+      WHERE send.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+      ORDER BY send.block_index DESC,send.event_index DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetDispensers(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DispenserRow[]> {
+  return q<DispenserRow>(
+    db,
+    `SELECT lower(hex(dispenser.tx_hash)) tx_hash,dispenser.block_index,dispenser.block_time,
+            source.address source,dictionary.asset,dispenser.give_quantity_normalized,
+            dispenser.give_remaining_normalized,dispenser.satoshirate,dispenser.satoshirate_normalized,
+            dispenser.dispense_count,dispenser.status,round(coalesce(signal.disp_trust,0),1) operator_trust
+       FROM dispensers dispenser
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=dispenser.asset_id
+       JOIN address_dictionary source ON source.address_id=dispenser.source_id
+       LEFT JOIN address_signals signal ON signal.address_id=dispenser.source_id
+      WHERE dispenser.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+      ORDER BY dispenser.block_index DESC,dispenser.tx_index DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
 }
