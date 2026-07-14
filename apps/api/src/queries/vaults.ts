@@ -1,7 +1,6 @@
 /**
  * Vault queries — the SQL behind GET /v2/vaults (Emblem Vault overview). "What's inside" is always derived
- * from our OWN Counterparty ledger (balances/sends), never trusted from Emblem: `inVault` is the funded-box
- * join reused across the summary and most-vaulted-assets reads.
+ * from our OWN Counterparty ledger (balances/sends), never trusted from Emblem.
  */
 import type { VaultsPayload } from "@xcp/shared/emblem";
 import type { MetricPoint } from "@xcp/shared/stats";
@@ -12,9 +11,6 @@ type VaultTopAsset = VaultsPayload["top_assets"][number];
 type VaultTopAddr = VaultsPayload["top_funders"][number];
 type SaleClassRow = VaultsPayload["sales_by_class"][number];
 type TopSoldRow = VaultsPayload["top_sold_assets"][number];
-
-// a funded vault box: an Emblem vault BTC address currently holding a positive Counterparty balance.
-const inVault = `emblem_vaults e JOIN balances b ON b.address_id=e.btc_address_id AND CAST(b.quantity AS INTEGER)>0`;
 
 /** Honest vault census (Counterparty vs foreign) + the Emblem sales market (count + realized USD). */
 export function vaultSummary(db: D1Database): Promise<VaultSummary | null> {
@@ -66,7 +62,9 @@ export function vaultTopAssets(db: D1Database): Promise<VaultTopAsset[]> {
   return q<VaultTopAsset>(
     db,
     `SELECT dictionary.asset, asset.asset_longname, COUNT(DISTINCT b.address_id) vaults
-       FROM ${inVault}
+       FROM emblem_vaults e
+       CROSS JOIN balances b INDEXED BY idx_balances_address_asset
+         ON b.address_id=e.btc_address_id AND CAST(b.quantity AS INTEGER)>0
        JOIN asset_dictionary dictionary ON dictionary.asset_id=b.asset_id
        LEFT JOIN assets asset ON asset.asset_id=b.asset_id
       GROUP BY b.asset_id ORDER BY vaults DESC LIMIT 15`,
@@ -78,7 +76,8 @@ export function vaultTopFunders(db: D1Database): Promise<VaultTopAddr[]> {
   return q<VaultTopAddr>(
     db,
     `SELECT address.address, COUNT(DISTINCT send.destination_id) vaults
-       FROM sends send JOIN emblem_vaults vault ON vault.btc_address_id=send.destination_id
+       FROM emblem_vaults vault
+       CROSS JOIN sends send INDEXED BY idx_sends_destination ON send.destination_id=vault.btc_address_id
        JOIN address_dictionary address ON address.address_id=send.source_id
       GROUP BY send.source_id ORDER BY vaults DESC LIMIT 12`,
   );
@@ -89,7 +88,8 @@ export function vaultTopCrackers(db: D1Database): Promise<VaultTopAddr[]> {
   return q<VaultTopAddr>(
     db,
     `SELECT address.address, COUNT(DISTINCT send.source_id) vaults
-       FROM sends send JOIN emblem_vaults vault ON vault.btc_address_id=send.source_id
+       FROM emblem_vaults vault
+       CROSS JOIN sends send INDEXED BY idx_sends_source ON send.source_id=vault.btc_address_id
        JOIN address_dictionary address ON address.address_id=send.destination_id
       GROUP BY send.destination_id ORDER BY vaults DESC LIMIT 12`,
   );

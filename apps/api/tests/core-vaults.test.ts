@@ -27,6 +27,9 @@ test("compact vault dashboard derives custody, participants, and market activity
     );
     CREATE TABLE balances(address_id INTEGER,asset_id INTEGER,quantity TEXT);
     CREATE TABLE sends(event_index INTEGER PRIMARY KEY,source_id INTEGER,destination_id INTEGER);
+    CREATE INDEX idx_balances_address_asset ON balances(address_id,asset_id);
+    CREATE INDEX idx_sends_source ON sends(source_id);
+    CREATE INDEX idx_sends_destination ON sends(destination_id);
     CREATE TABLE trades(
       venue TEXT,asset_id INTEGER,usd_value REAL,sale_class TEXT,block_time INTEGER
     );
