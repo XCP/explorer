@@ -1,5 +1,13 @@
 import type { AssetFeedCounts, AssetIndexRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
-import type { DispenserRow, IssuanceRow, SendRow } from "@xcp/shared/records";
+import type {
+  DestructionRow,
+  DispenserRow,
+  DividendRow,
+  IssuanceRow,
+  PoolMatchRow,
+  PoolRow,
+  SendRow,
+} from "@xcp/shared/records";
 import type { AssetRow, AssetSignalsRow } from "#api/storage-types";
 import type { AssetAccounting } from "#api/queries/asset-accounting";
 import { one, q } from "#api/db";
@@ -298,6 +306,94 @@ export function listCoreAssetDispensers(
        LEFT JOIN address_signals signal ON signal.address_id=dispenser.source_id
       WHERE dispenser.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
       ORDER BY dispenser.block_index DESC,dispenser.tx_index DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetDividends(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DividendRow[]> {
+  return q<DividendRow>(
+    db,
+    `SELECT lower(hex(dividend.tx_hash)) tx_hash,dividend.block_index,dividend.block_time,
+            source.address source,paid.asset asset,currency.asset dividend_asset,
+            dividend.quantity_per_unit_normalized,dividend.status
+       FROM dividends dividend
+       LEFT JOIN address_dictionary source ON source.address_id=dividend.source_id
+       LEFT JOIN asset_dictionary paid ON paid.asset_id=dividend.asset_id
+       LEFT JOIN asset_dictionary currency ON currency.asset_id=dividend.dividend_asset_id
+      WHERE dividend.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+         OR dividend.dividend_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+      ORDER BY dividend.block_index DESC,dividend.tx_index DESC LIMIT ?2 OFFSET ?3`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetDestructions(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<DestructionRow[]> {
+  return q<DestructionRow>(
+    db,
+    `SELECT lower(hex(destruction.tx_hash)) tx_hash,destruction.block_index,destruction.block_time,
+            source.address source,dictionary.asset,destruction.quantity_normalized,
+            destruction.tag,destruction.status
+       FROM destructions destruction
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=destruction.asset_id
+       LEFT JOIN address_dictionary source ON source.address_id=destruction.source_id
+      WHERE destruction.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+      ORDER BY destruction.block_index DESC,destruction.event_index DESC LIMIT ? OFFSET ?`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetPools(db: D1Database, asset: string, limit: number, offset: number): Promise<PoolRow[]> {
+  return q<PoolRow>(
+    db,
+    `SELECT pool.lp_asset,pool.pair,a.asset asset_a,b.asset asset_b,pool.reserve_a,pool.reserve_b,
+            pool.lp_supply,pool.price,pool.status,pool.block_index
+       FROM pools pool
+       JOIN asset_dictionary a ON a.asset_id=pool.asset_a_id
+       JOIN asset_dictionary b ON b.asset_id=pool.asset_b_id
+      WHERE pool.asset_a_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+         OR pool.asset_b_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+         OR pool.lp_asset=?1
+      ORDER BY pool.block_index DESC LIMIT ?2 OFFSET ?3`,
+    asset,
+    limit,
+    offset,
+  );
+}
+
+export function listCoreAssetPoolMatches(
+  db: D1Database,
+  asset: string,
+  limit: number,
+  offset: number,
+): Promise<PoolMatchRow[]> {
+  return q<PoolMatchRow>(
+    db,
+    `SELECT lower(hex(match.tx_hash)) tx_hash,match.block_index,match.block_time,source.address source,
+            match.lp_asset,match.pair,forward.asset forward_asset,match.forward_quantity,
+            backward.asset backward_asset,match.backward_quantity
+       FROM pool_matches match
+       LEFT JOIN address_dictionary source ON source.address_id=match.source_id
+       LEFT JOIN asset_dictionary forward ON forward.asset_id=match.forward_asset_id
+       LEFT JOIN asset_dictionary backward ON backward.asset_id=match.backward_asset_id
+      WHERE match.forward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+         OR match.backward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+      ORDER BY match.block_index DESC,match.event_index DESC LIMIT ?2 OFFSET ?3`,
     asset,
     limit,
     offset,

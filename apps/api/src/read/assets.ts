@@ -72,6 +72,10 @@ import {
   listCoreAssetIssuances,
   listCoreAssetSends,
   listCoreAssetDispensers,
+  listCoreAssetDividends,
+  listCoreAssetDestructions,
+  listCoreAssetPools,
+  listCoreAssetPoolMatches,
 } from "#api/queries/core-assets";
 import { coreReadsEnabled } from "#api/read/core-read-gate";
 
@@ -369,22 +373,34 @@ assets.get("/v2/assets/:asset/fairmints", async (c) => {
 });
 
 assets.get("/v2/assets/:asset/dividends", async (c) => {
-  const rows = await listAssetDividends(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetDividends(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetDividends(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/destructions", async (c) => {
-  const rows = await listAssetDestructions(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetDestructions(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetDestructions(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/pools", async (c) => {
-  const rows = await listAssetPools(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetPools(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetPools(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
 assets.get("/v2/assets/:asset/pool-matches", async (c) => {
-  const rows = await listAssetPoolMatches(c.env.DB, c.req.param("asset").toUpperCase(), lim(c), off(c));
+  const asset = c.req.param("asset").toUpperCase();
+  const rows = (await coreReadsEnabled(c.env))
+    ? await listCoreAssetPoolMatches(c.env.CORE_DB, asset, lim(c), off(c))
+    : await listAssetPoolMatches(c.env.DB, asset, lim(c), off(c));
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
