@@ -8,6 +8,20 @@
 import type { RecordKind, RecordRowMap, CancelRow, DispenserRefillRow, PoolLiquidityRow } from "@xcp/shared/records";
 import { q, one } from "#api/db";
 
+const SEND_FEED_SQL = `SELECT LOWER(HEX(send.tx_hash)) tx_hash,send.block_index,send.block_time,
+  source.address source,destination.address destination,asset.asset,send.quantity_normalized,
+  send.send_type,send.status,send.memo
+FROM sends send
+LEFT JOIN address_dictionary source ON source.address_id=send.source_id
+LEFT JOIN address_dictionary destination ON destination.address_id=send.destination_id
+LEFT JOIN asset_dictionary asset ON asset.asset_id=send.asset_id
+ORDER BY send.block_index DESC,send.event_index DESC LIMIT ? OFFSET ?`;
+
+/** Global send feed from the canonical compact ledger. Event index makes MPMA rows deterministic. */
+export function listSends(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["sends"][]> {
+  return q<RecordRowMap["sends"]>(db, SEND_FEED_SQL, limit, offset);
+}
+
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even
 // though they have no assets row). Powers the base/quote price math on the client. Aliases the orders
 // table `o`, so its feed orders on o.block_index. Also reused by the per-asset orders tab (queries/assets).
