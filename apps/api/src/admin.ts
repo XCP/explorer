@@ -61,37 +61,40 @@ admin.post("/admin/btc-stats", async (c) => {
   if (!Array.isArray(rows) || rows.length === 0) return c.json({ error: "expected a non-empty JSON array" }, 400);
   if (rows.length > 100) return c.json({ error: "max 100 rows per call" }, 400);
   const now = Math.floor(Date.now() / 1000);
-  const stmt = c.env.DB.prepare(
-    `INSERT INTO btc_signals (address, btc_received, btc_sent, btc_balance, btc_txs, btc_first_block, btc_last_block, updated_at)
-     VALUES (?,?,?,?,?,?,?,?)
-     ON CONFLICT(address) DO UPDATE SET btc_received=excluded.btc_received, btc_sent=excluded.btc_sent,
+  const validRows = rows.filter((row) => typeof row.address === "string" && row.address.length > 0);
+  const statements = validRows.flatMap((row) => [
+    c.env.CORE_DB.prepare(`INSERT OR IGNORE INTO address_dictionary(address) VALUES(?)`).bind(row.address),
+    c.env.CORE_DB.prepare(
+      `INSERT INTO btc_signals (address_id,btc_received,btc_sent,btc_balance,btc_txs,btc_first_block,btc_last_block,updated_at)
+     VALUES ((SELECT address_id FROM address_dictionary WHERE address=?),?,?,?,?,?,?,?)
+     ON CONFLICT(address_id) DO UPDATE SET btc_received=excluded.btc_received, btc_sent=excluded.btc_sent,
        btc_balance=excluded.btc_balance, btc_txs=excluded.btc_txs, btc_first_block=excluded.btc_first_block,
        btc_last_block=excluded.btc_last_block, updated_at=excluded.updated_at`,
-  );
-  await c.env.DB.batch(
-    rows
-      .filter((r) => typeof r.address === "string" && r.address.length > 0)
-      .map((r) =>
-        stmt.bind(
-          r.address,
-          r.btc_received ?? 0,
-          r.btc_sent ?? 0,
-          r.btc_balance ?? 0,
-          r.btc_txs ?? 0,
-          r.btc_first_block ?? null,
-          r.btc_last_block ?? null,
-          now,
-        ),
-      ),
-  );
-  return c.json({ ok: true, upserted: rows.length });
+    ).bind(
+      row.address,
+      row.btc_received ?? 0,
+      row.btc_sent ?? 0,
+      row.btc_balance ?? 0,
+      row.btc_txs ?? 0,
+      row.btc_first_block ?? null,
+      row.btc_last_block ?? null,
+      now,
+    ),
+  ]);
+  for (let index = 0; index < statements.length; index += 90)
+    await c.env.CORE_DB.batch(statements.slice(index, index + 90));
+  return c.json({ ok: true, upserted: validRows.length });
 });
 
 // Export the address universe the BTC exporter should cover (real users + anything scored/curated).
 admin.get("/admin/btc-stats/addresses", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 5000, min: 1, max: 10_000 });
   const offset = boundedInteger(c.req.query("offset"), { defaultValue: 0, min: 0 });
-  const r = await c.env.DB.prepare(`SELECT address FROM address_signals ORDER BY address LIMIT ? OFFSET ?`)
+  const r = await c.env.CORE_DB.prepare(
+    `SELECT dictionary.address FROM address_signals signal
+     JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+     ORDER BY dictionary.address LIMIT ? OFFSET ?`,
+  )
     .bind(limit, offset)
     .all<{ address: string }>();
   return c.json({
@@ -169,28 +172,29 @@ admin.post("/admin/promote-collection", async (c) => {
   }>();
   if (!issuer || !slug) return c.json({ error: "issuer and slug are required" }, 400);
   const meta = JSON.stringify({ collection: name || slug, ...(site ? { site } : {}) });
-  const rows = await c.env.DB.prepare(
-    `SELECT a.asset FROM assets a
-      WHERE a.issuer=? AND a.mime_type IS NOT NULL
-        AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND source IN ('collection','tokenscan','digirare','discovered'))
-        AND a.asset NOT IN (SELECT entity_id FROM tags WHERE entity_type='asset' AND tag IN ('stamp','src20','src721'))`,
+  const rows = await c.env.CORE_DB.prepare(
+    `SELECT dictionary.asset,entity.entity_id FROM assets asset
+      JOIN asset_dictionary dictionary ON dictionary.asset_id=asset.asset_id
+      JOIN address_dictionary issuer ON issuer.address_id=asset.issuer_id
+      JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+      WHERE issuer.address=? AND asset.mime_type IS NOT NULL
+        AND entity.entity_id NOT IN (SELECT entity_id FROM tags WHERE source IN ('collection','tokenscan','digirare','discovered'))
+        AND entity.entity_id NOT IN (SELECT entity_id FROM tags WHERE tag IN ('stamp','src20','src721'))`,
   )
     .bind(issuer)
-    .all<{ asset: string }>();
-  const assets = (rows.results ?? []).map((r) => r.asset);
-  for (let i = 0; i < assets.length; i += 100) {
-    await c.env.DB.batch(
-      assets
-        .slice(i, i + 100)
-        .map((a) =>
-          c.env.DB.prepare(
-            `INSERT OR IGNORE INTO tags (entity_type,entity_id,tag,source,meta) VALUES ('asset',?,?,'discovered',?)`,
-          ).bind(a, slug, meta),
-        ),
+    .all<{ asset: string; entity_id: number }>();
+  for (let i = 0; i < rows.results.length; i += 90) {
+    await c.env.CORE_DB.batch(
+      rows.results.slice(i, i + 90).map((row) =>
+        c.env.CORE_DB.prepare(
+          `INSERT INTO tags(entity_id,tag,source,meta) VALUES(?,?,'discovered',?)
+             ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+        ).bind(row.entity_id, slug, meta),
+      ),
     );
   }
   await c.env.CORE_DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
-  return c.json({ issuer, slug, name: name || slug, tagged: assets.length });
+  return c.json({ issuer, slug, name: name || slug, tagged: rows.results.length });
 });
 
 // Advance deterministic asset-supply maintenance one step (recomputes supply from our own ledger —
@@ -304,7 +308,7 @@ admin.post("/admin/signal-test", async (c) => {
       ROUND((COUNT(*)*SUM(x*c)-SUM(x)*SUM(c))/NULLIF(SQRT((COUNT(*)*SUM(x*x)-SUM(x)*SUM(x))*(COUNT(*)*SUM(c*c)-SUM(c)*SUM(c))),0),3) corr_with
     FROM b WHERE x IS NOT NULL`;
   try {
-    const r = await c.env.DB.prepare(sql).first<Record<string, number>>();
+    const r = await c.env.CORE_DB.prepare(sql).first<Record<string, number>>();
     const lift = r && r.mean_rest ? Math.round((r.mean_target / r.mean_rest) * 100) / 100 : null;
     return c.json({ table, expr, target, corr, lift, ...r });
   } catch (e) {
@@ -321,7 +325,7 @@ admin.post("/admin/signal-test", async (c) => {
 admin.get("/admin/curated", async (c) => {
   const kind = c.req.query("kind");
   if (!kind) return c.json({ error: "need ?kind=" }, 400);
-  return c.json({ kind, rows: await curatedList(c.env.DB, kind) });
+  return c.json({ kind, rows: await curatedList(c.env.CORE_DB, kind) });
 });
 
 admin.post("/admin/curated", async (c) => {
@@ -329,10 +333,7 @@ admin.post("/admin/curated", async (c) => {
     .json<{ kind?: string; key?: string; value?: string | null; note?: string | null }>()
     .catch(() => null);
   if (!body?.kind || !body?.key) return c.json({ error: "need {kind,key}" }, 400);
-  await Promise.all([
-    curatedUpsert(c.env.DB, { kind: body.kind, key: body.key, value: body.value, note: body.note }),
-    curatedUpsert(c.env.CORE_DB, { kind: body.kind, key: body.key, value: body.value, note: body.note }),
-  ]);
+  await curatedUpsert(c.env.CORE_DB, { kind: body.kind, key: body.key, value: body.value, note: body.note });
   return c.json({ ok: true, kind: body.kind, key: body.key });
 });
 
@@ -340,6 +341,6 @@ admin.delete("/admin/curated", async (c) => {
   const kind = c.req.query("kind"),
     key = c.req.query("key");
   if (!kind || !key) return c.json({ error: "need ?kind= and ?key=" }, 400);
-  const [r] = await Promise.all([curatedDelete(c.env.DB, kind, key), curatedDelete(c.env.CORE_DB, kind, key)]);
+  const r = await curatedDelete(c.env.CORE_DB, kind, key);
   return c.json({ ok: true, kind, key, deleted: r.meta?.changes ?? 0 });
 });

@@ -25,12 +25,12 @@ const LEGIT_WATCHLIST = [
 ];
 
 async function cut(env: Env, key: string): Promise<number> {
-  const v = (await env.DB.prepare(`SELECT value FROM indexer_state WHERE key=?`).bind(key).first<{ value: string }>())
+  const v = (await env.CORE_DB.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>())
     ?.value;
   return Number(v) || 0;
 }
 async function one(env: Env, sql: string): Promise<Record<string, number>> {
-  return (await env.DB.prepare(sql).first<Record<string, number>>()) ?? {};
+  return (await env.CORE_DB.prepare(sql).first<Record<string, number>>()) ?? {};
 }
 
 /** Compute the full scorecard for the graph currently written to asset_signals / address_signals. */
@@ -59,7 +59,9 @@ export async function graphEval(env: Env): Promise<Record<string, unknown>> {
   // C1 — catches known-bad: recall of curated lowq assets, and of derived scam-actor addresses, in distrust.
   const recallLowq = await one(
     env,
-    `SELECT SUM(CASE WHEN ${aDist} THEN 1 ELSE 0 END) hit, COUNT(*) total FROM asset_signals WHERE asset IN (SELECT key FROM curated WHERE kind='lowq')`,
+    `SELECT SUM(CASE WHEN ${aDist} THEN 1 ELSE 0 END) hit, COUNT(*) total
+     FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+     WHERE dictionary.asset IN (SELECT key FROM curated WHERE kind='lowq')`,
   );
   const recallScam = await one(
     env,
@@ -91,7 +93,10 @@ export async function graphEval(env: Env): Promise<Record<string, unknown>> {
   const wl = LEGIT_WATCHLIST.map((a) => `'${a}'`).join(",");
   const coverage = await one(
     env,
-    `SELECT SUM(CASE WHEN ${aTrust} THEN 1 ELSE 0 END) trusted, SUM(CASE WHEN ${aDist} THEN 1 ELSE 0 END) distrusted, COUNT(*) present FROM asset_signals WHERE asset IN (${wl})`,
+    `SELECT SUM(CASE WHEN ${aTrust} THEN 1 ELSE 0 END) trusted,
+      SUM(CASE WHEN ${aDist} THEN 1 ELSE 0 END) distrusted,COUNT(*) present
+     FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+     WHERE dictionary.asset IN (${wl})`,
   );
 
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : 0);

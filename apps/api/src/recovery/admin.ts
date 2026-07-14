@@ -159,7 +159,7 @@ recoveryAdmin.post("/admin/recovery/protections/stamps", async (c) => {
 recoveryAdmin.post("/admin/recovery/protections/stamps/bootstrap", async (c) => {
   const cursor = boundedInteger(c.req.query("cursor"), { defaultValue: -1, min: -1 });
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 500, min: 1, max: 2_000 });
-  const page = await stampProtectionSourcePage(c.env.DB, cursor, limit);
+  const page = await stampProtectionSourcePage(c.env.CORE_DB, cursor, limit);
   const now = Math.floor(Date.now() / 1000);
   const protectedTransactions = await storeStampProtections(c.env, page.transactions, now);
   if (page.next_cursor === null)

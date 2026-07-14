@@ -29,7 +29,7 @@ export async function stampProtectionSourcePage(
 ): Promise<StampSourcePage> {
   const result = await db
     .prepare(
-      `SELECT event_index,tx_hash,description
+      `SELECT event_index,lower(hex(tx_hash)) tx_hash,description
          FROM issuances
         WHERE event_index>? AND status='valid'
         ORDER BY event_index
