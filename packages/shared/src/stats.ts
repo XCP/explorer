@@ -41,7 +41,8 @@ export interface NetworkStats {
   rps_matches: number;
   pools: number;
   pool_matches: number;
-  pool_liquidity: number;
+  pool_deposits: number;
+  pool_withdrawals: number;
   holders: number;
   btc_fees: number;
   xcp_destroyed: number;

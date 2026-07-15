@@ -280,7 +280,8 @@ test("contract: stats quality modes remain isolated and monotonic", async (t) =>
   const countFields = [
     "assets", "transactions", "sends", "issuances", "dispensers", "dispenses", "orders", "order_matches",
     "sweeps", "broadcasts", "dividends", "fairmints", "destructions", "burns", "fairminters", "bets",
-    "bet_matches", "btcpays", "cancels", "rps", "rps_matches", "pools", "pool_matches", "pool_liquidity",
+    "bet_matches", "btcpays", "cancels", "rps", "rps_matches", "pools", "pool_matches",
+    "pool_deposits", "pool_withdrawals",
     "holders", "btc_fees", "xcp_destroyed",
   ];
   for (const field of countFields) {

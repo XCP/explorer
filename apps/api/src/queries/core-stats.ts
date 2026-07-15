@@ -27,7 +27,8 @@ export function coreNetworkCounts(db: D1Database): Promise<NetworkCounts | null>
             (SELECT COUNT(*) FROM btcpays) btcpays,(SELECT COUNT(*) FROM cancels) cancels,
             (SELECT COUNT(*) FROM rps) rps,(SELECT COUNT(*) FROM rps_matches) rps_matches,
             (SELECT COUNT(*) FROM pools) pools,(SELECT COUNT(*) FROM pool_matches) pool_matches,
-            (SELECT COUNT(*) FROM pool_liquidity) pool_liquidity
+            (SELECT COUNT(*) FROM pool_liquidity WHERE kind='deposit') pool_deposits,
+            (SELECT COUNT(*) FROM pool_liquidity WHERE kind='withdrawal') pool_withdrawals
        FROM network_stats_snapshot WHERE singleton=1`,
   );
 }
@@ -104,7 +105,13 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
       (SELECT COUNT(*) FROM pool_liquidity item
         LEFT JOIN asset_signals signal_a ON signal_a.asset_id=item.asset_a_id
         LEFT JOIN asset_signals signal_b ON signal_b.asset_id=item.asset_b_id
-        WHERE COALESCE(signal_a.low_quality,0)=0 AND COALESCE(signal_b.low_quality,0)=0) pool_liquidity,
+        WHERE item.kind='deposit' AND COALESCE(signal_a.low_quality,0)=0
+          AND COALESCE(signal_b.low_quality,0)=0) pool_deposits,
+      (SELECT COUNT(*) FROM pool_liquidity item
+        LEFT JOIN asset_signals signal_a ON signal_a.asset_id=item.asset_a_id
+        LEFT JOIN asset_signals signal_b ON signal_b.asset_id=item.asset_b_id
+        WHERE item.kind='withdrawal' AND COALESCE(signal_a.low_quality,0)=0
+          AND COALESCE(signal_b.low_quality,0)=0) pool_withdrawals,
       snapshot.holders-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN balances item ON item.asset_id=signal.asset_id
         WHERE signal.low_quality=1 AND CAST(item.quantity AS INTEGER)>0) holders,
       (SELECT COALESCE(SUM(CAST(tx.fee AS REAL)),0)/100000000.0 FROM transactions tx
