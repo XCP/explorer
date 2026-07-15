@@ -33,6 +33,9 @@ export const RECORD_KINDS = [
   "rps_matches",
   "pools",
   "pool_matches",
+  "cancels",
+  "pool_deposits",
+  "pool_withdrawals",
 ] as const;
 
 export type RecordKind = (typeof RECORD_KINDS)[number];
@@ -411,4 +414,7 @@ export interface RecordRowMap {
   rps_matches: RpsMatchRow;
   pools: PoolRow;
   pool_matches: PoolMatchRow;
+  cancels: CancelRow;
+  pool_deposits: PoolLiquidityRow;
+  pool_withdrawals: PoolLiquidityRow;
 }

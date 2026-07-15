@@ -278,11 +278,35 @@ test("contract: stats quality modes remain isolated and monotonic", async (t) =>
     getJson(`/v2/metrics?days=90&include_hidden=1&contract=${contract}`),
   ]);
   const countFields = [
-    "assets", "transactions", "sends", "issuances", "dispensers", "dispenses", "orders", "order_matches",
-    "sweeps", "broadcasts", "dividends", "fairmints", "destructions", "burns", "fairminters", "bets",
-    "bet_matches", "btcpays", "cancels", "rps", "rps_matches", "pools", "pool_matches",
-    "pool_deposits", "pool_withdrawals",
-    "holders", "btc_fees", "xcp_destroyed",
+    "assets",
+    "addresses",
+    "transactions",
+    "sends",
+    "issuances",
+    "dispensers",
+    "dispenses",
+    "orders",
+    "order_matches",
+    "sweeps",
+    "broadcasts",
+    "dividends",
+    "fairmints",
+    "destructions",
+    "burns",
+    "fairminters",
+    "bets",
+    "bet_matches",
+    "btcpays",
+    "cancels",
+    "rps",
+    "rps_matches",
+    "pools",
+    "pool_matches",
+    "pool_deposits",
+    "pool_withdrawals",
+    "holders",
+    "btc_fees",
+    "xcp_destroyed",
   ];
   for (const field of countFields) {
     assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
@@ -295,7 +319,10 @@ test("contract: stats quality modes remain isolated and monotonic", async (t) =>
     assert.ok(Array.isArray(filteredMetrics.result[field]), `filtered metrics.${field} must be an array`);
     assert.ok(Array.isArray(allMetrics.result[field]), `all metrics.${field} must be an array`);
     const total = (rows: Array<{ v: number }>) => rows.reduce((sum, row) => sum + row.v, 0);
-    assert.ok(total(filteredMetrics.result[field]) <= total(allMetrics.result[field]), `filtered metrics.${field} cannot exceed all-chain`);
+    assert.ok(
+      total(filteredMetrics.result[field]) <= total(allMetrics.result[field]),
+      `filtered metrics.${field} cannot exceed all-chain`,
+    );
   }
 });
 

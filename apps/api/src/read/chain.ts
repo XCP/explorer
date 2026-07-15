@@ -25,6 +25,8 @@ import {
   listRpsMatches,
   listPools,
   listPoolMatches,
+  listCancels,
+  listPoolLiquidity,
   classifyCoreTx,
   coreStatelessRecordsByTx,
   coreContextRecordsByTx,
@@ -350,27 +352,54 @@ chain.get("/v2/transactions/:hash/bitcoin", async (c) => {
    the per-kind SELECT lives in queries/records.ts. */
 function recordFeed(c: Ctx, kind: RecordKind, limit: number, offset: number) {
   switch (kind) {
-    case "orders": return listOrders(c.env.CORE_DB, limit, offset);
-    case "order_matches": return listOrderMatches(c.env.CORE_DB, limit, offset);
-    case "transactions": return listTransactions(c.env.CORE_DB, limit, offset);
-    case "sends": return listSends(c.env.CORE_DB, limit, offset);
-    case "issuances": return listIssuances(c.env.CORE_DB, limit, offset);
-    case "dispensers": return listDispensers(c.env.CORE_DB, limit, offset);
-    case "dispenses": return listDispenses(c.env.CORE_DB, limit, offset);
-    case "sweeps": return listSweeps(c.env.CORE_DB, limit, offset);
-    case "destructions": return listDestructions(c.env.CORE_DB, limit, offset);
-    case "burns": return listBurns(c.env.CORE_DB, limit, offset);
-    case "dividends": return listDividends(c.env.CORE_DB, limit, offset);
-    case "broadcasts": return listBroadcasts(c.env.CORE_DB, limit, offset);
-    case "fairminters": return listFairminters(c.env.CORE_DB, limit, offset);
-    case "fairmints": return listFairmints(c.env.CORE_DB, limit, offset);
-    case "btcpays": return listBtcpays(c.env.CORE_DB, limit, offset);
-    case "bets": return listBets(c.env.CORE_DB, limit, offset);
-    case "bet_matches": return listBetMatches(c.env.CORE_DB, limit, offset);
-    case "rps": return listRps(c.env.CORE_DB, limit, offset);
-    case "rps_matches": return listRpsMatches(c.env.CORE_DB, limit, offset);
-    case "pools": return listPools(c.env.CORE_DB, limit, offset);
-    case "pool_matches": return listPoolMatches(c.env.CORE_DB, limit, offset);
+    case "orders":
+      return listOrders(c.env.CORE_DB, limit, offset);
+    case "order_matches":
+      return listOrderMatches(c.env.CORE_DB, limit, offset);
+    case "transactions":
+      return listTransactions(c.env.CORE_DB, limit, offset);
+    case "sends":
+      return listSends(c.env.CORE_DB, limit, offset);
+    case "issuances":
+      return listIssuances(c.env.CORE_DB, limit, offset);
+    case "dispensers":
+      return listDispensers(c.env.CORE_DB, limit, offset);
+    case "dispenses":
+      return listDispenses(c.env.CORE_DB, limit, offset);
+    case "sweeps":
+      return listSweeps(c.env.CORE_DB, limit, offset);
+    case "destructions":
+      return listDestructions(c.env.CORE_DB, limit, offset);
+    case "burns":
+      return listBurns(c.env.CORE_DB, limit, offset);
+    case "dividends":
+      return listDividends(c.env.CORE_DB, limit, offset);
+    case "broadcasts":
+      return listBroadcasts(c.env.CORE_DB, limit, offset);
+    case "fairminters":
+      return listFairminters(c.env.CORE_DB, limit, offset);
+    case "fairmints":
+      return listFairmints(c.env.CORE_DB, limit, offset);
+    case "btcpays":
+      return listBtcpays(c.env.CORE_DB, limit, offset);
+    case "bets":
+      return listBets(c.env.CORE_DB, limit, offset);
+    case "bet_matches":
+      return listBetMatches(c.env.CORE_DB, limit, offset);
+    case "rps":
+      return listRps(c.env.CORE_DB, limit, offset);
+    case "rps_matches":
+      return listRpsMatches(c.env.CORE_DB, limit, offset);
+    case "pools":
+      return listPools(c.env.CORE_DB, limit, offset);
+    case "pool_matches":
+      return listPoolMatches(c.env.CORE_DB, limit, offset);
+    case "cancels":
+      return listCancels(c.env.CORE_DB, limit, offset);
+    case "pool_deposits":
+      return listPoolLiquidity(c.env.CORE_DB, "deposit", limit, offset);
+    case "pool_withdrawals":
+      return listPoolLiquidity(c.env.CORE_DB, "withdrawal", limit, offset);
   }
 }
 

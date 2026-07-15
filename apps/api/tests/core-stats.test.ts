@@ -39,6 +39,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY);
     CREATE TABLE burns(x INTEGER); CREATE TABLE fairminters(x INTEGER); CREATE TABLE bets(x INTEGER);
     CREATE TABLE bet_matches(x INTEGER); CREATE TABLE btcpays(x INTEGER); CREATE TABLE cancels(x INTEGER);
     CREATE TABLE rps(x INTEGER); CREATE TABLE rps_matches(x INTEGER);
@@ -68,6 +69,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
     {
       tip: 101,
       assets: 2,
+      addresses: 0,
       transactions: 3,
       sends: 5,
       issuances: 6,
@@ -146,6 +148,7 @@ test("quality stats exclude low-quality asset activity without removing unscoped
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY);
     CREATE TABLE network_stats_snapshot(singleton INTEGER PRIMARY KEY,assets INTEGER,transactions INTEGER,sends INTEGER,
       issuances INTEGER,dispensers INTEGER,dispenses INTEGER,sweeps INTEGER,broadcasts INTEGER,dividends INTEGER,
       fairmints INTEGER,destructions INTEGER,holders INTEGER);
@@ -181,12 +184,40 @@ test("quality stats exclude low-quality asset activity without removing unscoped
     INSERT INTO destructions VALUES(12,1,'valid','400000000'),(11,3,'valid','800000000');
     INSERT INTO balances VALUES(2,'1'),(3,'1'),(2,'0');
   `);
-  assert.deepEqual({ ...(await coreQualityNetworkStats(d1(db))) }, {
-    tip: 100, assets: 2, transactions: 3, sends: 1, issuances: 1, dispensers: 1, dispenses: 1,
-    orders: 1, order_matches: 1, sweeps: 1, broadcasts: 1, dividends: 1, fairmints: 1,
-    destructions: 1, burns: 0, fairminters: 0, bets: 0, bet_matches: 0, btcpays: 0, cancels: 0,
-    rps: 0, rps_matches: 0, pools: 0, pool_matches: 0, pool_deposits: 0, pool_withdrawals: 0,
-    holders: 1, btc_fees: 0.4, xcp_destroyed: 10,
-  });
+  assert.deepEqual(
+    { ...(await coreQualityNetworkStats(d1(db))) },
+    {
+      tip: 100,
+      assets: 2,
+      addresses: 0,
+      transactions: 3,
+      sends: 1,
+      issuances: 1,
+      dispensers: 1,
+      dispenses: 1,
+      orders: 1,
+      order_matches: 1,
+      sweeps: 1,
+      broadcasts: 1,
+      dividends: 1,
+      fairmints: 1,
+      destructions: 1,
+      burns: 0,
+      fairminters: 0,
+      bets: 0,
+      bet_matches: 0,
+      btcpays: 0,
+      cancels: 0,
+      rps: 0,
+      rps_matches: 0,
+      pools: 0,
+      pool_matches: 0,
+      pool_deposits: 0,
+      pool_withdrawals: 0,
+      holders: 1,
+      btc_fees: 0.4,
+      xcp_destroyed: 10,
+    },
+  );
   db.close();
 });

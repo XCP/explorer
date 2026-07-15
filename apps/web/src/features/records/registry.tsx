@@ -9,6 +9,12 @@ import type {
   FairmintRow,
   DividendRow,
   DestructionRow,
+  BetMatchRow,
+  RpsRow,
+  RpsMatchRow,
+  PoolMatchRow,
+  CancelRow,
+  PoolLiquidityRow,
 } from "@xcp/shared/records";
 import type { AssetListRow } from "@xcp/shared/assets";
 import { commas, compact, short, fromSats } from "@/lib/format";
@@ -192,6 +198,119 @@ const btc8 = (n?: string | number | null) => {
   const v = Number(n);
   return n != null && n !== "" && Number.isFinite(v) ? v.toFixed(8) : "—";
 };
+
+const BET_MATCH_COLS: Col<BetMatchRow>[] = [
+  cTime,
+  cBlock,
+  { label: "Feed", priority: 2, cell: (r) => addrCell(r.feed_address) },
+  { label: "Party A", priority: 1, cell: (r) => addrCell(r.tx0_address) },
+  { label: "Party B", priority: 2, cell: (r) => addrCell(r.tx1_address) },
+  { label: "Forward (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.forward_quantity)) },
+  { label: "Backward (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSats(r.backward_quantity)) },
+  cStatus,
+];
+
+const RPS_COLS: Col<RpsRow>[] = [
+  cTime,
+  cBlock,
+  cSource,
+  { label: "Moves", numeric: true, priority: 2, cell: (r) => commas(r.possible_moves) },
+  { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.wager)) },
+  { label: "Expiration", numeric: true, priority: 3, cell: (r) => commas(r.expiration) },
+  cStatus,
+  cView,
+];
+
+const RPS_MATCH_COLS: Col<RpsMatchRow>[] = [
+  cTime,
+  cBlock,
+  { label: "Player A", priority: 1, cell: (r) => addrCell(r.tx0_address) },
+  { label: "Player B", priority: 2, cell: (r) => addrCell(r.tx1_address) },
+  { label: "Moves", numeric: true, priority: 3, cell: (r) => commas(r.possible_moves) },
+  { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.wager)) },
+  cStatus,
+];
+
+const POOL_MATCH_COLS: Col<PoolMatchRow>[] = [
+  cTime,
+  cBlock,
+  { label: "Pair", priority: 1, cell: (r) => <span className="font-mono text-zinc-100">{r.pair ?? "â€”"}</span> },
+  {
+    label: "Forward",
+    numeric: true,
+    priority: 1,
+    cell: (r) => (
+      <>
+        {commas(r.forward_quantity)} {r.forward_asset}
+      </>
+    ),
+  },
+  {
+    label: "Backward",
+    numeric: true,
+    priority: 2,
+    cell: (r) => (
+      <>
+        {commas(r.backward_quantity)} {r.backward_asset}
+      </>
+    ),
+  },
+  { label: "Fee (bps)", numeric: true, priority: 3, cell: (r) => commas(r.fee_bps) },
+  cSource,
+  cView,
+];
+
+const CANCEL_COLS: Col<CancelRow>[] = [
+  cTime,
+  cBlock,
+  cSource,
+  { label: "Canceled Order", priority: 1, cell: (r) => txCell(r.offer_hash) },
+  cStatus,
+  cView,
+];
+
+const POOL_LIQUIDITY_COLS: Col<PoolLiquidityRow>[] = [
+  cTime,
+  cBlock,
+  {
+    label: "Pair",
+    priority: 1,
+    cell: (r) => (
+      <span className="font-mono text-zinc-100">
+        {r.asset_a}/{r.asset_b}
+      </span>
+    ),
+  },
+  {
+    label: "Asset A",
+    numeric: true,
+    priority: 1,
+    cell: (r) => (
+      <>
+        {commas(r.quantity_a)} {r.asset_a}
+      </>
+    ),
+  },
+  {
+    label: "Asset B",
+    numeric: true,
+    priority: 2,
+    cell: (r) => (
+      <>
+        {commas(r.quantity_b)} {r.asset_b}
+      </>
+    ),
+  },
+  {
+    label: "LP Change",
+    numeric: true,
+    priority: 2,
+    cell: (r) => commas(r.kind === "deposit" ? r.quantity_minted : r.quantity_destroyed),
+  },
+  cSource,
+  cStatus,
+  cView,
+];
 // Effective price for ONE unit of the card: a dispenser's satoshirate is charged per dispense, which can hand
 // out give_quantity>1 units, so divide by the give amount to get the per-unit BTC price (not the bundle price).
 const btcPerUnit = (rate?: string | number | null, give?: string | number | null) => {
@@ -695,4 +814,12 @@ export const REGISTRY: Registry = {
       cView,
     ],
   },
+  bet_matches: { slug: "bet-matches", title: "Bet Matches", cols: BET_MATCH_COLS },
+  rps: { slug: "rps", title: "RPS Games", cols: RPS_COLS },
+  rps_matches: { slug: "rps-matches", title: "RPS Matches", cols: RPS_MATCH_COLS },
+  pools: { slug: "pools", title: "Pools", cols: POOL_COLS },
+  pool_matches: { slug: "pool-matches", title: "Pool Matches", cols: POOL_MATCH_COLS },
+  cancels: { slug: "cancels", title: "Cancels", cols: CANCEL_COLS },
+  pool_deposits: { slug: "pool-deposits", title: "Pool Deposits", cols: POOL_LIQUIDITY_COLS },
+  pool_withdrawals: { slug: "pool-withdrawals", title: "Pool Withdrawals", cols: POOL_LIQUIDITY_COLS },
 };

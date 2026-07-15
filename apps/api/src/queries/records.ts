@@ -223,6 +223,30 @@ LEFT JOIN asset_dictionary forward ON forward.asset_id=match.forward_asset_id
 LEFT JOIN asset_dictionary backward ON backward.asset_id=match.backward_asset_id
 ORDER BY match.block_index DESC,match.event_index DESC`;
 
+const CANCEL_FEED_SQL = `WITH page AS (
+  SELECT tx_index FROM cancels ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(cancel.tx_hash)) tx_hash,cancel.block_index,cancel.block_time,source.address source,
+  LOWER(HEX(parent.tx_hash)) offer_hash,cancel.status
+FROM page JOIN cancels cancel ON cancel.tx_index=page.tx_index
+LEFT JOIN address_dictionary source ON source.address_id=cancel.source_id
+LEFT JOIN transactions parent ON parent.tx_index=cancel.offer_tx_index
+ORDER BY cancel.block_index DESC,cancel.tx_index DESC`;
+
+const POOL_LIQUIDITY_FEED_SQL = `WITH page AS (
+  SELECT event_index FROM pool_liquidity WHERE kind=?
+  ORDER BY block_index DESC,event_index DESC LIMIT ? OFFSET ?
+)
+SELECT LOWER(HEX(liquidity.tx_hash)) tx_hash,liquidity.block_index,liquidity.block_time,
+  source.address source,liquidity.kind,asset_a.asset asset_a,asset_b.asset asset_b,
+  liquidity.quantity_a,liquidity.quantity_b,liquidity.quantity_minted,
+  liquidity.quantity_destroyed,liquidity.status
+FROM page JOIN pool_liquidity liquidity ON liquidity.event_index=page.event_index
+LEFT JOIN address_dictionary source ON source.address_id=liquidity.source_id
+LEFT JOIN asset_dictionary asset_a ON asset_a.asset_id=liquidity.asset_a_id
+LEFT JOIN asset_dictionary asset_b ON asset_b.asset_id=liquidity.asset_b_id
+ORDER BY liquidity.block_index DESC,liquidity.event_index DESC`;
+
 export function listTransactions(
   db: D1Database,
   limit: number,
@@ -312,6 +336,19 @@ export function listPoolMatches(
   return q<RecordRowMap["pool_matches"]>(db, POOL_MATCH_FEED_SQL, limit, offset);
 }
 
+export function listCancels(db: D1Database, limit: number, offset: number): Promise<RecordRowMap["cancels"][]> {
+  return q<RecordRowMap["cancels"]>(db, CANCEL_FEED_SQL, limit, offset);
+}
+
+export function listPoolLiquidity(
+  db: D1Database,
+  kind: "deposit" | "withdrawal",
+  limit: number,
+  offset: number,
+): Promise<RecordRowMap["pool_deposits"][]> {
+  return q<RecordRowMap["pool_deposits"]>(db, POOL_LIQUIDITY_FEED_SQL, kind, limit, offset);
+}
+
 // orders with normalized give/get quantities (divisibility via join; XCP/BTC are always divisible even
 // though they have no assets row). Powers the base/quote price math on the client. Aliases the orders
 // table `o`, so its feed orders on o.block_index. Also reused by the per-asset orders tab (queries/assets).
@@ -399,6 +436,15 @@ const FEEDS: Record<RecordKind, RecordFeed> = {
   },
   pool_matches: {
     select: `SELECT tx_hash,block_index,block_time,source,lp_asset,pair,forward_asset,forward_quantity,backward_asset,backward_quantity,fee_quantity,fee_bps FROM pool_matches`,
+  },
+  cancels: {
+    select: `SELECT tx_hash,block_index,block_time,source,offer_hash,status FROM cancels`,
+  },
+  pool_deposits: {
+    select: `SELECT tx_hash,block_index,block_time,source,kind,asset_a,asset_b,quantity_a,quantity_b,quantity_minted,quantity_destroyed,status FROM pool_liquidity WHERE kind='deposit'`,
+  },
+  pool_withdrawals: {
+    select: `SELECT tx_hash,block_index,block_time,source,kind,asset_a,asset_b,quantity_a,quantity_b,quantity_minted,quantity_destroyed,status FROM pool_liquidity WHERE kind='withdrawal'`,
   },
 };
 
