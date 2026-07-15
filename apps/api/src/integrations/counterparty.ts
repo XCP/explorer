@@ -14,11 +14,18 @@ export function parseCounterpartyResponse<T = unknown>(text: string): T {
   return value as T;
 }
 
-const backoff = (attempt: number, retryAfter = 0) =>
-  new Promise((resolve) => setTimeout(resolve, retryAfter ? retryAfter * 1000 : Math.min(8000, 500 * 2 ** attempt)));
+const MAX_BACKOFF_MS = 8_000;
+
+const backoffMs = (attempt: number, retryAfter = 0) => {
+  const requested = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt;
+  const bounded = Math.min(MAX_BACKOFF_MS, requested);
+  // Jitter prevents every scheduled Worker invocation from retrying a recovering provider together.
+  return Math.round(bounded * (0.75 + Math.random() * 0.5));
+};
 
 export interface CounterpartyRequestOptions {
   timeoutMs?: number;
+  totalTimeoutMs?: number;
   maxRetries?: number;
   malformedRetries?: number;
 }
@@ -28,16 +35,21 @@ export async function counterpartyJson<T = unknown>(
   path: string,
   options: CounterpartyRequestOptions = {},
 ): Promise<T> {
-  const { timeoutMs = 45_000, maxRetries = 4, malformedRetries = 2 } = options;
+  const { timeoutMs = 45_000, totalTimeoutMs = 120_000, maxRetries = 4, malformedRetries = 2 } = options;
+  const deadline = Date.now() + totalTimeoutMs;
   // On rate-limit (429) or upstream 5xx, wait and retry instead of hammering Counterparty.
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error(`Counterparty ${path} request deadline exceeded`);
+    const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(Math.min(timeoutMs, remaining)) });
     if (response.ok) {
       try {
         return parseCounterpartyResponse<T>(await response.text());
       } catch (error) {
         if (attempt < malformedRetries) {
-          await backoff(attempt);
+          const delay = Math.min(backoffMs(attempt), deadline - Date.now());
+          if (delay <= 0) throw new Error(`Counterparty ${path} request deadline exceeded`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }
         throw error;
@@ -45,7 +57,9 @@ export async function counterpartyJson<T = unknown>(
     }
     if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
       const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
-      await backoff(attempt, retryAfter);
+      const delay = Math.min(backoffMs(attempt, retryAfter), deadline - Date.now());
+      if (delay <= 0) throw new Error(`Counterparty ${path} request deadline exceeded`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
       continue;
     }
     throw new Error(`Counterparty ${path} ${response.status}`);
