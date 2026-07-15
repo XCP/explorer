@@ -128,8 +128,8 @@ admin.post("/admin/sync", async (c) => {
 admin.post("/admin/refresh-signals", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 400, min: 1, max: 1000 });
   const [assets, addresses] = await Promise.all([
-    runCoreAssetSignalsStep(c.env.CORE_DB, limit),
-    runCoreAddressSignalsStep(c.env.CORE_DB, limit),
+    runCoreAssetSignalsStep(c.env.CORE_DB, limit, true),
+    runCoreAddressSignalsStep(c.env.CORE_DB, limit, true),
   ]);
   return c.json({ assets, addresses });
 });

@@ -1,5 +1,7 @@
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
+const FULL_REPAIR_INTERVAL = 1_008;
+
 const UPSERT = `INSERT INTO asset_signals(
   asset_id,issuer_id,divisible,locked,holders,top1_pct,burned_pct,holder_breadth,
   pct_creator_holders,avg_holder_dex,trades,self_trade_pct,low_quality,
@@ -115,8 +117,15 @@ export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<s
 export async function runCoreAssetSignalsStep(
   db: D1Database,
   limit = 400,
+  force = false,
 ): Promise<{ processed: number; cursor: number; cycleComplete: boolean }> {
   const cursor = await getCoreStateInt(db, "asset_signals_cursor");
+  if (cursor === 0 && !force && (await getCoreStateInt(db, "asset_signals_cycles")) > 0) {
+    const tip =
+      Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
+    const completed = await getCoreStateInt(db, "asset_signals_completed_block");
+    if (tip - completed < FULL_REPAIR_INTERVAL) return { processed: 0, cursor: 0, cycleComplete: true };
+  }
   const rows = await db
     .prepare(
       `SELECT dictionary.asset_id,dictionary.asset FROM asset_dictionary dictionary
@@ -144,6 +153,9 @@ export async function runCoreAssetSignalsStep(
     }
     await setCoreState(db, "asset_signals_cursor", 0);
     await setCoreState(db, "asset_signals_cycles", (await getCoreStateInt(db, "asset_signals_cycles")) + 1);
+    const tip =
+      Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
+    await setCoreState(db, "asset_signals_completed_block", tip);
     return { processed: 0, cursor: 0, cycleComplete: true };
   }
   await rebuildCoreAssetSignals(

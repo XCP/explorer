@@ -1,5 +1,7 @@
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
+const FULL_REPAIR_INTERVAL = 1_008;
+
 const UPSERT = `INSERT INTO address_signals(
   address_id,first_block,last_block,out_peers,in_peers,dispense_btc,dispenses,dividends,
   assets_issued,locked_assets,btc_spent,btc_fees,assets_held,assets_received,
@@ -131,7 +133,7 @@ export async function enqueueCoreAddressSignals(db: D1Database, addresses: Itera
   );
 }
 
-export async function runCoreAddressSignalsStep(db: D1Database, limit = 40) {
+export async function runCoreAddressSignalsStep(db: D1Database, limit = 40, force = false) {
   const queue = await queuedIds(db);
   if (queue.length > 0) {
     const todo = queue.slice(0, limit),
@@ -152,6 +154,12 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 40) {
     };
   }
   const cursor = await getCoreStateInt(db, "address_signals_cursor");
+  if (cursor === 0 && !force && (await getCoreStateInt(db, "address_signals_cycles")) > 0) {
+    const tip =
+      Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
+    const completed = await getCoreStateInt(db, "address_signals_completed_block");
+    if (tip - completed < FULL_REPAIR_INTERVAL) return { processed: 0, cursor: 0, cycleComplete: true };
+  }
   const rows = await db
     .prepare(`SELECT address_id,address FROM address_dictionary WHERE address_id>? ORDER BY address_id LIMIT ?`)
     .bind(cursor, limit)
@@ -159,6 +167,9 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 40) {
   if (rows.results.length === 0) {
     await setCoreState(db, "address_signals_cursor", 0);
     await setCoreState(db, "address_signals_cycles", (await getCoreStateInt(db, "address_signals_cycles")) + 1);
+    const tip =
+      Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
+    await setCoreState(db, "address_signals_completed_block", tip);
     return { processed: 0, cursor: 0, cycleComplete: true };
   }
   await rebuildCoreAddressSignals(

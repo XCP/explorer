@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { rebuildCoreAddressSignals } from "#api/indexer/core-address-signals";
+import { rebuildCoreAddressSignals, runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 
 const migrations = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -86,4 +86,19 @@ test("compact address signals recompute touched identities and converge to zero"
     dex_trades: 0,
     btc_fees: 0,
   });
+});
+
+test("full address repair pauses after coverage while forced repair remains available", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO blocks(block_index,block_hash,block_time) VALUES(200,zeroblob(32),1);
+    INSERT INTO address_dictionary(address) VALUES('one'),('two');
+  `);
+  const core = d1(db);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).processed, 2);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).cycleComplete, true);
+  assert.deepEqual(await runCoreAddressSignalsStep(core, 10), { processed: 0, cursor: 0, cycleComplete: true });
+  assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='address_signals_cycles'`).get()?.value, "1");
+  assert.equal((await runCoreAddressSignalsStep(core, 10, true)).processed, 2);
 });

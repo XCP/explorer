@@ -108,6 +108,9 @@ test("compact asset signal repair walks every identity and durably completes a c
   assert.equal(processed, assets);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signals`).get()?.count, assets);
   assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='asset_signals_cycles'`).get()?.value, "1");
+  assert.deepEqual(await runCoreAssetSignalsStep(core, 1), { processed: 0, cursor: 0, cycleComplete: true });
+  assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='asset_signals_cycles'`).get()?.value, "1");
+  assert.equal((await runCoreAssetSignalsStep(core, 1, true)).processed, 1);
 });
 
 test("compact asset signals derive holder community features and propagate issuer quality", async () => {
