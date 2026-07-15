@@ -30,6 +30,7 @@ import { maybeBuildGraph } from "#api/indexer/graph";
 import { buildTrades } from "#api/indexer/trades";
 import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
 import { runScheduledJob } from "#api/scheduler/job";
+import { withCanonicalMaintenanceLease } from "#api/scheduler/maintenance-lease";
 import { read } from "#api/read/router";
 import { verify } from "#api/verify";
 import { extensionApi } from "#api/extension-api";
@@ -201,53 +202,56 @@ export default {
         const syncResult = await runScheduledJob("syncCoreEvents", () => syncCoreEvents(env, { maxEvents: 10000 }));
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
-        if (caughtUp) {
-          // Canonical Bitcoin enrichment runs before independent provider-backed projections. A slow recovery
-          // dependency must not starve fields used by the explorer's core transaction and block views.
-          await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
-          await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
-          // Signal maintenance uses the same convergent writers for event refreshes and
-          // bounded full-population repair. There is no source-database signal fallback.
-          await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
-          await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
-          await runScheduledJob("maybeRefreshQualityNetworkStats", () => maybeRefreshQualityNetworkStats(env.CORE_DB));
-          await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
-          // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
-          await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
-          // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).
-          await runScheduledJob("crawlEmblem", () => crawlEmblemStep(env));
-          await runScheduledJob("refreshEmblemStats", () => maybeRefreshEmblemStats(env));
-          // Maintain authoritative asset supply (+asset_id/mime_type): backfill all assets once, then
-          // refetch only assets touched by a supply-changing event, plus XCP every tick (fee-burn drift).
-          await runScheduledJob("crawlAssetSupply", () => crawlAssetSupply(env));
-          // Refresh SQLite optimizer stats periodically (~weekly). Without stats D1 picked terrible join orders
-          // (exchanges overview scanned all 1.75M sends = 18s); ANALYZE fixed plans globally (→0.5s). Gated by
-          // block-delta because ANALYZE itself is ~10s — far too heavy to run every 2-min tick.
-          await runScheduledJob("maybeAnalyze", () => maybeAnalyze(env));
-          // Collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf, ~daily.
-          await runScheduledJob("crawlCollections", () => maybeCrawlCollections(env));
-          // Fold in the tokenscan project directory (~60 collections + sites) as source='tokenscan' tags, ~weekly.
-          await runScheduledJob("crawlTokenscan", () => maybeCrawlTokenscan(env));
-          // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
-          await runScheduledJob("crawlEmblemSales", () => maybeCrawlEmblemSales(env));
-          // Recover post-April-2024 sales getNFTSales stopped indexing (getAssetTransfers + Seaport decode).
-          await runScheduledJob("crawlEmblemTransfers", () => crawlEmblemTransfers(env));
-          // Refresh live Emblem listings (Sequence Marketplace API) so the Radar can flag "buyable on ETH", ~hourly.
-          await runScheduledJob("crawlEmblemListings", () => maybeCrawlEmblemListings(env));
-          // Continue the Scarce.city sales sweep (Bitcoin-native marketplace; one bounded asset batch per tick).
-          await runScheduledJob("crawlScarceSales", () => crawlScarceSales(env));
-          // Classify Emblem vault contents/crack state (real vs scam sales) — one bounded vault batch per tick.
-          await runScheduledJob("classifyVaults", () => classifyVaults(env));
-          // Capture Emblem /meta (claim vs contents) for 'foreign' vaults — splits legit foreign from empty scams.
-          await runScheduledJob("crawlEmblemMeta", () => crawlEmblemMeta(env));
-          // Attribute Emblem empty-shell scams to BTC identities (creator bridge → address_signals.shell_scams). Daily-gated.
-          await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
-          // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
-          await runScheduledJob("buildTrades", () => buildTrades(env));
-          // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).
-          await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
-          await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
-        }
+        if (caughtUp)
+          await withCanonicalMaintenanceLease(env.CORE_DB, async () => {
+            // Canonical Bitcoin enrichment runs before independent provider-backed projections. A slow recovery
+            // dependency must not starve fields used by the explorer's core transaction and block views.
+            await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
+            await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
+            // Signal maintenance uses the same convergent writers for event refreshes and
+            // bounded full-population repair. There is no source-database signal fallback.
+            await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
+            await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
+            await runScheduledJob("maybeRefreshQualityNetworkStats", () =>
+              maybeRefreshQualityNetworkStats(env.CORE_DB),
+            );
+            await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
+            // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
+            await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
+            // Advance the Emblem Vault crawl (enumerate token ids via Alchemy + resolve BTC via /meta).
+            await runScheduledJob("crawlEmblem", () => crawlEmblemStep(env));
+            await runScheduledJob("refreshEmblemStats", () => maybeRefreshEmblemStats(env));
+            // Maintain authoritative asset supply (+asset_id/mime_type): backfill all assets once, then
+            // refetch only assets touched by a supply-changing event, plus XCP every tick (fee-burn drift).
+            await runScheduledJob("crawlAssetSupply", () => crawlAssetSupply(env));
+            // Refresh SQLite optimizer stats periodically (~weekly). Without stats D1 picked terrible join orders
+            // (exchanges overview scanned all 1.75M sends = 18s); ANALYZE fixed plans globally (→0.5s). Gated by
+            // block-delta because ANALYZE itself is ~10s — far too heavy to run every 2-min tick.
+            await runScheduledJob("maybeAnalyze", () => maybeAnalyze(env));
+            // Collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf, ~daily.
+            await runScheduledJob("crawlCollections", () => maybeCrawlCollections(env));
+            // Fold in the tokenscan project directory (~60 collections + sites) as source='tokenscan' tags, ~weekly.
+            await runScheduledJob("crawlTokenscan", () => maybeCrawlTokenscan(env));
+            // Continue the Emblem-vault sales backfill (Alchemy getNFTSales), ~hourly, one contract per call.
+            await runScheduledJob("crawlEmblemSales", () => maybeCrawlEmblemSales(env));
+            // Recover post-April-2024 sales getNFTSales stopped indexing (getAssetTransfers + Seaport decode).
+            await runScheduledJob("crawlEmblemTransfers", () => crawlEmblemTransfers(env));
+            // Refresh live Emblem listings (Sequence Marketplace API) so the Radar can flag "buyable on ETH", ~hourly.
+            await runScheduledJob("crawlEmblemListings", () => maybeCrawlEmblemListings(env));
+            // Continue the Scarce.city sales sweep (Bitcoin-native marketplace; one bounded asset batch per tick).
+            await runScheduledJob("crawlScarceSales", () => crawlScarceSales(env));
+            // Classify Emblem vault contents/crack state (real vs scam sales) — one bounded vault batch per tick.
+            await runScheduledJob("classifyVaults", () => classifyVaults(env));
+            // Capture Emblem /meta (claim vs contents) for 'foreign' vaults — splits legit foreign from empty scams.
+            await runScheduledJob("crawlEmblemMeta", () => crawlEmblemMeta(env));
+            // Attribute Emblem empty-shell scams to BTC identities (creator bridge → address_signals.shell_scams). Daily-gated.
+            await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
+            // Materialize the unified trades ledger: dex + dispense advance by Counterparty-block cursor, emblem re-folded.
+            await runScheduledJob("buildTrades", () => buildTrades(env));
+            // Daily USD price calendar (~daily), then map trades onto it (fills usd_value, bounded window per tick).
+            await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
+            await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
+          });
       })(),
     );
   },
