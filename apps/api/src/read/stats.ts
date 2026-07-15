@@ -40,18 +40,15 @@ stats.get("/v2/metrics", async (c) => {
       (await coreMetricSeries(c.env.CORE_DB, name, days, includeHidden))
         .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 }))
         .reverse();
-    // Bound D1 fan-out: seven simultaneous statements can exceed the per-invocation query concurrency limit.
-    const [transactions, issuances, dispenses, trades] = await Promise.all([
-      series("transactions"),
-      series("issuances"),
-      series("dispenses"),
-      series("trades"),
-    ]);
-    const [sends, btc_fees, xcp_burned] = await Promise.all([
-      series("sends"),
-      series("btc_fees"),
-      series("xcp_burned"),
-    ]);
+    // This producer is cached for six hours. Keep D1 statements sequential: concurrent filtered aggregates
+    // can exhaust an invocation's query slots even though every individual indexed series is inexpensive.
+    const transactions = await series("transactions");
+    const issuances = await series("issuances");
+    const dispenses = await series("dispenses");
+    const trades = await series("trades");
+    const sends = await series("sends");
+    const btc_fees = await series("btc_fees");
+    const xcp_burned = await series("xcp_burned");
     return { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } };
   });
 });
