@@ -12,6 +12,7 @@ const ETH_TOKENS = [
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const BLOCK_WINDOW = 250_000;
 const EMBLEM_WINDOW = 5_000;
+const DEX_RECONCILE_INTERVAL_BLOCKS = 6;
 
 export function coreDexTradesSql(): string {
   const forwardMoney = `forward_asset.asset IN ('XCP','BTC')`;
@@ -223,9 +224,6 @@ async function advanceDispenseVenue(
   const results = await db.batch([
     db.prepare(DISPENSE_TRADES_SQL).bind(cursor, high),
     db.prepare(DISPENSE_TRADE_LEGS_SQL).bind(cursor, high),
-    db
-      .prepare(`DELETE FROM trades WHERE venue='dispense' AND block_index>? AND block_index<=? AND instr(ref,':')=0`)
-      .bind(cursor, high),
   ]);
   await setCoreState(db, "trades_cur_dispense_payments", high);
   return {
@@ -246,13 +244,15 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   writes.dex = dex.written;
   writes.dispense = dispense.written;
 
-  let dexReconcileCursor = await getCoreStateInt(env.CORE_DB, "trades_dex_reconcile_block");
-  if (dexReconcileCursor >= tip) dexReconcileCursor = 0;
-  if (tip > 0) {
+  const lastDexReconcileRun = await getCoreStateInt(env.CORE_DB, "trades_dex_reconcile_run_block");
+  if (tip > 0 && tip - lastDexReconcileRun >= DEX_RECONCILE_INTERVAL_BLOCKS) {
+    let dexReconcileCursor = await getCoreStateInt(env.CORE_DB, "trades_dex_reconcile_block");
+    if (dexReconcileCursor >= tip) dexReconcileCursor = 0;
     const high = Math.min(dexReconcileCursor + BLOCK_WINDOW, tip);
     const result = await env.CORE_DB.prepare(coreDexTradesSql()).bind(dexReconcileCursor, high).run();
     writes.dex_reconcile = result.meta.rows_written ?? 0;
     await setCoreState(env.CORE_DB, "trades_dex_reconcile_block", high);
+    await setCoreState(env.CORE_DB, "trades_dex_reconcile_run_block", tip);
   }
 
   const emblemTip = Number(
