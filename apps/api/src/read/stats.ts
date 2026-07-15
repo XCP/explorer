@@ -40,11 +40,14 @@ stats.get("/v2/metrics", async (c) => {
       (await coreMetricSeries(c.env.CORE_DB, name, days, includeHidden))
         .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 }))
         .reverse();
-    const [transactions, issuances, dispenses, trades, sends, btc_fees, xcp_burned] = await Promise.all([
+    // Bound D1 fan-out: seven simultaneous statements can exceed the per-invocation query concurrency limit.
+    const [transactions, issuances, dispenses, trades] = await Promise.all([
       series("transactions"),
       series("issuances"),
       series("dispenses"),
       series("trades"),
+    ]);
+    const [sends, btc_fees, xcp_burned] = await Promise.all([
       series("sends"),
       series("btc_fees"),
       series("xcp_burned"),

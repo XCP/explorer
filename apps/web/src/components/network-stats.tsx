@@ -6,6 +6,7 @@ import { Card, Stat } from "@/components/ui/card";
 import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";
 import { useState } from "react";
+import { useStats } from "@/lib/hooks";
 
 const COUNTS: [keyof NetworkStatsPayload, string][] = [
   ["transactions", "Transactions"],
@@ -28,6 +29,7 @@ const COUNTS: [keyof NetworkStatsPayload, string][] = [
 // server page that owns the static metadata.
 export function NetworkStats() {
   const [showLowQ, setShowLowQ] = useState(false);
+  const { item: live } = useStats();
   const { data } = useSWR<Envelope<NetworkStatsPayload>>(
     apiUrl("/v2/stats", showLowQ ? { include_hidden: 1 } : {}),
   );
@@ -58,7 +60,7 @@ export function NetworkStats() {
           value={s?.xcp_destroyed != null ? commas(Math.round(s.xcp_destroyed)) : "—"}
         />
         <Stat label="BTC fees paid (all-time)" value={s?.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
-        <Stat label="Tip block" value={commas(s?.tip)} />
+        <Stat label="Tip block" value={commas(live?.tip ?? s?.tip)} />
       </div>
       <ActivityChart includeHidden={showLowQ} />
       <Card title="Counterparty totals">
