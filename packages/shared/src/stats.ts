@@ -31,6 +31,14 @@ export interface NetworkStats {
   dividends: number;
   fairmints: number;
   destructions: number;
+  burns: number;
+  fairminters: number;
+  bets: number;
+  bet_matches: number;
+  btcpays: number;
+  cancels: number;
+  rps: number;
+  rps_matches: number;
   holders: number;
   btc_fees: number;
   xcp_destroyed: number;

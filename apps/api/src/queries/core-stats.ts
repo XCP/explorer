@@ -21,7 +21,11 @@ export function coreNetworkCounts(db: D1Database): Promise<NetworkCounts | null>
   return one<NetworkCounts>(
     db,
     `SELECT ${CHAIN_POSITION} tip,assets,transactions,sends,issuances,dispensers,dispenses,orders,
-            order_matches,sweeps,broadcasts,dividends,fairmints,destructions,holders
+            order_matches,sweeps,broadcasts,dividends,fairmints,destructions,holders,
+            (SELECT COUNT(*) FROM burns) burns,(SELECT COUNT(*) FROM fairminters) fairminters,
+            (SELECT COUNT(*) FROM bets) bets,(SELECT COUNT(*) FROM bet_matches) bet_matches,
+            (SELECT COUNT(*) FROM btcpays) btcpays,(SELECT COUNT(*) FROM cancels) cancels,
+            (SELECT COUNT(*) FROM rps) rps,(SELECT COUNT(*) FROM rps_matches) rps_matches
        FROM network_stats_snapshot WHERE singleton=1`,
   );
 }
@@ -76,6 +80,17 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
         WHERE signal.low_quality=1) fairmints,
       snapshot.destructions-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN destructions item ON item.asset_id=signal.asset_id
         WHERE signal.low_quality=1) destructions,
+      (SELECT COUNT(*) FROM burns) burns,
+      (SELECT COUNT(*) FROM fairminters item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
+        WHERE COALESCE(signal.low_quality,0)=0) fairminters,
+      (SELECT COUNT(*) FROM bets) bets,(SELECT COUNT(*) FROM bet_matches) bet_matches,
+      (SELECT COUNT(*) FROM btcpays item
+        JOIN order_matches match ON match.tx0_index=item.order_match_tx0_index AND match.tx1_index=item.order_match_tx1_index
+        LEFT JOIN asset_signals forward_signal ON forward_signal.asset_id=match.forward_asset_id
+        LEFT JOIN asset_signals backward_signal ON backward_signal.asset_id=match.backward_asset_id
+        WHERE COALESCE(forward_signal.low_quality,0)=0 AND COALESCE(backward_signal.low_quality,0)=0) btcpays,
+      (SELECT COUNT(*) FROM cancels) cancels,(SELECT COUNT(*) FROM rps) rps,
+      (SELECT COUNT(*) FROM rps_matches) rps_matches,
       snapshot.holders-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN balances item ON item.asset_id=signal.asset_id
         WHERE signal.low_quality=1 AND CAST(item.quantity AS INTEGER)>0) holders,
       (SELECT COALESCE(SUM(CAST(tx.fee AS REAL)),0)/100000000.0 FROM transactions tx

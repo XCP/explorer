@@ -278,7 +278,8 @@ test("contract: stats quality modes remain isolated and monotonic", async (t) =>
   ]);
   const countFields = [
     "assets", "transactions", "sends", "issuances", "dispensers", "dispenses", "orders", "order_matches",
-    "sweeps", "broadcasts", "dividends", "fairmints", "destructions", "holders", "btc_fees", "xcp_destroyed",
+    "sweeps", "broadcasts", "dividends", "fairmints", "destructions", "burns", "fairminters", "bets",
+    "bet_matches", "btcpays", "cancels", "rps", "rps_matches", "holders", "btc_fees", "xcp_destroyed",
   ];
   for (const field of countFields) {
     assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);

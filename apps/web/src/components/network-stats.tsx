@@ -22,6 +22,14 @@ const COUNTS: [keyof NetworkStatsPayload, string][] = [
   ["dividends", "Dividends"],
   ["fairmints", "Fairmints"],
   ["destructions", "Destructions"],
+  ["burns", "Burns"],
+  ["fairminters", "Fairminters"],
+  ["bets", "Bets"],
+  ["bet_matches", "Bet matches"],
+  ["btcpays", "BTC pays"],
+  ["cancels", "Cancels"],
+  ["rps", "RPS games"],
+  ["rps_matches", "RPS matches"],
   ["holders", "Balances"],
 ];
 
