@@ -12,10 +12,12 @@ export function AreaChart({
   data,
   height = 200,
   formatValue = (value) => value.toLocaleString(),
+  formatDate,
 }: {
   data: Point[];
   height?: number;
   formatValue?: (value: number) => string;
+  formatDate?: (timestamp: number) => string;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   if (data.length < 2) return <div style={{ height }} className="animate-pulse rounded bg-zinc-900" />;
@@ -34,6 +36,7 @@ export function AreaChart({
     .join(" ");
   const area = `${line} L${left + plotWidth},${top + plotHeight} L${left},${top + plotHeight} Z`;
   const day = (timestamp: number) => new Date(timestamp * 1000).toISOString().slice(0, 10);
+  const dateLabel = formatDate ?? day;
   const active = hovered == null ? null : data[hovered];
   const activeX = hovered == null ? 0 : x(hovered);
 
@@ -105,7 +108,7 @@ export function AreaChart({
             transform: `translateX(${activeX > width * 0.75 ? "-100%" : activeX < width * 0.25 ? "0" : "-50%"})`,
           }}
         >
-          <div className="font-mono text-zinc-500">{day(active.t)}</div>
+          <div className="font-mono text-zinc-500">{dateLabel(active.t)}</div>
           <div className="mt-0.5 font-mono text-zinc-100">{formatValue(active.v)}</div>
         </div>
       )}
