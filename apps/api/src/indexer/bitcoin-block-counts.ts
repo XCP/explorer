@@ -3,7 +3,8 @@ import { fetchBlockPage, type ElectrsBlockSummary } from "#api/integrations/elec
 import { getCoreState, getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const PAGES_PER_STEP = 50;
-const PAGE_CONCURRENCY = 5;
+const PAGE_CONCURRENCY = 1;
+const PAGE_DELAY_MS = 100;
 const CURSOR_KEY = "bitcoin_block_counts_cursor";
 const REMAINING_KEY = "bitcoin_block_counts_remaining";
 const FRONTIER_KEY = "bitcoin_block_counts_frontier";
@@ -70,6 +71,9 @@ export async function backfillBitcoinBlockCounts(
         starts.slice(offset, offset + PAGE_CONCURRENCY).map((height) => fetchBlockPage(env.ELECTRS_API_BASE, height)),
       )),
     );
+    if (offset + PAGE_CONCURRENCY < starts.length) {
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+    }
   }
   const rows = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   let changed = 0;
