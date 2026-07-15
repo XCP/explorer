@@ -36,6 +36,7 @@ import { admin } from "#api/admin";
 import { recoveryRead } from "#api/recovery/read";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
+import { maybeRefreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 
@@ -185,6 +186,7 @@ export default {
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
           await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
+          await runScheduledJob("maybeRefreshQualityNetworkStats", () => maybeRefreshQualityNetworkStats(env.CORE_DB));
           await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
           // FULL tags rebuild as the daily self-healing backstop (reconciles anything the dirty set missed).
           await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
