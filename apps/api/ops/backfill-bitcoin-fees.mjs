@@ -53,19 +53,27 @@ async function transactions(txids) {
         }),
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok) throw new Error(`Counterparty Bitcoin RPC: ${response.status} ${await response.text()}`);
+      if (!response.ok) {
+        const error = new Error(`Counterparty Bitcoin RPC: ${response.status} ${await response.text()}`);
+        error.status = response.status;
+        error.retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+        throw error;
+      }
       const payload = await response.json();
       if (!payload.result || typeof payload.result !== "object")
         throw new Error(`Counterparty Bitcoin RPC: ${JSON.stringify(payload.error ?? payload).slice(0, 300)}`);
       return payload.result;
     } catch (error) {
       failure = error;
-      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 1_000 * 2 ** attempt));
+      if (attempt + 1 < attempts) {
+        const wait = error?.status === 429 ? (error.retryAfter || 30) * 1_000 : 1_000 * 2 ** attempt;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
     }
   }
   // Large batch responses occasionally exceed the provider's stream timeout. Split them until each request
   // is small enough; a persistently failing <=10-item leaf is reported to the page loop for a later pass.
-  if (txids.length > 10) {
+  if (failure?.status !== 429 && txids.length > 10) {
     const middle = Math.ceil(txids.length / 2);
     const [left, right] = await Promise.all([transactions(txids.slice(0, middle)), transactions(txids.slice(middle))]);
     return { ...left, ...right };
