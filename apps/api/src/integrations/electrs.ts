@@ -11,6 +11,25 @@ export interface ElectrsTransactionStatus {
   blockTime: number | null;
 }
 
+const ELECTRS_RETRIES = 2;
+const ELECTRS_MAX_RETRY_MS = 2_000;
+
+async function electrsFetch(url: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (response.ok || response.status === 404) return response;
+
+    const retryable = response.status === 429 || response.status >= 500;
+    const retryAfter = Number.parseInt(response.headers.get("retry-after") ?? "", 10);
+    await response.body?.cancel();
+    if (!retryable || attempt >= ELECTRS_RETRIES) throw new Error(`Electrs request ${response.status}`);
+
+    const requestedDelay = Number.isSafeInteger(retryAfter) && retryAfter >= 0 ? retryAfter * 1_000 : 250 * 2 ** attempt;
+    const delay = Math.min(ELECTRS_MAX_RETRY_MS, requestedDelay);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+
 export function parseElectrsTransactionFee(value: unknown): number {
   const transaction = object(value, "Electrs transaction must be an object");
   if (!Number.isSafeInteger(transaction.fee) || Number(transaction.fee) < 0)
@@ -42,9 +61,7 @@ export function parseElectrsBlockPage(value: unknown): ElectrsBlockSummary[] {
 }
 
 export async function fetchBlockPage(baseUrl: string, height: number): Promise<ElectrsBlockSummary[]> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/blocks/${height}`, {
-    signal: AbortSignal.timeout(20_000),
-  });
+  const response = await electrsFetch(`${baseUrl.replace(/\/$/, "")}/blocks/${height}`);
   if (!response.ok) throw new Error(`Electrs blocks ${response.status}`);
   return parseElectrsBlockPage(await response.json());
 }
@@ -97,44 +114,43 @@ export function parseElectrsOutspends(value: unknown): ElectrsOutspend[] {
 }
 
 export async function fetchTransactionOutspends(baseUrl: string, txid: string): Promise<ElectrsOutspend[]> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}/outspends`, {
-    signal: AbortSignal.timeout(20_000),
-  });
+  const response = await electrsFetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}/outspends`);
   if (!response.ok) throw new Error(`Electrs outspends ${response.status}`);
   return parseElectrsOutspends(await response.json());
 }
 
 export async function fetchTransactionStatus(baseUrl: string, txid: string): Promise<ElectrsTransactionStatus | null> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}`, {
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (response.status === 404) return null;
+  const response = await electrsFetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}`);
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
   if (!response.ok) throw new Error(`Electrs transaction ${response.status}`);
   return parseElectrsTransactionStatus(await response.json());
 }
 
 export async function fetchTransactionFee(baseUrl: string, txid: string): Promise<number | null> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}`, {
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (response.status === 404) return null;
+  const response = await electrsFetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}`);
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
   if (!response.ok) throw new Error(`Electrs transaction ${response.status}`);
   return parseElectrsTransactionFee(await response.json());
 }
 
 export async function fetchTransactionHex(baseUrl: string, txid: string): Promise<string | null> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}/hex`, {
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (response.status === 404) return null;
+  const response = await electrsFetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}/hex`);
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
   if (!response.ok) throw new Error(`Electrs transaction hex ${response.status}`);
   return parseElectrsTransactionHex(await response.text());
 }
 
 export async function fetchTipHeight(baseUrl: string): Promise<number> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/blocks/tip/height`, {
-    signal: AbortSignal.timeout(20_000),
-  });
+  const response = await electrsFetch(`${baseUrl.replace(/\/$/, "")}/blocks/tip/height`);
   if (!response.ok) throw new Error(`Electrs tip height ${response.status}`);
   const height = Number(await response.text());
   if (!Number.isSafeInteger(height) || height < 0) throw new Error("Electrs returned an invalid tip height");

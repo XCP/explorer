@@ -1,12 +1,40 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  fetchTipHeight,
   parseElectrsBlockPage,
   parseElectrsOutspends,
   parseElectrsTransactionFee,
   parseElectrsTransactionHex,
   parseElectrsTransactionStatus,
 } from "#api/integrations/electrs";
+
+test("Electrs retries rate limits and consumes the rejected response", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  let canceled = false;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      return new Response(
+        new ReadableStream({
+          cancel() {
+            canceled = true;
+          },
+        }),
+        { status: 429, headers: { "retry-after": "0" } },
+      );
+    }
+    return new Response("958084");
+  };
+  try {
+    assert.equal(await fetchTipHeight("https://electrs.example"), 958_084);
+    assert.equal(calls, 2);
+    assert.equal(canceled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("parses exact integer transaction fees", () => {
   assert.equal(parseElectrsTransactionFee({ fee: 46_970 }), 46_970);
