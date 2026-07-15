@@ -27,6 +27,7 @@ test("explicit issuer collections classify new issuances immediately", () => {
   });
   assert.equal(issuerCollection("unrelated"), null);
   assert.equal(issuerCollection(null), null);
+  assert.equal(issuerCollection("1ChvF5WNhVMg6heJdruRXgs6bUwQAaVWzL")?.tag, "based-intellectuals");
 });
 
 test("issuer collection rebuild writes and reconciles compact entity tags", async () => {
@@ -45,7 +46,7 @@ test("issuer collection rebuild writes and reconciles compact entity tags", asyn
     INSERT INTO tags VALUES(99,'corruptionaires','issuer','old');
   `);
   const result = await buildIssuerCollections({ CORE_DB: d1(db) } as never);
-  assert.equal(result.collections, 2);
+  assert.equal(result.collections, 3);
   assert.deepEqual(
     db.prepare(`SELECT entity.entity_key asset,tag.tag,tag.source FROM tags tag
       JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id`).all().map((row) => ({ ...row })),

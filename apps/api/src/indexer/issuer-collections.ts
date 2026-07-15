@@ -28,6 +28,11 @@ export const ISSUER_COLLECTIONS: readonly IssuerCollection[] = [
     name: "New Liberty Standard",
     site: "https://newlibertystandard.io/",
   },
+  {
+    issuer: "1ChvF5WNhVMg6heJdruRXgs6bUwQAaVWzL",
+    tag: "based-intellectuals",
+    name: "Based Intellectuals",
+  },
 ];
 
 export function issuerCollection(issuer: unknown): IssuerCollection | null {
