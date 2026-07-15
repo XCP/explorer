@@ -178,7 +178,8 @@ for (;;) {
               error: error instanceof Error ? error.message : String(error),
             }),
           );
-          if (error?.status === 429 || error?.status === 503) await new Promise((resolve) => setTimeout(resolve, 60_000));
+          if (error?.status === 429 || error?.status === 503)
+            await new Promise((resolve) => setTimeout(resolve, 60_000));
         }
         if (CHUNK_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS));
       }
