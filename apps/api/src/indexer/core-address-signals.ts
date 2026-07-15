@@ -17,6 +17,7 @@ seen AS (
   UNION ALL SELECT block_index FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)
   UNION ALL SELECT block_index FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)
 ),
+activity AS (SELECT min(block_index) first_block,max(block_index) last_block FROM seen),
 holding AS (SELECT count(DISTINCT asset_id) assets_held FROM balances
   WHERE address_id=(SELECT address_id FROM identity) AND CAST(quantity AS INTEGER)>0),
 creator AS (
@@ -57,7 +58,7 @@ collected AS (SELECT count(DISTINCT balance.asset_id) stamps FROM balances balan
   JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
   JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='stamp'
   WHERE balance.address_id=(SELECT address_id FROM identity) AND CAST(balance.quantity AS INTEGER)>0)
-SELECT identity.address_id,(SELECT min(block_index) FROM seen),coalesce((SELECT max(block_index) FROM seen),0),
+SELECT identity.address_id,activity.first_block,coalesce(activity.last_block,0),
   (SELECT count(DISTINCT destination_address_id) FROM sends WHERE source_address_id=identity.address_id),
   (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id),
   earned.btc,earned.dispenses,
@@ -86,7 +87,7 @@ SELECT identity.address_id,(SELECT min(block_index) FROM seen),coalesce((SELECT 
     UNION ALL SELECT tx1_index FROM order_matches WHERE tx1_address_id=identity.address_id)),
   stamp.created,collected.stamps,stamp.src20,
   EXISTS(SELECT 1 FROM broadcasts WHERE source_id=identity.address_id AND btns=1)
-FROM identity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
+FROM identity CROSS JOIN activity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
 WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
   first_block=excluded.first_block,last_block=excluded.last_block,out_peers=excluded.out_peers,in_peers=excluded.in_peers,
   dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses,dividends=excluded.dividends,
