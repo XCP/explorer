@@ -3,11 +3,7 @@ import { useState } from "react";
 
 type Point = { t: number; v: number };
 
-function compact(value: number): string {
-  return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
-
-/** Dependency-free daily area chart with an axis and an exact hover readout. */
+/** Dependency-free daily area chart with an exact hover readout. */
 export function AreaChart({
   data,
   height = 200,
@@ -22,7 +18,7 @@ export function AreaChart({
   const [hovered, setHovered] = useState<number | null>(null);
   if (data.length < 2) return <div style={{ height }} className="animate-pulse rounded bg-zinc-900" />;
   const width = 800;
-  const left = 52;
+  const left = 4;
   const right = 8;
   const top = 8;
   const bottom = 8;
@@ -65,22 +61,17 @@ export function AreaChart({
         </defs>
         {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
           const gridY = top + fraction * plotHeight;
-          const value = max * (1 - fraction);
           return (
-            <g key={fraction}>
-              <line
-                x1={left}
-                x2={width - right}
-                y1={gridY}
-                y2={gridY}
-                stroke="#27272a"
-                strokeWidth="1"
-                vectorEffect="non-scaling-stroke"
-              />
-              <text x={left - 7} y={gridY + 3} textAnchor="end" fill="#71717a" fontSize="10">
-                {compact(value)}
-              </text>
-            </g>
+            <line
+              key={fraction}
+              x1={left}
+              x2={width - right}
+              y1={gridY}
+              y2={gridY}
+              stroke="#27272a"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
           );
         })}
         <path d={area} fill="url(#xcpArea)" />
@@ -112,7 +103,7 @@ export function AreaChart({
           <div className="mt-0.5 font-mono text-zinc-100">{formatValue(active.v)}</div>
         </div>
       )}
-      <div className="mt-1 flex justify-between pl-[52px] text-[10px] font-mono text-zinc-500">
+      <div className="mt-1 flex justify-between text-[10px] font-mono text-zinc-500">
         <span>{day(data[0].t)}</span>
         <span>{day(data.at(-1)!.t)}</span>
       </div>

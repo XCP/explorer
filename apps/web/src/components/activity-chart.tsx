@@ -34,10 +34,14 @@ function monthly(points: Point[]): Point[] {
 export function ActivityChart() {
   const [metric, setMetric] = useState<Key>("transactions");
   const [days, setDays] = useState(365);
+  const [cumulative, setCumulative] = useState(false);
   const { data } = useSWR<Envelope<Record<string, Point[]>>>(apiUrl("/v2/metrics", { days, include_hidden: 1 }));
   const grouped = days > 365;
-  const series = grouped ? monthly(data?.result?.[metric] ?? []) : (data?.result?.[metric] ?? []);
-  const label = SERIES.find(([key]) => key === metric)![1];
+  let series = grouped ? monthly(data?.result?.[metric] ?? []) : (data?.result?.[metric] ?? []);
+  if (cumulative) {
+    let total = 0;
+    series = series.map((point) => ({ ...point, v: (total += point.v) }));
+  }
   const unit = metric === "btc_fees" ? " BTC" : metric === "xcp_burned" ? " XCP" : "";
   const format = (value: number) =>
     `${value.toLocaleString(undefined, { maximumFractionDigits: metric === "transactions" ? 0 : 2 })}${unit}`;
@@ -50,7 +54,7 @@ export function ActivityChart() {
 
   return (
     <Card title="Network activity">
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
         <div className="flex flex-wrap gap-1" aria-label="Chart period">
           {RANGES.map(([value, name]) => (
             <button
@@ -79,9 +83,14 @@ export function ActivityChart() {
             </option>
           ))}
         </select>
-      </div>
-      <div className="mb-2 text-xs text-zinc-400">
-        {grouped ? "Monthly" : "Daily"} {label.toLowerCase()} · {series.length.toLocaleString()} periods
+        <button
+          type="button"
+          onClick={() => setCumulative((value) => !value)}
+          aria-pressed={cumulative}
+          className={`rounded border px-2 py-1 text-xs ${cumulative ? "border-sky-500/50 bg-sky-400/10 text-sky-300" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}
+        >
+          Cumulative
+        </button>
       </div>
       <AreaChart data={series} height={240} formatValue={format} formatDate={formatDate} />
     </Card>
