@@ -86,9 +86,12 @@ export async function backfillBitcoinBlockCounts(
   }
   remaining = Math.max(0, remaining - changed);
   await setCoreState(env.CORE_DB, REMAINING_KEY, remaining);
-  if (settled.every((result) => result.status === "fulfilled")) {
-    if (maintenanceFrontier == null) await setCoreState(env.CORE_DB, CURSOR_KEY, starts.at(-1)! - 10);
-    else await setCoreState(env.CORE_DB, FRONTIER_KEY, nextHeight);
+  const completedPrefix = settled.findIndex((result) => result.status === "rejected");
+  const completedPages = completedPrefix === -1 ? settled.length : completedPrefix;
+  if (maintenanceFrontier == null && completedPages > 0) {
+    await setCoreState(env.CORE_DB, CURSOR_KEY, starts[completedPages - 1]! - 10);
+  } else if (maintenanceFrontier != null && completedPages === settled.length) {
+    await setCoreState(env.CORE_DB, FRONTIER_KEY, nextHeight);
   }
   return {
     blocks: changed,

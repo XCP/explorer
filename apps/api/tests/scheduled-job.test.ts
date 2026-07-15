@@ -18,6 +18,27 @@ test("scheduled jobs return successful results and emit a structured outcome", a
   assert.equal((events[0] as { outcome: string }).outcome, "success");
 });
 
+test("scheduled jobs log bounded scalar progress without arbitrary strings", async () => {
+  const events: unknown[] = [];
+  const original = console.log;
+  console.log = (event: unknown) => events.push(event);
+  try {
+    await runScheduledJob("progress", async () => ({
+      written: 12,
+      done: false,
+      cursor: "sensitive-or-high-cardinality",
+      rows: [1, 2, 3],
+    }));
+  } finally {
+    console.log = original;
+  }
+  assert.deepEqual((events[0] as { progress: unknown }).progress, {
+    written: 12,
+    done: false,
+    rows_count: 3,
+  });
+});
+
 test("scheduled jobs isolate failures and emit safe error details", async () => {
   const events: unknown[] = [];
   const original = console.error;
