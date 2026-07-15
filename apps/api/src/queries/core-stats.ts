@@ -37,28 +37,27 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
     db,
     `WITH snapshot AS (SELECT * FROM network_stats_snapshot WHERE singleton=1),
       lowq_tx AS (
-        SELECT item.tx_index FROM sends item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM issuances item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM dispensers item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM dispenses item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM orders item JOIN asset_signals signal ON signal.asset_id=item.give_asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM orders item JOIN asset_signals signal ON signal.asset_id=item.get_asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM dividends item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM fairmints item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
-        UNION SELECT item.tx_index FROM destructions item JOIN asset_signals signal ON signal.asset_id=item.asset_id AND signal.low_quality=1
+        SELECT item.tx_index FROM asset_signals signal CROSS JOIN sends item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN issuances item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN dispensers item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN dispenses item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN orders item ON item.give_asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN orders item ON item.get_asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN dividends item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN fairmints item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN destructions item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
       )
     SELECT (SELECT MAX(block_index) FROM blocks) tip,
-      (SELECT COUNT(*) FROM assets item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) assets,
+      snapshot.assets-(SELECT COUNT(*) FROM asset_signals WHERE low_quality=1) assets,
       snapshot.transactions,
-      (SELECT COUNT(*) FROM sends item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) sends,
-      (SELECT COUNT(*) FROM issuances item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) issuances,
-      (SELECT COUNT(*) FROM dispensers item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) dispensers,
-      (SELECT COUNT(*) FROM dispenses item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) dispenses,
+      snapshot.sends-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN sends item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) sends,
+      snapshot.issuances-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN issuances item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) issuances,
+      snapshot.dispensers-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN dispensers item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) dispensers,
+      snapshot.dispenses-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN dispenses item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) dispenses,
       (SELECT COUNT(*) FROM orders item
         LEFT JOIN asset_signals give_signal ON give_signal.asset_id=item.give_asset_id
         LEFT JOIN asset_signals get_signal ON get_signal.asset_id=item.get_asset_id
@@ -68,14 +67,14 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
         LEFT JOIN asset_signals backward_signal ON backward_signal.asset_id=item.backward_asset_id
         WHERE COALESCE(forward_signal.low_quality,0)=0 AND COALESCE(backward_signal.low_quality,0)=0) order_matches,
       snapshot.sweeps,snapshot.broadcasts,
-      (SELECT COUNT(*) FROM dividends item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) dividends,
-      (SELECT COUNT(*) FROM fairmints item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) fairmints,
-      (SELECT COUNT(*) FROM destructions item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0) destructions,
-      (SELECT COUNT(*) FROM balances item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE COALESCE(signal.low_quality,0)=0 AND CAST(item.quantity AS INTEGER)>0) holders,
+      snapshot.dividends-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN dividends item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) dividends,
+      snapshot.fairmints-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN fairmints item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) fairmints,
+      snapshot.destructions-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN destructions item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1) destructions,
+      snapshot.holders-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN balances item ON item.asset_id=signal.asset_id
+        WHERE signal.low_quality=1 AND CAST(item.quantity AS INTEGER)>0) holders,
       (SELECT COALESCE(SUM(CAST(tx.fee AS REAL)),0)/100000000.0 FROM transactions tx
         LEFT JOIN lowq_tx hidden ON hidden.tx_index=tx.tx_index WHERE hidden.tx_index IS NULL) btc_fees,
       (SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/100000000.0 FROM (

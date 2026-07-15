@@ -130,7 +130,9 @@ test("quality stats exclude low-quality asset activity without removing unscoped
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
-    CREATE TABLE network_stats_snapshot(singleton INTEGER PRIMARY KEY,transactions INTEGER,sweeps INTEGER,broadcasts INTEGER);
+    CREATE TABLE network_stats_snapshot(singleton INTEGER PRIMARY KEY,assets INTEGER,transactions INTEGER,sends INTEGER,
+      issuances INTEGER,dispensers INTEGER,dispenses INTEGER,sweeps INTEGER,broadcasts INTEGER,dividends INTEGER,
+      fairmints INTEGER,destructions INTEGER,holders INTEGER);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT);
     CREATE TABLE asset_signals(asset_id INTEGER PRIMARY KEY,low_quality INTEGER);
     CREATE TABLE assets(asset_id INTEGER); CREATE TABLE transactions(tx_index INTEGER,fee TEXT);
@@ -143,7 +145,7 @@ test("quality stats exclude low-quality asset activity without removing unscoped
     CREATE TABLE fairmints(tx_index INTEGER,asset_id INTEGER); CREATE TABLE destructions(tx_index INTEGER,asset_id INTEGER,status TEXT,quantity TEXT);
     CREATE TABLE balances(asset_id INTEGER,quantity TEXT);
     INSERT INTO blocks VALUES(100);
-    INSERT INTO network_stats_snapshot VALUES(1,3,1,1);
+    INSERT INTO network_stats_snapshot VALUES(1,3,3,2,2,2,2,1,1,2,2,2,2);
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CLEAN'),(3,'JUNK');
     INSERT INTO asset_signals VALUES(2,0),(3,1); INSERT INTO assets VALUES(1),(2),(3);
     INSERT INTO transactions VALUES(10,'10000000'),(11,'20000000'),(12,'30000000');
