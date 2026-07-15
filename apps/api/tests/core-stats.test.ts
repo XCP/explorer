@@ -42,6 +42,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
     CREATE TABLE burns(x INTEGER); CREATE TABLE fairminters(x INTEGER); CREATE TABLE bets(x INTEGER);
     CREATE TABLE bet_matches(x INTEGER); CREATE TABLE btcpays(x INTEGER); CREATE TABLE cancels(x INTEGER);
     CREATE TABLE rps(x INTEGER); CREATE TABLE rps_matches(x INTEGER);
+    CREATE TABLE pools(x INTEGER); CREATE TABLE pool_matches(x INTEGER); CREATE TABLE pool_liquidity(x INTEGER);
     CREATE TABLE network_stats_snapshot(
       singleton INTEGER PRIMARY KEY,assets INTEGER,transactions INTEGER,balances INTEGER,sends INTEGER,
       issuances INTEGER,dispensers INTEGER,dispenses INTEGER,orders INTEGER,order_matches INTEGER,
@@ -87,6 +88,9 @@ test("compact overview reads one snapshot and reports the canonical block positi
       cancels: 0,
       rps: 0,
       rps_matches: 0,
+      pools: 0,
+      pool_matches: 0,
+      pool_liquidity: 0,
       holders: 16,
     },
   );
@@ -159,6 +163,9 @@ test("quality stats exclude low-quality asset activity without removing unscoped
     CREATE TABLE bet_matches(x INTEGER);
     CREATE TABLE btcpays(order_match_tx0_index INTEGER,order_match_tx1_index INTEGER);
     CREATE TABLE cancels(x INTEGER); CREATE TABLE rps(x INTEGER); CREATE TABLE rps_matches(x INTEGER);
+    CREATE TABLE pools(asset_a_id INTEGER,asset_b_id INTEGER);
+    CREATE TABLE pool_matches(forward_asset_id INTEGER,backward_asset_id INTEGER);
+    CREATE TABLE pool_liquidity(asset_a_id INTEGER,asset_b_id INTEGER);
     INSERT INTO blocks VALUES(100);
     INSERT INTO network_stats_snapshot VALUES(1,3,3,2,2,2,2,1,1,2,2,2,2);
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CLEAN'),(3,'JUNK');
@@ -177,7 +184,8 @@ test("quality stats exclude low-quality asset activity without removing unscoped
     tip: 100, assets: 2, transactions: 3, sends: 1, issuances: 1, dispensers: 1, dispenses: 1,
     orders: 1, order_matches: 1, sweeps: 1, broadcasts: 1, dividends: 1, fairmints: 1,
     destructions: 1, burns: 0, fairminters: 0, bets: 0, bet_matches: 0, btcpays: 0, cancels: 0,
-    rps: 0, rps_matches: 0, holders: 1, btc_fees: 0.4, xcp_destroyed: 10,
+    rps: 0, rps_matches: 0, pools: 0, pool_matches: 0, pool_liquidity: 0,
+    holders: 1, btc_fees: 0.4, xcp_destroyed: 10,
   });
   db.close();
 });

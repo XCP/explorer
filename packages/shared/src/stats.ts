@@ -39,6 +39,9 @@ export interface NetworkStats {
   cancels: number;
   rps: number;
   rps_matches: number;
+  pools: number;
+  pool_matches: number;
+  pool_liquidity: number;
   holders: number;
   btc_fees: number;
   xcp_destroyed: number;

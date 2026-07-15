@@ -25,7 +25,9 @@ export function coreNetworkCounts(db: D1Database): Promise<NetworkCounts | null>
             (SELECT COUNT(*) FROM burns) burns,(SELECT COUNT(*) FROM fairminters) fairminters,
             (SELECT COUNT(*) FROM bets) bets,(SELECT COUNT(*) FROM bet_matches) bet_matches,
             (SELECT COUNT(*) FROM btcpays) btcpays,(SELECT COUNT(*) FROM cancels) cancels,
-            (SELECT COUNT(*) FROM rps) rps,(SELECT COUNT(*) FROM rps_matches) rps_matches
+            (SELECT COUNT(*) FROM rps) rps,(SELECT COUNT(*) FROM rps_matches) rps_matches,
+            (SELECT COUNT(*) FROM pools) pools,(SELECT COUNT(*) FROM pool_matches) pool_matches,
+            (SELECT COUNT(*) FROM pool_liquidity) pool_liquidity
        FROM network_stats_snapshot WHERE singleton=1`,
   );
 }
@@ -91,6 +93,18 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
         WHERE COALESCE(forward_signal.low_quality,0)=0 AND COALESCE(backward_signal.low_quality,0)=0) btcpays,
       (SELECT COUNT(*) FROM cancels) cancels,(SELECT COUNT(*) FROM rps) rps,
       (SELECT COUNT(*) FROM rps_matches) rps_matches,
+      (SELECT COUNT(*) FROM pools item
+        LEFT JOIN asset_signals signal_a ON signal_a.asset_id=item.asset_a_id
+        LEFT JOIN asset_signals signal_b ON signal_b.asset_id=item.asset_b_id
+        WHERE COALESCE(signal_a.low_quality,0)=0 AND COALESCE(signal_b.low_quality,0)=0) pools,
+      (SELECT COUNT(*) FROM pool_matches item
+        LEFT JOIN asset_signals forward_signal ON forward_signal.asset_id=item.forward_asset_id
+        LEFT JOIN asset_signals backward_signal ON backward_signal.asset_id=item.backward_asset_id
+        WHERE COALESCE(forward_signal.low_quality,0)=0 AND COALESCE(backward_signal.low_quality,0)=0) pool_matches,
+      (SELECT COUNT(*) FROM pool_liquidity item
+        LEFT JOIN asset_signals signal_a ON signal_a.asset_id=item.asset_a_id
+        LEFT JOIN asset_signals signal_b ON signal_b.asset_id=item.asset_b_id
+        WHERE COALESCE(signal_a.low_quality,0)=0 AND COALESCE(signal_b.low_quality,0)=0) pool_liquidity,
       snapshot.holders-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN balances item ON item.asset_id=signal.asset_id
         WHERE signal.low_quality=1 AND CAST(item.quantity AS INTEGER)>0) holders,
       (SELECT COALESCE(SUM(CAST(tx.fee AS REAL)),0)/100000000.0 FROM transactions tx

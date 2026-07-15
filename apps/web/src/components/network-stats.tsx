@@ -8,29 +8,22 @@ import { commas } from "@/lib/format";
 import { useState } from "react";
 import { useStats } from "@/lib/hooks";
 
-const COUNTS: [keyof NetworkStatsPayload, string][] = [
-  ["transactions", "Transactions"],
-  ["assets", "Assets"],
-  ["sends", "Sends"],
-  ["issuances", "Issuances"],
-  ["orders", "Orders"],
-  ["order_matches", "Order matches"],
-  ["dispensers", "Dispensers"],
-  ["dispenses", "Dispenses"],
-  ["sweeps", "Sweeps"],
-  ["broadcasts", "Broadcasts"],
-  ["dividends", "Dividends"],
-  ["fairmints", "Fairmints"],
-  ["destructions", "Destructions"],
-  ["burns", "Burns"],
-  ["fairminters", "Fairminters"],
-  ["bets", "Bets"],
-  ["bet_matches", "Bet matches"],
-  ["btcpays", "BTC pays"],
-  ["cancels", "Cancels"],
-  ["rps", "RPS games"],
-  ["rps_matches", "RPS matches"],
-  ["holders", "Balances"],
+const COUNT_GROUPS: [string, [keyof NetworkStatsPayload, string][]][] = [
+  ["Overview", [["transactions", "Transactions"], ["assets", "Assets"], ["holders", "Balances"]]],
+  ["Asset activity", [
+    ["issuances", "Issuances"], ["sends", "Sends"], ["dividends", "Dividends"],
+    ["destructions", "Destructions"], ["burns", "Burns"], ["sweeps", "Sweeps"],
+  ]],
+  ["Markets", [
+    ["orders", "Orders"], ["order_matches", "Order matches"], ["btcpays", "BTC pays"],
+    ["dispensers", "Dispensers"], ["dispenses", "Dispenses"], ["cancels", "Cancels"],
+    ["pools", "Pools"], ["pool_matches", "Pool swaps"], ["pool_liquidity", "Liquidity events"],
+  ]],
+  ["Fair minting", [["fairminters", "Fairminters"], ["fairmints", "Fairmints"]]],
+  ["Betting", [
+    ["broadcasts", "Broadcasts"], ["bets", "Bets"], ["bet_matches", "Bet matches"],
+    ["rps", "RPS games"], ["rps_matches", "RPS matches"],
+  ]],
 ];
 
 // Network stats dashboard — live totals + the activity chart. Client island rendered by the thin
@@ -72,11 +65,18 @@ export function NetworkStats() {
       </div>
       <ActivityChart includeHidden={showLowQ} />
       <Card title="Counterparty totals">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
-          {COUNTS.map(([k, label]) => (
-            <div key={k} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
-              <span className="text-zinc-400">{label}</span>
-              <span className="font-mono text-zinc-200">{commas(s?.[k])}</span>
+        <div className="space-y-5">
+          {COUNT_GROUPS.map(([group, counts]) => (
+            <div key={group}>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">{group}</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
+                {counts.map(([key, label]) => (
+                  <div key={key} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
+                    <span className="text-zinc-400">{label}</span>
+                    <span className="font-mono text-zinc-200">{commas(s?.[key])}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
