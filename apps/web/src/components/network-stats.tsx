@@ -8,8 +8,6 @@ import { Card, Stat } from "@/components/ui/card";
 import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";
 
-// Fixed by lifetime volume so the most-used protocol surfaces scan first without the UI
-// reshuffling as totals update.
 const COUNTS: [keyof NetworkStatsPayload, string, Route?][] = [
   ["assets", "Assets", "/assets"],
   ["sends", "Sends", "/sends"],
@@ -42,6 +40,12 @@ const COUNTS: [keyof NetworkStatsPayload, string, Route?][] = [
 export function NetworkStats() {
   const { data } = useSWR<Envelope<NetworkStatsPayload>>(apiUrl("/v2/stats", { include_hidden: 1 }));
   const s = data?.result;
+  const counts = s
+    ? [...COUNTS].sort(([aKey, aLabel], [bKey, bLabel]) => {
+        const difference = Number(s[bKey] ?? 0) - Number(s[aKey] ?? 0);
+        return difference || aLabel.localeCompare(bLabel);
+      })
+    : COUNTS;
   return (
     <>
       <div>
@@ -64,7 +68,7 @@ export function NetworkStats() {
       <ActivityChart />
       <Card title="Counterparty totals">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
-          {COUNTS.map(([key, label, href]) => (
+          {counts.map(([key, label, href]) => (
             <div key={key} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
               {href ? (
                 <Link
