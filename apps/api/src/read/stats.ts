@@ -30,7 +30,7 @@ stats.get("/v2/status", async (c) => J(c, { result: await coreSyncOverview(c.env
 
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
-  const days = boundedInteger(c.req.query("days"), { defaultValue: 90, min: 7, max: 365 });
+  const days = boundedInteger(c.req.query("days"), { defaultValue: 90, min: 7, max: 5000 });
   const includeHidden = c.req.query("include_hidden") === "1";
   // Daily buckets do not justify full-history regrouping every 30 minutes. Six hours keeps today's partial
   // bucket useful while bounding each low-cardinality days variant to four producers/day.

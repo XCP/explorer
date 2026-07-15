@@ -1,35 +1,117 @@
-// Dependency-free SVG charts (sky accent) for the home/stats time-series. Charts are drawn in accent,
-// never brand/market red — a red activity chart reads as an incident.
+"use client";
+import { useState } from "react";
 
-// Area chart with a date axis — for daily time-series.
-export function AreaChart({ data, height = 200 }: { data: { t: number; v: number }[]; height?: number }) {
-  if (data.length < 2) return <div style={{ height }} className="animate-pulse bg-zinc-900 rounded" />;
-  const W = 800,
-    H = height,
-    pad = 4,
-    n = data.length;
-  const max = Math.max(...data.map((d) => d.v), 1);
-  const X = (i: number) => (i / (n - 1)) * W;
-  const Y = (v: number) => H - pad - (v / max) * (H - 2 * pad);
-  const line = data.map((d, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(d.v).toFixed(1)}`).join(" ");
-  const area = `${line} L${W},${H} L0,${H} Z`;
-  const day = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+type Point = { t: number; v: number };
+
+function compact(value: number): string {
+  return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+/** Dependency-free daily area chart with an axis and an exact hover readout. */
+export function AreaChart({
+  data,
+  height = 200,
+  formatValue = (value) => value.toLocaleString(),
+}: {
+  data: Point[];
+  height?: number;
+  formatValue?: (value: number) => string;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  if (data.length < 2) return <div style={{ height }} className="animate-pulse rounded bg-zinc-900" />;
+  const width = 800;
+  const left = 52;
+  const right = 8;
+  const top = 8;
+  const bottom = 8;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const max = Math.max(...data.map((point) => point.v), 1);
+  const x = (index: number) => left + (index / (data.length - 1)) * plotWidth;
+  const y = (value: number) => top + (1 - value / max) * plotHeight;
+  const line = data
+    .map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(point.v).toFixed(1)}`)
+    .join(" ");
+  const area = `${line} L${left + plotWidth},${top + plotHeight} L${left},${top + plotHeight} Z`;
+  const day = (timestamp: number) => new Date(timestamp * 1000).toISOString().slice(0, 10);
+  const active = hovered == null ? null : data[hovered];
+  const activeX = hovered == null ? 0 : x(hovered);
+
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full touch-none"
+        style={{ height }}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Time series from ${day(data[0].t)} to ${day(data.at(-1)!.t)}`}
+        onPointerMove={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const internalX = ((event.clientX - bounds.left) / bounds.width) * width;
+          const ratio = Math.min(1, Math.max(0, (internalX - left) / plotWidth));
+          setHovered(Math.round(ratio * (data.length - 1)));
+        }}
+        onPointerLeave={() => setHovered(null)}
+      >
         <defs>
           <linearGradient id="xcpArea" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
             <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
+        {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+          const gridY = top + fraction * plotHeight;
+          const value = max * (1 - fraction);
+          return (
+            <g key={fraction}>
+              <line
+                x1={left}
+                x2={width - right}
+                y1={gridY}
+                y2={gridY}
+                stroke="#27272a"
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+              />
+              <text x={left - 7} y={gridY + 3} textAnchor="end" fill="#71717a" fontSize="10">
+                {compact(value)}
+              </text>
+            </g>
+          );
+        })}
         <path d={area} fill="url(#xcpArea)" />
         <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        {active && (
+          <>
+            <line
+              x1={activeX}
+              x2={activeX}
+              y1={top}
+              y2={top + plotHeight}
+              stroke="#71717a"
+              strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke"
+            />
+            <circle cx={activeX} cy={y(active.v)} r="3" fill="var(--color-accent)" vectorEffect="non-scaling-stroke" />
+          </>
+        )}
       </svg>
-      <div className="flex justify-between text-[10px] text-zinc-500 mt-1 font-mono">
+      {active && (
+        <div
+          className="pointer-events-none absolute top-2 z-10 rounded border border-zinc-700 bg-zinc-950/95 px-2.5 py-2 text-xs shadow-xl"
+          style={{
+            left: `${(activeX / width) * 100}%`,
+            transform: `translateX(${activeX > width * 0.75 ? "-100%" : activeX < width * 0.25 ? "0" : "-50%"})`,
+          }}
+        >
+          <div className="font-mono text-zinc-500">{day(active.t)}</div>
+          <div className="mt-0.5 font-mono text-zinc-100">{formatValue(active.v)}</div>
+        </div>
+      )}
+      <div className="mt-1 flex justify-between pl-[52px] text-[10px] font-mono text-zinc-500">
         <span>{day(data[0].t)}</span>
-        <span className="text-zinc-400">peak {max.toLocaleString()}</span>
-        <span>{day(data[n - 1].t)}</span>
+        <span>{day(data.at(-1)!.t)}</span>
       </div>
     </div>
   );
