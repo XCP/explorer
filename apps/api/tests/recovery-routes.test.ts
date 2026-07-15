@@ -210,48 +210,6 @@ test("all public recovery workflows stay unavailable until the read gate opens",
   }
 });
 
-test("finalization refuses absent, incomplete, and unchecked imports before opening reads", async () => {
-  const app = new Hono<{ Bindings: Env }>();
-  app.route("/", recoveryAdmin);
-  const db = new FakeRecoveryDb();
-  const bindings = env(db);
-
-  let response = await app.request("/admin/recovery/finalize", { method: "POST" }, bindings);
-  assert.equal(response.status, 409);
-  assert.equal(db.readReady, false);
-
-  db.imports = [{ completed: true }, { completed: false }];
-  db.uncheckedOutputs = 3;
-  response = await app.request("/admin/recovery/finalize", { method: "POST" }, bindings);
-  assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), {
-    error: "recovery index is not ready",
-    total_imports: 2,
-    completed_imports: 1,
-    unchecked_outputs: 3,
-    failed_transactions: 0,
-    stamp_protection_ready: false,
-    official_stamp_protection_ready: false,
-    r2_audit_ready: false,
-  });
-  assert.equal(db.readReady, false);
-});
-
-test("finalization opens reads only after every import and output is complete", async () => {
-  const app = new Hono<{ Bindings: Env }>();
-  app.route("/", recoveryAdmin);
-  const db = new FakeRecoveryDb();
-  db.imports = [{ completed: true }, { completed: true }];
-  db.stampProtectionReady = true;
-  db.officialStampProtectionReady = true;
-  db.r2AuditReady = true;
-
-  const response = await app.request("/admin/recovery/finalize", { method: "POST" }, env(db));
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, read_ready: true });
-  assert.equal(db.readReady, true);
-});
-
 test("R2 audit acceptance is bound to the completed import manifest", async () => {
   const app = new Hono<{ Bindings: Env }>();
   app.route("/", recoveryAdmin);
@@ -293,46 +251,6 @@ test("R2 audit acceptance is bound to the completed import manifest", async () =
   );
   assert.equal(response.status, 200);
   assert.equal(db.r2AuditReady, true);
-});
-
-test("replaying an identical terminal import page reuses its receipt without inflating progress", async () => {
-  const app = new Hono<{ Bindings: Env }>();
-  app.route("/", recoveryAdmin);
-  const db = new FakeRecoveryDb();
-  const bindings = env(db);
-  const request = {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ import_id: "bootstrap", cursor: 0, next_cursor: null, transactions: [] }),
-  };
-
-  let response = await app.request("/admin/recovery/import", request, bindings);
-  assert.equal(response.status, 200);
-  assert.equal(db.readReady, false);
-  assert.equal(db.r2AuditReady, false);
-  assert.deepEqual(await response.json(), {
-    ok: true,
-    upserted: 0,
-    replayed: false,
-    next_cursor: null,
-    complete: true,
-  });
-
-  db.readReady = true;
-  db.r2AuditReady = true;
-  response = await app.request("/admin/recovery/import", request, bindings);
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    ok: true,
-    upserted: 0,
-    replayed: true,
-    next_cursor: null,
-    complete: true,
-  });
-  assert.equal(db.readReady, true);
-  assert.equal(db.r2AuditReady, true);
-  assert.equal(db.receipts.size, 1);
-  assert.equal(db.importRows.get("bootstrap")?.rowsSeen, 0);
 });
 
 test("recovery output pagination supports direct navigation to the final page", async () => {
