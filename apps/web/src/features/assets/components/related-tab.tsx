@@ -12,7 +12,7 @@ function GalleryCard({ asset, name, why }: { asset: string; name: string; why: R
   return (
     <Link className="g-card" href={`/asset/${encodeURIComponent(asset)}`}>
       <div className="g-art">
-        <img src={artUrl(asset, 400, "full")} loading="lazy" alt="" />
+        <img src={artUrl(asset, 640, "full")} loading="lazy" alt="" />
       </div>
       <div className="g-meta">
         <div className="g-name">{name}</div>

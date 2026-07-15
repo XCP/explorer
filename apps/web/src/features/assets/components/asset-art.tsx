@@ -22,6 +22,7 @@ export function AssetArt({
   priority = false,
   w = 640,
   video = false,
+  original = false,
 }: {
   asset: string;
   className?: string;
@@ -30,11 +31,12 @@ export function AssetArt({
   priority?: boolean;
   w?: number;
   video?: boolean;
+  original?: boolean;
 }) {
   const [pixel, setPixel] = useState(stamp || asset[0] === "A"); // initial guess avoids a flash before load
   const [ratio, setRatio] = useState<string | undefined>();
   // `video` = the wire's one-bit hint (the ingest-stamped tag) — skip the error cascade entirely
-  const [stage, setStage] = useState<"resized" | "raw" | "video">(video ? "video" : "resized");
+  const [stage, setStage] = useState<"resized" | "raw" | "video">(video ? "video" : original ? "raw" : "resized");
 
   if (stage === "video") {
     return (

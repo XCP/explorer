@@ -168,7 +168,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
             video={item.tags?.includes("video")}
             priority
             natural
-            w={900}
+            original
           />
           <div className="cap">
             <span>

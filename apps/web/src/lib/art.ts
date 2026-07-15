@@ -8,7 +8,7 @@
 const MEDIA_CACHE_REVISION = "3";
 
 export function artUrl(asset: string, width: number, kind: "full" | "icon" = "full"): string {
-  return `https://cdn.xcp.io/cdn-cgi/image/format=auto,fit=scale-down,width=${width},quality=82/img/${kind}/${encodeURIComponent(asset)}?v=${MEDIA_CACHE_REVISION}`;
+  return `https://cdn.xcp.io/cdn-cgi/image/format=auto,fit=scale-down,width=${width},quality=82,onerror=redirect/img/${kind}/${encodeURIComponent(asset)}?v=${MEDIA_CACHE_REVISION}`;
 }
 
 /** The un-resized origin URL — the fallback when Image Resizing refuses the file (video/mp4 card art,

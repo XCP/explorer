@@ -6,7 +6,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card, Stat } from "@/components/ui/card";
-import { AreaChart } from "@/components/ui/charts";
+import { LineChart, type LineSeries } from "@/components/ui/charts";
 import { Board } from "@/components/board";
 import { Skeleton } from "@/components/ui/feedback";
 import { commas } from "@/lib/format";
@@ -94,7 +94,7 @@ function RecoveryLookup() {
           id="recovery-address"
           value={address}
           onChange={(event) => setAddress(event.target.value)}
-          placeholder="Enter a legacy Bitcoin P2PKH address"
+          placeholder="Enter a Bitcoin address"
           spellCheck={false}
           autoComplete="off"
           className="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 font-mono text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
@@ -107,7 +107,7 @@ function RecoveryLookup() {
           {loading ? "Checking…" : "Check address"}
         </button>
       </form>
-      <p className="mt-2 text-xs text-zinc-500">Only legacy addresses beginning with 1 can own these bare-multisig outputs.</p>
+      <p className="mt-2 text-xs text-zinc-500">This lookup currently accepts legacy P2PKH addresses.</p>
       <div aria-live="polite">
         {error && <p className="mt-4 rounded-md border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-300">{error}</p>}
         {result && (
@@ -123,33 +123,30 @@ function RecoveryLookup() {
 }
 
 function RecoveryChart({ rows, recovered }: { rows: RecoveryMonth[]; recovered: RecoveredMonth[] }) {
-  const [metric, setMetric] = useState<"recoverable" | "recovered">("recoverable");
   const [cumulative, setCumulative] = useState(false);
-  const data = useMemo(() => {
-    const source = metric === "recoverable"
-      ? rows.map((row) => ({ month: row.month, sats: row.unprotected_sats }))
-      : recovered.map((row) => ({ month: row.month, sats: row.gross_sats }));
-    return source.map((row, index) => {
-      const value = row.sats / 100_000_000;
-      const total = source.slice(0, index + 1).reduce((sum, item) => sum + item.sats / 100_000_000, 0);
-      return { t: row.month, v: cumulative ? total : value };
-    });
-  }, [rows, recovered, metric, cumulative]);
+  const series = useMemo<LineSeries[]>(() => {
+    const build = (source: Array<{ month: number; sats: number }>) => {
+      let total = 0;
+      return source.map((row) => {
+        const value = row.sats / 100_000_000;
+        total += value;
+        return { t: row.month, v: cumulative ? total : value };
+      });
+    };
+    return [
+      { label: "Recoverable", color: "#38bdf8", data: build(rows.map((row) => ({ month: row.month, sats: row.unprotected_sats }))) },
+      { label: "Recovered", color: "#facc15", data: build(recovered.map((row) => ({ month: row.month, sats: row.gross_sats }))) },
+    ];
+  }, [rows, recovered, cumulative]);
   return (
-    <Card title={metric === "recoverable" ? "Recoverable Bitcoin by creation month" : "Recovered Bitcoin by recovery month"}>
+    <Card title="Recoverable and recovered Bitcoin">
       <div className="mb-2 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <p className="text-xs text-zinc-500">
-          {metric === "recoverable"
-            ? "Currently unspent, non-Stamp outputs grouped by when they were created."
-            : "Gross value of indexed recovery outputs grouped by their confirmed spend date."}
+          Recoverable outputs use their creation month; recovered outputs use their confirmed spend month.
         </p>
         <div className="flex flex-wrap items-center gap-1 sm:shrink-0">
-          {(["recoverable", "recovered"] as const).map((value) => (
-            <button key={value} type="button" onClick={() => setMetric(value)} aria-pressed={metric === value}
-              className={`rounded border px-2 py-1 text-xs capitalize ${metric === value ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}>
-              {value}
-            </button>
-          ))}
+          <span className="flex items-center gap-1.5 px-1 text-xs text-zinc-400"><span className="size-2 rounded-full bg-sky-400" />Recoverable</span>
+          <span className="flex items-center gap-1.5 px-1 text-xs text-zinc-400"><span className="size-2 rounded-full bg-yellow-400" />Recovered</span>
           <button
             type="button"
             onClick={() => setCumulative((value) => !value)}
@@ -160,8 +157,8 @@ function RecoveryChart({ rows, recovered }: { rows: RecoveryMonth[]; recovered: 
           </button>
         </div>
       </div>
-      <AreaChart
-        data={data}
+      <LineChart
+        series={series}
         height={240}
         formatValue={(value) => `${value.toLocaleString(undefined, { maximumFractionDigits: 8 })} BTC`}
         formatDate={(timestamp) => new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp * 1000)}
@@ -184,7 +181,7 @@ export function Recovery() {
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Recoverable Bitcoin" value={summary ? btc(summary.recoverable_sats) : undefined} />
-        <Stat label="Without Stamps" value={summary ? btc(summary.unprotected_sats) : undefined} />
+        <Stat label="Excluding Stamps" value={summary ? btc(summary.unprotected_sats) : undefined} />
         <Stat label="Protected Stamps" value={summary ? btc(summary.protected_stamp_sats) : undefined} />
         <Stat label="Addresses" value={summary ? commas(summary.recovery_addresses) : undefined} />
       </div>
