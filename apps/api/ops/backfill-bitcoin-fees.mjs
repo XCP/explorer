@@ -37,8 +37,10 @@ async function api(path, init = {}) {
 }
 
 async function transactions(txids) {
+  if (txids.length === 0) return {};
   let failure;
-  for (let attempt = 0; attempt < 6; attempt++) {
+  const attempts = txids.length <= 10 ? 4 : 2;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       const response = await fetch(COUNTERPARTY, {
         method: "POST",
@@ -49,7 +51,7 @@ async function transactions(txids) {
           method: "getrawtransaction_batch",
           params: { txhash_list: txids, verbose: true },
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(30_000),
       });
       if (!response.ok) throw new Error(`Counterparty Bitcoin RPC: ${response.status} ${await response.text()}`);
       const payload = await response.json();
@@ -58,8 +60,15 @@ async function transactions(txids) {
       return payload.result;
     } catch (error) {
       failure = error;
-      if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 1_000 * 2 ** attempt)));
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 1_000 * 2 ** attempt));
     }
+  }
+  // Large batch responses occasionally exceed the provider's stream timeout. Split them until each request
+  // is small enough; a persistently failing <=10-item leaf is reported to the page loop for a later pass.
+  if (txids.length > 10) {
+    const middle = Math.ceil(txids.length / 2);
+    const [left, right] = await Promise.all([transactions(txids.slice(0, middle)), transactions(txids.slice(middle))]);
+    return { ...left, ...right };
   }
   throw failure;
 }
@@ -97,37 +106,62 @@ async function calculateFees(rows) {
 
 let total = 0;
 let pages = 0;
+let after = null;
+let passUpdated = 0;
+let complete = false;
 for (;;) {
   if (MAX_PAGES > 0 && pages >= MAX_PAGES) break;
-  const page = await api(`/admin/bitcoin-fees?limit=${PAGE_SIZE}`);
-  if (!Array.isArray(page.rows) || page.rows.length === 0) break;
+  const page = await api(`/admin/bitcoin-fees?limit=${PAGE_SIZE}${after == null ? "" : `&after=${after}`}`);
+  if (!Array.isArray(page.rows) || page.rows.length === 0) {
+    if (after == null) {
+      complete = true;
+      break;
+    }
+    if (passUpdated === 0) throw new Error("fee backfill pass made no progress; inspect unresolved RPC failures");
+    after = null;
+    passUpdated = 0;
+    continue;
+  }
   const chunks = [];
   for (let index = 0; index < page.rows.length; index += RPC_BATCH_SIZE)
     chunks.push(page.rows.slice(index, index + RPC_BATCH_SIZE));
-  const feeChunks = new Array(chunks.length);
   let chunkCursor = 0;
+  let verified = 0;
+  let updated = 0;
+  let failed = 0;
   await Promise.all(
     Array.from({ length: Math.min(RPC_CONCURRENCY, chunks.length) }, async () => {
       while (chunkCursor < chunks.length) {
         const index = chunkCursor++;
-        feeChunks[index] = await calculateFees(chunks[index]);
+        try {
+          const fees = await calculateFees(chunks[index]);
+          verified += fees.length;
+          for (let write = 0; write < fees.length; write += 100) {
+            const result = await api("/admin/bitcoin-fees", {
+              method: "POST",
+              body: JSON.stringify(fees.slice(write, write + 100)),
+            });
+            updated += Number(result.updated ?? 0);
+          }
+        } catch (error) {
+          failed += chunks[index].length;
+          console.error(
+            JSON.stringify({
+              event: "fee_chunk_failed",
+              first_tx: chunks[index][0]?.tx_index,
+              rows: chunks[index].length,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
       }
     }),
   );
-  const fees = feeChunks.flat();
-  const verified = fees.length;
-  let updated = 0;
-  for (let write = 0; write < fees.length; write += 100) {
-    const result = await api("/admin/bitcoin-fees", {
-      method: "POST",
-      body: JSON.stringify(fees.slice(write, write + 100)),
-    });
-    updated += Number(result.updated ?? 0);
-  }
   total += updated;
+  passUpdated += updated;
   pages += 1;
-  console.log(JSON.stringify({ total, requested: page.rows.length, verified, updated, next_tx: page.next }));
-  if (updated === 0) throw new Error("fee backfill made no progress; inspect the remaining Bitcoin RPC failures");
+  after = page.next;
+  console.log(JSON.stringify({ total, requested: page.rows.length, verified, updated, failed, next_tx: after }));
 }
 
-console.log(JSON.stringify({ complete: MAX_PAGES === 0, pages, updated: total }));
+console.log(JSON.stringify({ complete, pages, updated: total }));
