@@ -9,15 +9,23 @@ const UPSERT = `INSERT INTO address_signals(
   is_exchange,is_deposit,is_burn,assets_burned,disp_trust,likely_service,dex_trades,
   stamps_created,stamps_collected,src20_deploys,is_btns_user)
 WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1),
-seen AS (
-  SELECT block_index FROM sends WHERE source_address_id=(SELECT address_id FROM identity) OR destination_address_id=(SELECT address_id FROM identity)
-  UNION ALL SELECT block_index FROM dispenses WHERE source_id=(SELECT address_id FROM identity) OR destination_id=(SELECT address_id FROM identity)
-  UNION ALL SELECT block_index FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)
-  UNION ALL SELECT block_index FROM fairmints WHERE source_id=(SELECT address_id FROM identity)
-  UNION ALL SELECT block_index FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)
-  UNION ALL SELECT block_index FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)
-),
-activity AS (SELECT min(block_index) first_block,max(block_index) last_block FROM seen),
+activity AS (SELECT
+  nullif(min(
+    coalesce((SELECT min(block_index) FROM sends WHERE source_address_id=(SELECT address_id FROM identity) OR destination_address_id=(SELECT address_id FROM identity)),9223372036854775807),
+    coalesce((SELECT min(block_index) FROM dispenses WHERE source_id=(SELECT address_id FROM identity) OR destination_id=(SELECT address_id FROM identity)),9223372036854775807),
+    coalesce((SELECT min(block_index) FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)),9223372036854775807),
+    coalesce((SELECT min(block_index) FROM fairmints WHERE source_id=(SELECT address_id FROM identity)),9223372036854775807),
+    coalesce((SELECT min(block_index) FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)),9223372036854775807),
+    coalesce((SELECT min(block_index) FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)),9223372036854775807)
+  ),9223372036854775807) first_block,
+  max(
+    coalesce((SELECT max(block_index) FROM sends WHERE source_address_id=(SELECT address_id FROM identity) OR destination_address_id=(SELECT address_id FROM identity)),0),
+    coalesce((SELECT max(block_index) FROM dispenses WHERE source_id=(SELECT address_id FROM identity) OR destination_id=(SELECT address_id FROM identity)),0),
+    coalesce((SELECT max(block_index) FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)),0),
+    coalesce((SELECT max(block_index) FROM fairmints WHERE source_id=(SELECT address_id FROM identity)),0),
+    coalesce((SELECT max(block_index) FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)),0),
+    coalesce((SELECT max(block_index) FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)),0)
+  ) last_block),
 holding AS (SELECT count(DISTINCT asset_id) assets_held FROM balances
   WHERE address_id=(SELECT address_id FROM identity) AND CAST(quantity AS INTEGER)>0),
 creator AS (
@@ -83,8 +91,8 @@ SELECT identity.address_id,activity.first_block,coalesce(activity.last_block,0),
     AND (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id)=0
     AND (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id)>=500
     THEN 1 ELSE 0 END,
-  (SELECT count(*) FROM (SELECT tx0_index FROM order_matches WHERE tx0_address_id=identity.address_id
-    UNION ALL SELECT tx1_index FROM order_matches WHERE tx1_address_id=identity.address_id)),
+  (SELECT count(*) FROM order_matches WHERE tx0_address_id=identity.address_id)
+    +(SELECT count(*) FROM order_matches WHERE tx1_address_id=identity.address_id),
   stamp.created,collected.stamps,stamp.src20,
   EXISTS(SELECT 1 FROM broadcasts WHERE source_id=identity.address_id AND btns=1)
 FROM identity CROSS JOIN activity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
