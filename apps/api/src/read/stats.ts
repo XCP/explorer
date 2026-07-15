@@ -6,7 +6,7 @@ import { boundedInteger } from "#api/http/numbers";
 import { maxBlock, leaderboards, type MetricName } from "#api/queries/stats";
 import {
   coreHomeOverview,
-  coreMetricSeries,
+  coreMetricSeriesSet,
   coreNetworkCounts,
   coreNetworkTotals,
   coreQualityNetworkStats,
@@ -36,19 +36,11 @@ stats.get("/v2/metrics", async (c) => {
   // bucket useful while bounding each low-cardinality days variant to four producers/day.
   return cached(c, `metrics:${days}:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
     // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
-    const series = async (name: MetricName) =>
-      (await coreMetricSeries(c.env.CORE_DB, name, days, includeHidden))
-        .map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 }))
-        .reverse();
-    // This producer is cached for six hours. Keep D1 statements sequential: concurrent filtered aggregates
-    // can exhaust an invocation's query slots even though every individual indexed series is inexpensive.
-    const transactions = await series("transactions");
-    const issuances = await series("issuances");
-    const dispenses = await series("dispenses");
-    const trades = await series("trades");
-    const sends = await series("sends");
-    const btc_fees = await series("btc_fees");
-    const xcp_burned = await series("xcp_burned");
+    const names: MetricName[] = ["transactions", "issuances", "dispenses", "trades", "sends", "btc_fees", "xcp_burned"];
+    const rows = await coreMetricSeriesSet(c.env.CORE_DB, names, days, includeHidden);
+    const series = (name: MetricName) =>
+      rows[name].map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
+    const [transactions, issuances, dispenses, trades, sends, btc_fees, xcp_burned] = names.map(series);
     return { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } };
   });
 });

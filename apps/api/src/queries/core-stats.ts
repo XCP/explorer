@@ -158,16 +158,33 @@ export function coreMetricSeries(
   days: number,
   includeHidden = true,
 ): Promise<MetricDayRow[]> {
+  return metricStatement(db, name, days, includeHidden)
+    .all<MetricDayRow>()
+    .then((result) => result.results);
+}
+
+function metricStatement(db: D1Database, name: MetricName, days: number, includeHidden: boolean): D1PreparedStatement {
   const column = CORE_METRICS[name];
   if (!includeHidden && name !== "transactions") {
     const sql = CLEAN_METRICS[name];
     const cutoff = (days + 2) * 144;
     const binds = Array(sql.matchAll(/\?/g)).map(() => cutoff);
-    return q<MetricDayRow>(db, `SELECT d,v FROM (${sql}) WHERE d IS NOT NULL ORDER BY d DESC LIMIT ?`, ...binds, days);
+    return db.prepare(`SELECT d,v FROM (${sql}) WHERE d IS NOT NULL ORDER BY d DESC LIMIT ?`).bind(...binds, days);
   }
-  return q<MetricDayRow>(
-    db,
-    `SELECT day d,${column} v FROM daily_metrics WHERE ${column} IS NOT NULL ORDER BY day DESC LIMIT ?`,
-    days,
-  );
+  return db
+    .prepare(`SELECT day d,${column} v FROM daily_metrics WHERE ${column} IS NOT NULL ORDER BY day DESC LIMIT ?`)
+    .bind(days);
+}
+
+/** Execute the chart fan-out as one native D1 batch operation. */
+export async function coreMetricSeriesSet(
+  db: D1Database,
+  names: MetricName[],
+  days: number,
+  includeHidden: boolean,
+): Promise<Record<MetricName, MetricDayRow[]>> {
+  const results = await db.batch(names.map((name) => metricStatement(db, name, days, includeHidden)));
+  return Object.fromEntries(
+    names.map((name, index) => [name, (results[index]?.results ?? []) as unknown as MetricDayRow[]]),
+  ) as Record<MetricName, MetricDayRow[]>;
 }
