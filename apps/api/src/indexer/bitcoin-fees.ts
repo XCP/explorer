@@ -1,4 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import type { Env } from "#api/env";
+import { fetchTransactionFee } from "#api/integrations/electrs";
 import { hashToBytes } from "#api/indexer/identities";
 
 export interface BitcoinFeeCandidate {
@@ -20,8 +22,7 @@ export async function listMissingBitcoinFees(
 ): Promise<BitcoinFeeCandidate[]> {
   const result = await db
     .prepare(
-      `SELECT tx_index,LOWER(HEX(tx_hash)) tx_hash
-       FROM transactions
+      `SELECT tx_index,LOWER(HEX(tx_hash)) tx_hash FROM transactions
        WHERE bitcoin_fee IS NULL AND (? IS NULL OR tx_index<?)
        ORDER BY tx_index DESC LIMIT ?`,
     )
@@ -46,10 +47,26 @@ export function validBitcoinFeeRows(value: unknown): BitcoinFeeRow[] | null {
 export async function storeBitcoinFees(db: D1Database, rows: BitcoinFeeRow[]): Promise<number> {
   const results = await db.batch(
     rows.map((row) =>
-      db
-        .prepare(`UPDATE transactions SET bitcoin_fee=? WHERE tx_hash=? AND bitcoin_fee IS NULL`)
+      db.prepare(`UPDATE transactions SET bitcoin_fee=? WHERE tx_hash=? AND bitcoin_fee IS NULL`)
         .bind(String(row.fee), hashToBytes(row.tx_hash)),
     ),
   );
   return results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
+}
+
+/** Keep the staging frontier current while the one-time historical exporter walks backward. */
+export async function reconcileStagedBitcoinFees(
+  env: Pick<Env, "CORE_DB" | "ELECTRS_API_BASE">,
+  limit = 100,
+): Promise<{ requested: number; updated: number }> {
+  const rows = await listMissingBitcoinFees(env.CORE_DB, null, limit);
+  const settled = await Promise.allSettled(
+    rows.map(async (row) => ({ tx_hash: row.tx_hash, fee: await fetchTransactionFee(env.ELECTRS_API_BASE, row.tx_hash) })),
+  );
+  const fees = settled.flatMap((result) =>
+    result.status === "fulfilled" && result.value.fee !== null
+      ? [{ tx_hash: result.value.tx_hash, fee: result.value.fee }]
+      : [],
+  );
+  return { requested: rows.length, updated: fees.length ? await storeBitcoinFees(env.CORE_DB, fees) : 0 };
 }

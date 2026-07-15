@@ -18,6 +18,7 @@ const DISCOVER: FooterLink[] = [
   ["Leaderboards", "/leaderboards"],
   ["Firsts", "/firsts"],
   ["Vaults", "/vaults"],
+  ["Recover Bitcoin", "/recovery"],
   ["Exchanges", "/exchanges"],
   ["Network Stats", "/stats"],
 ];

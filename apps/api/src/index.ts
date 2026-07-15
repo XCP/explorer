@@ -41,6 +41,11 @@ import { maybeRefreshQualityNetworkStats } from "#api/indexer/quality-network-st
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 import { backfillBitcoinBlockCounts } from "#api/indexer/bitcoin-block-counts";
+import { reconcileStagedBitcoinFees } from "#api/indexer/bitcoin-fees";
+import { scanRecoveryTransactions } from "#api/recovery/scanner";
+import { verifyRecoveryTransactions } from "#api/recovery/verify";
+import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
+import { refreshRecoveryStats } from "#api/recovery/stats";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
@@ -185,9 +190,18 @@ export default {
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {
+          // Keep bare-multisig recovery current from one durable global cursor. Verification and attempt
+          // reconciliation are bounded separately so a slow chain provider cannot stall ingestion.
+          await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 200));
+          await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
+          await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
+          await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));
           // Enrich canonical blocks with Bitcoin's total transaction count. Newest-first keeps current
           // percentages complete while the same idempotent step walks historical blocks.
           await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
+          // Counterparty transaction events deliberately leave miner fees empty: Bitcoin Core is authoritative.
+          // This exact prevout-minus-outputs reconciliation normally covers only the newest few transactions.
+          await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
           // Signal maintenance uses the same convergent writers for event refreshes and
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));

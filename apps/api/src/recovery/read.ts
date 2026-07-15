@@ -41,6 +41,14 @@ function deterministicFeeAddress(address: string, configured: string): string | 
 
 export const recoveryRead = new Hono<{ Bindings: Env }>();
 
+recoveryRead.use("/addresses/*", async (c, next) => {
+  await next();
+  c.header("Access-Control-Allow-Origin", "*");
+  c.header("Access-Control-Allow-Headers", "Content-Type");
+  c.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+});
+recoveryRead.options("/addresses/*", (c) => c.body(null, 204));
+
 function chunks<T>(values: T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
     values.slice(index * size, (index + 1) * size),
@@ -53,6 +61,25 @@ async function recoveryReadsReady(env: Env): Promise<boolean> {
   }>();
   return state?.value === "1";
 }
+
+recoveryRead.get("/v2/recovery/stats", async (c) => {
+  const [summary, monthly, top] = await Promise.all([
+    c.env.RECOVERY_DB.prepare(`SELECT * FROM recovery_stats_snapshot WHERE singleton=1`).first(),
+    c.env.RECOVERY_DB.prepare(`SELECT * FROM recovery_monthly_stats ORDER BY month`).all(),
+    c.env.RECOVERY_DB.prepare(
+      `SELECT * FROM recovery_address_stats WHERE unprotected_sats>0 ORDER BY unprotected_sats DESC,address LIMIT 25`,
+    ).all(),
+  ]);
+  if (!summary) return c.json({ error: "recovery statistics are being prepared" }, 503, { "Access-Control-Allow-Origin": "*" });
+  return c.json(
+    { result: { summary, monthly: monthly.results, top_unprotected_addresses: top.results } },
+    200,
+    {
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+      "Access-Control-Allow-Origin": "*",
+    },
+  );
+});
 
 recoveryRead.get("/addresses/:address/recovery", async (c) => {
   if (!(await recoveryReadsReady(c.env))) return c.json({ error: "recovery index is still being verified" }, 503);

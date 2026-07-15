@@ -8,6 +8,8 @@ import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
 import { stampProtectionSourcePage, type StampProtectionSource } from "#api/recovery/stamp-source";
 import { auditRecoveryR2Page, recoveryR2AuditManifest, type RecoveryR2AuditManifest } from "#api/recovery/r2-audit";
 import { completeStampReceiptChain, type StampImportReceipt } from "#api/recovery/stamp-receipts";
+import { scanRecoveryTransactions } from "#api/recovery/scanner";
+import { refreshRecoveryStats } from "#api/recovery/stats";
 
 export const recoveryAdmin = new Hono<{ Bindings: Env }>();
 
@@ -329,6 +331,25 @@ recoveryAdmin.post("/admin/recovery/verify", async (c) => {
 recoveryAdmin.post("/admin/recovery/reconcile-attempts", async (c) => {
   const limit = boundedInteger(c.req.query("attempts"), { defaultValue: 25, min: 1, max: 100 });
   return c.json(await reconcileRecoveryAttempts(c.env, limit));
+});
+
+recoveryAdmin.post("/admin/recovery/scan", async (c) => {
+  const limit = boundedInteger(c.req.query("transactions"), { defaultValue: 200, min: 1, max: 250 });
+  return c.json(await scanRecoveryTransactions(c.env, limit));
+});
+
+recoveryAdmin.post("/admin/recovery/stats/refresh", async (c) => c.json(await refreshRecoveryStats(c.env, true)));
+
+recoveryAdmin.get("/admin/recovery/live-status", async (c) => {
+  const [state, queue, attempts, stats] = await Promise.all([
+    c.env.RECOVERY_DB.prepare(
+      `SELECT key,value,updated_at FROM recovery_state WHERE key IN ('recovery_scan_tx_index','read_ready') ORDER BY key`,
+    ).all(),
+    c.env.RECOVERY_DB.prepare(`SELECT COUNT(DISTINCT txid) transactions FROM recovery_outputs WHERE chain_checked_at IS NULL`).first(),
+    c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) attempts FROM recovery_attempts WHERE status='pending'`).first(),
+    c.env.RECOVERY_DB.prepare(`SELECT * FROM recovery_stats_snapshot WHERE singleton=1`).first(),
+  ]);
+  return c.json({ state: state.results, verification_queue: queue, pending_attempts: attempts, stats });
 });
 
 recoveryAdmin.get("/admin/recovery/audit/transactions", async (c) => {

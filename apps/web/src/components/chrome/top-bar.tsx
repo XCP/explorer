@@ -65,6 +65,7 @@ const DISCOVER: NavGroup[] = [
       ["Mempool", "/mempool"],
       ["Reputation", "/reputation"],
       ["Vaults", "/vaults"],
+      ["Recover Bitcoin", "/recovery"],
       ["Exchanges", "/exchanges"],
       ["Blocks", "/blocks"],
       ["Network Stats", "/stats"],

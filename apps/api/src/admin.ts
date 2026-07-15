@@ -45,9 +45,7 @@ admin.route("/", recoveryAdmin);
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
 
-// Temporary migration surface for the Bitcoin-authoritative fee fill. The exporter reads only rows still
-// missing a verified fee and writes exact integer satoshi values in bounded batches. Both routes disappear
-// after the verified cutover migration replaces the legacy fee column.
+// Temporary, token-gated migration surface. Delete immediately after migration 0034 succeeds.
 admin.get("/admin/bitcoin-fees", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 5000, min: 1, max: 10_000 });
   const after = optionalBoundedInteger(c.req.query("after"), { min: 0 });
