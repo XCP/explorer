@@ -40,6 +40,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
   db.exec(`
     CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY);
+    CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY);
     CREATE TABLE burns(x INTEGER); CREATE TABLE fairminters(x INTEGER); CREATE TABLE bets(x INTEGER);
     CREATE TABLE bet_matches(x INTEGER); CREATE TABLE btcpays(x INTEGER); CREATE TABLE cancels(x INTEGER);
     CREATE TABLE rps(x INTEGER); CREATE TABLE rps_matches(x INTEGER);
@@ -69,6 +70,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
     {
       tip: 101,
       assets: 2,
+      addresses: 0,
       transactions: 3,
       sends: 5,
       issuances: 6,
@@ -148,6 +150,7 @@ test("quality stats exclude low-quality asset activity without removing unscoped
   db.exec(`
     CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY);
+    CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY);
     CREATE TABLE network_stats_snapshot(singleton INTEGER PRIMARY KEY,assets INTEGER,transactions INTEGER,sends INTEGER,
       issuances INTEGER,dispensers INTEGER,dispenses INTEGER,sweeps INTEGER,broadcasts INTEGER,dividends INTEGER,
       fairmints INTEGER,destructions INTEGER,holders INTEGER);
@@ -188,6 +191,7 @@ test("quality stats exclude low-quality asset activity without removing unscoped
     {
       tip: 100,
       assets: 2,
+      addresses: 0,
       transactions: 3,
       sends: 1,
       issuances: 1,

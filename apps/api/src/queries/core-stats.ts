@@ -20,7 +20,8 @@ export function coreSyncOverview(db: D1Database): Promise<SyncOverview | null> {
 export function coreNetworkCounts(db: D1Database): Promise<NetworkCounts | null> {
   return one<NetworkCounts>(
     db,
-    `SELECT ${CHAIN_POSITION} tip,assets,transactions,sends,issuances,dispensers,dispenses,orders,
+    `SELECT ${CHAIN_POSITION} tip,assets,(SELECT COUNT(*) FROM address_signals) addresses,
+            transactions,sends,issuances,dispensers,dispenses,orders,
             order_matches,sweeps,broadcasts,dividends,fairmints,destructions,holders,
             (SELECT COUNT(*) FROM burns) burns,(SELECT COUNT(*) FROM fairminters) fairminters,
             (SELECT COUNT(*) FROM bets) bets,(SELECT COUNT(*) FROM bet_matches) bet_matches,
@@ -59,6 +60,7 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
       )
     SELECT (SELECT MAX(block_index) FROM blocks) tip,
       snapshot.assets-(SELECT COUNT(*) FROM asset_signals WHERE low_quality=1) assets,
+      (SELECT COUNT(*) FROM address_signals) addresses,
       snapshot.transactions,
       snapshot.sends-(SELECT COUNT(*) FROM asset_signals signal CROSS JOIN sends item ON item.asset_id=signal.asset_id
         WHERE signal.low_quality=1) sends,

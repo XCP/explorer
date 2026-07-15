@@ -279,6 +279,7 @@ test("contract: stats quality modes remain isolated and monotonic", async (t) =>
   ]);
   const countFields = [
     "assets",
+    "addresses",
     "transactions",
     "sends",
     "issuances",

@@ -57,7 +57,7 @@ export function NetworkStats() {
         />
         <Stat label="BTC fees paid (all-time)" value={s?.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
         <Stat label="Assets" value={commas(s?.assets)} />
-        <Stat label="Transactions" value={commas(s?.transactions)} />
+        <Stat label="Addresses" value={commas(s?.addresses)} />
         <Stat label="Balances" value={commas(s?.holders)} />
       </div>
       <ActivityChart />
@@ -66,7 +66,7 @@ export function NetworkStats() {
           {COUNTS.map(([key, label, href]) => (
             <div key={key} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
               {href ? (
-                <Link href={href} className="text-zinc-400 hover:text-zinc-400 hover:underline underline-offset-2">
+                <Link href={href} className="text-zinc-400">
                   {label}
                 </Link>
               ) : (
