@@ -135,19 +135,20 @@ const CLEAN_METRICS: Record<Exclude<MetricName, "transactions">, string> = {
         UNION SELECT asset_id FROM destructions WHERE tx_index=tx.tx_index
       ) event JOIN asset_signals signal ON signal.asset_id=event.asset_id WHERE signal.low_quality=1
     ) GROUP BY d`,
-  xcp_burned: `SELECT block_time/86400 d,SUM(amount)/100000000.0 v FROM (
+  xcp_burned: `WITH cutoff AS (SELECT MAX(block_index)-? block FROM blocks)
+    SELECT block_time/86400 d,SUM(amount)/100000000.0 v FROM (
       SELECT item.block_time,CAST(item.fee_paid AS REAL) amount FROM issuances item
         LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND item.status LIKE 'valid%'
+        WHERE item.block_index>(SELECT block FROM cutoff) AND item.status LIKE 'valid%'
           AND item.fee_paid IS NOT NULL AND COALESCE(signal.low_quality,0)=0
       UNION ALL SELECT block_time,CAST(fee_paid AS REAL) FROM sweeps
-        WHERE block_index>(SELECT MAX(block_index)-? FROM blocks) AND fee_paid IS NOT NULL
+        WHERE block_index>(SELECT block FROM cutoff) AND fee_paid IS NOT NULL
       UNION ALL SELECT item.block_time,CAST(item.fee_paid AS REAL) FROM dividends item
         LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND item.fee_paid IS NOT NULL
+        WHERE item.block_index>(SELECT block FROM cutoff) AND item.fee_paid IS NOT NULL
           AND COALESCE(signal.low_quality,0)=0
       UNION ALL SELECT item.block_time,CAST(item.quantity AS REAL) FROM destructions item
-        WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND item.status LIKE 'valid%'
+        WHERE item.block_index>(SELECT block FROM cutoff) AND item.status LIKE 'valid%'
           AND item.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
     ) GROUP BY d`,
 };
