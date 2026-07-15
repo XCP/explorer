@@ -17,6 +17,7 @@ const TOKEN = process.env.ADMIN_TOKEN ?? devToken ?? readFileSync(arg("token-fil
 const PAGE_SIZE = Number(arg("page-size", "1000"));
 const RPC_BATCH_SIZE = Number(arg("rpc-batch-size", "100"));
 const RPC_CONCURRENCY = Number(arg("rpc-concurrency", "1"));
+const CHUNK_DELAY_MS = Number(arg("chunk-delay-ms", "500"));
 const MAX_PAGES = Number(arg("max-pages", "0"));
 
 if (!Number.isSafeInteger(PAGE_SIZE) || PAGE_SIZE < 1 || PAGE_SIZE > 10_000) throw new Error("invalid page-size");
@@ -24,6 +25,8 @@ if (!Number.isSafeInteger(RPC_BATCH_SIZE) || RPC_BATCH_SIZE < 1 || RPC_BATCH_SIZ
   throw new Error("invalid rpc-batch-size");
 if (!Number.isSafeInteger(RPC_CONCURRENCY) || RPC_CONCURRENCY < 1 || RPC_CONCURRENCY > 4)
   throw new Error("invalid rpc-concurrency");
+if (!Number.isSafeInteger(CHUNK_DELAY_MS) || CHUNK_DELAY_MS < 0 || CHUNK_DELAY_MS > 60_000)
+  throw new Error("invalid chunk-delay-ms");
 if (!Number.isSafeInteger(MAX_PAGES) || MAX_PAGES < 0) throw new Error("invalid max-pages");
 
 async function api(path, init = {}) {
@@ -161,7 +164,9 @@ for (;;) {
               error: error instanceof Error ? error.message : String(error),
             }),
           );
+          if (error?.status === 429 || error?.status === 503) await new Promise((resolve) => setTimeout(resolve, 60_000));
         }
+        if (CHUNK_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS));
       }
     }),
   );
