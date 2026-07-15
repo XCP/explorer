@@ -38,9 +38,17 @@ interface RecoveryAddressStat {
   unprotected_sats: number;
 }
 
+interface RecoveredMonth {
+  month: number;
+  outputs: number;
+  spending_transactions: number;
+  gross_sats: number;
+}
+
 interface RecoveryStats {
   summary: RecoverySummary;
   monthly: RecoveryMonth[];
+  recovered_monthly: RecoveredMonth[];
   top_unprotected_addresses: RecoveryAddressStat[];
 }
 
@@ -114,27 +122,43 @@ function RecoveryLookup() {
   );
 }
 
-function RecoveryChart({ rows }: { rows: RecoveryMonth[] }) {
+function RecoveryChart({ rows, recovered }: { rows: RecoveryMonth[]; recovered: RecoveredMonth[] }) {
+  const [metric, setMetric] = useState<"recoverable" | "recovered">("recoverable");
   const [cumulative, setCumulative] = useState(false);
   const data = useMemo(() => {
-    return rows.map((row, index) => {
-      const value = row.unprotected_sats / 100_000_000;
-      const total = rows.slice(0, index + 1).reduce((sum, item) => sum + item.unprotected_sats / 100_000_000, 0);
+    const source = metric === "recoverable"
+      ? rows.map((row) => ({ month: row.month, sats: row.unprotected_sats }))
+      : recovered.map((row) => ({ month: row.month, sats: row.gross_sats }));
+    return source.map((row, index) => {
+      const value = row.sats / 100_000_000;
+      const total = source.slice(0, index + 1).reduce((sum, item) => sum + item.sats / 100_000_000, 0);
       return { t: row.month, v: cumulative ? total : value };
     });
-  }, [rows, cumulative]);
+  }, [rows, recovered, metric, cumulative]);
   return (
-    <Card title="Recoverable Bitcoin by creation month">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-xs text-zinc-500">Currently unspent, non-Stamp outputs grouped by when they were created.</p>
-        <button
-          type="button"
-          onClick={() => setCumulative((value) => !value)}
-          aria-pressed={cumulative}
-          className={`shrink-0 rounded border px-2 py-1 text-xs ${cumulative ? "border-sky-500/50 bg-sky-400/10 text-sky-300" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}
-        >
-          Cumulative
-        </button>
+    <Card title={metric === "recoverable" ? "Recoverable Bitcoin by creation month" : "Recovered Bitcoin by recovery month"}>
+      <div className="mb-2 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <p className="text-xs text-zinc-500">
+          {metric === "recoverable"
+            ? "Currently unspent, non-Stamp outputs grouped by when they were created."
+            : "Gross value of indexed recovery outputs grouped by their confirmed spend date."}
+        </p>
+        <div className="flex flex-wrap items-center gap-1 sm:shrink-0">
+          {(["recoverable", "recovered"] as const).map((value) => (
+            <button key={value} type="button" onClick={() => setMetric(value)} aria-pressed={metric === value}
+              className={`rounded border px-2 py-1 text-xs capitalize ${metric === value ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}>
+              {value}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setCumulative((value) => !value)}
+            aria-pressed={cumulative}
+            className={`rounded border px-2 py-1 text-xs ${cumulative ? "border-sky-500/50 bg-sky-400/10 text-sky-300" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Cumulative
+          </button>
+        </div>
       </div>
       <AreaChart
         data={data}
@@ -165,7 +189,7 @@ export function Recovery() {
         <Stat label="Addresses" value={summary ? commas(summary.recovery_addresses) : undefined} />
       </div>
       <RecoveryLookup />
-      {stats ? <RecoveryChart rows={stats.monthly} /> : <Card title="Recoverable Bitcoin by creation month"><Skeleton rows={5} /></Card>}
+      {stats ? <RecoveryChart rows={stats.monthly} recovered={stats.recovered_monthly} /> : <Card title="Recoverable Bitcoin by creation month"><Skeleton rows={5} /></Card>}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="Recover with XCP Wallet">
           <ol className="space-y-4 text-sm text-zinc-300">
