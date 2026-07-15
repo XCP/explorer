@@ -144,16 +144,30 @@ for (;;) {
     Array.from({ length: Math.min(RPC_CONCURRENCY, chunks.length) }, async () => {
       while (chunkCursor < chunks.length) {
         const index = chunkCursor++;
+        const startedAt = Date.now();
         try {
           const fees = await calculateFees(chunks[index]);
+          let chunkUpdated = 0;
           verified += fees.length;
           for (let write = 0; write < fees.length; write += 100) {
             const result = await api("/admin/bitcoin-fees", {
               method: "POST",
               body: JSON.stringify(fees.slice(write, write + 100)),
             });
-            updated += Number(result.updated ?? 0);
+            chunkUpdated += Number(result.updated ?? 0);
           }
+          updated += chunkUpdated;
+          console.log(
+            JSON.stringify({
+              event: "fee_chunk_complete",
+              chunk: index + 1,
+              chunks: chunks.length,
+              requested: chunks[index].length,
+              verified: fees.length,
+              updated: chunkUpdated,
+              duration_ms: Date.now() - startedAt,
+            }),
+          );
         } catch (error) {
           failed += chunks[index].length;
           console.error(
