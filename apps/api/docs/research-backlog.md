@@ -111,9 +111,10 @@ ETL shape: one-time export (artisan/SQL dump) → rows into `prices(day,currency
 `source`/`fidelity` column; keep `__realized_usd` recalibration behind the usual gates.
 Maintenance: none for the historic value (it's frozen history); ongoing XCP/USD stays DEX-derived.
 
-### B. Consolidation service (source: same app.xcp.io app — see bitcoin-indexer.md "Related
-systems"): the migration path is owned by the Bitcoin indexer plan, since its follow-daemon and
-the consolidation service's MonitorBlockchainJob are the same per-block loop.
+### B. Bare-multisig recovery
+
+Recovery discovery, transaction data, attempt history, and ongoing chain reconciliation are native
+Worker services backed by `xcpio-btc` and R2. See `bitcoin-indexer.md` for the current architecture.
 
 ### C. Thin-market pricing methodology (deep-research verified, 2026-07-07; all findings 3-0
 adversarially confirmed against primary sources)

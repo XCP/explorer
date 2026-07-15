@@ -3,6 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 minify = true
 workers_dev = true
+routes = [{ pattern = "api.xcp.io/*", zone_name = "xcp.io" }]
 
 [limits]
 cpu_ms = 300000
