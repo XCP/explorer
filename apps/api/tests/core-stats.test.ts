@@ -69,7 +69,6 @@ test("compact overview reads one snapshot and reports the canonical block positi
     {
       tip: 101,
       assets: 2,
-      addresses: 0,
       transactions: 3,
       sends: 5,
       issuances: 6,
@@ -189,7 +188,6 @@ test("quality stats exclude low-quality asset activity without removing unscoped
     {
       tip: 100,
       assets: 2,
-      addresses: 0,
       transactions: 3,
       sends: 1,
       issuances: 1,

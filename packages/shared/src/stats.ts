@@ -19,7 +19,6 @@ export interface SyncOverview {
 export interface NetworkStats {
   tip: number | null;
   assets: number;
-  addresses: number;
   transactions: number;
   sends: number;
   issuances: number;

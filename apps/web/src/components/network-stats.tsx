@@ -11,7 +11,6 @@ import { commas } from "@/lib/format";
 // Fixed by lifetime volume so the most-used protocol surfaces scan first without the UI
 // reshuffling as totals update.
 const COUNTS: [keyof NetworkStatsPayload, string, Route?][] = [
-  ["transactions", "Transactions", "/transactions"],
   ["sends", "Sends", "/sends"],
   ["orders", "Orders", "/orders"],
   ["issuances", "Issuances", "/issuances"],
@@ -58,7 +57,7 @@ export function NetworkStats() {
         />
         <Stat label="BTC fees paid (all-time)" value={s?.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
         <Stat label="Assets" value={commas(s?.assets)} />
-        <Stat label="Addresses" value={commas(s?.addresses)} />
+        <Stat label="Transactions" value={commas(s?.transactions)} />
         <Stat label="Balances" value={commas(s?.holders)} />
       </div>
       <ActivityChart />
