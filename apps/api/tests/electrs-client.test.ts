@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseElectrsOutspends, parseElectrsTransactionStatus } from "#api/integrations/electrs";
+import { parseElectrsBlockPage, parseElectrsOutspends, parseElectrsTransactionStatus } from "#api/integrations/electrs";
+
+test("Electrs block parsing preserves Bitcoin transaction totals", () => {
+  assert.deepEqual(parseElectrsBlockPage([{ height: 958_084, tx_count: 3_174 }]), [
+    { height: 958_084, transactionCount: 3_174 },
+  ]);
+  assert.throws(() => parseElectrsBlockPage([{ height: 1, tx_count: "3" }]), /invalid transaction count/);
+});
 
 test("Electrs outspend parsing preserves confirmed spending evidence", () => {
   assert.deepEqual(

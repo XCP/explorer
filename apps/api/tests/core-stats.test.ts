@@ -122,11 +122,21 @@ test("compact daily metrics preserve day buckets and monetary normalization", as
     INSERT INTO destructions VALUES(86400,'400000000',2,'valid'),(86400,'800000000',1,'valid');
   `);
   db.exec(DAILY_METRICS_MIGRATION);
+  db.exec(`ALTER TABLE daily_metrics ADD COLUMN bitcoin_transactions INTEGER;
+    UPDATE daily_metrics SET bitcoin_transactions=CASE day WHEN 1 THEN 100 WHEN 2 THEN 80 END;`);
   const binding = d1(db);
   const series = async (name: Parameters<typeof coreMetricSeries>[1]) =>
     (await coreMetricSeries(binding, name, 7)).map((row) => ({ ...row }));
   assert.deepEqual(await series("transactions"), [
     { d: 2, v: 4 },
+    { d: 1, v: 5 },
+  ]);
+  assert.deepEqual(await series("bitcoin_transactions"), [
+    { d: 2, v: 80 },
+    { d: 1, v: 100 },
+  ]);
+  assert.deepEqual(await series("xcp_share"), [
+    { d: 2, v: 5 },
     { d: 1, v: 5 },
   ]);
   assert.deepEqual(await series("trades"), [{ d: 1, v: 2 }]);

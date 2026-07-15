@@ -39,6 +39,7 @@ import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { maybeRefreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
+import { backfillBitcoinBlockCounts } from "#api/indexer/bitcoin-block-counts";
 
 // Periodic SQLite ANALYZE — keeps the query planner's stats fresh as the chain grows (~weekly, gated by
 // block-delta since ANALYZE is ~10s). Stale/absent stats cause catastrophic join-order choices on D1.
@@ -182,6 +183,9 @@ export default {
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {
+          // Enrich canonical blocks with Bitcoin's total transaction count. Newest-first keeps current
+          // percentages complete while the same idempotent step walks historical blocks.
+          await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
           // Signal maintenance uses the same convergent writers for event refreshes and
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));

@@ -11,6 +11,7 @@ import { commas } from "@/lib/format";
 // Fixed by lifetime volume so the most-used protocol surfaces scan first without the UI
 // reshuffling as totals update.
 const COUNTS: [keyof NetworkStatsPayload, string, Route?][] = [
+  ["assets", "Assets", "/assets"],
   ["sends", "Sends", "/sends"],
   ["orders", "Orders", "/orders"],
   ["issuances", "Issuances", "/issuances"],
@@ -66,7 +67,10 @@ export function NetworkStats() {
           {COUNTS.map(([key, label, href]) => (
             <div key={key} className="flex justify-between gap-3 border-b border-zinc-900 py-2 text-sm">
               {href ? (
-                <Link href={href} className="text-zinc-400">
+                <Link
+                  href={href}
+                  className="!bg-transparent !text-zinc-400 !no-underline hover:!bg-transparent hover:!text-zinc-400 hover:!no-underline"
+                >
                   {label}
                 </Link>
               ) : (

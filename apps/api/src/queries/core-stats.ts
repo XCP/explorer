@@ -133,6 +133,8 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
 
 const CORE_METRICS: Record<MetricName, string> = {
   transactions: "transactions",
+  bitcoin_transactions: "bitcoin_transactions",
+  xcp_share: "xcp_share",
   issuances: "issuances",
   dispenses: "dispenses",
   trades: "trades",
@@ -141,7 +143,7 @@ const CORE_METRICS: Record<MetricName, string> = {
   xcp_burned: "xcp_burned",
 };
 
-const CLEAN_METRICS: Record<Exclude<MetricName, "transactions">, string> = {
+const CLEAN_METRICS: Record<Exclude<MetricName, "transactions" | "bitcoin_transactions" | "xcp_share">, string> = {
   issuances: `SELECT item.block_time/86400 d,COUNT(*) v FROM issuances item
     LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
     WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND COALESCE(signal.low_quality,0)=0 GROUP BY d`,
@@ -203,8 +205,15 @@ export function coreMetricSeries(
 }
 
 function metricStatement(db: D1Database, name: MetricName, days: number, includeHidden: boolean): D1PreparedStatement {
+  if (name === "xcp_share")
+    return db
+      .prepare(
+        `SELECT day d,100.0*transactions/bitcoin_transactions v FROM daily_metrics
+         WHERE transactions IS NOT NULL AND bitcoin_transactions>0 ORDER BY day DESC LIMIT ?`,
+      )
+      .bind(days);
   const column = CORE_METRICS[name];
-  if (!includeHidden && name !== "transactions") {
+  if (!includeHidden && name !== "transactions" && name !== "bitcoin_transactions") {
     const sql = CLEAN_METRICS[name];
     const cutoff = (days + 2) * 144;
     const binds = Array(sql.matchAll(/\?/g)).map(() => cutoff);

@@ -58,6 +58,8 @@ export interface MetricPoint {
 /** GET /v2/metrics — daily time-series for the activity charts. */
 export interface Metrics {
   transactions: MetricPoint[];
+  bitcoin_transactions: MetricPoint[];
+  xcp_share: MetricPoint[];
   issuances: MetricPoint[];
   trades: MetricPoint[];
   dispenses: MetricPoint[];

@@ -11,6 +11,31 @@ export interface ElectrsTransactionStatus {
   blockTime: number | null;
 }
 
+export interface ElectrsBlockSummary {
+  height: number;
+  transactionCount: number;
+}
+
+export function parseElectrsBlockPage(value: unknown): ElectrsBlockSummary[] {
+  if (!Array.isArray(value)) throw new Error("Electrs block page must be an array");
+  return value.map((item) => {
+    const block = object(item, "Electrs block summary must be an object");
+    if (!Number.isSafeInteger(block.height) || Number(block.height) < 0)
+      throw new Error("Electrs block summary has an invalid height");
+    if (!Number.isSafeInteger(block.tx_count) || Number(block.tx_count) < 0)
+      throw new Error("Electrs block summary has an invalid transaction count");
+    return { height: Number(block.height), transactionCount: Number(block.tx_count) };
+  });
+}
+
+export async function fetchBlockPage(baseUrl: string, height: number): Promise<ElectrsBlockSummary[]> {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/blocks/${height}`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error(`Electrs blocks ${response.status}`);
+  return parseElectrsBlockPage(await response.json());
+}
+
 function object(value: unknown, message: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(message);
   return value as Record<string, unknown>;

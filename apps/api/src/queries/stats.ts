@@ -19,7 +19,16 @@ export interface MetricDayRow {
 }
 
 /** The daily chart series the /metrics panel plots. Each is a GROUP BY day on block_time. */
-export type MetricName = "transactions" | "issuances" | "dispenses" | "trades" | "sends" | "btc_fees" | "xcp_burned";
+export type MetricName =
+  | "transactions"
+  | "bitcoin_transactions"
+  | "xcp_share"
+  | "issuances"
+  | "dispenses"
+  | "trades"
+  | "sends"
+  | "btc_fees"
+  | "xcp_burned";
 
 /** MAX(block_index) — the tip, used to age the reputation terms in the leaderboard SQL. */
 export function maxBlock(db: D1Database): Promise<number> {

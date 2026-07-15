@@ -36,12 +36,34 @@ stats.get("/v2/metrics", async (c) => {
   // bucket useful while bounding each low-cardinality days variant to four producers/day.
   return cached(c, `metrics:${days}:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
     // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
-    const names: MetricName[] = ["transactions", "issuances", "dispenses", "trades", "sends", "btc_fees", "xcp_burned"];
+    const names: MetricName[] = [
+      "transactions",
+      "bitcoin_transactions",
+      "xcp_share",
+      "issuances",
+      "dispenses",
+      "trades",
+      "sends",
+      "btc_fees",
+      "xcp_burned",
+    ];
     const rows = await coreMetricSeriesSet(c.env.CORE_DB, names, days, includeHidden);
-    const series = (name: MetricName) =>
-      rows[name].map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
-    const [transactions, issuances, dispenses, trades, sends, btc_fees, xcp_burned] = names.map(series);
-    return { result: { transactions, issuances, trades, dispenses, sends, btc_fees, xcp_burned } };
+    const series = (name: MetricName) => rows[name].map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
+    const [transactions, bitcoin_transactions, xcp_share, issuances, dispenses, trades, sends, btc_fees, xcp_burned] =
+      names.map(series);
+    return {
+      result: {
+        transactions,
+        bitcoin_transactions,
+        xcp_share,
+        issuances,
+        trades,
+        dispenses,
+        sends,
+        btc_fees,
+        xcp_burned,
+      },
+    };
   });
 });
 

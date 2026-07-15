@@ -29,6 +29,7 @@ export interface BlockRow {
   block_hash: string | null;
   block_time: number | null;
   transaction_count: number | null;
+  bitcoin_transaction_count: number | null;
 }
 
 /** A block's transaction summary inside BlockDetail. */
@@ -49,6 +50,7 @@ export interface BlockDetail {
   txlist_hash: string | null;
   messages_hash: string | null;
   transaction_count: number | null;
+  bitcoin_transaction_count: number | null;
   previous_block_hash: string | null;
   difficulty: string | null;
   transactions: BlockTxSummary[];

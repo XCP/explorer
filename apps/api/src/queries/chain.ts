@@ -2,12 +2,12 @@
 import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
 import { q, one } from "#api/db";
 
-export const BLOCK_PAGE_SQL = `SELECT block_index,LOWER(HEX(block_hash)) block_hash,block_time,transaction_count
+export const BLOCK_PAGE_SQL = `SELECT block_index,LOWER(HEX(block_hash)) block_hash,block_time,transaction_count,bitcoin_transaction_count
 FROM blocks ORDER BY block_index DESC LIMIT ?1 OFFSET ?2`;
 
 export const BLOCK_BY_INDEX_SQL = `SELECT block_index,LOWER(HEX(block_hash)) block_hash,block_time,
   LOWER(HEX(previous_block_hash)) previous_block_hash,difficulty,LOWER(HEX(ledger_hash)) ledger_hash,
-  LOWER(HEX(txlist_hash)) txlist_hash,LOWER(HEX(messages_hash)) messages_hash,transaction_count
+  LOWER(HEX(txlist_hash)) txlist_hash,LOWER(HEX(messages_hash)) messages_hash,transaction_count,bitcoin_transaction_count
 FROM blocks WHERE block_index=?1`;
 
 export const TRANSACTIONS_BY_BLOCK_SQL = `SELECT t.tx_index,LOWER(HEX(t.tx_hash)) tx_hash,

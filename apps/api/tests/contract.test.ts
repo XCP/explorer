@@ -81,6 +81,7 @@ const BLOCK_ROW: Spec = {
   block_hash: "string|null",
   block_time: "number|null",
   transaction_count: "number|null",
+  bitcoin_transaction_count: "number|null",
 };
 const ASSET_INDEX_ROW: Spec = {
   asset: "string",
@@ -315,7 +316,17 @@ test("contract: stats quality modes remain isolated and monotonic", async (t) =>
   assert.equal(filtered.result.transactions, all.result.transactions, "unscoped transaction count must be preserved");
   assert.ok(filtered.result.sends < all.result.sends, "quality modes must not collapse onto one cached payload");
 
-  for (const field of ["transactions", "issuances", "trades", "dispenses", "sends", "btc_fees", "xcp_burned"]) {
+  for (const field of [
+    "transactions",
+    "bitcoin_transactions",
+    "xcp_share",
+    "issuances",
+    "trades",
+    "dispenses",
+    "sends",
+    "btc_fees",
+    "xcp_burned",
+  ]) {
     assert.ok(Array.isArray(filteredMetrics.result[field]), `filtered metrics.${field} must be an array`);
     assert.ok(Array.isArray(allMetrics.result[field]), `all metrics.${field} must be an array`);
     const total = (rows: Array<{ v: number }>) => rows.reduce((sum, row) => sum + row.v, 0);
