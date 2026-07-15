@@ -18,6 +18,12 @@ export function parseElectrsTransactionFee(value: unknown): number {
   return Number(transaction.fee);
 }
 
+export function parseElectrsTransactionHex(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0 || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value))
+    throw new Error("Electrs transaction hex is invalid");
+  return value.toLowerCase();
+}
+
 export interface ElectrsBlockSummary {
   height: number;
   transactionCount: number;
@@ -114,6 +120,15 @@ export async function fetchTransactionFee(baseUrl: string, txid: string): Promis
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Electrs transaction ${response.status}`);
   return parseElectrsTransactionFee(await response.json());
+}
+
+export async function fetchTransactionHex(baseUrl: string, txid: string): Promise<string | null> {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}/hex`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Electrs transaction hex ${response.status}`);
+  return parseElectrsTransactionHex(await response.text());
 }
 
 export async function fetchTipHeight(baseUrl: string): Promise<number> {

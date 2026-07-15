@@ -4,6 +4,7 @@ import {
   parseElectrsBlockPage,
   parseElectrsOutspends,
   parseElectrsTransactionFee,
+  parseElectrsTransactionHex,
   parseElectrsTransactionStatus,
 } from "#api/integrations/electrs";
 
@@ -12,6 +13,12 @@ test("parses exact integer transaction fees", () => {
   assert.throws(() => parseElectrsTransactionFee({ fee: -1 }), /invalid fee/);
   assert.throws(() => parseElectrsTransactionFee({ fee: 1.5 }), /invalid fee/);
   assert.throws(() => parseElectrsTransactionFee({ fee: "46970" }), /invalid fee/);
+});
+
+test("parses and normalizes raw transaction hex", () => {
+  assert.equal(parseElectrsTransactionHex("00Aaff"), "00aaff");
+  assert.throws(() => parseElectrsTransactionHex("abc"), /invalid/);
+  assert.throws(() => parseElectrsTransactionHex("not-hex"), /invalid/);
 });
 
 test("Electrs block parsing preserves Bitcoin transaction totals", () => {

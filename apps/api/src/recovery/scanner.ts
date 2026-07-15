@@ -1,5 +1,5 @@
 import type { Env } from "#api/env";
-import { counterpartyJson } from "#api/integrations/counterparty";
+import { fetchTransactionHex } from "#api/integrations/electrs";
 import { hashToBytes } from "#api/indexer/identities";
 import { classifyStamp } from "#api/indexer/events/stamp";
 import { importRecoveryTransactions, type RecoveryImportOutput } from "#api/recovery/import";
@@ -13,10 +13,6 @@ interface CoreTransaction {
   txid: string;
   block_height: number;
   block_time: number | null;
-}
-
-interface RawTransactionEnvelope {
-  result: string;
 }
 
 export function recoveryCandidates(
@@ -114,16 +110,12 @@ export async function scanRecoveryTransactions(
   for (let offset = 0; offset < page.results.length; offset += 5) {
     const group = await Promise.all(
       page.results.slice(offset, offset + 5).map(async (row) => {
-        const response = await counterpartyJson<RawTransactionEnvelope>(
-          env.COUNTERPARTY_API_BASE,
-          `/bitcoin/transactions/${row.txid}?result_format=hex`,
-          { timeoutMs: 15_000, totalTimeoutMs: 30_000, maxRetries: 1, malformedRetries: 0 },
-        );
-        if (typeof response.result !== "string") throw new Error(`Counterparty omitted raw transaction ${row.txid}`);
+        const rawHex = await fetchTransactionHex(env.ELECTRS_API_BASE, row.txid);
+        if (rawHex === null) throw new Error(`Electrs omitted raw transaction ${row.txid}`);
         return {
           row,
-          rawHex: response.result,
-          candidates: recoveryCandidates(response.result, row.block_height, row.block_time),
+          rawHex,
+          candidates: recoveryCandidates(rawHex, row.block_height, row.block_time),
         };
       }),
     );
