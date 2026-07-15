@@ -190,18 +190,16 @@ export default {
         const caughtUp = !!syncResult?.caught_up;
         // Maintenance runs ONLY when caught up, so a catch-up/rebuild never contends with the live sync.
         if (caughtUp) {
+          // Canonical Bitcoin enrichment runs before independent provider-backed projections. A slow recovery
+          // dependency must not starve fields used by the explorer's core transaction and block views.
+          await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
+          await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
           // Keep bare-multisig recovery current from one durable global cursor. Verification and attempt
           // reconciliation are bounded separately so a slow chain provider cannot stall ingestion.
           await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 200));
           await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
           await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
           await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));
-          // Enrich canonical blocks with Bitcoin's total transaction count. Newest-first keeps current
-          // percentages complete while the same idempotent step walks historical blocks.
-          await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
-          // Counterparty transaction events deliberately leave miner fees empty: Bitcoin Core is authoritative.
-          // This exact prevout-minus-outputs reconciliation normally covers only the newest few transactions.
-          await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
           // Signal maintenance uses the same convergent writers for event refreshes and
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
