@@ -270,11 +270,12 @@ test("contract: GET /v2/status - cheap SyncOverview heartbeat", async (t) => {
 
 test("contract: stats quality modes remain isolated and monotonic", async (t) => {
   if (skipUnlessLive(t)) return;
+  const contract = Date.now();
   const [filtered, all, filteredMetrics, allMetrics] = await Promise.all([
-    getJson("/v2/stats"),
-    getJson("/v2/stats?include_hidden=1"),
-    getJson("/v2/metrics?days=90"),
-    getJson("/v2/metrics?days=90&include_hidden=1"),
+    getJson(`/v2/stats?contract=${contract}`),
+    getJson(`/v2/stats?include_hidden=1&contract=${contract}`),
+    getJson(`/v2/metrics?days=90&contract=${contract}`),
+    getJson(`/v2/metrics?days=90&include_hidden=1&contract=${contract}`),
   ]);
   const countFields = [
     "assets", "transactions", "sends", "issuances", "dispensers", "dispenses", "orders", "order_matches",
