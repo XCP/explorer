@@ -101,8 +101,9 @@ WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
 
 export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
   const unique = [...new Set(addresses)].filter(Boolean);
-  for (let index = 0; index < unique.length; index += 40)
-    await db.batch(unique.slice(index, index + 40).map((address) => db.prepare(UPSERT).bind(address)));
+  // D1.batch composes its statements internally; this UPSERT already contains several UNION terms and the
+  // composition can exceed D1's compound-SELECT limit. Each identity is independently replay-safe.
+  for (const address of unique) await db.prepare(UPSERT).bind(address).run();
   return unique.length;
 }
 
