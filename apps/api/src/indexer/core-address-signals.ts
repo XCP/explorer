@@ -133,7 +133,7 @@ export async function enqueueCoreAddressSignals(db: D1Database, addresses: Itera
   );
 }
 
-export async function runCoreAddressSignalsStep(db: D1Database, limit = 40, force = false) {
+export async function runCoreAddressSignalsStep(db: D1Database, limit = 100, force = false) {
   const queue = await queuedIds(db);
   if (queue.length > 0) {
     const todo = queue.slice(0, limit),
