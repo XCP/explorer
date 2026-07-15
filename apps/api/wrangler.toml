@@ -37,7 +37,6 @@ service = "xcpdex-api"
 [vars]
 COUNTERPARTY_API_BASE = "https://api.counterparty.io:4000/v2"
 XCPDEX_API = "https://xcpdex-api.me-bbe.workers.dev"
-CONSOLIDATION_API = "https://api.xcp.io"   # Hetzner consolidation svc (today api.xcp.io; switch to a grey-cloud origin at cutover)
 RECOVERY_FEE_PERCENT = "9"
 RECOVERY_FEE_EXEMPTION_SATS = "10000"
 ELECTRS_API_BASE = "https://api.counterparty.io:3000"

@@ -193,6 +193,23 @@ interface RecoveryReportBody {
   include_protected_stamps?: boolean;
 }
 
+interface RecoveryReportInput {
+  recovery_address?: string;
+  classification?: string;
+  spent_by_txid?: string | null;
+  protected_stamp?: number;
+  pending_txid?: string | null;
+}
+
+export function isRecoveryReportInput(
+  row: RecoveryReportInput | undefined,
+  address: string,
+  recoveryTxid: string,
+): row is RecoveryReportInput & { recovery_address: string; classification: string } {
+  if (row?.recovery_address !== address) return false;
+  return row.classification === "recoverable" || (row.classification === "spent" && row.spent_by_txid === recoveryTxid);
+}
+
 recoveryRead.post("/addresses/:address/recoveries", async (c) => {
   if (!(await recoveryReadsReady(c.env))) return c.json({ error: "recovery index is still being verified" }, 503);
   const address = c.req.param("address");
@@ -218,6 +235,7 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
 
   const lookupStatement = c.env.RECOVERY_DB.prepare(
     `SELECT recovery_address,classification,value_sats,
+            spent_by_txid,
             EXISTS(SELECT 1 FROM recovery_protected_transactions p
                     WHERE p.txid=recovery_outputs.txid AND p.protection_kind='stamp') protected_stamp,
             (SELECT a.txid FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
@@ -237,11 +255,12 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
           recovery_address?: string;
           classification?: string;
           value_sats?: number;
+          spent_by_txid?: string | null;
           pending_txid?: string | null;
           protected_stamp?: number;
         }
       | undefined;
-    if (row?.recovery_address !== address || row.classification !== "recoverable")
+    if (!isRecoveryReportInput(row, address, transaction.txid))
       return c.json(
         {
           error: `input is not recoverable by this address: ${transaction.inputs[index].txid}:${transaction.inputs[index].vout}`,

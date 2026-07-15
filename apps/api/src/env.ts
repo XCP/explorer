@@ -10,7 +10,6 @@ export interface Env {
   XCPDEX: Fetcher;
   COUNTERPARTY_API_BASE: string;
   XCPDEX_API: string;
-  CONSOLIDATION_API: string;
   ADMIN_TOKEN: string;
   ALCHEMY_KEY: string;
   ETHERSCAN_KEY: string;

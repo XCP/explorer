@@ -1,15 +1,11 @@
 /**
  * Stable app.xcp.io API surface consumed by the wallet extension:
  *   /api/v1/simple-search, /api/v1/search, /api/v1/asset/{asset}   -> canonical asset store
- *   /api/v1/address/{address}/utxos                                   -> cached read-through to Counterparty
- *   /api/v1/address/{address}/consolidation*                         -> proxy to Hetzner consolidation svc
  *   /api/v1/swap/{give}/{get}                                     -> proxy + reshape xcpdex market data
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "#api/env";
-import { requestConsolidation } from "#api/integrations/consolidation";
 
 type Ctx = Context<{ Bindings: Env }>;
 
@@ -137,20 +133,6 @@ extensionApi.get("/api/v1/asset/:asset", async (c) => {
     30,
   );
 });
-
-/* ---------- utxos + consolidation: proxy to the Hetzner consolidation service ---------- */
-
-// utxos lives in the consolidation service (same PHP codebase as app.xcp.io); proxy for shape parity.
-extensionApi.get("/api/v1/address/:address/utxos", (c) => proxyConsolidation(c));
-extensionApi.all("/api/v1/address/:address/consolidation", (c) => proxyConsolidation(c));
-extensionApi.all("/api/v1/address/:address/consolidation/:sub", (c) => proxyConsolidation(c));
-async function proxyConsolidation(c: Ctx) {
-  const res = await requestConsolidation(c.env.CONSOLIDATION_API, c.req.raw);
-  return c.body(await res.text(), res.status as ContentfulStatusCode, {
-    "content-type": res.headers.get("content-type") || "application/json",
-    "access-control-allow-origin": "*",
-  });
-}
 
 /* ---------- swap: proxy + reshape xcpdex pair data (market data lives in xcpdex) ---------- */
 
