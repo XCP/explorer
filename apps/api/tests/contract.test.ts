@@ -391,7 +391,11 @@ test("contract: GET /v2/featured - compact quality ranking with media", async (t
   const result = (await getJson("/v2/featured?limit=12")).result;
   assertRows(result, { asset: "string", asset_longname: "string|null", score: "number" }, "featured.result");
   assert.equal(result.length, 12, "featured should fill the requested page");
-  assert.equal(new Set(result.map((row: { asset: string }) => row.asset)).size, result.length, "featured assets must be unique");
+  assert.equal(
+    new Set(result.map((row: { asset: string }) => row.asset)).size,
+    result.length,
+    "featured assets must be unique",
+  );
   for (let index = 1; index < result.length; index += 1)
     assert.ok(result[index - 1].score >= result[index].score, "featured assets must remain score-sorted");
 });
