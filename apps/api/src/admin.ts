@@ -30,6 +30,7 @@ import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { recoveryAdmin } from "#api/recovery/admin";
 import { operationalStatus } from "#api/operations/status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
+import { refreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -121,6 +122,9 @@ admin.post("/admin/refresh-signals", async (c) => {
 admin.post("/admin/refresh-exchange-top-assets", async (c) => {
   return c.json(await refreshExchangeTopAssets(c.env));
 });
+
+// Force the filtered lifetime snapshot; normally refreshed out of band before its cache lifetime expires.
+admin.post("/admin/refresh-quality-stats", async (c) => c.json(await refreshQualityNetworkStats(c.env.CORE_DB)));
 
 // Advance the Emblem Vault crawl one step: enumerate token ids (Alchemy, per-contract pageKey cursor) +
 // resolve BTC addresses (keyless /meta). Stores only (contract, token id, btc address); contents come
