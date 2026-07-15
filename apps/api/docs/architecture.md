@@ -50,9 +50,10 @@ Scoring remains a pure read-time policy over signal rows. Weight changes do not 
 Public `/v2` handlers use domain query modules and `CORE_DB` exclusively. D1 read sessions may select a nearby
 replica; the API's existing cache headers tolerate bounded replication staleness.
 
-The wallet extension's stable `/api/v1` URLs are implemented in `extension-api.ts`. Asset responses are read
-from the same normalized store. Consolidation requests retain their public contract and proxy to the dedicated
-Bitcoin consolidation service; swap data comes from XCPDEX.
+The wallet extension's stable `/api/v1` search, asset, and swap URLs are implemented in `extension-api.ts`.
+Asset responses are read from the same normalized store and swap data comes from XCPDEX. Bare-multisig recovery
+is served natively by `recovery/read.ts` from `RECOVERY_DB`; there is no consolidation proxy or external
+application server in that request path.
 
 ## Schema changes and verification
 

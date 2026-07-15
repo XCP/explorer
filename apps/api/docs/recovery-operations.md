@@ -38,10 +38,9 @@ configuration. Migration files are permanent history and must not be edited or r
 The R2 auditor is retained as an explicit integrity tool, not a continuously running service. It checkpoints
 after every page and retries timeouts, rate limits, and server errors with bounded exponential backoff.
 
-Launch it through `ops/run-recovery-r2-audit.sh`. The wrapper loads the protected environment and fixes the
-working directory so the durable checkpoint is not accidentally created elsewhere. Restarting with the same
-checkpoint resumes after the last accepted transaction. Never place bearer tokens in command arguments, logs,
-or repository files.
+After loading the protected environment, run `node ops/audit-recovery-r2.mjs` from `apps/api`. Restarting with
+the same checkpoint resumes after the last accepted transaction. Never place bearer tokens in command
+arguments, logs, or repository files.
 
 ## Historical import
 
