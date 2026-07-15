@@ -10,5 +10,5 @@
     "outDir": ".test-dist",
     "rootDir": "."
   },
-  "include": ["tests/node-test.d.ts", "tests/**/*.test.ts", "ops/recovery-bootstrap-pipeline.mjs"]
+  "include": ["tests/node-test.d.ts", "tests/**/*.test.ts"]
 }

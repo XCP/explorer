@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(apiRoot, "../..");
 const wrangler = join(repositoryRoot, "node_modules/wrangler/bin/wrangler.js");
-const config = join(apiRoot, "wrangler.recovery.toml");
+const config = join(apiRoot, "wrangler.toml");
 const migrations = [
   "0001_recovery.sql",
   "0002_chain_reconciliation.sql",
