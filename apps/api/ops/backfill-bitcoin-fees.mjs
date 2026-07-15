@@ -120,12 +120,15 @@ for (;;) {
     continue;
   }
 
-  const { fees, failures } = await resolvePage(page.rows);
   let updated = 0;
-  for (let write = 0; write < fees.length; write += 100) {
+  let failed = 0;
+  for (let window = 0; window < page.rows.length; window += 100) {
+    const { fees, failures } = await resolvePage(page.rows.slice(window, window + 100));
+    failed += failures.length;
+    if (fees.length === 0) continue;
     const result = await api("/admin/bitcoin-fees", {
       method: "POST",
-      body: JSON.stringify(fees.slice(write, write + 100)),
+      body: JSON.stringify(fees),
     });
     updated += Number(result.updated ?? 0);
   }
@@ -134,14 +137,7 @@ for (;;) {
   pages += 1;
   after = page.next;
   console.log(
-    JSON.stringify({
-      event: "fee_page_complete",
-      total,
-      requested: page.rows.length,
-      updated,
-      failed: failures.length,
-      next_tx: after,
-    }),
+    JSON.stringify({ event: "fee_page_complete", total, requested: page.rows.length, updated, failed, next_tx: after }),
   );
 }
 
