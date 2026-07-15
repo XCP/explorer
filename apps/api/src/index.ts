@@ -180,7 +180,19 @@ export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
     if (event.cron === "1-59/2 * * * *") {
-      ctx.waitUntil(runScheduledJob("maybeBuildGraph", () => maybeBuildGraph(env)));
+      ctx.waitUntil(
+        (async () => {
+          // Recovery owns an independent database and provider budget. Keep it off the canonical ingestion lane
+          // so slow Bitcoin evidence cannot delay protocol projections or public-read freshness.
+          await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 200));
+          await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
+          await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
+          await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));
+          // The graph is already built and internally block-gated. Its occasional rebuild follows recovery rather
+          // than consuming the canonical lane's D1 budget.
+          await runScheduledJob("maybeBuildGraph", () => maybeBuildGraph(env));
+        })(),
+      );
       return;
     }
     ctx.waitUntil(
@@ -194,12 +206,6 @@ export default {
           // dependency must not starve fields used by the explorer's core transaction and block views.
           await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
           await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
-          // Keep bare-multisig recovery current from one durable global cursor. Verification and attempt
-          // reconciliation are bounded separately so a slow chain provider cannot stall ingestion.
-          await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 200));
-          await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
-          await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
-          await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));
           // Signal maintenance uses the same convergent writers for event refreshes and
           // bounded full-population repair. There is no source-database signal fallback.
           await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
