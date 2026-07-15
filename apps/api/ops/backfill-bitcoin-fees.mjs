@@ -7,7 +7,9 @@ function arg(name, fallback) {
 }
 
 const API = arg("api", "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
-const ELECTRS = arg("electrs", "https://api.counterparty.io:3000").replace(/\/$/, "");
+// Keep one-time bulk history off Counterparty's operational Electrs service. Both sources expose the same
+// Bitcoin-indexed integer fee; production maintenance continues to use the configured Counterparty endpoint.
+const ELECTRS = arg("electrs", "https://mempool.space/api").replace(/\/$/, "");
 const devToken = readFileSync(".dev.vars", "utf8")
   .split(/\r?\n/)
   .find((line) => line.startsWith("ADMIN_TOKEN="))
