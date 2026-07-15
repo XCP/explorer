@@ -126,7 +126,10 @@ const CLEAN_METRICS: Record<Exclude<MetricName, "transactions">, string> = {
         UNION SELECT asset_id FROM dispensers WHERE tx_index=tx.tx_index
         UNION SELECT asset_id FROM dispenses WHERE tx_index=tx.tx_index
         UNION SELECT give_asset_id FROM orders WHERE tx_index=tx.tx_index
-        UNION SELECT get_asset_id FROM orders WHERE tx_index=tx.tx_index
+      ) event JOIN asset_signals signal ON signal.asset_id=event.asset_id WHERE signal.low_quality=1
+    ) AND NOT EXISTS (
+      SELECT 1 FROM (
+        SELECT get_asset_id asset_id FROM orders WHERE tx_index=tx.tx_index
         UNION SELECT asset_id FROM dividends WHERE tx_index=tx.tx_index
         UNION SELECT asset_id FROM fairmints WHERE tx_index=tx.tx_index
         UNION SELECT asset_id FROM destructions WHERE tx_index=tx.tx_index

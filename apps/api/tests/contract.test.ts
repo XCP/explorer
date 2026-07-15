@@ -268,6 +268,33 @@ test("contract: GET /v2/status - cheap SyncOverview heartbeat", async (t) => {
   assert.ok(!("balances" in j.result), "status must not grow global COUNT(*) fields");
 });
 
+test("contract: stats quality modes remain isolated and monotonic", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const [filtered, all, filteredMetrics, allMetrics] = await Promise.all([
+    getJson("/v2/stats"),
+    getJson("/v2/stats?include_hidden=1"),
+    getJson("/v2/metrics?days=90"),
+    getJson("/v2/metrics?days=90&include_hidden=1"),
+  ]);
+  const countFields = [
+    "assets", "transactions", "sends", "issuances", "dispensers", "dispenses", "orders", "order_matches",
+    "sweeps", "broadcasts", "dividends", "fairmints", "destructions", "holders", "btc_fees", "xcp_destroyed",
+  ];
+  for (const field of countFields) {
+    assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
+    assert.ok(filtered.result[field] <= all.result[field], `filtered stats.${field} cannot exceed all-chain`);
+  }
+  assert.equal(filtered.result.transactions, all.result.transactions, "unscoped transaction count must be preserved");
+  assert.ok(filtered.result.sends < all.result.sends, "quality modes must not collapse onto one cached payload");
+
+  for (const field of ["transactions", "issuances", "trades", "dispenses", "sends", "btc_fees", "xcp_burned"]) {
+    assert.ok(Array.isArray(filteredMetrics.result[field]), `filtered metrics.${field} must be an array`);
+    assert.ok(Array.isArray(allMetrics.result[field]), `all metrics.${field} must be an array`);
+    const total = (rows: Array<{ v: number }>) => rows.reduce((sum, row) => sum + row.v, 0);
+    assert.ok(total(filteredMetrics.result[field]) <= total(allMetrics.result[field]), `filtered metrics.${field} cannot exceed all-chain`);
+  }
+});
+
 test("contract: GET /v2/blocks?limit=2 — BlockRow list", async (t) => {
   if (skipUnlessLive(t)) return;
   assertListEnvelope(await getJson("/v2/blocks?limit=2"), BLOCK_ROW, 2, "blocks");
