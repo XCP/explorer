@@ -2,6 +2,16 @@ import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const FULL_REPAIR_INTERVAL = 1_008;
 
+const ACTIVITY_BOUNDS = `SELECT min(first_block) first_block,max(last_block) last_block FROM (
+  SELECT min(block_index) first_block,max(block_index) last_block FROM sends
+    WHERE source_address_id=?1 OR destination_address_id=?1
+  UNION ALL SELECT min(block_index),max(block_index) FROM dispenses WHERE source_id=?1 OR destination_id=?1
+  UNION ALL SELECT min(block_index),max(block_index) FROM issuances WHERE issuer_id=?1
+  UNION ALL SELECT min(block_index),max(block_index) FROM fairmints WHERE source_id=?1
+  UNION ALL SELECT min(block_index),max(block_index) FROM order_matches WHERE tx0_address_id=?1 OR tx1_address_id=?1
+  UNION ALL SELECT min(block_index),max(block_index) FROM dispensers WHERE source_id=?1 OR origin_id=?1
+)`;
+
 const UPSERT = `INSERT INTO address_signals(
   address_id,first_block,last_block,out_peers,in_peers,dispense_btc,dispenses,dividends,
   assets_issued,locked_assets,btc_spent,btc_fees,assets_held,assets_received,
@@ -9,23 +19,6 @@ const UPSERT = `INSERT INTO address_signals(
   is_exchange,is_deposit,is_burn,assets_burned,disp_trust,likely_service,dex_trades,
   stamps_created,stamps_collected,src20_deploys,is_btns_user)
 WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1),
-activity AS (SELECT
-  nullif(min(
-    coalesce((SELECT min(block_index) FROM sends WHERE source_address_id=(SELECT address_id FROM identity) OR destination_address_id=(SELECT address_id FROM identity)),9223372036854775807),
-    coalesce((SELECT min(block_index) FROM dispenses WHERE source_id=(SELECT address_id FROM identity) OR destination_id=(SELECT address_id FROM identity)),9223372036854775807),
-    coalesce((SELECT min(block_index) FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)),9223372036854775807),
-    coalesce((SELECT min(block_index) FROM fairmints WHERE source_id=(SELECT address_id FROM identity)),9223372036854775807),
-    coalesce((SELECT min(block_index) FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)),9223372036854775807),
-    coalesce((SELECT min(block_index) FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)),9223372036854775807)
-  ),9223372036854775807) first_block,
-  max(
-    coalesce((SELECT max(block_index) FROM sends WHERE source_address_id=(SELECT address_id FROM identity) OR destination_address_id=(SELECT address_id FROM identity)),0),
-    coalesce((SELECT max(block_index) FROM dispenses WHERE source_id=(SELECT address_id FROM identity) OR destination_id=(SELECT address_id FROM identity)),0),
-    coalesce((SELECT max(block_index) FROM issuances WHERE issuer_id=(SELECT address_id FROM identity)),0),
-    coalesce((SELECT max(block_index) FROM fairmints WHERE source_id=(SELECT address_id FROM identity)),0),
-    coalesce((SELECT max(block_index) FROM order_matches WHERE tx0_address_id=(SELECT address_id FROM identity) OR tx1_address_id=(SELECT address_id FROM identity)),0),
-    coalesce((SELECT max(block_index) FROM dispensers WHERE source_id=(SELECT address_id FROM identity) OR origin_id=(SELECT address_id FROM identity)),0)
-  ) last_block),
 holding AS (SELECT count(DISTINCT asset_id) assets_held FROM balances
   WHERE address_id=(SELECT address_id FROM identity) AND CAST(quantity AS INTEGER)>0),
 creator AS (
@@ -66,7 +59,7 @@ collected AS (SELECT count(DISTINCT balance.asset_id) stamps FROM balances balan
   JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
   JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='stamp'
   WHERE balance.address_id=(SELECT address_id FROM identity) AND CAST(balance.quantity AS INTEGER)>0)
-SELECT identity.address_id,activity.first_block,coalesce(activity.last_block,0),
+SELECT identity.address_id,?2,coalesce(?3,0),
   (SELECT count(DISTINCT destination_address_id) FROM sends WHERE source_address_id=identity.address_id),
   (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id),
   earned.btc,earned.dispenses,
@@ -95,7 +88,7 @@ SELECT identity.address_id,activity.first_block,coalesce(activity.last_block,0),
     +(SELECT count(*) FROM order_matches WHERE tx1_address_id=identity.address_id),
   stamp.created,collected.stamps,stamp.src20,
   EXISTS(SELECT 1 FROM broadcasts WHERE source_id=identity.address_id AND btns=1)
-FROM identity CROSS JOIN activity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
+FROM identity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
 WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
   first_block=excluded.first_block,last_block=excluded.last_block,out_peers=excluded.out_peers,in_peers=excluded.in_peers,
   dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses,dividends=excluded.dividends,
@@ -110,9 +103,20 @@ WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
 
 export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
   const unique = [...new Set(addresses)].filter(Boolean);
-  // D1.batch composes its statements internally; this UPSERT already contains several UNION terms and the
-  // composition can exceed D1's compound-SELECT limit. Each identity is independently replay-safe.
-  for (const address of unique) await db.prepare(UPSERT).bind(address).run();
+  // Keep the small multi-table activity query separate from the large projection UPSERT. Combining them can
+  // exceed D1's compound-SELECT limit, while each address remains independently replay-safe.
+  for (const address of unique) {
+    const identity = await db
+      .prepare(`SELECT address_id FROM address_dictionary WHERE address=?`)
+      .bind(address)
+      .first<{ address_id: number }>();
+    if (!identity) continue;
+    const activity = await db
+      .prepare(ACTIVITY_BOUNDS)
+      .bind(identity.address_id)
+      .first<{ first_block: number | null; last_block: number | null }>();
+    await db.prepare(UPSERT).bind(address, activity?.first_block ?? null, activity?.last_block ?? null).run();
+  }
   return unique.length;
 }
 
