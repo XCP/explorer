@@ -16,6 +16,7 @@ import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { buildTags } from "#api/indexer/tags";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
+import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { crawlCollections } from "#api/indexer/collections";
 import { crawlEmblemSales } from "#api/indexer/emblem-sales";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
@@ -118,6 +119,7 @@ async function maybeRebuildTags(env: Env): Promise<void> {
   await runCoreBlockGated(env.CORE_DB, "tags_rebuilt_blk", 144, async () => {
     await buildTags(env, { includeTypes: false });
     await buildIssuerCollections(env);
+    await buildCuratedCollections(env);
   });
 }
 

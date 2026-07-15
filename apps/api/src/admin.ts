@@ -32,6 +32,7 @@ import { operationalStatus } from "#api/operations/status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { refreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
+import { buildCuratedCollections } from "#api/indexer/curated-collections";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -193,6 +194,10 @@ admin.post("/admin/build-tags", async (c) => {
 
 admin.post("/admin/build-issuer-collections", async (c) => {
   return c.json(await buildIssuerCollections(c.env));
+});
+
+admin.post("/admin/build-curated-collections", async (c) => {
+  return c.json(await buildCuratedCollections(c.env));
 });
 
 // Refresh collection-membership tags (Rare Pepe / Fake Rare / Bitcorn / …) from pepe.wtf. Cron runs it ~daily;

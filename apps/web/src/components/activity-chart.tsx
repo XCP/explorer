@@ -33,7 +33,7 @@ function monthly(points: Point[]): Point[] {
 
 export function ActivityChart() {
   const [metric, setMetric] = useState<Key>("transactions");
-  const [days, setDays] = useState(365);
+  const [days, setDays] = useState(90);
   const [cumulative, setCumulative] = useState(false);
   const { data } = useSWR<Envelope<Record<string, Point[]>>>(apiUrl("/v2/metrics", { days, include_hidden: 1 }));
   const grouped = days > 365;
@@ -68,29 +68,31 @@ export function ActivityChart() {
             </button>
           ))}
         </div>
-        <label className="ml-auto text-xs text-zinc-500" htmlFor="activity-metric">
-          Metric
-        </label>
-        <select
-          id="activity-metric"
-          value={metric}
-          onChange={(event) => setMetric(event.target.value as Key)}
-          className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-300"
-        >
-          {SERIES.map(([key, name]) => (
-            <option key={key} value={key}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={() => setCumulative((value) => !value)}
-          aria-pressed={cumulative}
-          className={`rounded border px-2 py-1 text-xs ${cumulative ? "border-sky-500/50 bg-sky-400/10 text-sky-300" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}
-        >
-          Cumulative
-        </button>
+        <div className="flex items-center gap-1.5 sm:ml-auto">
+          <label className="text-xs text-zinc-500" htmlFor="activity-metric">
+            Metric
+          </label>
+          <select
+            id="activity-metric"
+            value={metric}
+            onChange={(event) => setMetric(event.target.value as Key)}
+            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-300"
+          >
+            {SERIES.map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setCumulative((value) => !value)}
+            aria-pressed={cumulative}
+            className={`rounded border px-2 py-1 text-xs ${cumulative ? "border-sky-500/50 bg-sky-400/10 text-sky-300" : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Cumulative
+          </button>
+        </div>
       </div>
       <AreaChart data={series} height={240} formatValue={format} formatDate={formatDate} />
     </Card>
