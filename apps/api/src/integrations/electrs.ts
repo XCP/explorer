@@ -11,6 +11,13 @@ export interface ElectrsTransactionStatus {
   blockTime: number | null;
 }
 
+export function parseElectrsTransactionFee(value: unknown): number {
+  const transaction = object(value, "Electrs transaction must be an object");
+  if (!Number.isSafeInteger(transaction.fee) || Number(transaction.fee) < 0)
+    throw new Error("Electrs transaction has an invalid fee");
+  return Number(transaction.fee);
+}
+
 export interface ElectrsBlockSummary {
   height: number;
   transactionCount: number;
@@ -98,6 +105,15 @@ export async function fetchTransactionStatus(baseUrl: string, txid: string): Pro
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Electrs transaction ${response.status}`);
   return parseElectrsTransactionStatus(await response.json());
+}
+
+export async function fetchTransactionFee(baseUrl: string, txid: string): Promise<number | null> {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/tx/${encodeURIComponent(txid)}`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Electrs transaction ${response.status}`);
+  return parseElectrsTransactionFee(await response.json());
 }
 
 export async function fetchTipHeight(baseUrl: string): Promise<number> {

@@ -62,7 +62,7 @@ export function NetworkStats() {
         <Stat label="Addresses" value={commas(s?.addresses)} />
         <Stat label="Assets" value={commas(s?.assets)} />
         <Stat
-          label="XCP destroyed (all-time)"
+          label="XCP destroyed"
           value={
             s?.xcp_destroyed != null ? (
               <>
@@ -74,7 +74,7 @@ export function NetworkStats() {
           }
         />
         <Stat
-          label="BTC fees paid (all-time)"
+          label="BTC fees paid"
           value={
             s?.btc_fees != null ? (
               <>

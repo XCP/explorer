@@ -33,6 +33,7 @@ import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { refreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
+import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#api/indexer/bitcoin-fees";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -43,6 +44,22 @@ admin.route("/", recoveryAdmin);
 // Cheap, read-only snapshot for operators. Large tables are probed by indexed
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
+
+// Temporary migration surface for the Bitcoin-authoritative fee fill. The exporter reads only rows still
+// missing a verified fee and writes exact integer satoshi values in bounded batches. Both routes disappear
+// after the verified cutover migration replaces the legacy fee column.
+admin.get("/admin/bitcoin-fees", async (c) => {
+  const limit = boundedInteger(c.req.query("limit"), { defaultValue: 5000, min: 1, max: 10_000 });
+  const after = optionalBoundedInteger(c.req.query("after"), { min: 0 });
+  const rows = await listMissingBitcoinFees(c.env.CORE_DB, after ?? null, limit);
+  return c.json({ rows, next: rows.at(-1)?.tx_index ?? null });
+});
+
+admin.post("/admin/bitcoin-fees", async (c) => {
+  const rows = validBitcoinFeeRows(await c.req.json().catch(() => null));
+  if (!rows) return c.json({ error: "expected 1-100 rows with a 64-character tx_hash and integer fee" }, 400);
+  return c.json({ ok: true, updated: await storeBitcoinFees(c.env.CORE_DB, rows) });
+});
 
 // Bitcoin-side address summaries ingest (see ops/export-btc-stats.mjs — the Counterparty mirror
 // is blind to plain BTC activity; a local Core+Fulcrum node computes summaries and pushes them here).

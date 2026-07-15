@@ -1,6 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseElectrsBlockPage, parseElectrsOutspends, parseElectrsTransactionStatus } from "#api/integrations/electrs";
+import {
+  parseElectrsBlockPage,
+  parseElectrsOutspends,
+  parseElectrsTransactionFee,
+  parseElectrsTransactionStatus,
+} from "#api/integrations/electrs";
+
+test("parses exact integer transaction fees", () => {
+  assert.equal(parseElectrsTransactionFee({ fee: 46_970 }), 46_970);
+  assert.throws(() => parseElectrsTransactionFee({ fee: -1 }), /invalid fee/);
+  assert.throws(() => parseElectrsTransactionFee({ fee: 1.5 }), /invalid fee/);
+  assert.throws(() => parseElectrsTransactionFee({ fee: "46970" }), /invalid fee/);
+});
 
 test("Electrs block parsing preserves Bitcoin transaction totals", () => {
   assert.deepEqual(parseElectrsBlockPage([{ height: 958_084, tx_count: 3_174 }]), [
