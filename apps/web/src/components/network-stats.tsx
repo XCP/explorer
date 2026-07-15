@@ -56,14 +56,35 @@ export function NetworkStats() {
       </div>
       {/* deflation headline — XCP is destroyed by fees; this is the lifetime burn */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Stat label="Balances" value={commas(s?.holders)} />
+        <div className="hidden sm:block">
+          <Stat label="Balances" value={commas(s?.holders)} />
+        </div>
         <Stat label="Addresses" value={commas(s?.addresses)} />
         <Stat label="Assets" value={commas(s?.assets)} />
         <Stat
           label="XCP destroyed (all-time)"
-          value={s?.xcp_destroyed != null ? `${commas(Math.round(s.xcp_destroyed))} XCP` : "—"}
+          value={
+            s?.xcp_destroyed != null ? (
+              <>
+                {commas(Math.round(s.xcp_destroyed))} <span className="hidden sm:inline">XCP</span>
+              </>
+            ) : (
+              "—"
+            )
+          }
         />
-        <Stat label="BTC fees paid (all-time)" value={s?.btc_fees != null ? `${s.btc_fees.toFixed(2)} BTC` : "—"} />
+        <Stat
+          label="BTC fees paid (all-time)"
+          value={
+            s?.btc_fees != null ? (
+              <>
+                {s.btc_fees.toFixed(2)} <span className="hidden sm:inline">BTC</span>
+              </>
+            ) : (
+              "—"
+            )
+          }
+        />
       </div>
       <ActivityChart />
       <Card title="Counterparty totals">
