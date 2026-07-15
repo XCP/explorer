@@ -36,16 +36,19 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
   return one<NetworkCounts & NetworkTotals>(
     db,
     `WITH snapshot AS (SELECT * FROM network_stats_snapshot WHERE singleton=1),
-      lowq_tx AS (
+      lowq_tx_core AS (
         SELECT item.tx_index FROM asset_signals signal CROSS JOIN sends item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN issuances item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN dispensers item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN dispenses item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN orders item ON item.give_asset_id=signal.asset_id WHERE signal.low_quality=1
-        UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN orders item ON item.get_asset_id=signal.asset_id WHERE signal.low_quality=1
+      ), lowq_tx_protocol AS (
+        SELECT item.tx_index FROM asset_signals signal CROSS JOIN orders item ON item.get_asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN dividends item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN fairmints item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
         UNION SELECT item.tx_index FROM asset_signals signal CROSS JOIN destructions item ON item.asset_id=signal.asset_id WHERE signal.low_quality=1
+      ), lowq_tx AS (
+        SELECT tx_index FROM lowq_tx_core UNION SELECT tx_index FROM lowq_tx_protocol
       )
     SELECT (SELECT MAX(block_index) FROM blocks) tip,
       snapshot.assets-(SELECT COUNT(*) FROM asset_signals WHERE low_quality=1) assets,
