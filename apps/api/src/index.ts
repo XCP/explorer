@@ -184,7 +184,7 @@ export default {
         (async () => {
           // Recovery owns an independent database and provider budget. Keep it off the canonical ingestion lane
           // so slow Bitcoin evidence cannot delay protocol projections or public-read freshness.
-          await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 200));
+          await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 20));
           await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
           await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
           await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));

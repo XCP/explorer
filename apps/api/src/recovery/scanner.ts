@@ -19,21 +19,28 @@ interface RawTransactionEnvelope {
   result: string;
 }
 
-export function recoveryCandidates(rawHex: string, blockHeight: number, blockTime: number | null): RecoveryImportOutput[] {
+export function recoveryCandidates(
+  rawHex: string,
+  blockHeight: number,
+  blockTime: number | null,
+): RecoveryImportOutput[] {
   const transaction = parseRecoveryTransaction(rawHex);
   return transaction.outputs.flatMap((output, vout) => {
     const parsed = parseBareMultisig(output.scriptPubkeyHex);
     if (!parsed || parsed.requiredSignatures !== 1 || (parsed.publicKeyCount !== 2 && parsed.publicKeyCount !== 3)) {
       return [];
     }
-    if (output.valueSats > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("recovery output exceeds safe integer range");
-    return [{
-      vout,
-      value_sats: Number(output.valueSats),
-      script_pubkey_hex: output.scriptPubkeyHex,
-      block_height: blockHeight,
-      block_time: blockTime,
-    }];
+    if (output.valueSats > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new Error("recovery output exceeds safe integer range");
+    return [
+      {
+        vout,
+        value_sats: Number(output.valueSats),
+        script_pubkey_hex: output.scriptPubkeyHex,
+        block_height: blockHeight,
+        block_time: blockTime,
+      },
+    ];
   });
 }
 
@@ -45,8 +52,9 @@ async function initializeCursor(env: Env): Promise<number> {
 
   // Rescan the entire newest imported block. Import is an upsert, so overlap is harmless and prevents
   // a snapshot taken mid-block from leaving a permanent hole.
-  const imported = await env.RECOVERY_DB.prepare(`SELECT MAX(block_height) height FROM recovery_outputs`)
-    .first<{ height: number | null }>();
+  const imported = await env.RECOVERY_DB.prepare(`SELECT MAX(block_height) height FROM recovery_outputs`).first<{
+    height: number | null;
+  }>();
   const height = Number(imported?.height ?? 0);
   const beforeBlock = await env.CORE_DB.prepare(
     `SELECT COALESCE(MAX(tx_index),-1) cursor FROM transactions WHERE block_index<?`,
@@ -86,7 +94,10 @@ async function protectStampTransaction(env: Env, row: CoreTransaction): Promise<
   ]);
 }
 
-export async function scanRecoveryTransactions(env: Env, batchSize = 200): Promise<{ scanned: number; imported: number; cursor: number }> {
+export async function scanRecoveryTransactions(
+  env: Env,
+  batchSize = 200,
+): Promise<{ scanned: number; imported: number; cursor: number }> {
   const limit = Math.min(250, Math.max(1, Math.trunc(batchSize)));
   const cursor = await initializeCursor(env);
   const page = await env.CORE_DB.prepare(
@@ -106,6 +117,7 @@ export async function scanRecoveryTransactions(env: Env, batchSize = 200): Promi
         const response = await counterpartyJson<RawTransactionEnvelope>(
           env.COUNTERPARTY_API_BASE,
           `/bitcoin/transactions/${row.txid}?result_format=hex`,
+          { timeoutMs: 15_000, totalTimeoutMs: 30_000, maxRetries: 1, malformedRetries: 0 },
         );
         if (typeof response.result !== "string") throw new Error(`Counterparty omitted raw transaction ${row.txid}`);
         return {
