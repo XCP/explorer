@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
+import { refreshAssetEmergence } from "#api/indexer/asset-emergence";
 import { backfillBitcoinBlockCounts } from "#api/indexer/bitcoin-block-counts";
 import { reconcileStagedBitcoinFees } from "#api/indexer/bitcoin-fees";
 import { crawlCollections } from "#api/indexer/collections";
@@ -72,6 +73,9 @@ const maybeRebuildTags = (env: Env) =>
 
 const maybeCrawlPrices = (env: Env) => runCoreBlockGated(env.CORE_DB, "prices_synced_blk", 144, () => crawlPrices(env));
 
+const maybeRefreshAssetEmergence = (env: Env) =>
+  runCoreBlockGated(env.CORE_DB, "asset_emergence_refreshed_blk", 6, () => refreshAssetEmergence(env.CORE_DB));
+
 /** Serialized, replay-safe projections derived from the canonical mirror. */
 export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
   return withCanonicalMaintenanceLease(
@@ -99,6 +103,7 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("crawlEmblemMeta", () => crawlEmblemMeta(env));
       await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
       await runScheduledJob("buildTrades", () => buildTrades(env));
+      await runScheduledJob("refreshAssetEmergence", () => maybeRefreshAssetEmergence(env));
       await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
       await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
     },
