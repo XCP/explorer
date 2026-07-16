@@ -10,7 +10,8 @@ const API = arg("api", "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
 // Keep one-time bulk history off Counterparty's operational Electrs service. Both sources expose the same
 // Bitcoin-indexed integer fee; production maintenance continues to use the configured Counterparty endpoint.
 const ELECTRS = arg("electrs", "https://mempool.space/api").replace(/\/$/, "");
-const devToken = readFileSync(".dev.vars", "utf8")
+// Resolve local credentials relative to this script so unattended runners do not depend on their working directory.
+const devToken = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8")
   .split(/\r?\n/)
   .find((line) => line.startsWith("ADMIN_TOKEN="))
   ?.slice("ADMIN_TOKEN=".length)
