@@ -35,7 +35,7 @@ stats.get("/v2/metrics", async (c) => {
   const includeHidden = c.req.query("include_hidden") === "1";
   // Daily buckets do not justify full-history regrouping every 30 minutes. Six hours keeps today's partial
   // bucket useful while bounding each low-cardinality days variant to four producers/day.
-  return cached(c, `metrics:${days}:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
+  return cached(c, `metrics:v2:${days}:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
     // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
     const names: MetricName[] = [
       "transactions",

@@ -5,6 +5,7 @@ import { reconcileStagedBitcoinFees } from "#api/indexer/bitcoin-fees";
 import { crawlCollections } from "#api/indexer/collections";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
+import { reconcileRecentDailyTransactions } from "#api/indexer/daily-metrics";
 import { crawlEmblemListings } from "#api/indexer/emblem-listings";
 import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
 import { crawlEmblemSales } from "#api/indexer/emblem-sales";
@@ -78,6 +79,7 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
     async () => {
       await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
       await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
+      await runScheduledJob("reconcileRecentDailyTransactions", () => reconcileRecentDailyTransactions(env.CORE_DB));
       await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
       await runScheduledJob("maybeRefreshQualityNetworkStats", () => maybeRefreshQualityNetworkStats(env.CORE_DB));
       await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));

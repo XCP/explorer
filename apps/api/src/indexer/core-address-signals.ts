@@ -35,12 +35,21 @@ creator AS (
   FROM assets asset LEFT JOIN asset_signals signal ON signal.asset_id=asset.asset_id
   WHERE asset.issuer_id=(SELECT address_id FROM identity)
 ),
+earned_items AS (
+  SELECT item.btc_amount,item.asset_id,item.block_index
+  FROM dispensers dispenser INDEXED BY idx_dispensers_origin
+  JOIN dispenses item INDEXED BY idx_dispenses_dispenser ON item.dispenser_tx_index=dispenser.tx_index
+  WHERE dispenser.origin_id=(SELECT address_id FROM identity)
+  UNION ALL
+  SELECT item.btc_amount,item.asset_id,item.block_index
+  FROM dispenses item INDEXED BY idx_dispenses_source
+  LEFT JOIN dispensers dispenser ON dispenser.tx_index=item.dispenser_tx_index
+  WHERE item.source_id=(SELECT address_id FROM identity) AND dispenser.origin_id IS NULL
+),
 earned AS (
   SELECT count(*) dispenses,coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) btc,
     coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.btc_amount AS REAL) END)/1e8,0) clean
-  FROM dispenses item LEFT JOIN dispensers dispenser ON dispenser.tx_index=item.dispenser_tx_index
-  LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-  WHERE coalesce(dispenser.origin_id,item.source_id)=(SELECT address_id FROM identity)
+  FROM earned_items item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
 ),
 spent AS (
   SELECT coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) btc,
@@ -84,7 +93,12 @@ SELECT identity.address_id,?2,coalesce(?3,0),
     LEFT JOIN asset_signals asset ON asset.asset_id=send.asset_id
     WHERE send.source_address_id=identity.address_id AND burn.is_burn=1 AND coalesce(asset.low_quality,0)=0),
   coalesce((SELECT 2*ln(1+(max(block_index)-min(block_index))/4320.0)+1.5*ln(1+count(*))
-    FROM dispensers WHERE coalesce(origin_id,source_id)=identity.address_id),0),
+    FROM (
+      SELECT block_index FROM dispensers INDEXED BY idx_dispensers_origin WHERE origin_id=identity.address_id
+      UNION ALL
+      SELECT block_index FROM dispensers INDEXED BY idx_dispensers_source
+      WHERE source_id=identity.address_id AND origin_id IS NULL
+    )),0),
   CASE WHEN infra.exchange_flag=0 AND infra.burn_flag=0
     AND NOT EXISTS(SELECT 1 FROM emblem_vaults WHERE btc_address_id=identity.address_id)
     AND (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id)=0

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { reconcileRecentDailyTransactions } from "#api/indexer/daily-metrics";
 import {
   coreHomeOverview,
   coreMetricSeries,
@@ -28,6 +29,10 @@ class Statement {
   }
   async all<T>() {
     return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
+  async run() {
+    const result = this.db.prepare(this.sql).run(...this.values);
+    return { success: true, meta: { rows_written: Number(result.changes) } };
   }
 }
 
@@ -157,6 +162,30 @@ test("compact daily metrics preserve day buckets and monetary normalization", as
 
   db.exec(`INSERT INTO sends VALUES(259200); DELETE FROM sends WHERE block_time=172800;`);
   assert.deepEqual(await series("sends"), [{ d: 3, v: 1 }]);
+});
+
+test("recent daily transaction reconciliation repairs drift from canonical blocks", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY,block_time INTEGER,transaction_count INTEGER);
+    CREATE TABLE daily_metrics(day INTEGER PRIMARY KEY,transactions INTEGER);
+    INSERT INTO blocks VALUES
+      (1,86400,99),
+      (2,172800,2),(3,172801,3),
+      (4,259200,7),(5,259201,4);
+    INSERT INTO daily_metrics VALUES(2,0),(3,11);
+  `);
+  assert.equal(await reconcileRecentDailyTransactions(d1(db)), 1);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT day,transactions FROM daily_metrics ORDER BY day`)
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      { day: 2, transactions: 5 },
+      { day: 3, transactions: 11 },
+    ],
+  );
 });
 
 test("quality stats exclude low-quality asset activity without removing unscoped protocol activity", async () => {

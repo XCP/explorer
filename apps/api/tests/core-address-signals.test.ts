@@ -88,6 +88,48 @@ test("compact address signals recompute touched identities and converge to zero"
   });
 });
 
+test("address signals attribute dispenser proceeds to origin or source exactly once", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address) VALUES('1origin'),('1source'),('1buyer');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO assets(asset_id,type,issuer_id,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',(SELECT address_id FROM address_dictionary WHERE address='1source'),0,0,1
+      FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO dispensers(tx_index,tx_hash,block_index,source_id,origin_id,asset_id)
+      SELECT 1,randomblob(32),100,source.address_id,origin.address_id,asset.asset_id
+      FROM address_dictionary source,address_dictionary origin,asset_dictionary asset
+      WHERE source.address='1source' AND origin.address='1origin' AND asset.asset='CARD';
+    INSERT INTO dispensers(tx_index,tx_hash,block_index,source_id,origin_id,asset_id)
+      SELECT 2,randomblob(32),101,source.address_id,NULL,asset.asset_id
+      FROM address_dictionary source,asset_dictionary asset
+      WHERE source.address='1source' AND asset.asset='CARD';
+    INSERT INTO dispenses(event_index,tx_index,dispense_index,tx_hash,dispenser_tx_index,source_id,destination_id,asset_id,btc_amount,block_index)
+      SELECT 1,11,0,randomblob(32),1,source.address_id,buyer.address_id,asset.asset_id,'200000000',100
+      FROM address_dictionary source,address_dictionary buyer,asset_dictionary asset
+      WHERE source.address='1source' AND buyer.address='1buyer' AND asset.asset='CARD';
+    INSERT INTO dispenses(event_index,tx_index,dispense_index,tx_hash,dispenser_tx_index,source_id,destination_id,asset_id,btc_amount,block_index)
+      SELECT 2,12,0,randomblob(32),2,source.address_id,buyer.address_id,asset.asset_id,'300000000',101
+      FROM address_dictionary source,address_dictionary buyer,asset_dictionary asset
+      WHERE source.address='1source' AND buyer.address='1buyer' AND asset.asset='CARD';
+  `);
+
+  await rebuildCoreAddressSignals(d1(db), ["1origin", "1source"]);
+  const rows = db
+    .prepare(
+      `SELECT address.address,signal.dispenses,signal.dispense_btc
+       FROM address_signals signal JOIN address_dictionary address USING(address_id)
+       WHERE address.address IN ('1origin','1source') ORDER BY address.address`,
+    )
+    .all()
+    .map((row) => ({ ...row }));
+  assert.deepEqual(rows, [
+    { address: "1origin", dispenses: 1, dispense_btc: 2 },
+    { address: "1source", dispenses: 1, dispense_btc: 3 },
+  ]);
+});
+
 test("full address repair pauses after coverage while forced repair remains available", async () => {
   const db = new DatabaseSync(":memory:");
   for (const migration of migrations) db.exec(migration);

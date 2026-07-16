@@ -98,9 +98,13 @@ design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — p
 
 ## In progress (self-driving — check before assuming stale)
 
-- **Emblem sales recovery** — actively backfilling (+23k sales in 2 days as of 2026-07-11); cursors
-  in `indexer_state` (`emblem_sales_*`). **Transfers crawl** at ~contract 19/37 (`emblem_tx_*`,
-  floor 19.6M ≈ Apr 2024). **Vault-contents verification** loops perpetually.
+- **Finite historical maintenance** — inspect `/admin/backfills` rather than copying cursor values into
+  documentation. It reports Bitcoin transaction fees, Bitcoin block transaction counts, Ethereum block times,
+  recovery scanning, and trade builders from their durable production cursors.
+- **Recovery indexing** — the historical scanner is near tip and advances automatically; attempt reconciliation,
+  statistics, and current-chain scanning continue as bounded scheduled maintenance after catch-up.
+- **Emblem maintenance** — the historical sales cursor is complete. Transfer and vault-content verification remain
+  recurring indexed sweeps.
 - **The tx-page framework iteration** — owner is actively refining copy/layout in short loops; the
   order tab is the most-dialed exemplar of the pattern.
 
@@ -118,14 +122,16 @@ From `docs/product-direction.md` (owner accepted the frame; bets ranked there):
 Also slated: dispenser/fairminter dead-states → the one-frame conversion the order got; wallet
 provider's real compose API (the "Fill order" button's integration point is marked); OPEN_POOL txs
 unclassifiable (pools mirror lacks tx_hash — capture change); dispenser-close txs land on the
-generic fallback; related-tab thumbnails lack the video cascade; some pre-2023 `invalid:*` statuses
+generic fallback; some pre-2023 `invalid:*` statuses
 carry mojibake from capture; delete `/tx-lab` + the `/graph` page (confirmed dead; keep the
 signal chips) when the owner calls it.
 
 ## Live state cheat-sheet
 
-Worker `xcp-api`, D1 `xcpio` (~7.5GB), cron */2min. Key tables: mirror (transactions, sends, orders,
-dispensers/dispenses, issuances, fairmint*, broadcasts, sweeps…), derived (asset_signals,
-address_signals, trades, tags, graph_*, emblem_*, prices, curated, cache). The `cache` table backs
-`cached()`. Admin routes are Bearer-gated (`/admin/*`); tokens live in gitignored files — never
-commit them.
+Worker `xcp-api`, canonical D1 `xcpio-core` (~4.2 GB as of 2026-07-16), recovery D1 `xcpio-btc`
+(~872 MB), and two staggered two-minute cron triggers. `xcpio-core` is the only Counterparty explorer read
+source; there is no old-database fallback or version adapter. Key tables: normalized mirror (transactions,
+sends, orders, dispensers/dispenses, issuances, fairmint*, broadcasts, sweeps…), derived (asset_signals,
+address_signals, trades, tags, graph_*, emblem_*, prices, curated, cache). `xcpio-btc` owns independently
+rebuildable Bitcoin bare-multisig recovery state. The `cache` table backs `cached()`. Admin routes are
+Bearer-gated (`/admin/*`); tokens live in gitignored files — never commit them.
