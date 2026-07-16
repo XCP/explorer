@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { listEmergingAssets } from "#api/queries/asset-emergence";
+import { listEmergingAssets, listFreshAssets } from "#api/queries/asset-emergence";
 
 const migrations = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -83,6 +83,10 @@ test("emerging assets use cohort percentiles, eligibility rules, and determinist
       ["TIEA", 0],
       ["TIEB", 0],
     ],
+  );
+  assert.deepEqual(
+    (await listFreshAssets(d1(db), now)).map(({ asset, age_days }) => [asset, age_days]),
+    [["FRESH", 20]],
   );
   db.close();
 });

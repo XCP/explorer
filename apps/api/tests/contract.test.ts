@@ -695,6 +695,46 @@ test("contract: GET /v2/radar - non-empty compact conviction rankings", async (t
   );
 });
 
+test("contract: GET /v2/radar/emergence - evidence-backed Fresh and Emerging assets", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson("/v2/radar/emergence")).result;
+  assertShape(result, {
+    model: "string",
+    observed_at: "number",
+    fresh: "array",
+    emerging: "array",
+  });
+  assert.equal(result.model, "new-radar-2026-07");
+  const evidence = {
+    asset: "string",
+    asset_longname: "string|null",
+    issued_at: "number",
+    observation_cutoff: "number",
+    evidence_updated_at: "number",
+    age_days: "number",
+    trades: "number",
+    buyers: "number",
+    sellers: "number",
+    active_days: "number",
+    late_buyers: "number",
+    late_active_days: "number",
+    market_span_days: "number",
+    venues: "number",
+    fairmints: "number",
+    minters: "number",
+    paid_minters: "number",
+    mint_active_days: "number",
+    late_minters: "number",
+    holders: "number",
+    supply: "number",
+    top1_pct: "number",
+    reason: "string",
+  };
+  assertRows(result.fresh, evidence, "radar.emergence.fresh");
+  assert.ok(result.emerging.length > 0, "emerging rows required");
+  assertRows(result.emerging, { ...evidence, market_formation: "number" }, "radar.emergence.emerging");
+});
+
 test("contract: GET /v2/reputation/asset-review - compact population distribution", async (t) => {
   if (skipUnlessLive(t)) return;
   const result = (await getJson("/v2/reputation/asset-review")).result;

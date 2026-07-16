@@ -31,3 +31,43 @@ export interface RadarPayload {
   undervalued: RadarAsset[]; // high Conviction, low realized price — the discovery watchlist
   buyable: BuyableAsset[]; // high Conviction + an open dispenser right now — the actionable cut
 }
+
+/** Observable launch evidence. Counts are frozen at day 30 for Emerging assets. */
+export interface EmergenceEvidence {
+  asset: string;
+  asset_longname: string | null;
+  issued_at: number;
+  observation_cutoff: number;
+  evidence_updated_at: number;
+  age_days: number;
+  trades: number;
+  buyers: number;
+  sellers: number;
+  active_days: number;
+  late_buyers: number;
+  late_active_days: number;
+  market_span_days: number;
+  venues: number;
+  fairmints: number;
+  minters: number;
+  paid_minters: number;
+  mint_active_days: number;
+  late_minters: number;
+  holders: number;
+  supply: number;
+  top1_pct: number;
+  reason: string;
+}
+
+export type FreshAsset = EmergenceEvidence;
+
+export interface EmergingAsset extends EmergenceEvidence {
+  market_formation: number;
+}
+
+export interface AssetEmergencePayload {
+  model: "new-radar-2026-07";
+  observed_at: number;
+  fresh: FreshAsset[];
+  emerging: EmergingAsset[];
+}
