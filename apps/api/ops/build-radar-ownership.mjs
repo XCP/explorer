@@ -16,6 +16,24 @@ import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 
+const sleep = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+function remote(sql) {
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      return executeRemoteD1(sql);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) {
+        const delay = attempt * 2000;
+        process.stderr.write(`remote page attempt ${attempt} failed; retrying in ${delay / 1000}s\n`);
+        sleep(delay);
+      }
+    }
+  }
+  throw lastError;
+}
+
 const arg = (name, fallback) => {
   const prefix = `--${name}=`;
   return process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? fallback;
@@ -34,7 +52,7 @@ let receipt;
 try {
   receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
 } catch {
-  const frontier = executeRemoteD1(`SELECT MAX(event_index) event_index,MAX(block_index) block_index,
+  const frontier = remote(`SELECT MAX(event_index) event_index,MAX(block_index) block_index,
     COUNT(*) events FROM ledger_events`).rows[0];
   receipt = {
     schema: "xcp-radar-ownership-build/1",
@@ -69,7 +87,7 @@ const advance = db.prepare(`UPDATE replay_state SET cursor=?,event_count=event_c
 let completedThisRun = 0;
 while (state().cursor < receipt.frontier_event_index && (!stopAfterChunks || completedThisRun < stopAfterChunks)) {
   const before = Number(state().cursor);
-  const result = executeRemoteD1(`SELECT event_index,direction,block_index,address_id,asset_id,quantity,utxo_address_id
+  const result = remote(`SELECT event_index,direction,block_index,address_id,asset_id,quantity,utxo_address_id
     FROM ledger_events WHERE event_index>${before} AND event_index<=${receipt.frontier_event_index}
     ORDER BY event_index LIMIT ${chunkSize}`);
   if (result.rows.length === 0) throw new Error(`Ledger ended before frozen frontier after event ${before}`);
