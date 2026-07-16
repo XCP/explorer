@@ -5,11 +5,6 @@ interface StateRow {
   value: string;
 }
 
-interface BlockBounds {
-  first: number | null;
-  last: number | null;
-}
-
 function progress(total: number, complete: number) {
   const boundedComplete = Math.min(total, Math.max(0, complete));
   return {
@@ -25,33 +20,28 @@ function progress(total: number, complete: number) {
  * which is suitable for frequent health checks and must never scan multi-million-row partial indexes.
  */
 export async function backfillStatus(env: Env) {
-  const [fees, blockCounts, coreState, maxTransaction, maxEmblemSale, recoveryState] = await Promise.all(
-    [
-      env.CORE_DB.prepare(`SELECT MIN(tx_index) first,MAX(tx_index) last FROM transactions`).first<BlockBounds>(),
-      env.CORE_DB.prepare(`SELECT MIN(block_index) first,MAX(block_index) last FROM blocks`).first<BlockBounds>(),
-      env.CORE_DB.prepare(
-        `SELECT key,value FROM core_state WHERE key IN
+  const [coreState, maxEmblemSale, recoveryState] = await Promise.all([
+    env.CORE_DB.prepare(
+      `SELECT key,value FROM core_state WHERE key IN
           ('last_block_index','trades_cur_dex','trades_cur_dispense_payments','trades_cur_emblem',
            'trades_emblem_reconcile_cursor','bitcoin_block_counts_cursor','bitcoin_block_counts_remaining',
            'bitcoin_fees_remaining','ethereum_block_times_total','ethereum_block_times_remaining','vault_contents_cursor',
-           'asset_signals_cursor','address_signals_cursor','scarce_cursor')`,
-      ).all<StateRow>(),
-      env.CORE_DB.prepare(`SELECT COALESCE(MAX(tx_index),-1) value FROM transactions`).first<{ value: number }>(),
-      env.CORE_DB.prepare(`SELECT COALESCE(MAX(rowid),0) value FROM emblem_sales`).first<{ value: number }>(),
-      env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='recovery_scan_tx_index'`).first<{
-        value: string;
-      }>(),
-    ],
-  );
+           'asset_signals_cursor','address_signals_cursor','scarce_cursor','transactions_total','blocks_total')`,
+    ).all<StateRow>(),
+    env.CORE_DB.prepare(`SELECT COALESCE(MAX(rowid),0) value FROM emblem_sales`).first<{ value: number }>(),
+    env.RECOVERY_DB.prepare(`SELECT value FROM recovery_state WHERE key='recovery_scan_tx_index'`).first<{
+      value: string;
+    }>(),
+  ]);
 
   const state = Object.fromEntries(coreState.results.map((row) => [row.key, Number(row.value)]));
-  const transactionTip = Number(maxTransaction?.value ?? -1);
+  const transactionTotal = state.transactions_total ?? 0;
+  const transactionTip = transactionTotal - 1;
   const emblemTip = Number(maxEmblemSale?.value ?? 0);
   const recoveryCursor = Number(recoveryState?.value ?? -1);
-  const feeTotal = fees?.first == null || fees.last == null ? 0 : Number(fees.last) - Number(fees.first) + 1;
+  const feeTotal = transactionTotal;
   const feeRemaining = Math.min(feeTotal, Math.max(0, state.bitcoin_fees_remaining ?? feeTotal));
-  const blockTotal =
-    blockCounts?.first == null || blockCounts.last == null ? 0 : Number(blockCounts.last) - Number(blockCounts.first) + 1;
+  const blockTotal = state.blocks_total ?? 0;
   const blockRemaining = Math.min(blockTotal, Math.max(0, state.bitcoin_block_counts_remaining ?? blockTotal));
   return {
     generated_at: Math.floor(Date.now() / 1_000),
