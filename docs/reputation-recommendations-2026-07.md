@@ -90,6 +90,21 @@ Reason: network algorithms can reproduce volume, infrastructure hubs, seed choic
 
 Until then, graph results remain useful for related entities, exploration, anomaly review, and transparent network-standing detail—not the primary reputation tier.
 
+### Live graph evaluation correction
+
+The production scorecard previously reported 100% recall for 65 curated low-quality assets and one derived scam address. This was circular: all 66 labels were direct distrust seeds. The scorecard now separates seed reproduction from held-out detection and correctly reports **no held-out bad labels**. Distrust propagation therefore has no measured recall yet.
+
+Other live findings:
+
+- 19,528 addresses are classified trusted, but 84.6% are dormant for more than one year;
+- after excluding direct trust seeds, 16,864 propagated addresses remain trusted and 89.1% are dormant;
+- only one established clean asset is classified distrusted and distrust-tier market contamination is 0.7%, which is encouraging but does not establish predictive or reputational validity;
+- Radar has 11,332 otherwise eligible assets; its graph gate admits 6,444 and excludes 4,888 (43.1%);
+- 3,826 of those admitted assets (59.4%) are direct trust seeds, so the gate often reproduces collection/quality curation rather than independently validating it;
+- the graph factor is near zero for most assets but becomes material in the highest graph decile, making its influence concentrated rather than uniformly small.
+
+Decision: **do not describe current graph tiers as validated reputation or trust**. Keep the graph available as network standing and an exploratory explanation. Before it remains a hard Radar eligibility gate or a Conviction factor, run two ablations: Radar/Conviction with versus without graph influence, and held-out graph evaluation where seed labels are partitioned before propagation. The 89.1% held-out dormancy rate makes temporal edge decay the first graph variant worth testing.
+
 ## Remaining decision gates
 
 1. Produce subgroup and false-positive reviews for the two-factor asset outlook.
