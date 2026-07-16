@@ -15,6 +15,7 @@ const STATUS_BACKED_FIRSTS = [
   "non_ascii_description", "embedded_image",
   "description_url", "pepe_mention", "nft_term",
   "asset_dividend", "free_numeric_subasset", "locked_feed", "indefinite_order",
+  "sale_1000000_pepecash",
 ];
 
 test("catalog keys are unique and every query satisfies the shared row contract", () => {

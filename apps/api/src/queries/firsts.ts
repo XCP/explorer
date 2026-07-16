@@ -65,8 +65,9 @@ const earliestLockedSupplySql = (supply: number, extra: string) => `SELECT x.blo
       WHERE d.asset_id=x.asset_id AND d.status NOT LIKE 'invalid%' AND d.event_index<=x.event_index),0)=${supply}
   ORDER BY x.block_index,x.tx_index,x.event_index LIMIT 1`;
 
-// Address-format milestones are first *uses*, not activation blocks. Search source and destination
-// independently so SQLite can use both transaction indexes instead of evaluating an OR join.
+// Address-format milestones are first *uses*, not activation blocks. Activation boundaries come from
+// Counterparty Core's protocol_changes.json. Search source and destination independently so SQLite can
+// use both transaction indexes instead of evaluating an OR join.
 const earliestAddressUseSql = (addressPredicate: string, activationBlock: number) => `WITH uses AS (
   SELECT tx.block_index b,tx.block_time t,address.address ref,'address' typ,
     LOWER(HEX(tx.tx_hash)) tx,tx.tx_index
@@ -555,6 +556,31 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "sale_10_btc",
     label: "First asset sold for 10 BTC",
     sql: earliestTradeThresholdSql("BTC", 10),
+  },
+  {
+    key: "sale_1000000_pepecash",
+    label: "First asset sold for 1,000,000 PEPECASH",
+    // The unified trades projection treats only native market currencies as consideration. For an
+    // asset-to-asset DEX match, derive both orientations directly from the canonical match legs.
+    sql: `WITH candidates AS (
+      SELECT match.block_index b,match.block_time t,other.asset ref,
+        LOWER(HEX(match.tx1_hash)) tx,match.tx0_index,match.tx1_index
+      FROM order_matches match
+      JOIN asset_dictionary cash ON cash.asset_id=match.forward_asset_id AND cash.asset='PEPECASH'
+      JOIN asset_dictionary other ON other.asset_id=match.backward_asset_id
+      WHERE match.status NOT LIKE 'invalid%'
+        AND CAST(match.forward_quantity AS INTEGER)>=100000000000000
+        AND other.asset NOT IN ('BTC','XCP','PEPECASH')
+      UNION ALL
+      SELECT match.block_index b,match.block_time t,other.asset ref,
+        LOWER(HEX(match.tx1_hash)) tx,match.tx0_index,match.tx1_index
+      FROM order_matches match
+      JOIN asset_dictionary cash ON cash.asset_id=match.backward_asset_id AND cash.asset='PEPECASH'
+      JOIN asset_dictionary other ON other.asset_id=match.forward_asset_id
+      WHERE match.status NOT LIKE 'invalid%'
+        AND CAST(match.backward_quantity AS INTEGER)>=100000000000000
+        AND other.asset NOT IN ('BTC','XCP','PEPECASH')
+    ) SELECT b,t,ref,'asset' typ,tx FROM candidates ORDER BY b,tx0_index,tx1_index LIMIT 1`,
   },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
