@@ -191,3 +191,28 @@ Decision: concentration is an **exposure/severity** fact—how much supply one a
 probability that the actor will sell. Display it and permit risk filtering, but do not claim “likely dump.” A creator
 exception should require prior behavior (holding duration, historical net outflows, and observed selling) and remain
 an explanation or penalty adjustment until it survives temporal validation.
+
+## Initial price-dislocation evaluation
+
+`npm run evaluate:radar-dislocations` builds a robust reference from the median of monthly median unit-USD prices
+between 730 and 90 days before each cutoff. “Current” is the median completed-sale unit price in the final 90 days;
+the outcome is the following 180-day median. Eligibility requires at least three reference sales across at least two
+months. This yields 266–424 assets per temporal fold: a deliberately narrower established-market cohort.
+
+- Ranking by deeper dislocation produces **1.90–2.02x lift for a positive future median-price return** in all three
+  folds. Positive-return precision at 100 is 36%, 61%, and 23% respectively.
+- Deep discounts do not generally recover all the way to the old reference within 180 days. Ranking by dislocation
+  has only 0.25–0.32x lift for reaching 75% of that reference. “Positive return” and “full recovery” are different
+  claims and must remain separate.
+- Assets above their reference have the weakest positive-return rate in every fold (10%, 15%, and 5%). The deepest
+  bands sometimes have strong subsequent multiples, but contain only 4–21 assets and cannot anchor thresholds alone.
+- Reference depth and holder breadth often improve recovery/liquidity, but their interaction with return varies by
+  regime. A small depth contribution is a challenger; no fixed weight is justified yet.
+- Two or more current sales and four or more reference months consistently improve future-sale coverage relative to
+  a one-sale observation. Confidence should be shown explicitly rather than hiding sparse evidence in a score.
+
+Decision: a dedicated **Dislocations** surface is empirically justified as an opportunity hypothesis. It should rank
+discount separately from market-depth confidence and distribution risk, and say “below its established range,” not
+“will return to its old price.” Historical completed-sale regimes validate the signal but are not executable asks;
+production still requires joining the robust reference to a fresh dispenser or Emblem ask, enforcing unit-price and
+staleness checks, and manually reviewing named candidates before launch.
