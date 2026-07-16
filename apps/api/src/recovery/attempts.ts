@@ -28,7 +28,7 @@ const DEFAULT_PROVIDERS: AttemptProviders = {
   transactionStatus: fetchTransactionStatus,
   transactionOutspends: fetchTransactionOutspends,
 };
-const PROVIDER_CONCURRENCY = 3;
+const PROVIDER_CONCURRENCY = 1;
 
 export interface AttemptEvidence {
   status: "pending" | "confirmed" | "replaced" | "failed";
@@ -122,10 +122,11 @@ export async function reconcileRecoveryAttempts(
   const reconcileAttempt = async (attempt: AttemptRow) => {
     const attemptInputs = inputs.results.filter((input) => input.recovery_txid === attempt.txid);
     const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
-    const [transaction, ...parentOutspends] = await Promise.all([
-      providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid),
-      ...parentTxids.map((txid) => providers.transactionOutspends(env.ELECTRS_API_BASE, txid)),
-    ]);
+    const transaction = await providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid);
+    const parentOutspends = [] as ElectrsOutspend[][];
+    for (const txid of parentTxids) {
+      parentOutspends.push(await providers.transactionOutspends(env.ELECTRS_API_BASE, txid));
+    }
     const outspends = new Map(parentTxids.map((txid, index) => [txid, parentOutspends[index]]));
     const evidence = classifyAttemptEvidence(
       attempt.txid,
