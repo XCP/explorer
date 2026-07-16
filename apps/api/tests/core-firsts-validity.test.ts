@@ -9,6 +9,8 @@ const STATUS_BACKED_FIRSTS = [
   "detach", "locked", "divisible", "indivisible", "one_of_one", "reset", "transfer",
   "callable", "description", "json_desc", "mime", "easyasset", "fairminter", "fairmint",
   "pool_deposit", "pool_swap", "stamp", "src20", "src721", "btns",
+  "priced_oracle", "sweep_memo", "send_memo", "description_lock",
+  "fairminter_premint", "fairminter_commission", "fairminter_burn_payment",
 ];
 
 test("every first backed by a protocol-status table excludes invalid records", () => {
@@ -17,5 +19,12 @@ test("every first backed by a protocol-status table excludes invalid records", (
     const sql = byKey.get(key);
     assert.equal(typeof sql, "string", `missing firsts entry ${key}`);
     assert.match(sql!, /status NOT LIKE 'invalid%'/, `${key} does not exclude invalid records`);
+  }
+});
+
+test("only the literal first transaction displays a transaction hash as its subject", () => {
+  for (const entry of FIRSTS) {
+    if (entry.key === "transaction") continue;
+    assert.equal(/HEX\(.+\) ref,'tx' typ/.test(entry.sql), false, `${entry.key} exposes a hash as its subject`);
   }
 });

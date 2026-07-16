@@ -15,35 +15,24 @@ interface First {
   date: string;
   ref: string;
   type: string;
+  tx: string;
 }
 
-// the linkable entity behind a "first", by its type
+// The human-readable subject behind a first. The parent link always points to the causal transaction.
 function Entity({ type, ref }: { type: string; ref: string }) {
   if (type === "asset")
     return (
-      <Link href={`/asset/${ref}`} className="flex items-center gap-1.5 min-w-0">
+      <span className="flex min-w-0 items-center gap-1.5">
         <AssetIcon asset={ref} size={16} />
         <span className="truncate">{ref}</span>
-      </Link>
+      </span>
     );
   if (type === "address")
-    return (
-      <Link href={`/address/${ref}`} className="font-mono break-all">
-        {ref}
-      </Link>
-    );
+    return <span className="break-all font-mono">{ref}</span>;
   if (type === "tx")
-    return (
-      <Link href={`/tx/${ref}`} className="font-mono">
-        {short(ref)}
-      </Link>
-    );
+    return <span className="font-mono">{short(ref)}</span>;
   if (type === "block")
-    return (
-      <Link href={`/block/${ref}`} className="font-mono">
-        #{ref}
-      </Link>
-    );
+    return <span className="font-mono">#{ref}</span>;
   return <span className="truncate">{ref}</span>;
 }
 
@@ -106,9 +95,13 @@ export function Firsts() {
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
                       First
                     </span>
-                    <span className="min-w-0 overflow-hidden text-zinc-200 [&_a]:!text-zinc-200">
+                    <Link
+                      href={`/tx/${r.tx}`}
+                      className="block min-w-0 overflow-hidden !text-zinc-200"
+                      title={`View transaction ${r.tx}`}
+                    >
                       <Entity type={r.type} ref={r.ref} />
-                    </span>
+                    </Link>
                   </span>
                   <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
