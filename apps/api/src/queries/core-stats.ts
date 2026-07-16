@@ -34,14 +34,19 @@ export function coreNetworkCounts(db: D1Database): Promise<NetworkCounts | null>
   );
 }
 
-export function coreNetworkTotals(db: D1Database): Promise<NetworkTotals | null> {
-  return one<NetworkTotals>(db, `SELECT btc_fees,xcp_destroyed FROM network_stats_snapshot WHERE singleton=1`);
+export async function coreNetworkTotals(db: D1Database): Promise<NetworkTotals | null> {
+  const row = await one<Omit<NetworkTotals, "btc_fees_complete"> & { btc_fees_complete: number }>(
+    db,
+    `SELECT btc_fees,NOT EXISTS(SELECT 1 FROM transactions WHERE fee IS NULL) btc_fees_complete,xcp_destroyed
+       FROM network_stats_snapshot WHERE singleton=1`,
+  );
+  return row ? { ...row, btc_fees_complete: Boolean(row.btc_fees_complete) } : null;
 }
 
 /** Asset-filtered lifetime snapshot producer. Its result is materialized by the API cache; protocol-wide
  * relations without an asset identity remain equal to the canonical network snapshot. */
-export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts & NetworkTotals) | null> {
-  return one<NetworkCounts & NetworkTotals>(
+export async function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts & NetworkTotals) | null> {
+  const row = await one<NetworkCounts & Omit<NetworkTotals, "btc_fees_complete"> & { btc_fees_complete: number }>(
     db,
     `WITH snapshot AS (SELECT * FROM network_stats_snapshot WHERE singleton=1),
       lowq_tx_core AS (
@@ -118,6 +123,7 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
         WHERE signal.low_quality=1 AND CAST(item.quantity AS INTEGER)>0) holders,
       (SELECT COALESCE(SUM(CAST(tx.fee AS REAL)),0)/100000000.0 FROM transactions tx
         LEFT JOIN lowq_tx hidden ON hidden.tx_index=tx.tx_index WHERE hidden.tx_index IS NULL) btc_fees,
+      NOT EXISTS(SELECT 1 FROM transactions WHERE fee IS NULL) btc_fees_complete,
       (SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/100000000.0 FROM (
         SELECT item.fee_paid amount FROM issuances item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
           WHERE item.status LIKE 'valid%' AND item.fee_paid IS NOT NULL AND COALESCE(signal.low_quality,0)=0
@@ -129,6 +135,7 @@ export function coreQualityNetworkStats(db: D1Database): Promise<(NetworkCounts 
       )) xcp_destroyed
     FROM snapshot`,
   );
+  return row ? { ...row, btc_fees_complete: Boolean(row.btc_fees_complete) } : null;
 }
 
 const CORE_METRICS: Record<MetricName, string> = {

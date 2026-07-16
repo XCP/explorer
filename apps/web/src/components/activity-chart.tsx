@@ -31,7 +31,7 @@ function monthly(points: Point[]): Point[] {
   return [...buckets].map(([t, v]) => ({ t, v })).sort((a, b) => a.t - b.t);
 }
 
-export function ActivityChart() {
+export function ActivityChart({ btcFeesComplete }: { btcFeesComplete: boolean }) {
   const [metric, setMetric] = useState<Key>("transactions");
   const [days, setDays] = useState(90);
   const [cumulative, setCumulative] = useState(false);
@@ -78,7 +78,7 @@ export function ActivityChart() {
             onChange={(event) => setMetric(event.target.value as Key)}
             className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-300"
           >
-            {SERIES.map(([key, name]) => (
+            {SERIES.filter(([key]) => key !== "btc_fees" || btcFeesComplete).map(([key, name]) => (
               <option key={key} value={key}>
                 {name}
               </option>

@@ -8,9 +8,9 @@ import type { NetworkStats } from "@xcp/shared/stats";
 import { q, one } from "#api/db";
 
 /** The lifetime-counts half of NetworkStats (everything the totals query does not supply). */
-export type NetworkCounts = Omit<NetworkStats, "btc_fees" | "xcp_destroyed">;
+export type NetworkCounts = Omit<NetworkStats, "btc_fees" | "btc_fees_complete" | "xcp_destroyed">;
 /** The lifetime-totals half of NetworkStats (BTC miner fees + XCP destroyed). */
-export type NetworkTotals = Pick<NetworkStats, "btc_fees" | "xcp_destroyed">;
+export type NetworkTotals = Pick<NetworkStats, "btc_fees" | "btc_fees_complete" | "xcp_destroyed">;
 
 /** A single day bucket returned by a metrics series query. */
 export interface MetricDayRow {

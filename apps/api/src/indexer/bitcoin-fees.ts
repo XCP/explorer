@@ -47,11 +47,13 @@ export function validBitcoinFeeRows(value: unknown): BitcoinFeeRow[] | null {
 export async function storeBitcoinFees(db: D1Database, rows: BitcoinFeeRow[]): Promise<number> {
   const results = await db.batch(
     rows.map((row) =>
-      db.prepare(`UPDATE transactions SET fee=? WHERE tx_hash=? AND fee IS NULL`)
+      db
+        .prepare(`UPDATE transactions SET fee=? WHERE tx_hash=? AND fee IS NULL RETURNING tx_index`)
         .bind(String(row.fee), hashToBytes(row.tx_hash)),
     ),
   );
-  return results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
+  // D1 meta.changes includes writes performed by fee-maintenance triggers. RETURNING counts only transactions.
+  return results.reduce((sum, result) => sum + (result.results?.length ?? 0), 0);
 }
 
 /** Keep the staging frontier current while the one-time historical exporter walks backward. */
@@ -61,7 +63,10 @@ export async function reconcileStagedBitcoinFees(
 ): Promise<{ requested: number; updated: number }> {
   const rows = await listMissingBitcoinFees(env.CORE_DB, null, limit);
   const settled = await Promise.allSettled(
-    rows.map(async (row) => ({ tx_hash: row.tx_hash, fee: await fetchTransactionFee(env.ELECTRS_API_BASE, row.tx_hash) })),
+    rows.map(async (row) => ({
+      tx_hash: row.tx_hash,
+      fee: await fetchTransactionFee(env.ELECTRS_API_BASE, row.tx_hash),
+    })),
   );
   const fees = settled.flatMap((result) =>
     result.status === "fulfilled" && result.value.fee !== null

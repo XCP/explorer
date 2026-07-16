@@ -8,7 +8,8 @@ import { Card, Stat } from "@/components/ui/card";
 import { ActivityChart } from "@/components/activity-chart";
 import { commas } from "@/lib/format";
 
-const COUNTS: [keyof NetworkStatsPayload, string, Route?][] = [
+type CountKey = Exclude<keyof NetworkStatsPayload, "tip" | "btc_fees" | "btc_fees_complete" | "xcp_destroyed">;
+const COUNTS: [CountKey, string, Route?][] = [
   ["assets", "Assets", "/assets"],
   ["sends", "Sends", "/sends"],
   ["orders", "Orders", "/orders"],
@@ -76,7 +77,7 @@ export function NetworkStats() {
         <Stat
           label="BTC fees paid"
           value={
-            s?.btc_fees != null ? (
+            s?.btc_fees_complete && s.btc_fees != null ? (
               <>
                 {s.btc_fees.toFixed(2)} <span className="hidden sm:inline">BTC</span>
               </>
@@ -86,7 +87,7 @@ export function NetworkStats() {
           }
         />
       </div>
-      <ActivityChart />
+      <ActivityChart btcFeesComplete={s?.btc_fees_complete === true} />
       <Card title="Counterparty totals">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-1">
           {counts.map(([key, label, href]) => (

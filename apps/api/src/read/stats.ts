@@ -70,7 +70,7 @@ stats.get("/v2/metrics", async (c) => {
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) => {
   const includeHidden = c.req.query("include_hidden") === "1";
-  return cached(c, `stats:${includeHidden ? 1 : 0}`, { ttl: 86400, edge: 120, swr: 604800 }, async () => {
+  return cached(c, `stats:fee-completeness:${includeHidden ? 1 : 0}`, { ttl: 86400, edge: 120, swr: 604800 }, async () => {
     if (!includeHidden) return { result: await coreQualityNetworkStats(c.env.CORE_DB) };
     const counts = await coreNetworkCounts(c.env.CORE_DB);
     const totals = await coreNetworkTotals(c.env.CORE_DB);

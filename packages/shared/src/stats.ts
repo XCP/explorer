@@ -46,6 +46,7 @@ export interface NetworkStats {
   pool_withdrawals: number;
   holders: number;
   btc_fees: number;
+  btc_fees_complete: boolean;
   xcp_destroyed: number;
 }
 

@@ -312,6 +312,8 @@ test("contract: stats quality modes remain isolated and valid", async (t) => {
     assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
     assert.ok(filtered.result[field] <= all.result[field], `filtered stats.${field} cannot exceed all-chain`);
   }
+  assert.equal(typeof filtered.result.btc_fees_complete, "boolean");
+  assert.equal(typeof all.result.btc_fees_complete, "boolean");
   assert.equal(typeof filtered.result.transactions, "number", "filtered stats.transactions must be numeric");
   assert.equal(typeof all.result.transactions, "number", "all-chain stats.transactions must be numeric");
   // The two quality modes have independent stale-while-revalidate cache entries. Their unfiltered chain totals

@@ -45,6 +45,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
     CREATE TABLE bet_matches(x INTEGER); CREATE TABLE btcpays(x INTEGER); CREATE TABLE cancels(x INTEGER);
     CREATE TABLE rps(x INTEGER); CREATE TABLE rps_matches(x INTEGER);
     CREATE TABLE pools(x INTEGER); CREATE TABLE pool_matches(x INTEGER); CREATE TABLE pool_liquidity(kind TEXT);
+    CREATE TABLE transactions(fee TEXT);
     CREATE TABLE network_stats_snapshot(
       singleton INTEGER PRIMARY KEY,assets INTEGER,transactions INTEGER,balances INTEGER,sends INTEGER,
       issuances INTEGER,dispensers INTEGER,dispenses INTEGER,orders INTEGER,order_matches INTEGER,
@@ -98,7 +99,10 @@ test("compact overview reads one snapshot and reports the canonical block positi
       holders: 16,
     },
   );
-  assert.deepEqual({ ...(await coreNetworkTotals(dbBinding)) }, { btc_fees: 1.5, xcp_destroyed: 2.5 });
+  assert.deepEqual(
+    { ...(await coreNetworkTotals(dbBinding)) },
+    { btc_fees: 1.5, btc_fees_complete: true, xcp_destroyed: 2.5 },
+  );
 });
 
 test("compact daily metrics preserve day buckets and monetary normalization", async () => {
@@ -228,6 +232,7 @@ test("quality stats exclude low-quality asset activity without removing unscoped
       pool_withdrawals: 0,
       holders: 1,
       btc_fees: 0.4,
+      btc_fees_complete: true,
       xcp_destroyed: 10,
     },
   );
