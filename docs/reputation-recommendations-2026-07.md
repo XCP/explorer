@@ -55,6 +55,21 @@ The first bounded snapshot completed for the 2026-01-01 cutoff with 213,909 elig
 
 The artifact is built from exact timestamp boundaries in bounded source-ID ranges, resumes from immutable chunk files, records a fixed build frontier, hashes every chunk, and binds the ordered chunk manifest with a content checksum. It is local evaluation machinery only and is git-ignored.
 
+All three address snapshots now reproduce the original D1 lift results and add whole-ranking metrics:
+
+| Cutoff | Model | Precision @100 | Return lift | Persistence lift | Average precision | NDCG |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2025-01-01 | Recency | 49% | 7.345 | 9.035 | 0.208 | 0.792 |
+| 2025-01-01 | Balanced participation | 91% | 7.101 | 8.114 | 0.295 | 0.827 |
+| 2025-07-01 | Recency | 53% | 7.856 | 8.849 | 0.250 | 0.810 |
+| 2025-07-01 | Balanced participation | 88% | 7.420 | 8.773 | 0.273 | 0.819 |
+| 2026-01-01 | Recency | 69% | 8.573 | 9.389 | 0.304 | 0.819 |
+| 2026-01-01 | Balanced participation | 83% | 7.901 | 8.836 | 0.283 | 0.811 |
+
+Decision: **reject one universal address predictor**. Recency is the stable activity-outlook baseline because it wins return and persistence lift at every cutoff and wins full-ranking quality in the newest regime. Balanced participation is a separate high-precision review signal: it wins precision at 100 dramatically at every cutoff, but its whole-ranking advantage does not survive the newest regime. Raw transaction frequency is rejected as a primary predictor; it is consistently the weakest of the tested behavioral rankings.
+
+Presentation consequence: show historical track record, last-active/recency, and evidence strength separately. If an internal review queue is useful, balanced participation may order a bounded shortlist, but it must not be relabeled as public reputation or future-return probability.
+
 ### 5. Present collection profiles before considering a grade — do next
 
 Reason: membership evidence is now normalized and 7,671 memberships have multi-source corroboration. Collection behavior differs too much for total volume or maximum-card quality to be representative.
