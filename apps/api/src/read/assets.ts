@@ -532,13 +532,15 @@ assets.get("/v2/assets/:asset/cohort", async (c) => {
 // resolved server-side, so the tab needs only the asset.
 assets.get("/v2/assets/:asset/related", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const coll = await coreAssetCollection(c.env.CORE_DB, asset).catch(() => null);
-  const tag = coll?.tag ?? null;
-  const related = await coreAssetRelated(c.env.CORE_DB, asset, tag, 12, 6);
-  const rows = related.map(({ in_collection: _, ...row }) => row);
-  const collection = tag ? rows.filter((_, index) => related[index]?.in_collection === 1) : [];
-  const cohort = rows.filter((_, index) => related[index]?.in_collection === 0);
-  return J(c, { result: { collection, cohort } }, 3600);
+  return cached(c, `asset-related:${asset}`, { ttl: 3600, edge: 300, swr: 86400 }, async () => {
+    const coll = await coreAssetCollection(c.env.CORE_DB, asset).catch(() => null);
+    const tag = coll?.tag ?? null;
+    const related = await coreAssetRelated(c.env.CORE_DB, asset, tag, 12, 6);
+    const rows = related.map(({ in_collection: _, ...row }) => row);
+    const collection = tag ? rows.filter((_, index) => related[index]?.in_collection === 1) : [];
+    const cohort = rows.filter((_, index) => related[index]?.in_collection === 0);
+    return { result: { collection, cohort } };
+  });
 });
 
 // Holder quality (aggregate, non-creepy) + trading integrity for an asset — the "is this cap table
