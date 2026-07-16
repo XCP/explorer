@@ -156,3 +156,20 @@ Decision: retain flat reverse distrust as the baseline; do not adopt temporal de
 5. Convert accepted recommendations into small, independently reversible implementation changes.
 
 The project is now in recommendation and validation mode, not open-ended model discovery. Items 1, 3, and the product naming in item 5 have enough evidence to proceed; predictive weight changes and any collection grade do not.
+
+### Activity-outlook subgroup review (2026-07-16)
+
+The newest fully observed cutoff was reviewed with distribution-derived buckets rather than hand-selected activity
+thresholds. The two-factor core remains strongly ordered at the top: its first score decile returned at 30.34% and
+persisted across two or more future months at 10.23%. The second decile fell to 5.09% return and 0.58% persistence;
+most subsequent deciles returned between 0.38% and 4.13%.
+
+The review also exposed a dependency the aggregate metrics hide. The oldest age quartile returned at 14.14%, versus
+1.13% to 2.69% in the other age quartiles, and the ten top-100 false positives were all Rare Pepe-style assets. Named
+misses included `PEPELIBRARY`, `PEPESMURF`, `SCORPEPE`, and `FRYPEPE`. Collection-wide trading regimes therefore make
+asset observations non-independent and may make ordinary precision look more robust than it is.
+
+Decision: **do not publish Activity Outlook yet**. First run collection-clustered evaluation: report macro-averaged
+performance by collection, leave the largest collection out, and bootstrap by collection rather than by asset. The
+public `Rating` name remains unchanged. Active months and last activity remain factual supporting evidence alongside
+Rating, not a forecast and not an input added to Rating by this work.
