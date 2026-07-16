@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 const ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
 const TX = "08831b430e69f03c2bb3f5a41fc8e9d356a95d1399b1df8cdfd01c18a9c2b52a";
 
-const ROUTES = ["/", "/assets", "/asset/RAREPEPE", `/address/${ADDRESS}`, `/tx/${TX}`, "/blocks"];
+const ROUTES = ["/", "/assets", "/asset/RAREPEPE", `/address/${ADDRESS}`, `/tx/${TX}`, "/blocks", "/radar"];
 
 for (const route of ROUTES) {
   test(`${route} has no serious automated accessibility violations`, async ({ page }) => {

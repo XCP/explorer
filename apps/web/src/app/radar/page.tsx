@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { Radar } from "@/components/radar";
+
 export const metadata: Metadata = {
-  title: "Radar — Undervalued Grails",
+  title: "Counterparty Radar",
   description:
-    "Assets the smart money holds that the market hasn't priced — ranked by Conviction, a holder-and-scarcity score with no market inputs.",
+    "Explore early Counterparty market formation, recent launches, established holder evidence, and assets available on-chain.",
 };
+
 export default function Page() {
   return <Radar />;
 }
