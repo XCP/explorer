@@ -1,6 +1,6 @@
 # Adding a historical first
 
-The Firsts page is generated from `apps/api/src/queries/firsts.ts`. Each catalog entry is an independent SQL query that derives one milestone from canonical Counterparty history. The API runs the queries concurrently, then sorts the results by block.
+The Firsts page is generated from `apps/api/src/queries/firsts.ts`. Each catalog entry is an independent SQL query that derives one milestone from canonical Counterparty history. The API runs the ordered catalog in one D1 batch, then sorts the results by block. A query error fails the request rather than silently caching an incomplete history.
 
 ## Query contract
 

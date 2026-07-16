@@ -393,6 +393,10 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     "locked_feed",
     "bundled_dispense",
     "indefinite_order",
+    "sale_1000_xcp",
+    "sale_10000_xcp",
+    "sale_1_btc",
+    "sale_10_btc",
   ]) {
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }

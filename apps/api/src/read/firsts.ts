@@ -6,28 +6,27 @@
  */
 import type { FirstRow } from "@xcp/shared/stats";
 import { router, cached } from "#api/read/respond";
-import { FIRSTS_CATALOG, queryFirstRecord } from "#api/queries/firsts";
+import { FIRSTS_CATALOG, queryFirstRecords } from "#api/queries/firsts";
 
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
   cached(c, "firsts:catalog:subjects", { ttl: 3600, edge: 600 }, async () => {
-    const rows = await Promise.all(
-      FIRSTS_CATALOG.map(async (f): Promise<FirstRow | null> => {
-        const r = await queryFirstRecord(c.env.CORE_DB, f.sql);
-        if (!r || r.b == null) return null;
-        const t = Number(r.t) || 0;
-        return {
-          key: f.key,
-          label: f.label,
-          block: r.b,
-          date: new Date(t * 1000).toISOString().slice(0, 10),
-          ref: r.ref,
-          type: r.typ,
-          tx: r.tx,
-        };
-      }),
-    );
+    const records = await queryFirstRecords(c.env.CORE_DB);
+    const rows = FIRSTS_CATALOG.map((f, index): FirstRow | null => {
+      const r = records[index];
+      if (!r || r.b == null) return null;
+      const t = Number(r.t) || 0;
+      return {
+        key: f.key,
+        label: f.label,
+        block: r.b,
+        date: new Date(t * 1000).toISOString().slice(0, 10),
+        ref: r.ref,
+        type: r.typ,
+        tx: r.tx,
+      };
+    });
     return { result: rows.filter(Boolean).sort((a, b) => a!.block - b!.block) };
   }),
 );

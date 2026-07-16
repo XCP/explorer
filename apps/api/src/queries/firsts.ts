@@ -9,7 +9,6 @@
  * matching block) — then order only the handful of rows inside that single earliest block. Verified to return
  * the identical row while turning the SCAN+TEMP-B-TREE into a SEARCH ... USING INDEX (block_index=?).
  */
-import { one } from "#api/db";
 import type { FirstRow } from "@xcp/shared/stats";
 
 /** One firsts-catalog entry: a display label + the SQL that finds its earliest row. */
@@ -79,6 +78,13 @@ const earliestAddressUseSql = (addressPredicate: string, activationBlock: number
   FROM address_dictionary address JOIN transactions tx ON tx.destination_id=address.address_id
   WHERE tx.supported=1 AND tx.block_index>=${activationBlock} AND (${addressPredicate})
 ) SELECT b,t,ref,typ,tx FROM uses ORDER BY b,tx_index,ref LIMIT 1`;
+
+// Threshold milestones use completed Counterparty trades and total consideration, never unit/ask price.
+const earliestTradeThresholdSql = (currency: "BTC" | "XCP", total: number) => `SELECT
+  trade.block_index b,trade.block_time t,asset.asset ref,'asset' typ,LOWER(HEX(trade.tx_hash)) tx
+  FROM trades trade JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
+  WHERE trade.currency='${currency}' AND trade.total>=${total} AND trade.tx_hash IS NOT NULL
+  ORDER BY trade.block_index,trade.block_time,trade.ref LIMIT 1`;
 
 export const FIRSTS_CATALOG: FirstDefinition[] = [
   // --- protocol genesis ---
@@ -529,6 +535,27 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
       joins: "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id JOIN asset_dictionary get_asset ON get_asset.asset_id=x.get_asset_id",
     }),
   },
+  // --- adoption and market thresholds ---
+  {
+    key: "sale_1000_xcp",
+    label: "First asset sold for 1,000 XCP",
+    sql: earliestTradeThresholdSql("XCP", 1000),
+  },
+  {
+    key: "sale_10000_xcp",
+    label: "First asset sold for 10,000 XCP",
+    sql: earliestTradeThresholdSql("XCP", 10000),
+  },
+  {
+    key: "sale_1_btc",
+    label: "First asset sold for 1 BTC",
+    sql: earliestTradeThresholdSql("BTC", 1),
+  },
+  {
+    key: "sale_10_btc",
+    label: "First asset sold for 10 BTC",
+    sql: earliestTradeThresholdSql("BTC", 10),
+  },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
   // pass keyburn validation, which we can't derive from Counterparty alone (multiple stamp: assets share the
@@ -574,7 +601,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   },
 ];
 
-/** Run one firsts SQL; null on any error (a table may be empty on a fresh mirror). */
-export function queryFirstRecord(db: D1Database, sql: string): Promise<FirstQueryRow | null> {
-  return one<FirstQueryRow>(db, sql).catch(() => null);
+/** Run the catalog in one ordered D1 round trip. Query errors are intentionally not swallowed. */
+export async function queryFirstRecords(db: D1Database): Promise<Array<FirstQueryRow | null>> {
+  const results = await db.batch(FIRSTS_CATALOG.map((definition) => db.prepare(definition.sql)));
+  return results.map((result) => (result.results[0] as FirstQueryRow | undefined) ?? null);
 }
