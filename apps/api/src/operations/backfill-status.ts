@@ -32,7 +32,7 @@ function progress(total: number, complete: number) {
 export async function backfillStatus(env: Env) {
   const [fees, blockCounts, ethereumTimes, coreState, maxTransaction, maxEmblemSale, recoveryState] = await Promise.all(
     [
-      env.CORE_DB.prepare(`SELECT COUNT(*) total,COUNT(fee) complete FROM transactions`).first<CountRow>(),
+      env.CORE_DB.prepare(`SELECT MIN(tx_index) first,MAX(tx_index) last FROM transactions`).first<BlockBounds>(),
       env.CORE_DB.prepare(`SELECT MIN(block_index) first,MAX(block_index) last FROM blocks`).first<BlockBounds>(),
       env.CORE_DB.prepare(
         `SELECT COUNT(DISTINCT sale.block_number) total,COUNT(DISTINCT block.block_number) complete
@@ -42,7 +42,8 @@ export async function backfillStatus(env: Env) {
       env.CORE_DB.prepare(
         `SELECT key,value FROM core_state WHERE key IN
           ('last_block_index','trades_cur_dex','trades_cur_dispense_payments','trades_cur_emblem',
-           'trades_emblem_reconcile_cursor','bitcoin_block_counts_cursor','bitcoin_block_counts_remaining','vault_contents_cursor',
+           'trades_emblem_reconcile_cursor','bitcoin_block_counts_cursor','bitcoin_block_counts_remaining',
+           'bitcoin_fees_remaining','vault_contents_cursor',
            'asset_signals_cursor','address_signals_cursor','scarce_cursor')`,
       ).all<StateRow>(),
       env.CORE_DB.prepare(`SELECT COALESCE(MAX(tx_index),-1) value FROM transactions`).first<{ value: number }>(),
@@ -57,12 +58,14 @@ export async function backfillStatus(env: Env) {
   const transactionTip = Number(maxTransaction?.value ?? -1);
   const emblemTip = Number(maxEmblemSale?.value ?? 0);
   const recoveryCursor = Number(recoveryState?.value ?? -1);
+  const feeTotal = fees?.first == null || fees.last == null ? 0 : Number(fees.last) - Number(fees.first) + 1;
+  const feeRemaining = Math.min(feeTotal, Math.max(0, state.bitcoin_fees_remaining ?? feeTotal));
   const blockTotal =
     blockCounts?.first == null || blockCounts.last == null ? 0 : Number(blockCounts.last) - Number(blockCounts.first) + 1;
   const blockRemaining = Math.min(blockTotal, Math.max(0, state.bitcoin_block_counts_remaining ?? blockTotal));
   return {
     generated_at: Math.floor(Date.now() / 1_000),
-    bitcoin_fees: progress(Number(fees?.total ?? 0), Number(fees?.complete ?? 0)),
+    bitcoin_fees: progress(feeTotal, feeTotal - feeRemaining),
     bitcoin_block_transaction_counts: progress(blockTotal, blockTotal - blockRemaining),
     ethereum_block_times: progress(Number(ethereumTimes?.total ?? 0), Number(ethereumTimes?.complete ?? 0)),
     recovery_scan: {
