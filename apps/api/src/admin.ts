@@ -30,6 +30,7 @@ import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { recoveryAdmin } from "#api/recovery/admin";
 import { operationalStatus } from "#api/operations/status";
+import { backfillStatus } from "#api/operations/backfill-status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { refreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
@@ -45,6 +46,10 @@ admin.route("/", recoveryAdmin);
 // Cheap, read-only snapshot for operators. Large tables are probed by indexed
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
+
+// Explicit operator report for finite historical work. Unlike the cheap health snapshot above, this may scan
+// large partial indexes and should only be called interactively.
+admin.get("/admin/backfills", async (c) => c.json(await backfillStatus(c.env)));
 
 // Token-gated historical fee maintenance. Remove after the Bitcoin-authoritative backfill completes.
 admin.get("/admin/bitcoin-fees", async (c) => {
