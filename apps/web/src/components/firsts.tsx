@@ -111,7 +111,6 @@ export function Firsts() {
                     <Link
                       href={`/tx/${r.tx}`}
                       className="block min-w-0 overflow-hidden !text-zinc-200"
-                      title={`View transaction ${r.tx}`}
                     >
                       <Entity type={r.type} ref={r.ref} />
                     </Link>
