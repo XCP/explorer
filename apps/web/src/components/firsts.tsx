@@ -158,6 +158,25 @@ export function Firsts() {
           </div>
         )}
       </Card>
+
+      <section aria-labelledby="about-firsts" className="border-t border-zinc-900 pt-5">
+        <h2 id="about-firsts" className="text-sm font-semibold text-zinc-300">
+          About these firsts
+        </h2>
+        <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-400">
+          This timeline is derived from valid on-chain records. Media firsts identify the earliest issuance description
+          that references a detectable format or host; an asset whose media was mapped off-chain may have existed or
+          traded earlier. You can{" "}
+          <a href="https://github.com/XCP/explorer/blob/main/apps/api/src/queries/firsts.ts" className="!text-zinc-300">
+            review every query
+          </a>{" "}
+          or{" "}
+          <a href="https://github.com/XCP/explorer/blob/main/docs/adding-firsts.md" className="!text-zinc-300">
+            contribute a reproducible first
+          </a>
+          .
+        </p>
+      </section>
     </>
   );
 }
