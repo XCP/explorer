@@ -53,6 +53,11 @@ try {
   };
   writeFileSync(validationPath, `${JSON.stringify(receipt, null, 2)}\n`);
 }
+if (!Array.isArray(receipt.native_asset_ids)) {
+  receipt.native_asset_ids = remote(`SELECT asset_id FROM asset_dictionary WHERE asset IN ('BTC','XCP')
+    ORDER BY asset_id`).rows.map((row) => Number(row.asset_id));
+  writeFileSync(validationPath, `${JSON.stringify(receipt, null, 2)}\n`);
+}
 
 const db = new DatabaseSync(resolve(root, "ownership.sqlite"));
 db.exec(`CREATE TABLE IF NOT EXISTS validation_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),
@@ -60,7 +65,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS validation_state(singleton INTEGER PRIMARY K
   INSERT OR IGNORE INTO validation_state VALUES(1,0,0,0);
   CREATE TABLE IF NOT EXISTS canonical_balances(
     balance_id INTEGER PRIMARY KEY,holder_id INTEGER,asset_id INTEGER NOT NULL,quantity INTEGER NOT NULL,
-    updated_event_index INTEGER NOT NULL);`);
+    updated_event_index INTEGER NOT NULL);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_holder_asset
+    ON canonical_balances(holder_id,asset_id);`);
 const state = () => db.prepare(`SELECT cursor,row_count,chunk_count FROM validation_state WHERE singleton=1`).get();
 const insert = db.prepare(`INSERT INTO canonical_balances
   (balance_id,holder_id,asset_id,quantity,updated_event_index) VALUES(?,?,?,?,?)
@@ -109,15 +116,19 @@ const finalState = state();
 const complete = Number(finalState.cursor) === Number(receipt.max_balance_id);
 let comparison = null;
 if (complete) {
+  const nativeIds = receipt.native_asset_ids.join(",") || "-1";
   comparison = db
     .prepare(`SELECT
       SUM(c.updated_event_index<=? AND r.holder_id IS NULL) missing_from_replay,
       SUM(c.updated_event_index<=? AND r.holder_id IS NOT NULL AND c.quantity!=r.quantity) quantity_mismatches,
+      SUM(c.updated_event_index<=? AND c.asset_id NOT IN (${nativeIds})
+        AND r.holder_id IS NOT NULL AND c.quantity!=r.quantity) non_native_quantity_mismatches,
       SUM(c.updated_event_index<=? AND r.holder_id IS NOT NULL AND c.quantity=r.quantity) exact_matches,
       SUM(c.updated_event_index>?) changed_after_frontier
     FROM canonical_balances c
     LEFT JOIN balances r ON r.holder_id=c.holder_id AND r.asset_id=c.asset_id`)
     .get(
+      replay.frontier_event_index,
       replay.frontier_event_index,
       replay.frontier_event_index,
       replay.frontier_event_index,

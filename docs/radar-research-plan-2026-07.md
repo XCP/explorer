@@ -45,6 +45,12 @@ comparison that joins only `balances.address_id` silently drops UTXO balances. T
 resumable, event-indexed export replayed into a local exact-integer balance state, emitting derived concentration
 features at frozen cutoffs rather than copying millions of balance rows back into production.
 
+The completed replay reproduced 1,834,390 of 1,834,391 canonical holder/asset rows exactly, with no missing or
+replay-only identities. The single mismatch is native XCP for `15AaPbjutocUSnwECuVpF29sSF9DpvMbZd`: historical
+ledger deltas net to 453.21225889 XCP while canonical state is 153 XCP. All issued-asset rows—the population Radar
+evaluates—match exactly. Treat canonical balances as operational truth and retain this native escrow/accounting
+exception as an audit finding; do not “correct” production from the analytical replay.
+
 ## Shared factual layer
 
 Both Radars should consume named, independently inspectable facts rather than a universal quality number:
