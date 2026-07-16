@@ -352,7 +352,8 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
             signal.max_dispense_btc,signal.max_trade_xcp,signal.supply,signal.max_realized_usd,
             signal.distinct_dispense_buyers,signal.max_dispense_btc_clean,signal.emblem_trades,
             signal.graph_trust,signal.graph_distrust,signal.holder_cohesion,
-            signal.cohesion_edges,signal.cohesion_strong
+            signal.cohesion_edges,signal.cohesion_strong,signal.active_trade_months,
+            signal.last_trade_time
        FROM asset_signals signal
        JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
        LEFT JOIN assets ON assets.asset_id=signal.asset_id

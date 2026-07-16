@@ -7,7 +7,8 @@ const UPSERT = `INSERT INTO asset_signals(
   pct_creator_holders,avg_holder_dex,trades,self_trade_pct,low_quality,
   first_trade_blk,last_trade_blk,dispenses,dispense_btc,distinct_traders,distinct_dispensers,
   age_blocks,recent_events,recency_blocks,max_dispense_btc,max_trade_xcp,supply,
-  max_realized_usd,distinct_dispense_buyers,max_dispense_btc_clean,emblem_trades
+  max_realized_usd,distinct_dispense_buyers,max_dispense_btc_clean,emblem_trades,
+  active_trade_months,last_trade_time
 )
 WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
   tip AS (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1),
@@ -66,7 +67,9 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
   ),
   sales AS (
     SELECT coalesce(max(usd_value),0) max_realized_usd,
-      coalesce(sum(CASE WHEN venue='emblem' THEN 1 ELSE 0 END),0) emblem_trades
+      coalesce(sum(CASE WHEN venue='emblem' THEN 1 ELSE 0 END),0) emblem_trades,
+      count(DISTINCT strftime('%Y-%m',block_time,'unixepoch')) active_trade_months,
+      max(block_time) last_trade_time
     FROM trades WHERE asset_id=(SELECT asset_id FROM identity)
   )
 SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,
@@ -84,7 +87,8 @@ SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,
   coalesce((SELECT block_index FROM tip)-asset.first_issuance_block_index,0),recent.recent_events,
   coalesce((SELECT block_index FROM tip)-market.last_trade_blk,0),dispense.max_dispense_btc,
   market.max_trade_xcp,coalesce(CAST(asset.supply_normalized AS REAL),0),sales.max_realized_usd,
-  dispense.distinct_dispense_buyers,dispense.max_dispense_btc_clean,sales.emblem_trades
+  dispense.distinct_dispense_buyers,dispense.max_dispense_btc_clean,sales.emblem_trades,
+  sales.active_trade_months,sales.last_trade_time
 FROM identity LEFT JOIN assets asset ON asset.asset_id=identity.asset_id
 CROSS JOIN holding CROSS JOIN market CROSS JOIN dispense CROSS JOIN recent CROSS JOIN sales
 WHERE 1
@@ -102,7 +106,8 @@ ON CONFLICT(asset_id) DO UPDATE SET
   max_trade_xcp=excluded.max_trade_xcp,supply=excluded.supply,
   max_realized_usd=excluded.max_realized_usd,
   distinct_dispense_buyers=excluded.distinct_dispense_buyers,
-  max_dispense_btc_clean=excluded.max_dispense_btc_clean,emblem_trades=excluded.emblem_trades`;
+  max_dispense_btc_clean=excluded.max_dispense_btc_clean,emblem_trades=excluded.emblem_trades,
+  active_trade_months=excluded.active_trade_months,last_trade_time=excluded.last_trade_time`;
 
 /** Refresh volatile asset features from canonical relations for identities touched by an event batch. */
 export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<string>): Promise<number> {

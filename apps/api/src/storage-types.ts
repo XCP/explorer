@@ -65,6 +65,8 @@ export interface AssetSignalsRow {
   holder_cohesion: number | null; // migration 0040 (interaction edges among top holders ÷ holder count; NULL until built)
   cohesion_edges: number | null; // migration 0040 (raw edge count among top holders)
   cohesion_strong: number | null; // migration 0040 (edges with w≥1.6 ⇔ ~4+ repeated interactions)
+  active_trade_months: number; // migration 0060 (distinct UTC months in the unified trade ledger)
+  last_trade_time: number | null; // migration 0060 (exact unix time of latest unified-ledger trade)
 }
 
 /** Mirror of the `address_signals` table (ADDR_DDL in signals.ts). */

@@ -117,6 +117,10 @@ const ASSET_QUALITY: Spec = {
   breakdown: "object?",
   low_quality: "boolean?",
 };
+const ASSET_ACTIVITY: Spec = {
+  active_months: "number",
+  last_trade_time: "number|null",
+};
 const ASSET_FEED_COUNTS: Spec = {
   sales: "number",
   issuances: "number",
@@ -520,6 +524,7 @@ test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (
   const j = await getJson("/v2/assets/RAREPEPE");
   assertShape(j.result, ASSET_DETAIL, "RAREPEPE.");
   if (j.result.quality) assertShape(j.result.quality, ASSET_QUALITY, "RAREPEPE.quality.");
+  if (j.result.activity) assertShape(j.result.activity, ASSET_ACTIVITY, "RAREPEPE.activity.");
   assert.ok(!("tags" in j.result) || Array.isArray(j.result.tags), "RAREPEPE.tags must be an array when present");
 });
 
@@ -847,11 +852,7 @@ test("contract: GET /v2/addresses/:a/reputation — AddressReputation + evidence
   assertShape(j.result, ADDRESS_REPUTATION, "reputation.");
   assertShape(j.result.track_record, { score: "number|null", tier: "string", meaning: "string|null" }, "track_record.");
   if (j.result.activity !== null)
-    assertShape(
-      j.result.activity,
-      { last_active_at: "number", days_since_active: "number" },
-      "activity.",
-    );
+    assertShape(j.result.activity, { last_active_at: "number", days_since_active: "number" }, "activity.");
   if (j.result.evidence !== null) assertShape(j.result.evidence, REP_EVIDENCE, "reputation.evidence.");
   assert.ok(Array.isArray(j.result.tags), "reputation.tags must be an array");
 });

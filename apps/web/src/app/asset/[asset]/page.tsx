@@ -101,7 +101,12 @@ function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[
     stats.push({ label: "Volume", value: usdCompact(item.sales.realized_usd), detail: "lifetime", hideOnMobile: true });
   }
   if (item.quality)
-    stats.push({ label: "Rating", value: item.quality.score ?? "—", detail: item.quality.tier, hideOnMobile: true });
+    stats.push({
+      label: "Market evidence",
+      value: item.quality.score ?? "—",
+      detail: item.quality.tier,
+      hideOnMobile: true,
+    });
   return stats;
 }
 
@@ -321,6 +326,18 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                     <span className="amt mono">
                       {usdCompact(item.sales.realized_usd)} <span className="time">lifetime</span>
                     </span>
+                  </div>
+                )}
+                {item.activity && item.activity.active_months > 0 && (
+                  <div className="row">
+                    <span className="k">Active months</span>
+                    <span className="amt mono">{commas(item.activity.active_months)}</span>
+                  </div>
+                )}
+                {item.activity?.last_trade_time && (
+                  <div className="row">
+                    <span className="k">Last activity</span>
+                    <span className="amt mono">{timeAgo(item.activity.last_trade_time)}</span>
                   </div>
                 )}
               </div>

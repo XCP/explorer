@@ -159,11 +159,7 @@ assets.get("/v2/assets/:asset", async (c) => {
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
   const tags = tagsRes;
   // Conviction describes holder participation and scarcity without using market prices.
-  const convictionEligible =
-    sig &&
-    sig.low_quality !== 1 &&
-    (sig.holders ?? 0) >= 15 &&
-    !tags.includes("numeric");
+  const convictionEligible = sig && sig.low_quality !== 1 && (sig.holders ?? 0) >= 15 && !tags.includes("numeric");
   const convictionRaw = convictionEligible ? scoreConviction(sig).raw : null;
   const body: AssetDetail = {
     ...r,
@@ -186,6 +182,12 @@ assets.get("/v2/assets/:asset", async (c) => {
             low_quality: sig.low_quality === 1,
           }
         : { tier: "Dormant", score: null },
+    activity: sig
+      ? {
+          active_months: sig.active_trade_months ?? 0,
+          last_trade_time: sig.last_trade_time ?? null,
+        }
+      : null,
     tags,
     sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
     collection: collectionRes?.tag ?? null,

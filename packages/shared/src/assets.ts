@@ -73,6 +73,7 @@ export interface AssetDetail {
   circulating_normalized?: string;
   holder_count: number;
   quality?: AssetQuality;
+  activity?: AssetMarketActivity | null;
   tags?: string[];
   sales?: AssetSales;
   collection?: string | null; // collection tag (pepe.wtf source='collection' or tokenscan), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
@@ -83,6 +84,12 @@ export interface AssetDetail {
   feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
   cohesion?: AssetCohesion | null; // holder-cohesion coordination signal; null until the batch has scored this asset
   conviction?: AssetConviction | null; // who-holds-it + scarcity score; null outside the eligible population
+}
+
+/** Factual activity, deliberately separate from historical Market Evidence and predictions. */
+export interface AssetMarketActivity {
+  active_months: number;
+  last_trade_time: number | null;
 }
 
 /** Conviction describes holder participation and scarcity without market-price inputs. */
