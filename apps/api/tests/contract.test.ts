@@ -855,3 +855,10 @@ test("contract: GET /v2/addresses/:a/reputation — AddressReputation + evidence
   if (j.result.evidence !== null) assertShape(j.result.evidence, REP_EVIDENCE, "reputation.evidence.");
   assert.ok(Array.isArray(j.result.tags), "reputation.tags must be an array");
 });
+
+test("contract: address graph reports network standing rather than a trust verdict", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson(`/v2/addresses/${ADDR}/graph`)).result;
+  assertShape(result, { trust: "number", distrust: "number", tier: "string" }, "graph.");
+  assert.ok(["connected", "flagged", "unscored"].includes(result.tier), "graph tier vocabulary drifted");
+});

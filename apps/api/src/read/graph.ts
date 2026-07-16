@@ -7,15 +7,18 @@
  *                                          fraction, + top-20 trusted/distrusted addresses AND assets). cached 600.
  *   GET /v2/addresses/:address/graph       -> { result: { trust, distrust, tier } }  (60s)
  *   GET /v2/assets/:asset/graph         -> { result: { trust, distrust, tier } }  (60s)
- * `tier` is the pure graphTier() classifier (trusted / distrusted / unscored — never a continuum).
+ * Public tiers are connected / flagged / unscored: seeded network standing, not a reputation verdict.
  */
-import type { GraphSubgraph } from "@xcp/shared/graph";
+import type { GraphSubgraph, GraphTier } from "@xcp/shared/graph";
 import { router, cached, J } from "#api/read/respond";
 import { graphOverview, graphScore, graphCuts } from "#api/queries/graph";
 import { addressEgo, assetHolders } from "#api/queries/graph-extract";
 import { graphTier } from "#api/indexer/graph-core";
 
 export const graph = router();
+
+const publicTier = (tier: ReturnType<typeof graphTier>): GraphTier =>
+  tier === "trusted" ? "connected" : tier === "distrusted" ? "flagged" : "unscored";
 
 // Bounded, renderable sub-graphs for the viz experiment. limit clamps the node budget so a hub can't return
 // its whole neighbourhood. GET /v2/graph/address/:a (ego-network) · /v2/graph/asset/:a (holder star).
@@ -45,7 +48,7 @@ graph.get("/v2/addresses/:address/graph", async (c) => {
   ]);
   const trust = s?.trust ?? 0,
     distrust = s?.distrust ?? 0;
-  return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust, cuts.address) } }, 60);
+  return J(c, { result: { trust, distrust, tier: publicTier(graphTier(trust, distrust, cuts.address)) } }, 60);
 });
 
 graph.get("/v2/assets/:asset/graph", async (c) => {
@@ -55,5 +58,5 @@ graph.get("/v2/assets/:asset/graph", async (c) => {
   ]);
   const trust = s?.trust ?? 0,
     distrust = s?.distrust ?? 0;
-  return J(c, { result: { trust, distrust, tier: graphTier(trust, distrust, cuts.asset) } }, 60);
+  return J(c, { result: { trust, distrust, tier: publicTier(graphTier(trust, distrust, cuts.asset)) } }, 60);
 });
