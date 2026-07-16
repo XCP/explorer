@@ -7,7 +7,20 @@ export type LineSeries = {
   label: string;
   color: string;
   data: Point[];
+  carryForward?: boolean;
 };
+
+export function alignLineValues(series: LineSeries[], timestamps: number[]): number[][] {
+  return series.map((item) => {
+    const byTimestamp = new Map(item.data.map((point) => [point.t, point.v]));
+    let previous = 0;
+    return timestamps.map((timestamp) => {
+      const value = byTimestamp.get(timestamp);
+      if (value !== undefined) previous = value;
+      return value ?? (item.carryForward ? previous : 0);
+    });
+  });
+}
 
 /** Dependency-free multi-series line chart with a shared hover readout. */
 export function LineChart({
@@ -35,13 +48,10 @@ export function LineChart({
   const max = Math.max(...series.flatMap((item) => item.data.map((point) => point.v)), 1);
   const x = (index: number) => left + (index / (timestamps.length - 1)) * plotWidth;
   const y = (value: number) => top + (1 - value / max) * plotHeight;
-  const values = series.map((item) => {
-    const byTimestamp = new Map(item.data.map((point) => [point.t, point.v]));
-    return timestamps.map((timestamp) => byTimestamp.get(timestamp) ?? 0);
-  });
-  const paths = values.map((points) => points
-    .map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`)
-    .join(" "));
+  const values = alignLineValues(series, timestamps);
+  const paths = values.map((points) =>
+    points.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" "),
+  );
   const day = (timestamp: number) => new Date(timestamp * 1000).toISOString().slice(0, 10);
   const dateLabel = formatDate ?? day;
   const activeTimestamp = hovered == null ? null : timestamps[hovered];
@@ -66,16 +76,49 @@ export function LineChart({
       >
         {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
           const gridY = top + fraction * plotHeight;
-          return <line key={fraction} x1={left} x2={width - right} y1={gridY} y2={gridY} stroke="#27272a" strokeWidth="1" vectorEffect="non-scaling-stroke" />;
+          return (
+            <line
+              key={fraction}
+              x1={left}
+              x2={width - right}
+              y1={gridY}
+              y2={gridY}
+              stroke="#27272a"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
+          );
         })}
         {paths.map((path, index) => (
-          <path key={series[index].label} d={path} fill="none" stroke={series[index].color} strokeWidth={1.75} vectorEffect="non-scaling-stroke" />
+          <path
+            key={series[index].label}
+            d={path}
+            fill="none"
+            stroke={series[index].color}
+            strokeWidth={1.75}
+            vectorEffect="non-scaling-stroke"
+          />
         ))}
         {hovered != null && (
           <>
-            <line x1={activeX} x2={activeX} y1={top} y2={top + plotHeight} stroke="#71717a" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+            <line
+              x1={activeX}
+              x2={activeX}
+              y1={top}
+              y2={top + plotHeight}
+              stroke="#71717a"
+              strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke"
+            />
             {series.map((item, index) => (
-              <circle key={item.label} cx={activeX} cy={y(values[index][hovered])} r="3" fill={item.color} vectorEffect="non-scaling-stroke" />
+              <circle
+                key={item.label}
+                cx={activeX}
+                cy={y(values[index][hovered])}
+                r="3"
+                fill={item.color}
+                vectorEffect="non-scaling-stroke"
+              />
             ))}
           </>
         )}
@@ -91,7 +134,10 @@ export function LineChart({
           <div className="font-mono text-zinc-500">{dateLabel(activeTimestamp)}</div>
           {series.map((item, index) => (
             <div key={item.label} className="mt-1 flex items-center justify-between gap-4 font-mono">
-              <span className="flex items-center gap-1.5 text-zinc-400"><span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />{item.label}</span>
+              <span className="flex items-center gap-1.5 text-zinc-400">
+                <span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />
+                {item.label}
+              </span>
               <span className="text-zinc-100">{formatValue(values[index][hovered])}</span>
             </div>
           ))}
