@@ -26,6 +26,14 @@ export interface RecoveryImportTransaction {
 
 const hashPattern = /^[0-9a-f]{64}$/i;
 
+export async function batchRecoveryStatements(
+  db: Pick<D1Database, "batch">,
+  statements: D1PreparedStatement[],
+): Promise<void> {
+  for (let offset = 0; offset < statements.length; offset += 100)
+    await db.batch(statements.slice(offset, offset + 100));
+}
+
 export async function importRecoveryTransactions(env: Env, rows: RecoveryImportTransaction[]): Promise<number> {
   if (rows.length === 0 || rows.length > 100) throw new Error("expected 1 to 100 transactions");
   const now = Math.floor(Date.now() / 1000);
@@ -110,8 +118,10 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
       );
     }
   }
-  if (statements.length > 100) throw new Error("max 100 outputs per request");
   await Promise.all(blobs);
-  await env.RECOVERY_DB.batch(statements);
+  // A single Counterparty data transaction can legitimately contain more than D1's 100-statement batch
+  // ceiling. Chunk the convergent upserts; callers advance their durable transaction cursor only after this
+  // function returns, so a later chunk failure safely replays the earlier chunks on retry.
+  await batchRecoveryStatements(env.RECOVERY_DB, statements);
   return statements.length;
 }
