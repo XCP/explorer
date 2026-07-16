@@ -1,10 +1,5 @@
 import type { Env } from "#api/env";
 
-interface CountRow {
-  total: number;
-  complete: number;
-}
-
 interface StateRow {
   key: string;
   value: string;
@@ -30,20 +25,15 @@ function progress(total: number, complete: number) {
  * which is suitable for frequent health checks and must never scan multi-million-row partial indexes.
  */
 export async function backfillStatus(env: Env) {
-  const [fees, blockCounts, ethereumTimes, coreState, maxTransaction, maxEmblemSale, recoveryState] = await Promise.all(
+  const [fees, blockCounts, coreState, maxTransaction, maxEmblemSale, recoveryState] = await Promise.all(
     [
       env.CORE_DB.prepare(`SELECT MIN(tx_index) first,MAX(tx_index) last FROM transactions`).first<BlockBounds>(),
       env.CORE_DB.prepare(`SELECT MIN(block_index) first,MAX(block_index) last FROM blocks`).first<BlockBounds>(),
       env.CORE_DB.prepare(
-        `SELECT COUNT(DISTINCT sale.block_number) total,COUNT(DISTINCT block.block_number) complete
-           FROM emblem_sales sale LEFT JOIN ethereum_blocks block ON block.block_number=sale.block_number
-          WHERE sale.block_number IS NOT NULL`,
-      ).first<CountRow>(),
-      env.CORE_DB.prepare(
         `SELECT key,value FROM core_state WHERE key IN
           ('last_block_index','trades_cur_dex','trades_cur_dispense_payments','trades_cur_emblem',
            'trades_emblem_reconcile_cursor','bitcoin_block_counts_cursor','bitcoin_block_counts_remaining',
-           'bitcoin_fees_remaining','vault_contents_cursor',
+           'bitcoin_fees_remaining','ethereum_block_times_total','ethereum_block_times_remaining','vault_contents_cursor',
            'asset_signals_cursor','address_signals_cursor','scarce_cursor')`,
       ).all<StateRow>(),
       env.CORE_DB.prepare(`SELECT COALESCE(MAX(tx_index),-1) value FROM transactions`).first<{ value: number }>(),
@@ -67,7 +57,10 @@ export async function backfillStatus(env: Env) {
     generated_at: Math.floor(Date.now() / 1_000),
     bitcoin_fees: progress(feeTotal, feeTotal - feeRemaining),
     bitcoin_block_transaction_counts: progress(blockTotal, blockTotal - blockRemaining),
-    ethereum_block_times: progress(Number(ethereumTimes?.total ?? 0), Number(ethereumTimes?.complete ?? 0)),
+    ethereum_block_times: progress(
+      state.ethereum_block_times_total ?? 0,
+      (state.ethereum_block_times_total ?? 0) - (state.ethereum_block_times_remaining ?? 0),
+    ),
     recovery_scan: {
       ...progress(transactionTip + 1, recoveryCursor + 1),
       cursor: recoveryCursor,
