@@ -52,6 +52,19 @@ const viss = (extra: string) =>
     joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
   });
 
+// Supply-sensitive milestones must reconstruct net supply at the locking event. Looking only at the
+// lock row's quantity misses assets issued across several transactions; looking at today's asset state
+// lets later issuance/destruction rewrite history.
+const lockedSupply = (supply: number, extra: string) => `SELECT x.block_index b,x.block_time t,
+  asset.asset ref,'asset' typ,LOWER(HEX(x.tx_hash)) tx
+  FROM issuances x JOIN asset_dictionary asset ON asset.asset_id=x.asset_id
+  WHERE x.status NOT LIKE 'invalid%' AND x.locked=1 AND (${extra})
+    AND COALESCE((SELECT SUM(CAST(i.quantity AS INTEGER)) FROM issuances i
+      WHERE i.asset_id=x.asset_id AND i.status NOT LIKE 'invalid%' AND i.event_index<=x.event_index),0)
+      - COALESCE((SELECT SUM(CAST(d.quantity AS INTEGER)) FROM destructions d
+      WHERE d.asset_id=x.asset_id AND d.status NOT LIKE 'invalid%' AND d.event_index<=x.event_index),0)=${supply}
+  ORDER BY x.block_index,x.tx_index,x.event_index LIMIT 1`;
+
 export const FIRSTS: First[] = [
   // --- protocol genesis ---
   {
@@ -344,18 +357,27 @@ export const FIRSTS: First[] = [
   { key: "locked", label: "First locked issuance", sql: viss(`locked=1`) },
   { key: "divisible", label: "First divisible asset", sql: viss(`divisible=1`) },
   { key: "indivisible", label: "First indivisible asset", sql: viss(`divisible=0`) },
-  {
-    key: "one_of_one",
-    label: "First 1/1 (single edition)",
-    sql: viss(`divisible=0 AND locked=1 AND CAST(quantity AS INTEGER)=1`),
-  },
+  { key: "one_of_one", label: "First 1/1 (single edition)", sql: lockedSupply(1, "x.divisible=0") },
+  { key: "numeric_one_of_one", label: "First numeric 1/1", sql: lockedSupply(1, "x.divisible=0 AND asset.asset GLOB 'A[0-9]*'") },
+  { key: "subasset_one_of_one", label: "First subasset 1/1", sql: lockedSupply(1, "x.divisible=0 AND x.asset_longname IS NOT NULL") },
+  { key: "satoshi_nft", label: "First one-satoshi NFT", sql: lockedSupply(1, "x.divisible=1") },
+  { key: "tokenless", label: "First locked tokenless asset", sql: lockedSupply(0, "1=1") },
   { key: "reset", label: "First asset reset (CIP03)", sql: viss(`reset=1`) },
   { key: "transfer", label: "First asset transfer", sql: viss(`transfer=1`) },
   { key: "callable", label: "First callable asset", sql: viss(`callable=1`) },
   { key: "description", label: "First asset description", sql: viss(`description IS NOT NULL AND description!=''`) },
+  { key: "non_ascii_description", label: "First non-ASCII asset description", sql: viss(`description GLOB '*[^ -~]*'`) },
+  { key: "embedded_image", label: "First embedded data-URI image", sql: viss(`LOWER(description) LIKE 'data:image%'`) },
+  { key: "description_url", label: "First external URL in an asset description", sql: viss(`LOWER(description) LIKE '%http://%' OR LOWER(description) LIKE '%https://%'`) },
+  { key: "pepe_mention", label: "First Pepe mention in an asset description", sql: viss(`UPPER(description) LIKE '%PEPE%'`) },
+  { key: "nft_term", label: "First use of “NFT” in an asset description", sql: viss(`UPPER(description) LIKE '%NFT%'`) },
   { key: "description_lock", label: "First locked asset description", sql: viss(`asset_events='lock_description'`) },
   { key: "json_desc", label: "First JSON description", sql: viss(`TRIM(description) LIKE '{%'`) },
-  { key: "mime", label: "First MIME-typed asset", sql: viss(`mime_type IS NOT NULL AND mime_type!=''`) },
+  {
+    key: "inscription",
+    label: "First Counterparty inscription",
+    sql: viss(`mime_type IS NOT NULL AND mime_type NOT IN ('','text/plain')`),
+  },
   { key: "easyasset", label: "First EasyAsset", sql: viss(`lower(description) LIKE '%easyasset%'`) },
   {
     key: "fairminter",

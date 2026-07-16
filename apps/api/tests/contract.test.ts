@@ -373,9 +373,20 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     "fairminter_premint",
     "fairminter_commission",
     "fairminter_burn_payment",
+    "inscription",
+    "numeric_one_of_one",
+    "subasset_one_of_one",
+    "satoshi_nft",
+    "tokenless",
+    "non_ascii_description",
+    "embedded_image",
+    "description_url",
+    "pepe_mention",
+    "nft_term",
   ]) {
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }
+  assert.equal(keys.has("mime"), false, "migration-defaulted MIME values are not historical milestones");
   const stamp = j.result.find((row: { key?: string }) => row.key === "stamp");
   assert.deepEqual(
     stamp,

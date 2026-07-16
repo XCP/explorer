@@ -7,10 +7,13 @@ const STATUS_BACKED_FIRSTS = [
   "dividend", "broadcast", "bet", "bet_match", "rps", "rps_match", "sweep",
   "cancel", "btcpay", "non_xcp_order", "enhanced_send", "mpma", "attach", "move",
   "detach", "locked", "divisible", "indivisible", "one_of_one", "reset", "transfer",
-  "callable", "description", "json_desc", "mime", "easyasset", "fairminter", "fairmint",
+  "callable", "description", "json_desc", "inscription", "easyasset", "fairminter", "fairmint",
   "pool_deposit", "pool_swap", "stamp", "src20", "src721", "btns",
   "priced_oracle", "sweep_memo", "send_memo", "description_lock",
   "fairminter_premint", "fairminter_commission", "fairminter_burn_payment",
+  "numeric_one_of_one", "subasset_one_of_one", "satoshi_nft", "tokenless",
+  "non_ascii_description", "embedded_image",
+  "description_url", "pepe_mention", "nft_term",
 ];
 
 test("every first backed by a protocol-status table excludes invalid records", () => {
