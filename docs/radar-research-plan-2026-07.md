@@ -258,6 +258,11 @@ ledger events were not present, and prior analytical runs remain auditable witho
 - Late-period buyers and first-to-last market span add useful persistence evidence, particularly in the 2023-2024
   fold, where late buyer breadth reaches 61% precision at 100 for a later broad market. They do not dominate every
   fold, so persistence should remain a named fact/challenger rather than a hard-coded universal weight.
+- Early completed-sale venue diversity is positively associated with later markets (roughly 5-12x standalone lift),
+  but it is weaker than buyer breadth and persistence. Giving venue diversity 10% of a buyer-plus-active-days model
+  produces no improvement in two folds and reduces precision in the other two. Do not give it a production ranking
+  weight. Surface the venue mix as corroborating evidence; separately test DEX pair/currency diversity once the
+  analytical trade snapshot retains currency identity.
 
 Decision: a New Radar is empirically better grounded than the current historical-maximum-price screen, but the next
 iteration must add identity-level holder retention, exclude target-asset evidence from holder reputation, and audit

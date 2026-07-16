@@ -24,6 +24,7 @@ const rows = db
   ), early_market AS (
     SELECT issued.asset_id,COUNT(trade.trade_rowid) early_trades,
       COUNT(DISTINCT trade.buyer_id) early_buyers,COUNT(DISTINCT trade.seller_id) early_sellers,
+      COUNT(DISTINCT trade.venue) early_venues,
       COUNT(DISTINCT strftime('%Y-%m-%d',trade.block_time,'unixepoch')) early_active_days,
       COUNT(DISTINCT CASE WHEN trade.block_time>=issued.issued_at+14*86400 THEN trade.buyer_id END) late_buyers,
       COUNT(DISTINCT CASE WHEN trade.block_time>=issued.issued_at+14*86400
@@ -100,6 +101,7 @@ const evaluations = folds.map((fold) => {
   const holder = percentileRanks(cohort, "holders30");
   const buyer = percentileRanks(cohort, "early_buyers");
   const days = percentileRanks(cohort, "early_active_days");
+  const venue = percentileRanks(cohort, "early_venues");
   const lateBuyer = percentileRanks(cohort, "late_buyers");
   const span = percentileRanks(cohort, "early_market_span_days");
   const safety = percentileRanks(cohort, "top1_share");
@@ -119,10 +121,16 @@ const evaluations = folds.map((fold) => {
     ["holder_breadth", (row) => holder.get(row.id)],
     ["paid_buyer_breadth", (row) => buyer.get(row.id)],
     ["active_days", (row) => days.get(row.id)],
+    ["venue_diversity", (row) => venue.get(row.id)],
     ["late_paid_buyer_breadth", (row) => lateBuyer.get(row.id)],
     ["early_market_span", (row) => span.get(row.id)],
     ["distribution_safety", (row) => 1 - safety.get(row.id)],
     ["issuer_prior_assets", (row) => issuer.get(row.id)],
+    ["market_core", (row) => buyer.get(row.id) * 0.5 + days.get(row.id) * 0.5],
+    [
+      "market_core_plus_venue",
+      (row) => buyer.get(row.id) * 0.45 + days.get(row.id) * 0.45 + venue.get(row.id) * 0.1,
+    ],
     [
       "early_adoption_challenger",
       challenger,
@@ -138,6 +146,7 @@ const evaluations = folds.map((fold) => {
       holders30: row.holders30,
       early_buyers: row.early_buyers,
       early_active_days: row.early_active_days,
+      early_venues: row.early_venues,
       late_buyers: row.late_buyers,
       early_market_span_days: row.early_market_span_days,
       top1_share: row.top1_share,
