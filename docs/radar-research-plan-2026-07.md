@@ -304,3 +304,6 @@ distinct non-self paid buyers and active trading days observed by day 30. Keep l
 breadth, exact retention, supply, issuer share, and concentration as visible evidence or filters. Do not add their
 weights unless a challenger improves both bounded-review precision and whole-ranking quality without a worst-fold
 regression.
+
+The accepted shadow contract, serving-projection requirements, and frontend language are specified in
+[`new-radar-model.md`](new-radar-model.md).
