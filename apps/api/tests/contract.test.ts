@@ -700,7 +700,16 @@ test("contract: GET /v2/reputation/asset-review - compact population distributio
   const result = (await getJson("/v2/reputation/asset-review")).result;
   assertShape(
     result.distribution,
-    { n: "number", mean: "number", max: "number", min: "number", top1pct: "number", top10pct: "number" },
+    {
+      n: "number",
+      mean: "number",
+      max: "number",
+      min: "number",
+      bluechip: "number",
+      premium: "number",
+      notable: "number",
+      speculative: "number",
+    },
     "asset-review.distribution.",
   );
   assertRows(
@@ -708,7 +717,15 @@ test("contract: GET /v2/reputation/asset-review - compact population distributio
     { asset: "string", asset_longname: "string|null", holders: "number", trades: "number", raw: "number" },
     "asset-review.top",
   );
-  assert.ok(result.distribution.n > 150_000, "asset review population is incomplete");
+  assert.ok(result.distribution.n > 20_000, "market-asset review population is incomplete");
+  assert.equal(
+    result.distribution.bluechip +
+      result.distribution.premium +
+      result.distribution.notable +
+      result.distribution.speculative,
+    result.distribution.n,
+    "asset review tier buckets must partition the market population",
+  );
   assert.equal(result.top[0].asset, "XCP", "top raw-quality asset changed");
 });
 

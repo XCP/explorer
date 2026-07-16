@@ -16,7 +16,7 @@ import {
   ASSET_FACTORS,
   ADDRESS_FACTORS,
 } from "#api/reputation/score";
-import { ASSET_PENALTY, ADDRESS_TIERS, CONVICTION_PCT } from "#api/reputation/config";
+import { ASSET_PENALTY, ASSET_TIERS, ADDRESS_TIERS, CONVICTION_PCT } from "#api/reputation/config";
 import {
   featuredAssets,
   chainTip,
@@ -258,8 +258,13 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
 assets.get("/v2/reputation/asset-review", (c) =>
   cached(c, "asset-review:quality", { ttl: 600, edge: 60 }, async () => {
     const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
+    const cut = (tier: string) => {
+      const value = ASSET_TIERS.find((entry) => entry.tier === tier)?.minRaw;
+      if (value === undefined) throw new Error(`${tier} asset tier is required for reputation calibration`);
+      return value;
+    };
     const [distribution, top] = await Promise.all([
-      assetReviewDistribution(c.env.CORE_DB, expr),
+      assetReviewDistribution(c.env.CORE_DB, expr, cut("Bluechip"), cut("Premium"), cut("Notable")),
       assetReviewTop(c.env.CORE_DB, expr),
     ]);
     return { result: { distribution, top } };

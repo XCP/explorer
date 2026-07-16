@@ -195,12 +195,24 @@ export function assetTop1Pct(db: D1Database, asset: string): Promise<{ t: number
 /* ---------- asset-quality calibration (parallel to /v2/reputation/review) ---------- */
 
 /** Population quality distribution over asset_signals (`expr` = config-driven raw-score SQL). */
-export function assetReviewDistribution(db: D1Database, expr: string): Promise<AssetReviewDistribution | null> {
+export function assetReviewDistribution(
+  db: D1Database,
+  expr: string,
+  bluechipCut: number,
+  premiumCut: number,
+  notableCut: number,
+): Promise<AssetReviewDistribution | null> {
   return one<AssetReviewDistribution>(
     db,
-    `WITH r AS (SELECT (${expr}) raw FROM asset_signals)
+    `WITH r AS (
+       SELECT (${expr}) raw FROM asset_signals WHERE trades>0 OR dispenses>0
+     )
      SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max, ROUND(MIN(raw),2) min,
-       SUM(CASE WHEN raw>=16 THEN 1 ELSE 0 END) top1pct, SUM(CASE WHEN raw>=9 THEN 1 ELSE 0 END) top10pct FROM r`,
+       SUM(CASE WHEN raw>=${bluechipCut} THEN 1 ELSE 0 END) bluechip,
+       SUM(CASE WHEN raw>=${premiumCut} AND raw<${bluechipCut} THEN 1 ELSE 0 END) premium,
+       SUM(CASE WHEN raw>=${notableCut} AND raw<${premiumCut} THEN 1 ELSE 0 END) notable,
+       SUM(CASE WHEN raw<${notableCut} THEN 1 ELSE 0 END) speculative
+     FROM r`,
   );
 }
 

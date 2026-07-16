@@ -142,7 +142,8 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
       ...COLLECTION_TAGS,
     )
   ).map((r) => r.a);
-  const estCut = ASSET_TIERS.find((t) => t.tier === "Established")?.minRaw ?? 45.86;
+  const premiumCut = ASSET_TIERS.find((t) => t.tier === "Premium")?.minRaw;
+  if (premiumCut === undefined) throw new Error("Premium asset tier is required for graph trust seeding");
   const qualExpr = rawSqlExpr(ASSET_FACTORS, tip); // the asset quality raw, in SQL (same expr as /reputation/review)
   // low_quality=0: the −6 penalty doesn't fully demote a curated-junk asset on the Phase-B scale (a wash/bridge
   // token can ride real flow to Established), so a flagged asset must NEVER become a trust seed via quality.
@@ -151,7 +152,7 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
       env.CORE_DB,
       `SELECT asset.asset a FROM asset_signals signal
        JOIN asset_dictionary asset ON asset.asset_id=signal.asset_id
-       WHERE signal.low_quality=0 AND (signal.trades>0 OR signal.dispenses>0) AND (${qualExpr}) >= ${estCut}`,
+       WHERE signal.low_quality=0 AND (signal.trades>0 OR signal.dispenses>0) AND (${qualExpr}) >= ${premiumCut}`,
     )
   ).map((r) => r.a);
   const trust = new Set<string>();
@@ -173,9 +174,7 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
   for (const address of [...trustAddrs, ...grailIssuers]) if (!excluded.has(address)) trust.add(address);
 
   // ---- DISTRUST (unchanged): curated lowq + their issuers + derived scam actors ----
-  const lowqs = (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind='lowq'`)).map(
-    (r) => r.key,
-  );
+  const lowqs = (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind='lowq'`)).map((r) => r.key);
   const distrust = new Set<string>();
   for (const l of lowqs) distrust.add(`asset:${l}`);
   for (const a of await distinctIssuers(env, lowqs)) if (!excluded.has(a)) distrust.add(a);
@@ -196,7 +195,8 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
   const rows: [string, string, number, number][] = [];
   subsets.forEach((sub, slot) => {
     const s = sub.length ? 1 / sub.length : 0;
-    for (const node of sub) rows.push([node.startsWith("asset:") ? "asset" : "address", node.replace(/^asset:/, ""), slot, s]);
+    for (const node of sub)
+      rows.push([node.startsWith("asset:") ? "asset" : "address", node.replace(/^asset:/, ""), slot, s]);
   });
   const dArr = [...distrust];
   const ds = dArr.length ? 1 / dArr.length : 0;
@@ -205,11 +205,7 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
 
   const stmts = chunk(rows, 20)
     .filter((p) => p.length)
-    .map((part) =>
-      env.CORE_DB.prepare(
-        entitySeedInsertStatement(generation, part.length),
-      ).bind(...part.flat()),
-    );
+    .map((part) => env.CORE_DB.prepare(entitySeedInsertStatement(generation, part.length)).bind(...part.flat()));
   for (const b of chunk(stmts, 20)) await env.CORE_DB.batch(b);
   await env.CORE_DB.prepare(entitySeedApplyStatement(generation)).run();
 }
@@ -230,13 +226,9 @@ function buildOps(generation: number, bipartite: boolean): { name: string; exec:
     },
   ];
   ENTITY_IDENTITY_STATEMENTS.forEach((sql, i) => ops.push({ name: `identity_${i}`, exec: runSql(sql) }));
-  entityEdgeStatements(generation, bipartite).forEach((sql, i) =>
-    ops.push({ name: `edges_${i}`, exec: runSql(sql) }),
-  );
+  entityEdgeStatements(generation, bipartite).forEach((sql, i) => ops.push({ name: `edges_${i}`, exec: runSql(sql) }));
   entityNodeStatements(generation).forEach((sql, i) => ops.push({ name: `node_${i}`, exec: runSql(sql) }));
-  entityRankInitStatements(generation).forEach((sql, i) =>
-    ops.push({ name: `rank_init_${i}`, exec: runSql(sql) }),
-  );
+  entityRankInitStatements(generation).forEach((sql, i) => ops.push({ name: `rank_init_${i}`, exec: runSql(sql) }));
   ops.push({ name: "seeds", exec: (env) => applySeeds(env, generation) });
   return ops;
 }

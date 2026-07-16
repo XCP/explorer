@@ -242,8 +242,10 @@ export interface AssetReviewDistribution {
   mean: number;
   max: number;
   min: number;
-  top1pct: number;
-  top10pct: number;
+  bluechip: number;
+  premium: number;
+  notable: number;
+  speculative: number;
 }
 
 /** GET /v2/reputation/asset-review — a top-20-by-raw-quality row (face-validity check). */
