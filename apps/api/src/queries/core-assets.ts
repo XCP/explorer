@@ -172,7 +172,7 @@ export function coreAssetCohort(
      SELECT other_dictionary.asset,other_state.asset_longname,COUNT(*) shared,
        ROUND(100.0*COUNT(*)/NULLIF((SELECT COUNT(*) FROM subject_holders),0),1) pct
      FROM subject_holders subject_balance
-     CROSS JOIN balances other_balance INDEXED BY idx_balances_address_asset
+     CROSS JOIN balances other_balance INDEXED BY idx_balances_positive_address_asset
        ON other_balance.address_id=subject_balance.address_id
      JOIN asset_dictionary other_dictionary ON other_dictionary.asset_id=other_balance.asset_id
      LEFT JOIN assets other_state ON other_state.asset_id=other_balance.asset_id
@@ -199,7 +199,7 @@ export function coreAssetRelated(
      ), overlap AS MATERIALIZED (
        SELECT other_balance.asset_id,COUNT(*) shared
        FROM subject_holders subject_balance
-       CROSS JOIN balances other_balance INDEXED BY idx_balances_address_asset
+       CROSS JOIN balances other_balance INDEXED BY idx_balances_positive_address_asset
          ON other_balance.address_id=subject_balance.address_id
        WHERE other_balance.asset_id<>(SELECT asset_id FROM subject)
          AND CAST(other_balance.quantity AS INTEGER)>0
