@@ -534,7 +534,7 @@ assets.get("/v2/assets/:asset/related", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
   const coll = await coreAssetCollection(c.env.CORE_DB, asset).catch(() => null);
   const tag = coll?.tag ?? null;
-  const related = await coreAssetRelated(c.env.CORE_DB, asset, tag, 12, 6).catch(() => []);
+  const related = await coreAssetRelated(c.env.CORE_DB, asset, tag, 12, 6);
   const rows = related.map(({ in_collection: _, ...row }) => row);
   const collection = tag ? rows.filter((_, index) => related[index]?.in_collection === 1) : [];
   const cohort = rows.filter((_, index) => related[index]?.in_collection === 0);
