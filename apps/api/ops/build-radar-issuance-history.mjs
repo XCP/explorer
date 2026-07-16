@@ -58,19 +58,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS issuance_history_state(singleton INTEGER PRI
   INSERT OR IGNORE INTO issuance_history_state VALUES(1,-1,0,0);
   CREATE TABLE IF NOT EXISTS issuance_history(
     event_index INTEGER PRIMARY KEY,block_index INTEGER NOT NULL,asset_id INTEGER NOT NULL,
-    source_id INTEGER,issuer_id INTEGER NOT NULL,transfer INTEGER NOT NULL);
+    source_id INTEGER,issuer_id INTEGER NOT NULL,transfer INTEGER NOT NULL,
+    divisible INTEGER NOT NULL DEFAULT 0,reset INTEGER NOT NULL DEFAULT 0);
   CREATE INDEX IF NOT EXISTS idx_issuance_history_asset_event
     ON issuance_history(asset_id,event_index);`);
+const issuanceColumns = new Set(db.prepare(`PRAGMA table_info(issuance_history)`).all().map((column) => column.name));
+if (!issuanceColumns.has("divisible")) {
+  db.exec(`ALTER TABLE issuance_history ADD COLUMN divisible INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE issuance_history ADD COLUMN reset INTEGER NOT NULL DEFAULT 0;
+    DELETE FROM issuance_history;
+    UPDATE issuance_history_state SET cursor=-1,row_count=0,chunk_count=0 WHERE singleton=1;`);
+}
 const state = () => db.prepare(`SELECT cursor,row_count,chunk_count FROM issuance_history_state`).get();
 const insert = db.prepare(`INSERT INTO issuance_history
-  (event_index,block_index,asset_id,source_id,issuer_id,transfer) VALUES(?,?,?,?,?,?)`);
+  (event_index,block_index,asset_id,source_id,issuer_id,transfer,divisible,reset) VALUES(?,?,?,?,?,?,?,?)`);
 const advance = db.prepare(`UPDATE issuance_history_state SET cursor=?,row_count=row_count+?,
   chunk_count=chunk_count+1 WHERE singleton=1`);
 
 let completedThisRun = 0;
 while (state().cursor < receipt.max_event_index && (!stopAfterChunks || completedThisRun < stopAfterChunks)) {
   const cursor = Number(state().cursor);
-  const result = remote(`SELECT event_index,block_index,asset_id,source_id,issuer_id,transfer
+  const result = remote(`SELECT event_index,block_index,asset_id,source_id,issuer_id,transfer,divisible,reset
     FROM issuances WHERE status='valid' AND asset_id IS NOT NULL AND issuer_id IS NOT NULL
       AND event_index>${cursor} AND event_index<=${receipt.max_event_index}
     ORDER BY event_index LIMIT ${chunkSize}`);
@@ -86,6 +94,8 @@ while (state().cursor < receipt.max_event_index && (!stopAfterChunks || complete
         row.source_id == null ? null : Number(row.source_id),
         Number(row.issuer_id),
         Number(row.transfer),
+        Number(row.divisible),
+        Number(row.reset ?? 0),
       );
     advance.run(after, result.rows.length);
     db.exec("COMMIT");
@@ -109,4 +119,3 @@ const report = {
 writeFileSync(resolve(root, "issuance-history.json"), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 db.close();
-

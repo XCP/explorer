@@ -41,11 +41,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS historical_replay_state(
     cutoff_label TEXT NOT NULL,cutoff_block INTEGER NOT NULL,asset_id INTEGER NOT NULL,
     holders INTEGER NOT NULL,total_quantity INTEGER NOT NULL,top1_quantity INTEGER NOT NULL,
     top5_quantity INTEGER NOT NULL,creator_id INTEGER,owner_id INTEGER,
+    divisible INTEGER NOT NULL DEFAULT 0,normalized_supply REAL NOT NULL DEFAULT 0,
     creator_quantity INTEGER NOT NULL,owner_quantity INTEGER NOT NULL,
     largest_non_creator_quantity INTEGER NOT NULL,largest_non_owner_quantity INTEGER NOT NULL,
     PRIMARY KEY(cutoff_label,asset_id)) WITHOUT ROWID;
   CREATE INDEX IF NOT EXISTS idx_issuance_history_block_asset
     ON issuance_history(block_index,asset_id,event_index);`);
+const concentrationColumns = new Set(
+  db.prepare(`PRAGMA table_info(historical_concentration)`).all().map((column) => column.name),
+);
+if (!concentrationColumns.has("normalized_supply")) {
+  db.exec(`ALTER TABLE historical_concentration ADD COLUMN divisible INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE historical_concentration ADD COLUMN normalized_supply REAL NOT NULL DEFAULT 0;
+    DELETE FROM historical_concentration;
+    DELETE FROM historical_balances;
+    UPDATE historical_replay_state SET cursor=-1,event_count=0,chunk_count=0,next_cutoff=0 WHERE singleton=1;`);
+}
 const state = () => db.prepare(`SELECT cursor,event_count,chunk_count,next_cutoff FROM historical_replay_state`).get();
 const apply = db.prepare(`INSERT INTO historical_balances
   (holder_id,asset_id,quantity,last_event_index,utxo_address_id) VALUES(?,?,?,?,?)
@@ -90,21 +101,22 @@ function emitConcentration(cutoff, cutoffIndex) {
       ON effective_holders(asset_id,quantity DESC,holder_id);
     CREATE TEMP TABLE cutoff_owners AS
       WITH ranked AS (
-        SELECT asset_id,issuer_id,
+        SELECT asset_id,issuer_id,divisible,
           ROW_NUMBER() OVER(PARTITION BY asset_id ORDER BY event_index) creator_rank,
           ROW_NUMBER() OVER(PARTITION BY asset_id ORDER BY event_index DESC) owner_rank
         FROM issuance_history WHERE block_index<=${cutoff.block}
       )
       SELECT asset_id,MAX(CASE WHEN creator_rank=1 THEN issuer_id END) creator_id,
-        MAX(CASE WHEN owner_rank=1 THEN issuer_id END) owner_id
+        MAX(CASE WHEN owner_rank=1 THEN issuer_id END) owner_id,
+        MAX(CASE WHEN owner_rank=1 THEN divisible END) divisible
       FROM ranked GROUP BY asset_id;
     CREATE UNIQUE INDEX temp.idx_cutoff_owners_asset ON cutoff_owners(asset_id);
     INSERT OR REPLACE INTO historical_concentration
       (cutoff_label,cutoff_block,asset_id,holders,total_quantity,top1_quantity,top5_quantity,
        creator_id,owner_id,creator_quantity,owner_quantity,
-       largest_non_creator_quantity,largest_non_owner_quantity)
+       largest_non_creator_quantity,largest_non_owner_quantity,divisible,normalized_supply)
     WITH ranked AS (
-      SELECT holder.asset_id,holder.holder_id,holder.quantity,owner.creator_id,owner.owner_id,
+      SELECT holder.asset_id,holder.holder_id,holder.quantity,owner.creator_id,owner.owner_id,owner.divisible,
         ROW_NUMBER() OVER(PARTITION BY holder.asset_id ORDER BY holder.quantity DESC,holder.holder_id) rank
       FROM effective_holders holder LEFT JOIN cutoff_owners owner ON owner.asset_id=holder.asset_id
     )
@@ -114,7 +126,8 @@ function emitConcentration(cutoff, cutoffIndex) {
       SUM(CASE WHEN holder_id=creator_id THEN quantity ELSE 0 END),
       SUM(CASE WHEN holder_id=owner_id THEN quantity ELSE 0 END),
       MAX(CASE WHEN holder_id<>creator_id OR creator_id IS NULL THEN quantity ELSE 0 END),
-      MAX(CASE WHEN holder_id<>owner_id OR owner_id IS NULL THEN quantity ELSE 0 END)
+      MAX(CASE WHEN holder_id<>owner_id OR owner_id IS NULL THEN quantity ELSE 0 END),
+      COALESCE(divisible,0),SUM(quantity)/CASE WHEN COALESCE(divisible,0)=1 THEN 1e8 ELSE 1 END
     FROM ranked GROUP BY asset_id;
     UPDATE historical_replay_state SET next_cutoff=${cutoffIndex + 1} WHERE singleton=1;
     DROP TABLE temp.effective_holders;
@@ -164,4 +177,3 @@ const report = {
 writeFileSync(resolve(root, "concentration.json"), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 db.close();
-
