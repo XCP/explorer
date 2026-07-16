@@ -23,7 +23,7 @@ export async function listMissingBitcoinFees(
   const result = await db
     .prepare(
       `SELECT tx_index,LOWER(HEX(tx_hash)) tx_hash FROM transactions
-       WHERE bitcoin_fee IS NULL AND (? IS NULL OR tx_index<?)
+       WHERE fee IS NULL AND (? IS NULL OR tx_index<?)
        ORDER BY tx_index DESC LIMIT ?`,
     )
     .bind(after, after, limit)
@@ -47,7 +47,7 @@ export function validBitcoinFeeRows(value: unknown): BitcoinFeeRow[] | null {
 export async function storeBitcoinFees(db: D1Database, rows: BitcoinFeeRow[]): Promise<number> {
   const results = await db.batch(
     rows.map((row) =>
-      db.prepare(`UPDATE transactions SET bitcoin_fee=? WHERE tx_hash=? AND bitcoin_fee IS NULL`)
+      db.prepare(`UPDATE transactions SET fee=? WHERE tx_hash=? AND fee IS NULL`)
         .bind(String(row.fee), hashToBytes(row.tx_hash)),
     ),
   );

@@ -45,7 +45,7 @@ admin.route("/", recoveryAdmin);
 // frontier lookups rather than repeatedly counted in full.
 admin.get("/admin/status", async (c) => c.json(await operationalStatus(c.env)));
 
-// Temporary, token-gated migration surface. Delete immediately after migration 0034 succeeds.
+// Token-gated historical fee maintenance. Remove after the Bitcoin-authoritative backfill completes.
 admin.get("/admin/bitcoin-fees", async (c) => {
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 5000, min: 1, max: 10_000 });
   const after = optionalBoundedInteger(c.req.query("after"), { min: 0 });
