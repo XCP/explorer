@@ -342,7 +342,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                   <div className="row">
                     <span className="k">Activity outlook</span>
                     <span className="amt mono">
-                      {item.activity_outlook.score} <span className="time">/100 relative rank</span>
+                      {item.activity_outlook.score} <span className="time">/100 · relative 180-day rank</span>
                     </span>
                   </div>
                 )}
