@@ -131,6 +131,16 @@ test("only the literal first transaction displays a transaction hash as its subj
   }
 });
 
+test("sale milestones threshold executed unit price rather than aggregate volume", () => {
+  for (const key of ["sale_1000_xcp", "sale_10000_xcp", "sale_1_btc", "sale_10_btc"]) {
+    const entry = FIRSTS_CATALOG.find((candidate) => candidate.key === key);
+    if (!entry) throw new Error(`missing price milestone ${key}`);
+    assert.match(entry.sql, /trade\.price>=/);
+    assert.equal(/trade\.total>=/.test(entry.sql), false);
+    assert.match(entry.label, /per unit$/);
+  }
+});
+
 test("joined dictionary predicates are self-contained inside earliest-block subqueries", () => {
   const numeric = FIRSTS_CATALOG.find((entry) => entry.key === "numeric");
   if (!numeric) throw new Error("numeric first is missing");

@@ -82,11 +82,12 @@ const earliestAddressUseSql = (addressPredicate: string, activationBlock: number
   WHERE tx.supported=1 AND tx.block_index>=${activationBlock} AND (${addressPredicate})
 ) SELECT b,t,ref,typ,tx FROM uses ORDER BY b,tx_index,ref LIMIT 1`;
 
-// Threshold milestones use completed Counterparty trades and total consideration, never unit/ask price.
-const earliestTradeThresholdSql = (currency: "BTC" | "XCP", total: number) => `SELECT
+// Price milestones use completed Counterparty trades and normalized consideration per asset unit.
+// `total` is aggregate trade volume and must not be mistaken for the executed unit price.
+const earliestTradePriceThresholdSql = (currency: "BTC" | "XCP", price: number) => `SELECT
   trade.block_index b,trade.block_time t,asset.asset ref,'asset' typ,LOWER(HEX(trade.tx_hash)) tx
   FROM trades trade JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
-  WHERE trade.currency='${currency}' AND trade.total>=${total} AND trade.tx_hash IS NOT NULL
+  WHERE trade.currency='${currency}' AND trade.price>=${price} AND trade.tx_hash IS NOT NULL
   ORDER BY trade.block_index,trade.block_time,trade.ref LIMIT 1`;
 
 /** Earliest valid send touching a dynamic address cohort. Each cohort address performs one indexed seek,
@@ -735,23 +736,23 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   // --- adoption and market thresholds ---
   {
     key: "sale_1000_xcp",
-    label: "First asset sold for 1,000 XCP",
-    sql: earliestTradeThresholdSql("XCP", 1000),
+    label: "First asset sold at 1,000 XCP per unit",
+    sql: earliestTradePriceThresholdSql("XCP", 1000),
   },
   {
     key: "sale_10000_xcp",
-    label: "First asset sold for 10,000 XCP",
-    sql: earliestTradeThresholdSql("XCP", 10000),
+    label: "First asset sold at 10,000 XCP per unit",
+    sql: earliestTradePriceThresholdSql("XCP", 10000),
   },
   {
     key: "sale_1_btc",
-    label: "First asset sold for 1 BTC",
-    sql: earliestTradeThresholdSql("BTC", 1),
+    label: "First asset sold at 1 BTC per unit",
+    sql: earliestTradePriceThresholdSql("BTC", 1),
   },
   {
     key: "sale_10_btc",
-    label: "First asset sold for 10 BTC",
-    sql: earliestTradeThresholdSql("BTC", 10),
+    label: "First asset sold at 10 BTC per unit",
+    sql: earliestTradePriceThresholdSql("BTC", 10),
   },
   {
     key: "sale_1000000_pepecash",

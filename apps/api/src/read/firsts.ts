@@ -37,7 +37,7 @@ async function resolveAssetSubjects(db: D1Database, records: Awaited<ReturnType<
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
-  cached(c, "firsts:catalog:complete-media", { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }, async () => {
+  cached(c, "firsts:catalog:unit-price-milestones", { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }, async () => {
     const records = await queryFirstRecords(c.env.CORE_DB);
     const displayNames = await resolveAssetSubjects(c.env.CORE_DB, records);
     const rows = FIRSTS_CATALOG.map((f, index): FirstRow | null => {

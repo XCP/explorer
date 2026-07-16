@@ -422,6 +422,9 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }
   assert.equal(keys.has("mime"), false, "migration-defaulted MIME values are not historical milestones");
+  const oneBtc = j.result.find((row: { key?: string }) => row.key === "sale_1_btc");
+  assert.equal(oneBtc?.ref, "MPBTC", "the BTC threshold must use executed unit price, not total trade volume");
+  assert.equal(oneBtc?.block, 290948);
   const stamp = j.result.find((row: { key?: string }) => row.key === "stamp");
   assert.deepEqual(
     stamp,
