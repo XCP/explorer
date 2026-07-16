@@ -5,7 +5,8 @@
 > `docs/reputation-recommendations-2026-07.md`. The graph recovers some withheld curation, especially with
 > temporally decayed positive edges, but that does not validate general trustworthiness or investment quality.
 > Product language therefore treats it as seeded **network standing**, not a reputation verdict. It is no longer
-> a hard Radar eligibility gate; its remaining Conviction weight is under explicit production ablation review.
+> a hard Radar eligibility gate, and its Conviction weight was removed after named production ablation showed
+> direct curated seeds dominating the graph-weighted leaders. It remains an exploratory network-standing surface.
 
 *2026-07-06. Deep-research harness: 106 agents, 25 falsifiable claims extracted from primary sources,
 24 confirmed under 3-vote adversarial verification. Primary sources: Gyöngyi et al. (TrustRank,

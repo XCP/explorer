@@ -37,7 +37,6 @@ import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#api/indexer/bitcoin-fees";
 import { projectCollectionMembership } from "#api/indexer/collection-membership";
-import { graphInfluenceEval } from "#api/indexer/graph-influence-eval";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -270,7 +269,6 @@ admin.post("/admin/build-scam-attribution", async (c) => {
 // Graph-reputation SCORECARD: objective success criteria for the current graph (recall, false-flags,
 // distrust contamination, watchlist coverage, tier sizes). Run after each rebuild; compare across variants.
 admin.get("/admin/graph-eval", async (c) => c.json(await graphEval(c.env)));
-admin.get("/admin/graph-influence", async (c) => c.json(await graphInfluenceEval(c.env)));
 
 // Classify Emblem vault contents + crack state (real vs scam sales). Loop until {wrapped:true} to sweep
 // the whole vault universe; bounded batch per call. Run before build-trades so the fold sees fresh classes.

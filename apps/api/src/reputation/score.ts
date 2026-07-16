@@ -70,8 +70,6 @@ function factorValue(f: Factor, row: FeatureRow, tip: number): number {
     const circ = Math.max(1, (supply * (100 - num(row.burned_pct))) / 100);
     return SCALARS.scarcityOffset - Math.log10(circ);
   }
-  // graph trust is a tiny PPR mass (~1e-4); scale ×1e6 into a usable log range for the Conviction signal.
-  if (f.key === "__graph_trust") return ln(num(row.graph_trust) * 1e6);
   switch (f.transform) {
     // address age: decays if idle, then WINSORIZED at SCALARS.addrAgeCap so pure longevity can't dominate (H2 lab).
     case "age":
@@ -197,7 +195,6 @@ export function rawSqlExpr(factors: Factor[], tip: number): string {
       terms.push(
         `${w}*(CASE WHEN COALESCE(supply,0)<=0 THEN 0 ELSE ${SCALARS.scarcityOffset} - LN(MAX(1.0,COALESCE(supply,0)*(100-COALESCE(burned_pct,0))/100.0))/LN(10) END)`,
       );
-    else if (f.key === "__graph_trust") terms.push(`${w}*LN(1+MAX(0,COALESCE(graph_trust,0)*1000000.0))`);
     else if (f.transform === "age")
       terms.push(`${w}*MIN(${SCALARS.addrAgeCap},((${tip}-COALESCE(first_block,${tip}))/${B}.0)*${adDk})`); // age transform winsorized (mirrors score.ts Math.min)
     else if (f.transform === "span") terms.push(`${w}*((COALESCE(last_block,0)-COALESCE(first_block,0))/${B}.0)`);

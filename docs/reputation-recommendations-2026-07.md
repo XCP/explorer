@@ -125,7 +125,12 @@ Removing the gate alone had no effect on the then-current Established top 40 bec
 
 The hard graph eligibility gate was subsequently removed: it excluded 4,409 of 10,478 otherwise eligible assets while changing none of the top 40, and held-out curation recovery is not sufficient evidence for categorical exclusion. The graph score factor remains pending the named ranking review because removing it materially changes the result.
 
-Decision: **do not make an unreviewed production ranking change**. The graph is both influential and unevaluated, so neither “leave it because it is small” nor “remove it because it is invalid” is justified without named review. Treat Radar as an experimental discovery surface, label graph contribution explicitly, and use the checked-in `/admin/graph-influence` ablation for review. The next model experiment must partition trust/distrust seeds and test propagation on held-out seeds, including a temporal-decay variant; current-state ranking agreement cannot validate the graph.
+Decision completed 2026-07-16: remove seeded graph standing from Conviction. The production-aligned ablation changed
+15 of 40 Established assets. Named review showed the graph-weighted leaders were dominated by direct curated seeds
+with graph mass around 47–83, while strong unseeded holder profiles received roughly 0.1–0.7. Combined with the
+absence of incremental predictive validation, this was circular curation amplification rather than independent
+evidence. The graph remains a separate exploratory network-standing surface. The completed ablation endpoint and
+test machinery were removed after the decision; this document retains the evidence.
 
 ### Five-fold held-out graph results
 

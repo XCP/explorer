@@ -300,13 +300,6 @@ export const CONVICTION_FACTORS: Factor[] = [
     why: "held by DEEP collectors (avg holdings-breadth of its holders) — serious collections, not one-offs",
   },
   {
-    key: "__graph_trust",
-    weight: 1.0,
-    transform: "log",
-    label: "network",
-    why: "network standing within the seeded collector/creator graph — relational evidence, not a trust verdict",
-  },
-  {
     key: "holders",
     weight: 0.5,
     transform: "log",
@@ -321,9 +314,10 @@ export const CONVICTION_FACTORS: Factor[] = [
     why: "PENALTY: dominated by one whale = not broad conviction, one holder can dump it",
   },
 ];
-// raw→0-100 anchors. Calibrated over 155k scored assets (low_quality=0, holders≥1): median 5.0, p90 17.6,
-// p99 25.6, max 31.2. A big cluster sits at ~5 (scarcity-only baseline for held-but-quiet cards) — floor 2.
-export const CONVICTION_PCT = { floor: 2.0, p50: 5.0, p90: 17.6, p99: 25.6, max: 31.5 };
+// Graph-free raw→0-100 anchors, calibrated 2026-07-16 over 155,462 clean assets with holders: p50 5.00,
+// p90 16.86, p99 22.56, max 28.10. Seeded graph standing was removed after named review showed circular
+// curation amplification and no demonstrated incremental predictive value.
+export const CONVICTION_PCT = { floor: 2.0, p50: 5.0, p90: 16.86, p99: 22.56, max: 28.1 };
 
 /* ---------- output mapping ---------- */
 // raw -> 0-100 percentile via piecewise-linear anchors. RECALIBRATE from /v2/reputation/review after any
