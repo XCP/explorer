@@ -39,7 +39,7 @@ import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#
 
 export const admin = new Hono<{ Bindings: Env }>();
 
-// every route is gated by the shared admin token (Bearer header, or deprecated ?token=).
+// Every route is gated by the shared admin Bearer token.
 admin.use("/admin/*", requireAdmin);
 admin.route("/", recoveryAdmin);
 

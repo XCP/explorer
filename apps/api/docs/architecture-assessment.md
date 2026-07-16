@@ -93,9 +93,9 @@ Priorities mean architectural importance, not permission to refactor everything 
 
 ### P0 — Secure and normalize the operational boundary
 
-The admin router accepts `Authorization: Bearer`, but retains a `?token=` fallback; `verify.ts` still
-uses query tokens directly. Query secrets leak into browser history, access logs, analytics, copied URLs,
-and intermediary telemetry. The fallback also duplicates authorization logic.
+Resolved: all operational and verification routes use the shared `requireAdmin` middleware and accept
+credentials only through `Authorization: Bearer`. Query-string credentials are rejected, preventing secrets
+from entering browser history, access logs, analytics, copied URLs, and intermediary telemetry.
 
 Target:
 
