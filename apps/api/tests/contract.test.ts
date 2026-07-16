@@ -365,6 +365,14 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     "detach",
     "pool_deposit",
     "pool_swap",
+    "priced_oracle",
+    "send_memo",
+    "sweep_memo",
+    "oracle_dispenser",
+    "description_lock",
+    "fairminter_premint",
+    "fairminter_commission",
+    "fairminter_burn_payment",
   ]) {
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }
@@ -378,9 +386,14 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
       date: "2023-03-07",
       ref: "A7337447728884561000",
       type: "asset",
+      tx: "17686488353b65b128d19031240478ba50f1387d0ea7e5f188ea7fda78ea06f4",
     },
     "the curated Stamp genesis must remain stable",
   );
+  for (const row of j.result as Array<{ key: string; type: string; tx: string }>) {
+    assert.match(row.tx, /^[0-9a-f]{64}$/, `${row.key} must link to its causal transaction`);
+    if (row.key !== "transaction") assert.notEqual(row.type, "tx", `${row.key} must display a meaningful subject`);
+  }
 });
 
 test("contract: GET /v2/collections/candidates — compact discovery projection", async (t) => {
