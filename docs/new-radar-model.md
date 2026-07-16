@@ -71,6 +71,12 @@ Venue diversity is corroborating evidence only. It has positive standalone assoc
 weight added to buyer breadth and active days produced no improvement in two temporal folds and regressed two.
 DEX quote-pair diversity remains untested until the analytical snapshot preserves quote-currency identity.
 
+Fairmint participation is primary-market evidence, not a completed secondary sale. Count every valid non-issuer
+Fairminter as intentional participation because even a zero-XCP-price Fairmint requires an on-chain Bitcoin
+transaction and its fee. Report XCP-paying Fairminters (`paid_quantity > 0`) separately. Do not add either count to
+the baseline weight yet: Fairmints currently cover only 247 assets, and the mature day-30/day-180 Fairmint subgroup
+contains 203 assets but only one strict later broad-market outcome. That is insufficient for a stable coefficient.
+
 ## Evidence for the baseline
 
 The cutoff-safe evaluator reconstructs exact holder state from 7.16 million ledger events and uses actual Bitcoin

@@ -29,6 +29,7 @@
     "snapshot:radar-issuances": "node ops/build-radar-issuance-history.mjs",
     "snapshot:radar-concentration": "node ops/build-radar-concentration.mjs",
     "snapshot:radar-trades": "node ops/build-radar-trade-history.mjs",
+    "snapshot:radar-fairmints": "node ops/build-radar-fairmint-history.mjs",
     "evaluate:radar-concentration": "node ops/evaluate-radar-concentration.mjs",
     "snapshot:radar-holder-outcomes": "node ops/build-radar-holder-outcomes.mjs",
     "evaluate:radar-holder-outcomes": "node ops/evaluate-radar-holder-outcomes.mjs",

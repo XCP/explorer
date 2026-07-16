@@ -254,6 +254,11 @@ ledger events were not present, and prior analytical runs remain auditable witho
 - Raw issuer prior-asset count is neutral to strongly harmful in most folds. Prolific issuance is not issuer quality;
   any issuer feature must measure prior outcomes, retention, and market formation rather than output volume.
 - Named review exposes mass-airdrop false positives with roughly 9,400 holders but only one or two paid buyers.
+- Fairmint history contains 190,292 valid events across 247 assets and 3,404 distinct participating addresses. Only
+  104 events across 20 assets paid an XCP price; the other events still required a Bitcoin transaction and fee.
+  A universal 20% primary-adoption weight regressed whole-ranking AP and NDCG in every temporal fold. Within the
+  203 mature Fairmint assets, only one reached the strict later broad-market outcome, so Fairmint breadth remains
+  displayed primary-adoption evidence rather than a fitted weight pending forward data.
   Holder breadth must never stand in for acquisition breadth. Short launch bursts are another distinct failure mode.
 - Late-period buyers and first-to-last market span add useful persistence evidence, particularly in the 2023-2024
   fold, where late buyer breadth reaches 61% precision at 100 for a later broad market. They do not dominate every

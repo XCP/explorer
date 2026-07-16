@@ -15,16 +15,23 @@ const observationDays = Number(arg("observation-days", "30"));
 const outcomeDays = 180;
 const marketOutcomeStartDays = Number(arg("market-outcome-start-days", String(observationDays)));
 if (![7, 30, 90].includes(observationDays)) throw new Error("observation-days must be 7, 30, or 90");
-if (!Number.isInteger(marketOutcomeStartDays) || marketOutcomeStartDays < observationDays || marketOutcomeStartDays >= outcomeDays)
+if (
+  !Number.isInteger(marketOutcomeStartDays) ||
+  marketOutcomeStartDays < observationDays ||
+  marketOutcomeStartDays >= outcomeDays
+)
   throw new Error("market-outcome-start-days must be at least the observation age and less than 180");
 const ownership = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
+const fairmints = JSON.parse(readFileSync(resolve(root, "fairmint-history.json"), "utf8"));
+if (!fairmints.complete) throw new Error("Fairmint history snapshot is incomplete");
 for (const age of [observationDays, outcomeDays]) {
   const receipt = JSON.parse(readFileSync(resolve(root, `new-features-${age}d.json`), "utf8"));
   if (!receipt.complete) throw new Error(`${age}-day New Radar features are incomplete`);
 }
 const db = new DatabaseSync(resolve(root, "ownership.sqlite"), { readOnly: true });
 const rows = db
-  .prepare(`WITH issued AS (
+  .prepare(
+    `WITH issued AS (
     SELECT early.*,
       COUNT(*) OVER(PARTITION BY early.issuer_id ORDER BY early.issued_at,early.asset_id
         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) issuer_prior_assets
@@ -43,6 +50,21 @@ const rows = db
     FROM issued LEFT JOIN market_trades trade ON trade.asset_id=issued.asset_id
       AND trade.block_time>=issued.issued_at AND trade.block_time<=issued.observed_at
       AND (trade.buyer_id IS NULL OR trade.seller_id IS NULL OR trade.buyer_id<>trade.seller_id)
+    GROUP BY issued.asset_id
+  ), early_primary AS (
+    SELECT issued.asset_id,COUNT(mint.event_index) early_fairmints,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>issued.issuer_id THEN mint.source_id END) early_minters,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>issued.issuer_id AND CAST(mint.paid_quantity AS INTEGER)>0
+        THEN mint.source_id END) early_paid_minters,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>issued.issuer_id
+        THEN strftime('%Y-%m-%d',mint.block_time,'unixepoch') END) early_mint_days,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>issued.issuer_id
+        AND mint.block_time>=issued.issued_at+${Math.ceil(observationDays / 2)}*86400
+        THEN mint.source_id END) late_minters,
+      SUM(CASE WHEN mint.source_id<>issued.issuer_id THEN CAST(mint.earn_quantity AS REAL) ELSE 0 END) early_minted,
+      SUM(CASE WHEN mint.source_id<>issued.issuer_id THEN CAST(mint.paid_quantity AS REAL) ELSE 0 END) early_xcp_paid
+    FROM issued LEFT JOIN fairmint_history mint ON mint.asset_id=issued.asset_id
+      AND mint.block_time>=issued.issued_at AND mint.block_time<=issued.observed_at
     GROUP BY issued.asset_id
   ), future_market AS (
     SELECT issued.asset_id,COUNT(trade.trade_rowid) future_trades,
@@ -72,17 +94,30 @@ const rows = db
   FROM issued JOIN radar_new_cohort_members later_member ON later_member.asset_id=issued.asset_id
     AND later_member.age_days=${outcomeDays} AND later_member.frontier_event_index=${Number(ownership.frontier_event_index)}
   JOIN radar_new_features later ON later.asset_id=issued.asset_id AND later.age_days=${outcomeDays}
-  JOIN early_market USING(asset_id) JOIN future_market USING(asset_id)
+  JOIN early_market USING(asset_id) JOIN early_primary USING(asset_id) JOIN future_market USING(asset_id)
   LEFT JOIN retention ON retention.asset_id=issued.asset_id
-  WHERE issued.raw_supply>0 AND issued.holders>0`)
+  WHERE issued.raw_supply>0 AND issued.holders>0`,
+  )
   .all()
   .map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value)])));
 db.close();
 
 const folds = [
-  { label: "2016-2019", start: Date.parse("2016-01-01T00:00:00Z") / 1000, end: Date.parse("2020-01-01T00:00:00Z") / 1000 },
-  { label: "2020-2022", start: Date.parse("2020-01-01T00:00:00Z") / 1000, end: Date.parse("2023-01-01T00:00:00Z") / 1000 },
-  { label: "2023-2024", start: Date.parse("2023-01-01T00:00:00Z") / 1000, end: Date.parse("2025-01-01T00:00:00Z") / 1000 },
+  {
+    label: "2016-2019",
+    start: Date.parse("2016-01-01T00:00:00Z") / 1000,
+    end: Date.parse("2020-01-01T00:00:00Z") / 1000,
+  },
+  {
+    label: "2020-2022",
+    start: Date.parse("2020-01-01T00:00:00Z") / 1000,
+    end: Date.parse("2023-01-01T00:00:00Z") / 1000,
+  },
+  {
+    label: "2023-2024",
+    start: Date.parse("2023-01-01T00:00:00Z") / 1000,
+    end: Date.parse("2025-01-01T00:00:00Z") / 1000,
+  },
   { label: "2025-2026", start: Date.parse("2025-01-01T00:00:00Z") / 1000, end: Infinity },
 ];
 const outcomes = {
@@ -130,15 +165,15 @@ const evaluations = folds.map((fold) => {
   const buyer = percentileRanks(cohort, "early_buyers");
   const days = percentileRanks(cohort, "early_active_days");
   const venue = percentileRanks(cohort, "early_venues");
+  const minters = percentileRanks(cohort, "early_minters");
+  const paidMinters = percentileRanks(cohort, "early_paid_minters");
+  const mintDays = percentileRanks(cohort, "early_mint_days");
   const lateBuyer = percentileRanks(cohort, "late_buyers");
   const span = percentileRanks(cohort, "early_market_span_days");
   const safety = percentileRanks(cohort, "top1_share");
   const issuer = percentileRanks(cohort, "issuer_prior_assets");
   const challenger = (row) =>
-    holder.get(row.id) * 0.35 +
-    buyer.get(row.id) * 0.3 +
-    days.get(row.id) * 0.2 +
-    (1 - safety.get(row.id)) * 0.15;
+    holder.get(row.id) * 0.35 + buyer.get(row.id) * 0.3 + days.get(row.id) * 0.2 + (1 - safety.get(row.id)) * 0.15;
   const persistentChallenger = (row) =>
     holder.get(row.id) * 0.2 +
     buyer.get(row.id) * 0.2 +
@@ -150,19 +185,21 @@ const evaluations = folds.map((fold) => {
     ["paid_buyer_breadth", (row) => buyer.get(row.id)],
     ["active_days", (row) => days.get(row.id)],
     ["venue_diversity", (row) => venue.get(row.id)],
+    ["primary_minter_breadth", (row) => minters.get(row.id)],
+    ["paid_primary_minter_breadth", (row) => paidMinters.get(row.id)],
+    ["primary_mint_days", (row) => mintDays.get(row.id)],
     ["late_paid_buyer_breadth", (row) => lateBuyer.get(row.id)],
     ["early_market_span", (row) => span.get(row.id)],
     ["distribution_safety", (row) => 1 - safety.get(row.id)],
     ["issuer_prior_assets", (row) => issuer.get(row.id)],
     ["market_core", (row) => buyer.get(row.id) * 0.5 + days.get(row.id) * 0.5],
     [
-      "market_core_plus_venue",
-      (row) => buyer.get(row.id) * 0.45 + days.get(row.id) * 0.45 + venue.get(row.id) * 0.1,
+      "market_core_plus_primary",
+      (row) =>
+        buyer.get(row.id) * 0.4 + days.get(row.id) * 0.4 + paidMinters.get(row.id) * 0.1 + mintDays.get(row.id) * 0.1,
     ],
-    [
-      "early_adoption_challenger",
-      challenger,
-    ],
+    ["market_core_plus_venue", (row) => buyer.get(row.id) * 0.45 + days.get(row.id) * 0.45 + venue.get(row.id) * 0.1],
+    ["early_adoption_challenger", challenger],
     ["persistent_adoption_challenger", persistentChallenger],
   ];
   const review = [...cohort]
@@ -175,6 +212,9 @@ const evaluations = folds.map((fold) => {
       early_buyers: row.early_buyers,
       early_active_days: row.early_active_days,
       early_venues: row.early_venues,
+      early_minters: row.early_minters,
+      early_paid_minters: row.early_paid_minters,
+      early_mint_days: row.early_mint_days,
       late_buyers: row.late_buyers,
       early_market_span_days: row.early_market_span_days,
       top1_share: row.top1_share,
@@ -210,5 +250,8 @@ const report = {
   evaluations,
 };
 const outcomeSuffix = marketOutcomeStartDays === observationDays ? "" : `-market-from-${marketOutcomeStartDays}d`;
-writeFileSync(resolve(root, `new-evaluation-${observationDays}d${outcomeSuffix}.json`), `${JSON.stringify(report, null, 2)}\n`);
+writeFileSync(
+  resolve(root, `new-evaluation-${observationDays}d${outcomeSuffix}.json`),
+  `${JSON.stringify(report, null, 2)}\n`,
+);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
