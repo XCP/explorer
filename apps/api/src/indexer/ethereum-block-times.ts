@@ -9,13 +9,7 @@ const D1_BATCH = 100;
 
 export async function backfillEthereumBlockTimes(env: Env): Promise<Record<string, unknown>> {
   if (!env.ALCHEMY_KEY) return { skipped: "no ALCHEMY_KEY" };
-  const rows = await env.CORE_DB.prepare(
-    `SELECT DISTINCT sale.block_number
-       FROM emblem_sales sale LEFT JOIN ethereum_blocks block
-         ON block.block_number=sale.block_number
-      WHERE sale.block_number IS NOT NULL AND block.block_number IS NULL
-      ORDER BY sale.block_number LIMIT ?`,
-  )
+  const rows = await env.CORE_DB.prepare(`SELECT block_number FROM ethereum_block_queue ORDER BY block_number LIMIT ?`)
     .bind(BLOCKS_PER_RUN)
     .all<{ block_number: number }>();
   const blockNumbers = rows.results.map((row) => row.block_number);
