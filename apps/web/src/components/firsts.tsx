@@ -9,11 +9,11 @@ import { short, commas } from "@/lib/format";
 import type { FirstRow } from "@xcp/shared/stats";
 
 // The human-readable subject behind a first. The parent link always points to the causal transaction.
-function Entity({ type, ref }: Pick<FirstRow, "type" | "ref">) {
+function Entity({ type, ref, icon_asset }: Pick<FirstRow, "type" | "ref" | "icon_asset">) {
   if (type === "asset")
     return (
       <span className="flex min-w-0 items-center gap-1.5">
-        <AssetIcon asset={ref} size={16} />
+        <AssetIcon asset={icon_asset ?? ref} size={16} />
         <span className="truncate">{ref}</span>
       </span>
     );
@@ -112,7 +112,7 @@ export function Firsts() {
                       href={`/tx/${r.tx}`}
                       className="block min-w-0 overflow-hidden !text-zinc-200"
                     >
-                      <Entity type={r.type} ref={r.ref} />
+                      <Entity type={r.type} ref={r.ref} icon_asset={r.icon_asset} />
                     </Link>
                   </span>
                 </li>

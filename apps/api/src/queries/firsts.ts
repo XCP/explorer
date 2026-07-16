@@ -25,6 +25,7 @@ export interface FirstQueryRow {
   ref: string;
   typ: FirstRow["type"];
   tx: string;
+  icon_asset?: string | null;
 }
 
 // Every query returns the same aliases: b, t, ref, typ, and tx. See docs/adding-firsts.md.
@@ -45,7 +46,7 @@ const earliestEventSql = (
 };
 // asset-property firsts read the ISSUANCES event (first valid issuance that set the property), not assets state.
 const earliestValidIssuanceSql = (extra: string) =>
-  earliestEventSql("issuances", "asset.asset ref,'asset' typ", {
+  earliestEventSql("issuances", "COALESCE(x.asset_longname,asset.asset) ref,'asset' typ,asset.asset icon_asset", {
     where: extra,
     valid: true,
     by: "x.tx_index,x.event_index",
@@ -56,7 +57,7 @@ const earliestValidIssuanceSql = (extra: string) =>
 // lock row's quantity misses assets issued across several transactions; looking at today's asset state
 // lets later issuance/destruction rewrite history.
 const earliestLockedSupplySql = (supply: number, extra: string) => `SELECT x.block_index b,x.block_time t,
-  asset.asset ref,'asset' typ,LOWER(HEX(x.tx_hash)) tx
+  COALESCE(x.asset_longname,asset.asset) ref,'asset' typ,LOWER(HEX(x.tx_hash)) tx,asset.asset icon_asset
   FROM issuances x JOIN asset_dictionary asset ON asset.asset_id=x.asset_id
   WHERE x.status NOT LIKE 'invalid%' AND x.locked=1 AND (${extra})
     AND COALESCE((SELECT SUM(CAST(i.quantity AS INTEGER)) FROM issuances i

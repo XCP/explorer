@@ -14,6 +14,9 @@ Every query must return exactly these aliases:
 | `typ` | Subject type: `asset`, `address`, `pair`, `broadcast`, `summary`, `block`, or `tx` |
 | `tx` | Lowercase, 64-character causal Bitcoin transaction hash |
 
+Asset rows may additionally return `icon_asset`. Use it when `ref` is a readable subasset longname but
+the CDN must receive the canonical numeric asset name.
+
 Only the literal **First transaction** may use a transaction hash as `ref`. Every other row displays the thing that was first and links that subject to its causal transaction.
 
 ## Preferred query builders

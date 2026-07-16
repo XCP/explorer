@@ -104,4 +104,5 @@ export interface FirstRow {
   ref: string; // display + link id
   type: "block" | "tx" | "address" | "asset" | "pair" | "broadcast" | "summary";
   tx: string; // transaction that established the milestone
+  icon_asset?: string | null; // canonical asset name when ref is a readable subasset longname
 }
