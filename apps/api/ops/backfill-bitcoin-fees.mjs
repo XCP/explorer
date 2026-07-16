@@ -11,11 +11,13 @@ const API = arg("api", "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
 // Bitcoin-indexed integer fee; production maintenance continues to use the configured Counterparty endpoint.
 const ELECTRS = arg("electrs", "https://mempool.space/api").replace(/\/$/, "");
 // Resolve local credentials relative to this script so unattended runners do not depend on their working directory.
-const devToken = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8")
-  .split(/\r?\n/)
-  .find((line) => line.startsWith("ADMIN_TOKEN="))
-  ?.slice("ADMIN_TOKEN=".length)
-  .replace(/^"|"$/g, "");
+const devToken = process.env.ADMIN_TOKEN
+  ? undefined
+  : readFileSync(new URL("../.dev.vars", import.meta.url), "utf8")
+      .split(/\r?\n/)
+      .find((line) => line.startsWith("ADMIN_TOKEN="))
+      ?.slice("ADMIN_TOKEN=".length)
+      .replace(/^"|"$/g, "");
 const TOKEN = process.env.ADMIN_TOKEN ?? devToken ?? readFileSync(arg("token-file", "admin.tok"), "utf8").trim();
 const PAGE_SIZE = Number(arg("page-size", "500"));
 const CONCURRENCY = Number(arg("concurrency", "2"));
