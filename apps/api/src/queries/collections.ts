@@ -35,7 +35,7 @@ export function listCollectionProfiles(db: D1Database): Promise<CollectionProfil
        SELECT tag,COUNT(DISTINCT source) sources,GROUP_CONCAT(DISTINCT source) source_list
        FROM collection_membership_evidence WHERE source IN (${SOURCES}) GROUP BY tag
      ), metadata AS (
-       SELECT tag,MIN(CASE WHEN meta IS NOT NULL THEN meta END) meta
+       SELECT tag,MIN(CASE WHEN json_valid(meta) THEN meta END) meta
        FROM tags WHERE source IN (${SOURCES}) GROUP BY tag
      )
      SELECT base.tag,
