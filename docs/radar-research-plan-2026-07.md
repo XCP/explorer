@@ -169,3 +169,25 @@ Decision: keep concentration and normalized supply as explicit facts and potenti
 the main activity ranking based on this experiment. Next evaluate concentrated-holder and creator selling outcomes,
 then build the dislocation price reference; those outcomes test downside risk rather than incorrectly asking a
 risk feature to predict demand.
+
+### Dominant-holder outcome
+
+The exact ledger was replayed a second time to track the cutoff's dominant, creator, owner, and largest non-creator
+holder to the 180-day horizon. `npm run evaluate:radar-holder-outcomes` evaluates inventory reduction and separately
+reports directly observed sales. Inventory reduction is potential sell pressure, not proof of sale; direct sales
+undercount origin-funded dispensers because the normalized trade seller may be the dispenser source.
+
+- A dominant holder reduced inventory at all in only 3.5–9.7% of established-market assets, depending on band and
+  cutoff; the median reduction is zero in every band.
+- Dominant holders owning at least 50% reduced inventory by at least 10% in 1.5–3.7% of assets. This is not higher
+  than the less-concentrated bands and therefore does not show that concentrated holders are more likely to act.
+- Creator-dominant assets had lower material-reduction rates than non-creator-dominant assets in the first two
+  folds (3.47% vs 3.94%; 1.87% vs 2.72%), but the ordering reverses in the newest fold (1.95% vs 0.78%). Creator
+  identity alone is not a stable exception policy.
+- Directly observed dominant-holder sales occur in only about 0.4–0.9% of the cohort and are a lower bound because
+  of dispenser attribution.
+
+Decision: concentration is an **exposure/severity** fact—how much supply one actor could move—not a demonstrated
+probability that the actor will sell. Display it and permit risk filtering, but do not claim “likely dump.” A creator
+exception should require prior behavior (holding duration, historical net outflows, and observed selling) and remain
+an explanation or penalty adjustment until it survives temporal validation.
