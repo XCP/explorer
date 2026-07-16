@@ -484,3 +484,80 @@ USD-value coverage is stable across these cohorts: 95.46–95.59% of assets have
 Decision: do not promote either challenger into the production asset rating yet. Historical realized value belongs in the descriptive **market evidence** axis. A predictive **activity outlook** should remain separate, led by active-month breadth and recency, and must be monitored for temporal drift. A single fixed composite should not be optimized simultaneously for historical significance and future activity.
 
 Future evaluation reports must include per-cutoff results and a worst-cutoff regression gate. An average improvement cannot hide a recent regime failure.
+
+## Tag and collection audit
+
+The reproducible current-state audit is `npm run audit:tags -w xcp-api`. It reports source ownership, multi-source collection slugs, and robust collection profiles. It is descriptive and performs no writes.
+
+### Live tag provenance
+
+The canonical table contains 847,401 tag rows across ten sources:
+
+| Source     |    Rows | Distinct tags | Entities | Metadata rows |
+| ---------- | ------: | ------------: | -------: | ------------: |
+| computed   | 544,169 |            29 |  427,852 |             0 |
+| protocol   | 174,482 |             4 |  100,041 |             0 |
+| media      |  93,030 |             2 |   92,931 |             0 |
+| collection |  20,400 |            19 |   20,391 |         7,990 |
+| artist     |   7,977 |         1,436 |    7,977 |         7,977 |
+| tokenscan  |   5,791 |            51 |    5,723 |         5,791 |
+| digirare   |   1,080 |             4 |    1,080 |         1,080 |
+| manual     |     315 |             5 |      315 |           309 |
+| issuer     |     138 |             3 |      138 |           138 |
+| curated    |       9 |             1 |        9 |             0 |
+
+Missing metadata is not inherently a defect for deterministic computed/protocol/media facts: their rule and source code are the provenance. Collection, artist, directory, manual, and issuer sources should carry source-specific metadata.
+
+### Structural provenance limitation
+
+`tags` is keyed by `(entity_id, tag)`. Consequently, two sources cannot independently retain the same claim. The upsert policies are also asymmetric: Tokenscan preserves a row owned by another source, while pepe.wtf collection, manual, and issuer writers can replace its source. This produces a useful canonical tag but loses corroboration and disagreement evidence.
+
+Nine canonical collection slugs currently contain members owned by multiple sources:
+
+| Collection        | Sources | Canonical members |
+| ----------------- | ------: | ----------------: |
+| dank-directory    |       2 |             2,460 |
+| fake-commons      |       2 |             1,964 |
+| fake-rare         |       2 |               914 |
+| bitcorn           |       3 |               370 |
+| the-pepe-project  |       2 |               290 |
+| spells-of-genesis |       2 |               270 |
+| rare-coco         |       2 |               220 |
+| 17art             |       2 |               218 |
+| force-of-will     |       2 |               161 |
+
+These counts are unions, not corroboration counts. We cannot currently tell whether two sources both asserted one member after one source won the canonical row.
+
+Recommended storage shape:
+
+1. Keep `tags` as the small canonical read projection.
+2. Add a source-evidence relation keyed by `(entity_id, tag, source)` for externally curated/manual/issuer collection claims only; do not duplicate the 800k deterministic facts unnecessarily.
+3. Make every collection writer own and reconcile only its evidence rows.
+4. Derive canonical collection tags from evidence using one documented priority policy. Suggested initial order: manual > issuer > pepe.wtf collection > Digirare > Tokenscan.
+5. Expose `sources`, `source_count`, and source metadata on collection membership/profile reads.
+6. Backfill by replaying the five existing collection writers; do not infer lost corroboration from current canonical rows.
+
+This is normalization, not compatibility machinery: evidence is the source-of-truth relation; `tags` remains the efficient canonical projection used by reads.
+
+### Collection profile findings
+
+A collection should not receive a quality grade from its maximum card score or total volume. Current profiles demonstrate why:
+
+- Memorychain: 152 members, 100% market coverage, median 49.5 holders and 36 market events, only 2.7% of events and 14.9% of measured value concentrated in its top asset.
+- Rare Pepe: 1,774 members, 98.5% market coverage, median 50 holders and 31 events, but 37.4% of events come from one asset.
+- Based Intellectuals: 58 members, 98.3% market coverage, median 49 holders and 59 events, but one issuer. This is not bad; it is a different creator structure that must be shown rather than penalized automatically.
+- Counterparty Bitbowl: 32 members and 100% market coverage, but 91.1% of measured peak-value sum is concentrated in one card.
+- Gameicon: 19 members and 100% market coverage, but 99.5% value concentration.
+- Stampunks: 9,999 members but only 14.4% have a market; median holders is 1 and median events is 0. It behaves like a directory/superset, not a uniformly established collection.
+
+Recommended collection presentation:
+
+- membership evidence: source count, source names, and coverage;
+- breadth: member count, held-member share, market-member share;
+- typical member: median holders, median market events, median market-evidence tier;
+- concentration: top-member event/value shares;
+- creator structure: distinct issuers and largest-issuer share, displayed descriptively;
+- evidence strength: limited/moderate/strong based on member count and market coverage;
+- integrity warnings separately.
+
+Do not compute a single collection grade until historical membership snapshots or source-effective dates support leakage-safe future-breadth validation. Current curated membership can be used for descriptive profiles, not back-projected as if it were known at old cutoffs.

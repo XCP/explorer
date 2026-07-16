@@ -12,8 +12,7 @@
  *
  * The JSON report is written to stdout. Redirect it to a dated artifact when establishing a release baseline.
  */
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 
 export const HORIZON_DAYS = 180;
 export const CUTOFFS = [
@@ -207,20 +206,6 @@ ORDER BY label,predictor`;
 
 export const ADDRESS_ACTIVITY_BASELINE_SQL = addressActivityBaselineSql();
 
-function stripAnsi(value) {
-  return value.replace(/\u001b\[[0-9;]*m/g, "");
-}
-
-export function parseWranglerResults(stdout) {
-  const clean = stripAnsi(stdout);
-  const start = clean.indexOf("[\n  {");
-  if (start < 0) throw new Error(`Wrangler did not return a JSON result: ${clean.slice(-500)}`);
-  const payload = JSON.parse(clean.slice(start));
-  const statement = payload[0];
-  if (!statement?.success || !Array.isArray(statement.results)) throw new Error("D1 baseline query failed");
-  return { rows: statement.results, meta: statement.meta ?? {} };
-}
-
 export function validateLeakage(rows) {
   const cutoffs = new Map(CUTOFFS.map(([label, cutoff]) => [label, cutoff]));
   for (const row of rows) {
@@ -323,25 +308,12 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
   };
 }
 
-function execute(wrangler, sql) {
-  const result = spawnSync(process.execPath, [wrangler, "d1", "execute", "xcpio-core", "--remote", "--command", sql], {
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  if (result.status !== 0)
-    throw new Error(result.error?.message || result.stderr || result.stdout || `Wrangler exited ${result.status}`);
-  return parseWranglerResults(result.stdout);
-}
-
 function run() {
-  const wrangler = fileURLToPath(new URL("../../../node_modules/wrangler/bin/wrangler.js", import.meta.url));
   const assetsOnly = process.argv.includes("--assets-only");
   const addressesOnly = process.argv.includes("--addresses-only");
   if (assetsOnly && addressesOnly) throw new Error("Choose at most one evaluation scope");
-  const asset = addressesOnly ? { rows: [], meta: {} } : execute(wrangler, ASSET_MARKET_BASELINE_SQL);
-  const addressParts = assetsOnly
-    ? []
-    : CUTOFFS.map((cutoff) => execute(wrangler, addressActivityBaselineSql([cutoff])));
+  const asset = addressesOnly ? { rows: [], meta: {} } : executeRemoteD1(ASSET_MARKET_BASELINE_SQL);
+  const addressParts = assetsOnly ? [] : CUTOFFS.map((cutoff) => executeRemoteD1(addressActivityBaselineSql([cutoff])));
   const addressRows = addressParts.flatMap((part) => part.rows);
   const addressMeta = {
     rows_read: addressParts.reduce((sum, part) => sum + Number(part.meta.rows_read ?? 0), 0),
