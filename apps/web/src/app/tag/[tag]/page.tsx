@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ tag: stri
   const d = await loadTag(tag);
   if (!d) return { title: "Not found" };
   const members = d.entity_type === "asset" ? `${commas(d.n_assets)} assets` : `${commas(d.n_addresses)} addresses`;
-  const description = `Counterparty "${d.tag}" tag — ${members}${d.median_tier ? `, median market-evidence tier ${d.median_tier}` : ""}.`;
+  const description = `Counterparty "${d.tag}" tag — ${members}${d.median_tier ? `, median rating ${d.median_tier}` : ""}.`;
   return { title: `${tag} tag`, description, openGraph: { title: `${tag} | XCP.io`, description } };
 }
 
@@ -42,7 +42,7 @@ export default async function TagPage({ params }: { params: Promise<{ tag: strin
         <h1 className="text-xl font-semibold text-zinc-100 break-all">{d.tag}</h1>
         <p className="text-sm text-zinc-400 mt-1">
           A <span className="text-zinc-300">{d.source}</span> {d.entity_type} tag. The median summarizes the historical
-          market evidence of a typical member — realized value, breadth, and durability — not price or future return.
+          rating of a typical member — realized value, breadth, and durability — not price or future return.
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

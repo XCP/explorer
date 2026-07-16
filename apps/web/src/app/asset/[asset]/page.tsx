@@ -65,7 +65,7 @@ const fullDate = (sec?: number | null) => {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 };
 
-// The stat strip is identity-first, followed by current market facts and historical Market Evidence.
+// The stat strip is identity-first, followed by current market facts and the asset Rating.
 function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[] {
   const stats: SectionStat[] = [];
   // Circulating = supply − burned (the derived circulating_normalized when present, else compute it).
@@ -100,7 +100,7 @@ function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[
   }
   if (item.quality)
     stats.push({
-      label: "Market evidence",
+      label: "Rating",
       value: item.quality.score ?? "—",
       detail: item.quality.tier,
       hideOnMobile: true,
