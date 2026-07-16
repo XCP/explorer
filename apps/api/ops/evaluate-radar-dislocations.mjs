@@ -21,7 +21,8 @@ function cohort(cutoff) {
     .prepare(`WITH priced AS MATERIALIZED (
       SELECT asset_id,block_time,buyer_id,usd_value/quantity unit_usd,
         strftime('%Y-%m',block_time,'unixepoch') month
-      FROM market_trades WHERE asset_id IS NOT NULL AND block_time>0 AND quantity>0 AND usd_value>0
+      FROM market_trades WHERE venue IN ('dispense','dex')
+        AND asset_id IS NOT NULL AND block_time>0 AND quantity>0 AND usd_value>0
         AND block_time>=? AND block_time<=?
     ), ref_ranked AS (
       SELECT *,ROW_NUMBER() OVER(PARTITION BY asset_id,month ORDER BY unit_usd) rank,
@@ -150,7 +151,10 @@ const report = {
   reference: "median of monthly median unit-USD prices from 730 to 90 days before cutoff",
   current: "median unit-USD completed sale in the final 90 days",
   outcome: "median unit-USD completed sale in the following 180 days",
-  caveat: "Completed-sale regimes validate the thesis but are not historical executable asks.",
+  caveats: [
+    "Completed-sale regimes validate the thesis but are not historical executable asks.",
+    "Emblem sales are excluded because the vault sale feed does not expose Counterparty asset quantity; treating each vault as one asset unit can distort per-unit prices.",
+  ],
   evaluations,
 };
 writeFileSync(resolve(root, "dislocation-evaluation.json"), `${JSON.stringify(report, null, 2)}\n`);

@@ -31,6 +31,7 @@
     "snapshot:radar-holder-outcomes": "node ops/build-radar-holder-outcomes.mjs",
     "evaluate:radar-holder-outcomes": "node ops/evaluate-radar-holder-outcomes.mjs",
     "evaluate:radar-dislocations": "node ops/evaluate-radar-dislocations.mjs",
+    "audit:current-dislocations": "node ops/audit-current-dislocations.mjs",
     "evaluate:graph-heldout": "node --max-old-space-size=2048 ops/evaluate-graph-heldout.mjs",
     "audit:tags": "node ops/audit-tags-collections.mjs",
     "audit:radar": "node ops/audit-radar-theses.mjs",
