@@ -401,3 +401,37 @@ A proposed model or weight change ships only when a checked-in evaluation report
 8. updated public methodology and calibration snapshot.
 
 Initial numeric acceptance thresholds should be set after generating the baseline distributions; choosing them now would be another unsupported judgment. Once baselines exist, freeze the thresholds before testing challenger models.
+
+## First historical baseline results
+
+The initial leakage-safe evaluator (`npm run evaluate:reputation -w xcp-api`) uses three cutoffs—2025-01-01, 2025-07-01, and 2026-01-01—and a 180-day outcome window. Features stop at the cutoff; outcomes begin strictly after it. Current signal snapshots are prohibited.
+
+### Asset market persistence
+
+Eligible population: assets with at least one canonical trade by the cutoff. Future return means at least one canonical trade in the following 180 days; persistence means trading in at least two future calendar months; buyer breadth means at least two future distinct buyers.
+
+| Predictor       | Return lift range | Persistence lift range | Buyer-breadth lift range |
+| --------------- | ----------------: | ---------------------: | -----------------------: |
+| Active months   |        6.13–7.66× |             8.57–9.01× |               8.55–8.69× |
+| Recency         |        5.88–6.46× |             7.74–8.69× |               7.35–8.43× |
+| Sales           |        5.51–6.79× |             7.78–8.22× |               7.74–7.80× |
+| Distinct buyers |        5.41–6.25× |             7.61–8.04× |               7.23–7.74× |
+| Realized USD    |        5.08–6.87× |             6.61–7.97× |               6.99–7.73× |
+
+Only 4.76–7.43% of eligible assets returned in each future window. Prior active-month breadth is the strongest and most stable simple predictor. Historical realized USD is not the strongest predictor of future market persistence, especially in the newest cutoff. This supports displaying historical market evidence separately from expected continued activity.
+
+### Address return activity
+
+Eligible population: addresses that originated at least one supported Counterparty transaction by the cutoff. Incoming activity is excluded so an unsolicited transfer cannot create reputation. Future return means originating another supported transaction in the following 180 days; persistence means activity in at least two future months.
+
+| Predictor         | Return lift range | Persistence lift range |
+| ----------------- | ----------------: | ---------------------: |
+| Recency           |        7.35–8.57× |             8.85–9.39× |
+| Active months     |        5.36–6.47× |             6.24–7.67× |
+| Transaction count |        4.79–5.23× |             6.41–6.55× |
+
+Only 0.56–1.01% of eligible addresses returned in each future window. Recency is the baseline to beat for future participation. A rich address track-record score may still describe historical contribution, but it should not claim superior prediction of return until it beats this baseline out of sample.
+
+### Evaluation operating cost
+
+The asset query read about 7.1 million rows and used about 9 seconds of D1 SQL time. The first address run read about 54.8 million rows and used about 72 seconds. The address methodology is sound but too expensive for rapid iteration against canonical D1. Repeated experiments should use a compact, reproducible analytics snapshot or separate analytics database—not a new serving dependency and not another production compatibility layer.
