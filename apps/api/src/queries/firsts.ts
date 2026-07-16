@@ -12,14 +12,14 @@
 import { one } from "#api/db";
 
 /** One firsts-catalog entry: a display label + the SQL that finds its earliest row. */
-export interface First {
+export interface FirstDefinition {
   key: string;
   label: string;
   sql: string;
 }
 
 /** The raw shape every firsts SQL returns: block index, unix block time, display ref, entity type. */
-export interface FirstRaw {
+export interface FirstQueryRow {
   b: number | null;
   t: number | null;
   ref: string;
@@ -27,8 +27,8 @@ export interface FirstRaw {
   tx: string;
 }
 
-// each sql returns: b (block index), t (unix block time), ref (display + link id), typ (entity type for linking)
-const earliest = (
+// Every query returns the same aliases: b, t, ref, typ, and tx. See docs/adding-firsts.md.
+const earliestEventSql = (
   table: string,
   ref: string,
   opts: { where?: string; by?: string; bcol?: string; joins?: string; valid?: boolean; tx?: string } = {},
@@ -44,8 +44,8 @@ const earliest = (
     WHERE x.${bcol}=(SELECT MIN(${bcol}) FROM ${table}${minWhere})${filt} ORDER BY ${by} LIMIT 1`;
 };
 // asset-property firsts read the ISSUANCES event (first valid issuance that set the property), not assets state.
-const viss = (extra: string) =>
-  earliest("issuances", "asset.asset ref,'asset' typ", {
+const earliestValidIssuanceSql = (extra: string) =>
+  earliestEventSql("issuances", "asset.asset ref,'asset' typ", {
     where: extra,
     valid: true,
     by: "x.tx_index,x.event_index",
@@ -55,7 +55,7 @@ const viss = (extra: string) =>
 // Supply-sensitive milestones must reconstruct net supply at the locking event. Looking only at the
 // lock row's quantity misses assets issued across several transactions; looking at today's asset state
 // lets later issuance/destruction rewrite history.
-const lockedSupply = (supply: number, extra: string) => `SELECT x.block_index b,x.block_time t,
+const earliestLockedSupplySql = (supply: number, extra: string) => `SELECT x.block_index b,x.block_time t,
   asset.asset ref,'asset' typ,LOWER(HEX(x.tx_hash)) tx
   FROM issuances x JOIN asset_dictionary asset ON asset.asset_id=x.asset_id
   WHERE x.status NOT LIKE 'invalid%' AND x.locked=1 AND (${extra})
@@ -65,22 +65,22 @@ const lockedSupply = (supply: number, extra: string) => `SELECT x.block_index b,
       WHERE d.asset_id=x.asset_id AND d.status NOT LIKE 'invalid%' AND d.event_index<=x.event_index),0)=${supply}
   ORDER BY x.block_index,x.tx_index,x.event_index LIMIT 1`;
 
-export const FIRSTS: First[] = [
+export const FIRSTS_CATALOG: FirstDefinition[] = [
   // --- protocol genesis ---
   {
     key: "block",
     label: "First block",
-    sql: earliest("transactions", "CAST(x.block_index AS TEXT) ref,'block' typ", { by: "x.tx_index" }),
+    sql: earliestEventSql("transactions", "CAST(x.block_index AS TEXT) ref,'block' typ", { by: "x.tx_index" }),
   },
   {
     key: "transaction",
     label: "First transaction",
-    sql: earliest("transactions", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+    sql: earliestEventSql("transactions", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
   },
   {
     key: "burn",
     label: "First XCP burn",
-    sql: earliest("burns", "source.address ref,'address' typ", {
+    sql: earliestEventSql("burns", "source.address ref,'address' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
@@ -90,7 +90,7 @@ export const FIRSTS: First[] = [
   {
     key: "asset",
     label: "First asset issued",
-    sql: earliest("issuances", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("issuances", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.tx_index,x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -99,17 +99,17 @@ export const FIRSTS: First[] = [
   {
     key: "subasset",
     label: "First subasset",
-    sql: viss("asset_longname IS NOT NULL"),
+    sql: earliestValidIssuanceSql("asset_longname IS NOT NULL"),
   },
   {
     key: "numeric",
     label: "First numeric asset",
-    sql: viss("asset.asset GLOB 'A[0-9]*'"),
+    sql: earliestValidIssuanceSql("asset.asset GLOB 'A[0-9]*'"),
   },
   {
     key: "destruction",
     label: "First destruction",
-    sql: earliest("destructions", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("destructions", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -119,7 +119,7 @@ export const FIRSTS: First[] = [
   {
     key: "send",
     label: "First send",
-    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.tx_index,x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -128,7 +128,7 @@ export const FIRSTS: First[] = [
   {
     key: "order",
     label: "First DEX order",
-    sql: earliest("orders", "give_asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("orders", "give_asset.asset ref,'asset' typ", {
       by: "x.tx_index", valid: true,
       joins: "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id",
     }),
@@ -136,7 +136,7 @@ export const FIRSTS: First[] = [
   {
     key: "order_match",
     label: "First order match",
-    sql: earliest("order_matches", "forward_asset.asset||' / '||backward_asset.asset ref,'pair' typ", {
+    sql: earliestEventSql("order_matches", "forward_asset.asset||' / '||backward_asset.asset ref,'pair' typ", {
       by: "x.tx0_index,x.tx1_index", valid: true, tx: "LOWER(HEX(x.tx1_hash))",
       joins: "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
     }),
@@ -144,7 +144,7 @@ export const FIRSTS: First[] = [
   {
     key: "dispenser",
     label: "First dispenser",
-    sql: earliest("dispensers", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dispensers", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -153,7 +153,7 @@ export const FIRSTS: First[] = [
   {
     key: "oracle_dispenser",
     label: "First oracle-priced dispenser",
-    sql: earliest("dispensers", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dispensers", "asset.asset ref,'asset' typ", {
       where: "oracle_address_id IS NOT NULL",
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -162,7 +162,7 @@ export const FIRSTS: First[] = [
   {
     key: "dispense",
     label: "First dispense",
-    sql: earliest("dispenses", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dispenses", "asset.asset ref,'asset' typ", {
       by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -171,7 +171,7 @@ export const FIRSTS: First[] = [
   {
     key: "dividend",
     label: "First dividend",
-    sql: earliest("dividends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dividends", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -180,7 +180,7 @@ export const FIRSTS: First[] = [
   {
     key: "broadcast",
     label: "First broadcast",
-    sql: earliest("broadcasts", "source.address ref,'address' typ", {
+    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
@@ -189,7 +189,7 @@ export const FIRSTS: First[] = [
   {
     key: "priced_oracle",
     label: "First priced oracle broadcast",
-    sql: earliest("broadcasts", "source.address ref,'address' typ", {
+    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
       where: "CAST(fee_fraction_int AS INTEGER)>0",
       valid: true,
       by: "x.tx_index",
@@ -199,7 +199,7 @@ export const FIRSTS: First[] = [
   {
     key: "bet",
     label: "First bet",
-    sql: earliest("bets", "source.address ref,'address' typ", {
+    sql: earliestEventSql("bets", "source.address ref,'address' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
@@ -208,7 +208,7 @@ export const FIRSTS: First[] = [
   {
     key: "bet_match",
     label: "First bet match",
-    sql: earliest("bet_matches", "feed.address ref,'address' typ", {
+    sql: earliestEventSql("bet_matches", "feed.address ref,'address' typ", {
       by: "x.tx0_index,x.tx1_index", valid: true, tx: "LOWER(HEX(x.tx1_hash))",
       joins: "JOIN address_dictionary feed ON feed.address_id=x.feed_address_id",
     }),
@@ -216,7 +216,7 @@ export const FIRSTS: First[] = [
   {
     key: "rps",
     label: "First RPS game",
-    sql: earliest("rps", "source.address ref,'address' typ", {
+    sql: earliestEventSql("rps", "source.address ref,'address' typ", {
       by: "x.tx_index", valid: true,
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -224,7 +224,7 @@ export const FIRSTS: First[] = [
   {
     key: "rps_match",
     label: "First RPS match",
-    sql: earliest("rps_matches", "player.address ref,'address' typ", {
+    sql: earliestEventSql("rps_matches", "player.address ref,'address' typ", {
       by: "x.tx0_index,x.tx1_index", valid: true, tx: "LOWER(HEX(x.tx1_hash))",
       joins: "JOIN address_dictionary player ON player.address_id=x.tx1_address_id",
     }),
@@ -232,7 +232,7 @@ export const FIRSTS: First[] = [
   {
     key: "sweep",
     label: "First sweep",
-    sql: earliest("sweeps", "source.address ref,'address' typ", {
+    sql: earliestEventSql("sweeps", "source.address ref,'address' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
@@ -241,7 +241,7 @@ export const FIRSTS: First[] = [
   {
     key: "sweep_memo",
     label: "First sweep with a memo",
-    sql: earliest("sweeps", "source.address ref,'address' typ", {
+    sql: earliestEventSql("sweeps", "source.address ref,'address' typ", {
       where: "memo IS NOT NULL AND memo!=''",
       valid: true,
       by: "x.tx_index",
@@ -251,7 +251,7 @@ export const FIRSTS: First[] = [
   {
     key: "cancel",
     label: "First cancel",
-    sql: earliest("cancels", "source.address ref,'address' typ", {
+    sql: earliestEventSql("cancels", "source.address ref,'address' typ", {
       by: "x.tx_index", valid: true,
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -259,7 +259,7 @@ export const FIRSTS: First[] = [
   {
     key: "btcpay",
     label: "First BTC pay",
-    sql: earliest("btcpays", "source.address ref,'address' typ", {
+    sql: earliestEventSql("btcpays", "source.address ref,'address' typ", {
       by: "x.event_index", valid: true,
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -267,7 +267,7 @@ export const FIRSTS: First[] = [
   {
     key: "non_xcp_order",
     label: "First non-XCP DEX order",
-    sql: earliest("orders", "give_asset.asset||' / '||get_asset.asset ref,'pair' typ", {
+    sql: earliestEventSql("orders", "give_asset.asset||' / '||get_asset.asset ref,'pair' typ", {
       where:
         "give_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP') AND get_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')",
       valid: true,
@@ -278,7 +278,7 @@ export const FIRSTS: First[] = [
   {
     key: "btc_dispense",
     label: "First dispense paid in BTC",
-    sql: earliest("dispenses", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dispenses", "asset.asset ref,'asset' typ", {
       where: "CAST(btc_amount AS INTEGER)>0",
       by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -287,7 +287,7 @@ export const FIRSTS: First[] = [
   {
     key: "enhanced_send",
     label: "First enhanced send",
-    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       where: "send_type='enhanced_send'",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -297,7 +297,7 @@ export const FIRSTS: First[] = [
   {
     key: "send_memo",
     label: "First send with a memo",
-    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       where: "memo IS NOT NULL AND memo!=''",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -307,7 +307,7 @@ export const FIRSTS: First[] = [
   {
     key: "dispenser_refill",
     label: "First dispenser refill",
-    sql: earliest("dispenser_refills", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dispenser_refills", "asset.asset ref,'asset' typ", {
       by: "x.tx_index,x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -315,7 +315,7 @@ export const FIRSTS: First[] = [
   {
     key: "mpma",
     label: "First MPMA send",
-    sql: earliest("sends", "source.address ref,'address' typ", {
+    sql: earliestEventSql("sends", "source.address ref,'address' typ", {
       where: "send_type='mpma'",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -325,7 +325,7 @@ export const FIRSTS: First[] = [
   {
     key: "attach",
     label: "First UTXO attach",
-    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       where: "send_type='attach'",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -335,7 +335,7 @@ export const FIRSTS: First[] = [
   {
     key: "move",
     label: "First UTXO move",
-    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       where: "send_type='move'",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -345,7 +345,7 @@ export const FIRSTS: First[] = [
   {
     key: "detach",
     label: "First UTXO detach",
-    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       where: "send_type='detach'",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -354,35 +354,35 @@ export const FIRSTS: First[] = [
   },
   // asset-PROPERTY firsts — from the ISSUANCES table (the EVENT that first set the property), NOT the assets
   // current-state table. e.g. first LOCKED = first valid issuance with locked=1, not the oldest now-locked asset.
-  { key: "locked", label: "First locked issuance", sql: viss(`locked=1`) },
-  { key: "divisible", label: "First divisible asset", sql: viss(`divisible=1`) },
-  { key: "indivisible", label: "First indivisible asset", sql: viss(`divisible=0`) },
-  { key: "one_of_one", label: "First 1/1 (single edition)", sql: lockedSupply(1, "x.divisible=0") },
-  { key: "numeric_one_of_one", label: "First numeric 1/1", sql: lockedSupply(1, "x.divisible=0 AND asset.asset GLOB 'A[0-9]*'") },
-  { key: "subasset_one_of_one", label: "First subasset 1/1", sql: lockedSupply(1, "x.divisible=0 AND x.asset_longname IS NOT NULL") },
-  { key: "satoshi_nft", label: "First one-satoshi NFT", sql: lockedSupply(1, "x.divisible=1") },
-  { key: "tokenless", label: "First locked tokenless asset", sql: lockedSupply(0, "1=1") },
-  { key: "reset", label: "First asset reset (CIP03)", sql: viss(`reset=1`) },
-  { key: "transfer", label: "First asset transfer", sql: viss(`transfer=1`) },
-  { key: "callable", label: "First callable asset", sql: viss(`callable=1`) },
-  { key: "description", label: "First asset description", sql: viss(`description IS NOT NULL AND description!=''`) },
-  { key: "non_ascii_description", label: "First non-ASCII asset description", sql: viss(`description GLOB '*[^ -~]*'`) },
-  { key: "embedded_image", label: "First embedded data-URI image", sql: viss(`LOWER(description) LIKE 'data:image%'`) },
-  { key: "description_url", label: "First external URL in an asset description", sql: viss(`LOWER(description) LIKE '%http://%' OR LOWER(description) LIKE '%https://%'`) },
-  { key: "pepe_mention", label: "First Pepe mention in an asset description", sql: viss(`UPPER(description) LIKE '%PEPE%'`) },
-  { key: "nft_term", label: "First use of “NFT” in an asset description", sql: viss(`UPPER(description) LIKE '%NFT%'`) },
-  { key: "description_lock", label: "First locked asset description", sql: viss(`asset_events='lock_description'`) },
-  { key: "json_desc", label: "First JSON description", sql: viss(`TRIM(description) LIKE '{%'`) },
+  { key: "locked", label: "First locked issuance", sql: earliestValidIssuanceSql(`locked=1`) },
+  { key: "divisible", label: "First divisible asset", sql: earliestValidIssuanceSql(`divisible=1`) },
+  { key: "indivisible", label: "First indivisible asset", sql: earliestValidIssuanceSql(`divisible=0`) },
+  { key: "one_of_one", label: "First 1/1 (single edition)", sql: earliestLockedSupplySql(1, "x.divisible=0") },
+  { key: "numeric_one_of_one", label: "First numeric 1/1", sql: earliestLockedSupplySql(1, "x.divisible=0 AND asset.asset GLOB 'A[0-9]*'") },
+  { key: "subasset_one_of_one", label: "First subasset 1/1", sql: earliestLockedSupplySql(1, "x.divisible=0 AND x.asset_longname IS NOT NULL") },
+  { key: "satoshi_nft", label: "First one-satoshi NFT", sql: earliestLockedSupplySql(1, "x.divisible=1") },
+  { key: "tokenless", label: "First locked tokenless asset", sql: earliestLockedSupplySql(0, "1=1") },
+  { key: "reset", label: "First asset reset (CIP03)", sql: earliestValidIssuanceSql(`reset=1`) },
+  { key: "transfer", label: "First asset transfer", sql: earliestValidIssuanceSql(`transfer=1`) },
+  { key: "callable", label: "First callable asset", sql: earliestValidIssuanceSql(`callable=1`) },
+  { key: "description", label: "First asset description", sql: earliestValidIssuanceSql(`description IS NOT NULL AND description!=''`) },
+  { key: "non_ascii_description", label: "First non-ASCII asset description", sql: earliestValidIssuanceSql(`description GLOB '*[^ -~]*'`) },
+  { key: "embedded_image", label: "First embedded data-URI image", sql: earliestValidIssuanceSql(`LOWER(description) LIKE 'data:image%'`) },
+  { key: "description_url", label: "First external URL in an asset description", sql: earliestValidIssuanceSql(`LOWER(description) LIKE '%http://%' OR LOWER(description) LIKE '%https://%'`) },
+  { key: "pepe_mention", label: "First Pepe mention in an asset description", sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%PEPE%'`) },
+  { key: "nft_term", label: "First use of “NFT” in an asset description", sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%NFT%'`) },
+  { key: "description_lock", label: "First locked asset description", sql: earliestValidIssuanceSql(`asset_events='lock_description'`) },
+  { key: "json_desc", label: "First JSON description", sql: earliestValidIssuanceSql(`TRIM(description) LIKE '{%'`) },
   {
     key: "inscription",
     label: "First Counterparty inscription",
-    sql: viss(`mime_type IS NOT NULL AND mime_type NOT IN ('','text/plain')`),
+    sql: earliestValidIssuanceSql(`mime_type IS NOT NULL AND mime_type NOT IN ('','text/plain')`),
   },
-  { key: "easyasset", label: "First EasyAsset", sql: viss(`lower(description) LIKE '%easyasset%'`) },
+  { key: "easyasset", label: "First EasyAsset", sql: earliestValidIssuanceSql(`lower(description) LIKE '%easyasset%'`) },
   {
     key: "fairminter",
     label: "First fairminter",
-    sql: earliest("fairminters", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("fairminters", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -391,7 +391,7 @@ export const FIRSTS: First[] = [
   {
     key: "fairminter_premint",
     label: "First preminted fairminter",
-    sql: earliest("fairminters", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("fairminters", "asset.asset ref,'asset' typ", {
       where: "CAST(premint_quantity AS INTEGER)>0",
       valid: true,
       by: "x.tx_index",
@@ -401,7 +401,7 @@ export const FIRSTS: First[] = [
   {
     key: "fairminter_commission",
     label: "First commissioned fairminter",
-    sql: earliest("fairminters", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("fairminters", "asset.asset ref,'asset' typ", {
       where: "CAST(minted_asset_commission_int AS INTEGER)>0",
       valid: true,
       by: "x.tx_index",
@@ -411,7 +411,7 @@ export const FIRSTS: First[] = [
   {
     key: "fairminter_burn_payment",
     label: "First burn-paid fairminter",
-    sql: earliest("fairminters", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("fairminters", "asset.asset ref,'asset' typ", {
       where: "burn_payment=1",
       valid: true,
       by: "x.tx_index",
@@ -421,7 +421,7 @@ export const FIRSTS: First[] = [
   {
     key: "fairmint",
     label: "First fairmint",
-    sql: earliest("fairmints", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("fairmints", "asset.asset ref,'asset' typ", {
       valid: true,
       by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
@@ -430,7 +430,7 @@ export const FIRSTS: First[] = [
   {
     key: "pool_deposit",
     label: "First pool deposit",
-    sql: earliest("pool_liquidity", "asset_a.asset||' / '||asset_b.asset ref,'pair' typ", {
+    sql: earliestEventSql("pool_liquidity", "asset_a.asset||' / '||asset_b.asset ref,'pair' typ", {
       where: "kind='deposit'",
       valid: true,
       by: "x.tx_index,x.event_index",
@@ -440,7 +440,7 @@ export const FIRSTS: First[] = [
   {
     key: "pool_swap",
     label: "First pool swap",
-    sql: earliest("pool_matches", "COALESCE(x.pair,x.lp_asset) ref,'pair' typ", { by: "x.tx_index,x.event_index", valid: true }),
+    sql: earliestEventSql("pool_matches", "COALESCE(x.pair,x.lp_asset) ref,'pair' typ", { by: "x.tx_index,x.event_index", valid: true }),
   },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
@@ -479,7 +479,7 @@ export const FIRSTS: First[] = [
   {
     key: "btns",
     label: "First BTNS broadcast",
-    sql: earliest("broadcasts", "source.address ref,'address' typ", {
+    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
       where: "btns=1",
       valid: true,
       by: "x.tx_index",
@@ -489,6 +489,6 @@ export const FIRSTS: First[] = [
 ];
 
 /** Run one firsts SQL; null on any error (a table may be empty on a fresh mirror). */
-export function firstRecord(db: D1Database, sql: string): Promise<FirstRaw | null> {
-  return one<FirstRaw>(db, sql).catch(() => null);
+export function queryFirstRecord(db: D1Database, sql: string): Promise<FirstQueryRow | null> {
+  return one<FirstQueryRow>(db, sql).catch(() => null);
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FIRSTS } from "../src/queries/firsts.js";
+import { FIRSTS_CATALOG } from "../src/queries/firsts.js";
 
 const STATUS_BACKED_FIRSTS = [
   "burn", "asset", "destruction", "send", "order", "order_match", "dispenser",
@@ -16,8 +16,18 @@ const STATUS_BACKED_FIRSTS = [
   "description_url", "pepe_mention", "nft_term",
 ];
 
+test("catalog keys are unique and every query satisfies the shared row contract", () => {
+  const keys = FIRSTS_CATALOG.map((entry) => entry.key);
+  assert.equal(new Set(keys).size, keys.length, "firsts catalog contains a duplicate key");
+  for (const entry of FIRSTS_CATALOG) {
+    for (const alias of [" b", " t", " ref", " typ", " tx"]) {
+      assert.ok(entry.sql.includes(alias), `${entry.key} does not return the ${alias.trim()} alias`);
+    }
+  }
+});
+
 test("every first backed by a protocol-status table excludes invalid records", () => {
-  const byKey = new Map(FIRSTS.map((entry) => [entry.key, entry.sql]));
+  const byKey = new Map(FIRSTS_CATALOG.map((entry) => [entry.key, entry.sql]));
   for (const key of STATUS_BACKED_FIRSTS) {
     const sql = byKey.get(key);
     assert.equal(typeof sql, "string", `missing firsts entry ${key}`);
@@ -26,7 +36,7 @@ test("every first backed by a protocol-status table excludes invalid records", (
 });
 
 test("only the literal first transaction displays a transaction hash as its subject", () => {
-  for (const entry of FIRSTS) {
+  for (const entry of FIRSTS_CATALOG) {
     if (entry.key === "transaction") continue;
     assert.equal(/HEX\(.+\) ref,'tx' typ/.test(entry.sql), false, `${entry.key} exposes a hash as its subject`);
   }

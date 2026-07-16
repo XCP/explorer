@@ -6,15 +6,15 @@
  */
 import type { FirstRow } from "@xcp/shared/stats";
 import { router, cached } from "#api/read/respond";
-import { FIRSTS, firstRecord } from "#api/queries/firsts";
+import { FIRSTS_CATALOG, queryFirstRecord } from "#api/queries/firsts";
 
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
   cached(c, "firsts:catalog:expanded", { ttl: 3600, edge: 600 }, async () => {
     const rows = await Promise.all(
-      FIRSTS.map(async (f): Promise<FirstRow | null> => {
-        const r = await firstRecord(c.env.CORE_DB, f.sql);
+      FIRSTS_CATALOG.map(async (f): Promise<FirstRow | null> => {
+        const r = await queryFirstRecord(c.env.CORE_DB, f.sql);
         if (!r || r.b == null) return null;
         const t = Number(r.t) || 0;
         return {
