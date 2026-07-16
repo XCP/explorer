@@ -96,17 +96,11 @@ export async function graphInfluenceEval(env: Env): Promise<Record<string, unkno
          signal.graph_trust,signal.graph_distrust,signal.holders,
          COALESCE(signal.max_realized_usd,0) market_usd
        FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
-       WHERE ${baseEligible} AND COALESCE(signal.max_realized_usd,0)<500
+       WHERE ${baseEligible}
      ),variant AS (
-       SELECT 'current' variant,asset,full_score score,graph_trust,graph_distrust,holders,market_usd
-         FROM base WHERE graph_trust>graph_distrust
+       SELECT 'current' variant,asset,full_score score,graph_trust,graph_distrust,holders,market_usd FROM base
        UNION ALL
-       SELECT 'no_gate',asset,full_score,graph_trust,graph_distrust,holders,market_usd FROM base
-       UNION ALL
-       SELECT 'no_factor',asset,no_graph_score,graph_trust,graph_distrust,holders,market_usd
-         FROM base WHERE graph_trust>graph_distrust
-       UNION ALL
-       SELECT 'no_graph',asset,no_graph_score,graph_trust,graph_distrust,holders,market_usd FROM base
+       SELECT 'without_graph',asset,no_graph_score,graph_trust,graph_distrust,holders,market_usd FROM base
      ),ranked AS (
        SELECT variant,asset,ROUND(score,4) score,graph_trust,graph_distrust,holders,market_usd,
          ROW_NUMBER() OVER(PARTITION BY variant ORDER BY score DESC,asset) rank
@@ -117,12 +111,9 @@ export async function graphInfluenceEval(env: Env): Promise<Record<string, unkno
   return {
     methodology: {
       population: "non-low-quality, non-numeric assets with at least 15 holders",
-      market_ceiling_usd: 500,
       variants: {
-        current: "graph gate and graph Conviction factor",
-        no_gate: "graph factor retained; graph gate removed",
-        no_factor: "graph gate retained; graph factor removed",
-        no_graph: "both graph gate and graph factor removed",
+        current: "production Established ranking with the graph network-standing factor",
+        without_graph: "same eligible population and factors, excluding graph network standing",
       },
       warning: "current-state ranking ablation; not a historical causal or predictive evaluation",
     },

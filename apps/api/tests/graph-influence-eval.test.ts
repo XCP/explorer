@@ -16,11 +16,11 @@ test("graph ablation summary reports entrants, exits, overlap, and rank movement
   const summary = summarizeGraphAblations([
     row("current", 1, "A", 3),
     row("current", 2, "B", 2),
-    row("no_graph", 1, "B", 4),
-    row("no_graph", 2, "C", 3),
+    row("without_graph", 1, "B", 4),
+    row("without_graph", 2, "C", 3),
   ]) as Record<string, any>;
-  assert.equal(summary.no_graph.overlap_with_current, 1);
-  assert.equal(summary.no_graph.mean_absolute_rank_change, 1);
-  assert.deepEqual(summary.no_graph.entrants, [{ asset: "C", rank: 2, score: 3 }]);
-  assert.deepEqual(summary.no_graph.exits, [{ asset: "A", rank: 1, score: 3 }]);
+  assert.equal(summary.without_graph.overlap_with_current, 1);
+  assert.equal(summary.without_graph.mean_absolute_rank_change, 1);
+  assert.deepEqual(summary.without_graph.entrants, [{ asset: "C", rank: 2, score: 3 }]);
+  assert.deepEqual(summary.without_graph.exits, [{ asset: "A", rank: 1, score: 3 }]);
 });
