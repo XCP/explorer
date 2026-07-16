@@ -30,19 +30,22 @@ export interface FirstRaw {
 const earliest = (
   table: string,
   ref: string,
-  opts: { where?: string; by?: string; bcol?: string; joins?: string } = {},
+  opts: { where?: string; by?: string; bcol?: string; joins?: string; valid?: boolean } = {},
 ): string => {
-  const { where, by = "x.rowid", bcol = "block_index", joins = "" } = opts;
+  const { where, by = "x.rowid", bcol = "block_index", joins = "", valid = false } = opts;
   const tcol = bcol === "block_index" ? "block_time" : "first_issuance_block_time";
-  const filt = where ? ` AND (${where})` : "";
-  const minWhere = where ? ` WHERE ${where}` : "";
+  const predicate = [valid ? "status NOT LIKE 'invalid%'" : "", where ? `(${where})` : ""]
+    .filter(Boolean).join(" AND ");
+  const filt = predicate ? ` AND (${predicate})` : "";
+  const minWhere = predicate ? ` WHERE ${predicate}` : "";
   return `SELECT x.${bcol} b,x.${tcol} t,${ref} FROM ${table} x ${joins}
     WHERE x.${bcol}=(SELECT MIN(${bcol}) FROM ${table}${minWhere})${filt} ORDER BY ${by} LIMIT 1`;
 };
 // asset-property firsts read the ISSUANCES event (first valid issuance that set the property), not assets state.
 const viss = (extra: string) =>
   earliest("issuances", "asset.asset ref,'asset' typ", {
-    where: `status='valid' AND (${extra})`,
+    where: extra,
+    valid: true,
     by: "x.tx_index,x.event_index",
     joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
   });
@@ -63,6 +66,7 @@ export const FIRSTS: First[] = [
     key: "burn",
     label: "First XCP burn",
     sql: earliest("burns", "source.address ref,'address' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -72,6 +76,7 @@ export const FIRSTS: First[] = [
     key: "asset",
     label: "First asset issued",
     sql: earliest("issuances", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.tx_index,x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -100,6 +105,7 @@ export const FIRSTS: First[] = [
     key: "destruction",
     label: "First destruction",
     sql: earliest("destructions", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -109,6 +115,7 @@ export const FIRSTS: First[] = [
     key: "send",
     label: "First send",
     sql: earliest("sends", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.tx_index,x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -116,17 +123,18 @@ export const FIRSTS: First[] = [
   {
     key: "order",
     label: "First DEX order",
-    sql: earliest("orders", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+    sql: earliest("orders", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index", valid: true }),
   },
   {
     key: "order_match",
     label: "First order match",
-    sql: earliest("order_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }),
+    sql: earliest("order_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index", valid: true }),
   },
   {
     key: "dispenser",
     label: "First dispenser",
     sql: earliest("dispensers", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -144,6 +152,7 @@ export const FIRSTS: First[] = [
     key: "dividend",
     label: "First dividend",
     sql: earliest("dividends", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -152,6 +161,7 @@ export const FIRSTS: First[] = [
     key: "broadcast",
     label: "First broadcast",
     sql: earliest("broadcasts", "source.address ref,'address' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -160,6 +170,7 @@ export const FIRSTS: First[] = [
     key: "bet",
     label: "First bet",
     sql: earliest("bets", "source.address ref,'address' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -167,22 +178,23 @@ export const FIRSTS: First[] = [
   {
     key: "bet_match",
     label: "First bet match",
-    sql: earliest("bet_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }),
+    sql: earliest("bet_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index", valid: true }),
   },
   {
     key: "rps",
     label: "First RPS game",
-    sql: earliest("rps", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+    sql: earliest("rps", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index", valid: true }),
   },
   {
     key: "rps_match",
     label: "First RPS match",
-    sql: earliest("rps_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }),
+    sql: earliest("rps_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index", valid: true }),
   },
   {
     key: "sweep",
     label: "First sweep",
     sql: earliest("sweeps", "source.address ref,'address' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
@@ -190,12 +202,12 @@ export const FIRSTS: First[] = [
   {
     key: "cancel",
     label: "First cancel",
-    sql: earliest("cancels", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+    sql: earliest("cancels", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index", valid: true }),
   },
   {
     key: "btcpay",
     label: "First BTC pay",
-    sql: earliest("btcpays", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.event_index" }),
+    sql: earliest("btcpays", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.event_index", valid: true }),
   },
   {
     key: "non_xcp_order",
@@ -203,6 +215,7 @@ export const FIRSTS: First[] = [
     sql: earliest("orders", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where:
         "give_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP') AND get_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')",
+      valid: true,
       by: "x.tx_index",
     }),
   },
@@ -220,6 +233,7 @@ export const FIRSTS: First[] = [
     label: "First enhanced send",
     sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where: "send_type='enhanced_send'",
+      valid: true,
       by: "x.tx_index,x.event_index",
     }),
   },
@@ -236,6 +250,7 @@ export const FIRSTS: First[] = [
     label: "First MPMA send",
     sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where: "send_type='mpma'",
+      valid: true,
       by: "x.tx_index,x.event_index",
     }),
   },
@@ -244,6 +259,7 @@ export const FIRSTS: First[] = [
     label: "First UTXO attach",
     sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where: "send_type='attach'",
+      valid: true,
       by: "x.tx_index,x.event_index",
     }),
   },
@@ -252,6 +268,7 @@ export const FIRSTS: First[] = [
     label: "First UTXO move",
     sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where: "send_type='move'",
+      valid: true,
       by: "x.tx_index,x.event_index",
     }),
   },
@@ -260,6 +277,7 @@ export const FIRSTS: First[] = [
     label: "First UTXO detach",
     sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where: "send_type='detach'",
+      valid: true,
       by: "x.tx_index,x.event_index",
     }),
   },
@@ -284,6 +302,7 @@ export const FIRSTS: First[] = [
     key: "fairminter",
     label: "First fairminter",
     sql: earliest("fairminters", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -292,6 +311,7 @@ export const FIRSTS: First[] = [
     key: "fairmint",
     label: "First fairmint",
     sql: earliest("fairmints", "asset.asset ref,'asset' typ", {
+      valid: true,
       by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
@@ -301,13 +321,14 @@ export const FIRSTS: First[] = [
     label: "First pool deposit",
     sql: earliest("pool_liquidity", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
       where: "kind='deposit'",
+      valid: true,
       by: "x.tx_index,x.event_index",
     }),
   },
   {
     key: "pool_swap",
     label: "First pool swap",
-    sql: earliest("pool_matches", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index,x.event_index" }),
+    sql: earliest("pool_matches", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index,x.event_index", valid: true }),
   },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
@@ -318,7 +339,7 @@ export const FIRSTS: First[] = [
     label: "First Bitcoin Stamp",
     sql: `SELECT issuance.block_index b,issuance.block_time t,asset.asset ref,'asset' typ
       FROM issuances issuance JOIN asset_dictionary asset ON asset.asset_id=issuance.asset_id
-      WHERE asset.asset='A7337447728884561000'
+      WHERE asset.asset='A7337447728884561000' AND issuance.status NOT LIKE 'invalid%'
       ORDER BY issuance.block_index,issuance.event_index LIMIT 1`,
   },
   {
@@ -328,7 +349,8 @@ export const FIRSTS: First[] = [
       FROM tags tag JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
       JOIN asset_dictionary asset ON asset.asset=entity.entity_key
       JOIN issuances issuance ON issuance.asset_id=asset.asset_id
-      WHERE tag.tag='src20' AND instr(lower(issuance.description),'stamp:')>0
+      WHERE tag.tag='src20' AND issuance.status NOT LIKE 'invalid%'
+        AND instr(lower(issuance.description),'stamp:')>0
       ORDER BY issuance.block_index,issuance.event_index LIMIT 1`,
   },
   {
@@ -338,7 +360,8 @@ export const FIRSTS: First[] = [
       FROM tags tag JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
       JOIN asset_dictionary asset ON asset.asset=entity.entity_key
       JOIN issuances issuance ON issuance.asset_id=asset.asset_id
-      WHERE tag.tag='src721' AND instr(lower(issuance.description),'stamp:')>0
+      WHERE tag.tag='src721' AND issuance.status NOT LIKE 'invalid%'
+        AND instr(lower(issuance.description),'stamp:')>0
       ORDER BY issuance.block_index,issuance.event_index LIMIT 1`,
   },
   {
@@ -346,6 +369,7 @@ export const FIRSTS: First[] = [
     label: "First BTNS broadcast",
     sql: earliest("broadcasts", "source.address ref,'address' typ", {
       where: "btns=1",
+      valid: true,
       by: "x.tx_index",
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
