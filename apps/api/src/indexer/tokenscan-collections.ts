@@ -11,6 +11,10 @@
 import type { Env } from "#api/env";
 import { fetchTokenscanDirectory, type TokenscanCollection } from "#api/integrations/tokenscan-directory";
 import { canonicalCollection, EXCLUDED_COLLECTIONS } from "#api/indexer/collections";
+import {
+  COLLECTION_EVIDENCE_UPSERT_SQL,
+  projectCollectionMembershipTags,
+} from "#api/indexer/collection-membership";
 
 const slugify = (s: string) =>
   s
@@ -18,12 +22,6 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 const assetOf = (card: string) => card.replace(/\.[^.]+$/, "").trim(); // "RAREPIGEON.png" -> "RAREPIGEON"
-export const TOKENSCAN_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,meta)
-  SELECT entity_id,?2,'tokenscan',?3 FROM entity_dictionary
-  WHERE entity_type='asset' AND entity_key=?1
-  ON CONFLICT(entity_id,tag) DO UPDATE SET
-    meta=CASE WHEN tags.source='tokenscan' THEN excluded.meta ELSE tags.meta END`;
-
 async function fetchNftData(): Promise<TokenscanCollection[]> {
   return fetchTokenscanDirectory();
 }
@@ -39,9 +37,10 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
   if (!data.length) return { skipped: "empty(kept prior)" }; // transient-safe: never wipe on a blip
 
   const prior = await env.CORE_DB.prepare(
-    `SELECT entity.entity_key asset,tag.tag FROM tags tag
-     JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
-     WHERE tag.source='tokenscan'`,
+    `SELECT entity.entity_key asset,evidence.tag
+     FROM collection_membership_evidence evidence
+     JOIN entity_dictionary entity ON entity.entity_id=evidence.entity_id AND entity.entity_type='asset'
+     WHERE evidence.source='tokenscan'`,
   ).all<{
     asset: string;
     tag: string;
@@ -62,7 +61,7 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
         env.CORE_DB.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`).bind(
           asset,
         ),
-        env.CORE_DB.prepare(TOKENSCAN_TAG_UPSERT_SQL).bind(asset, tag, meta),
+        env.CORE_DB.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).bind(asset, tag, "tokenscan", null, meta),
       );
     }
     collections++;
@@ -79,11 +78,15 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
         .slice(i, i + 100)
         .map((row) =>
           env.CORE_DB.prepare(
-            `DELETE FROM tags WHERE source='tokenscan' AND tag=?
+            `DELETE FROM collection_membership_evidence WHERE source='tokenscan' AND tag=?
              AND entity_id=(SELECT entity_id FROM entity_dictionary WHERE entity_type='asset' AND entity_key=?)`,
           ).bind(row.tag, row.asset),
         ),
     );
   }
+  await projectCollectionMembershipTags(env, [
+    ...(prior.results ?? []).map((row) => row.tag),
+    ...data.map((collection) => canonicalCollection(slugify(collection.name || ""))).filter(Boolean),
+  ]);
   return { collections, tagged, removed: stale.length };
 }

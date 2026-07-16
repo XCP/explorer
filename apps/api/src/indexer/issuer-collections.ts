@@ -7,6 +7,7 @@
  * intact (it only touches source='computed').
  */
 import type { Env } from "#api/env";
+import { projectCollectionMembership } from "#api/indexer/collection-membership";
 
 interface IssuerCollection {
   issuer: string;
@@ -63,20 +64,20 @@ export async function buildIssuerCollections(env: Env): Promise<Record<string, u
       .bind(c.issuer)
       .run();
     const res = await env.CORE_DB.prepare(
-      `INSERT INTO tags(entity_id,tag,source,meta)
-       SELECT entity.entity_id,?,'issuer',? FROM assets state
+      `INSERT INTO collection_membership_evidence(entity_id,tag,source,meta,observed_at)
+       SELECT entity.entity_id,?,'issuer',?,unixepoch() FROM assets state
        JOIN asset_dictionary asset ON asset.asset_id=state.asset_id
        JOIN address_dictionary issuer ON issuer.address_id=state.issuer_id
        JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=asset.asset
        WHERE issuer.address=?
-       ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+       ON CONFLICT(entity_id,tag,source) DO UPDATE SET meta=excluded.meta,observed_at=unixepoch()`,
     )
       .bind(c.tag, meta, c.issuer)
       .run();
     tagged += res?.meta?.rows_written ?? 0;
     // reconcile removals (e.g. an asset transferred away) — scoped to this issuer's assets, so never a full wipe.
     await env.CORE_DB.prepare(
-      `DELETE FROM tags AS tag WHERE tag.source='issuer' AND tag.tag=? AND NOT EXISTS (
+      `DELETE FROM collection_membership_evidence AS tag WHERE tag.source='issuer' AND tag.tag=? AND NOT EXISTS (
          SELECT 1 FROM entity_dictionary entity
          JOIN asset_dictionary asset ON asset.asset=entity.entity_key
          JOIN assets state ON state.asset_id=asset.asset_id
@@ -86,6 +87,7 @@ export async function buildIssuerCollections(env: Env): Promise<Record<string, u
     )
       .bind(c.tag, c.issuer)
       .run();
+    await projectCollectionMembership(env, c.tag);
   }
   return { collections: ISSUER_COLLECTIONS.length, tagged };
 }

@@ -21,6 +21,7 @@ import type {
 import type { AssetRow, AssetSignalsRow } from "#api/storage-types";
 import type { AssetAccounting } from "#api/queries/asset-accounting";
 import { one, q } from "#api/db";
+import { collectionMembershipPrioritySql } from "#api/indexer/collection-membership";
 
 export interface CoreAssetListFilter {
   query?: string;
@@ -456,8 +457,7 @@ export async function coreAssetCollection(
     db,
     asset,
     `tags.source IN ('manual','collection','tokenscan','digirare','issuer','discovered')`,
-    `ORDER BY CASE tags.source WHEN 'manual' THEN 0 WHEN 'collection' THEN 1 WHEN 'tokenscan' THEN 2
-                               WHEN 'digirare' THEN 3 WHEN 'issuer' THEN 4 ELSE 5 END`,
+    `ORDER BY ${collectionMembershipPrioritySql("tags.source")}`,
   );
   if (!row) return null;
   try {

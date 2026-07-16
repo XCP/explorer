@@ -38,12 +38,15 @@ test("issuer collection rebuild writes and reconciles compact entity tags", asyn
     CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,issuer_id INTEGER);
     CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,
       UNIQUE(entity_type,entity_key));
-    CREATE TABLE tags(entity_id INTEGER,tag TEXT,source TEXT,meta TEXT,PRIMARY KEY(entity_id,tag));
+    CREATE TABLE tags(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,PRIMARY KEY(entity_id,tag));
+    CREATE TABLE collection_membership_evidence(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,
+      observed_at INTEGER DEFAULT(unixepoch()),PRIMARY KEY(entity_id,tag,source));
     INSERT INTO address_dictionary VALUES(1,'bc1qv9zuv6ycly3gvnt2qrrw7ve9f3vlyjapmefrym');
     INSERT INTO asset_dictionary VALUES(10,'CORRUPTJSUN');
     INSERT INTO assets VALUES(10,1);
     INSERT INTO entity_dictionary VALUES(99,'asset','STALE');
-    INSERT INTO tags VALUES(99,'corruptionaires','issuer','old');
+    INSERT INTO tags VALUES(99,'corruptionaires','issuer',NULL,'old');
+    INSERT INTO collection_membership_evidence(entity_id,tag,source,meta) VALUES(99,'corruptionaires','issuer','old');
   `);
   const result = await buildIssuerCollections({ CORE_DB: d1(db) } as never);
   assert.equal(result.collections, 3);

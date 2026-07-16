@@ -13,6 +13,7 @@ test("collection audit uses canonical tag unions and robust medians", () => {
   assert.match(COLLECTION_PROFILE_SQL, /median_holders/);
   assert.match(COLLECTION_PROFILE_SQL, /top_asset_event_pct/);
   assert.match(COLLECTION_SOURCE_OVERLAP_SQL, /HAVING COUNT\(DISTINCT source\)>1/);
+  assert.match(COLLECTION_SOURCE_OVERLAP_SQL, /collection_membership_evidence/);
 });
 
 test("collection audit explicitly remains descriptive", () => {

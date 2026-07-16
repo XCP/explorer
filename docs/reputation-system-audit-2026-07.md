@@ -533,11 +533,13 @@ Recommended storage shape:
 1. Keep `tags` as the small canonical read projection.
 2. Add a source-evidence relation keyed by `(entity_id, tag, source)` for externally curated/manual/issuer collection claims only; do not duplicate the 800k deterministic facts unnecessarily.
 3. Make every collection writer own and reconcile only its evidence rows.
-4. Derive canonical collection tags from evidence using one documented priority policy. Suggested initial order: manual > issuer > pepe.wtf collection > Digirare > Tokenscan.
+4. Derive canonical collection tags from evidence using one documented priority policy: manual > issuer > reviewed discovery > pepe.wtf collection > Digirare > Tokenscan.
 5. Expose `sources`, `source_count`, and source metadata on collection membership/profile reads.
-6. Backfill by replaying the five existing collection writers; do not infer lost corroboration from current canonical rows.
+6. Backfill by replaying the replayable writers; preserve the checked-in Digirare snapshot as its own evidence source and do not infer lost corroboration from the old canonical rows.
 
 This is normalization, not compatibility machinery: evidence is the source-of-truth relation; `tags` remains the efficient canonical projection used by reads.
+
+Implemented in migration `0057_collection_membership_evidence.sql`: all six membership producers now upsert and reconcile source-scoped evidence, then rebuild the canonical projection deterministically. Tests cover corroborating sources, priority, fallback after a source retracts a claim, final removal, unrelated-tag isolation, and replay idempotence. The migration seeds the one source retained by the prior projection; subsequent writer replays restore independently observable corroboration.
 
 ### Collection profile findings
 

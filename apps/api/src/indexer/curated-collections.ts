@@ -4,6 +4,10 @@
  * the provenance and rebuild path explicit instead of leaving one-off production rows behind.
  */
 import type { Env } from "#api/env";
+import {
+  COLLECTION_EVIDENCE_UPSERT_SQL,
+  projectCollectionMembership,
+} from "#api/indexer/collection-membership";
 import { THE_COUNTERPART_ASSETS } from "#api/indexer/the-counterpart";
 
 interface CuratedCollection {
@@ -52,11 +56,7 @@ export async function buildCuratedCollections(env: Env): Promise<Record<string, 
         `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
          SELECT 'asset',asset FROM asset_dictionary WHERE asset=?`,
       ).bind(asset),
-      env.CORE_DB.prepare(
-        `INSERT INTO tags(entity_id,tag,source,meta)
-         SELECT entity_id,?,'manual',? FROM entity_dictionary WHERE entity_type='asset' AND entity_key=?
-         ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
-      ).bind(collection.tag, meta, asset),
+      env.CORE_DB.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).bind(asset, collection.tag, "manual", null, meta),
     ]);
     for (let index = 0; index < statements.length; index += 90) {
       const results = await env.CORE_DB.batch(statements.slice(index, index + 90));
@@ -64,13 +64,14 @@ export async function buildCuratedCollections(env: Env): Promise<Record<string, 
     }
 
     await env.CORE_DB.prepare(
-      `DELETE FROM tags WHERE source='manual' AND tag=? AND entity_id IN (
+      `DELETE FROM collection_membership_evidence WHERE source='manual' AND tag=? AND entity_id IN (
          SELECT entity_id FROM entity_dictionary
          WHERE entity_type='asset' AND entity_key NOT IN (SELECT value FROM json_each(?))
        )`,
     )
       .bind(collection.tag, JSON.stringify(collection.assets))
       .run();
+    await projectCollectionMembership(env, collection.tag);
   }
   await env.CORE_DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
   return { collections: CURATED_COLLECTIONS.length, tagged };

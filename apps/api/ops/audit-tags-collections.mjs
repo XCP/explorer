@@ -3,29 +3,31 @@
 /** Current-state provenance and robust collection-profile audit. No writes; JSON to stdout. */
 import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 
-export const COLLECTION_SOURCES = ["collection", "tokenscan", "manual", "issuer", "digirare"];
+export const COLLECTION_SOURCES = ["manual", "issuer", "discovered", "collection", "digirare", "tokenscan"];
 const sources = COLLECTION_SOURCES.map((source) => `'${source}'`).join(",");
 
 export const TAG_SOURCE_CENSUS_SQL = `SELECT source,COUNT(*) rows,COUNT(DISTINCT tag) tags,
   SUM(meta IS NOT NULL) with_meta,SUM(value IS NOT NULL) with_value,COUNT(DISTINCT entity_id) entities
 FROM tags GROUP BY source ORDER BY rows DESC`;
 
-export const COLLECTION_SOURCE_OVERLAP_SQL = `SELECT tag,COUNT(DISTINCT source) sources,COUNT(*) members,
+export const COLLECTION_SOURCE_OVERLAP_SQL = `SELECT tag,COUNT(DISTINCT source) sources,
+  COUNT(DISTINCT entity_id) members,COUNT(*) evidence_rows,
   GROUP_CONCAT(DISTINCT source) source_list
-FROM tags WHERE source IN (${sources}) GROUP BY tag HAVING COUNT(DISTINCT source)>1
+FROM collection_membership_evidence WHERE source IN (${sources}) GROUP BY tag HAVING COUNT(DISTINCT source)>1
 ORDER BY members DESC,tag`;
 
 export const COLLECTION_PROFILE_SQL = `WITH member AS (
-  SELECT tag.tag,tag.source,tag.entity_id,state.issuer_id,
+  SELECT evidence.tag,evidence.entity_id,COUNT(*) sources,state.issuer_id,
     COALESCE(signal.holders,0) holders,
     COALESCE(signal.trades,0)+COALESCE(signal.dispenses,0) market_events,
     COALESCE(signal.max_realized_usd,0) max_realized_usd
-  FROM tags tag
-  JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
+  FROM collection_membership_evidence evidence
+  JOIN entity_dictionary entity ON entity.entity_id=evidence.entity_id AND entity.entity_type='asset'
   LEFT JOIN asset_dictionary asset ON asset.asset=entity.entity_key
   LEFT JOIN assets state ON state.asset_id=asset.asset_id
   LEFT JOIN asset_signals signal ON signal.asset_id=asset.asset_id
-  WHERE tag.source IN (${sources})
+  WHERE evidence.source IN (${sources})
+  GROUP BY evidence.tag,evidence.entity_id
 ), ranked AS (
   SELECT member.*,
     ROW_NUMBER() OVER(PARTITION BY tag ORDER BY holders) holder_rank,
@@ -33,13 +35,13 @@ export const COLLECTION_PROFILE_SQL = `WITH member AS (
     COUNT(*) OVER(PARTITION BY tag) n
   FROM member
 ), base AS (
-  SELECT tag,COUNT(*) members,COUNT(DISTINCT source) sources,COUNT(DISTINCT issuer_id) issuers,
+  SELECT tag,COUNT(*) members,MAX(sources) max_sources_per_member,COUNT(DISTINCT issuer_id) issuers,
     SUM(market_events>0) market_assets,SUM(holders>0) held_assets,SUM(market_events) market_events,
     SUM(max_realized_usd) realized_peak_sum,MAX(market_events) max_asset_events,
     MAX(max_realized_usd) max_asset_value
   FROM member GROUP BY tag HAVING COUNT(*)>=5
 )
-SELECT base.tag,base.members,base.sources,base.issuers,base.market_assets,
+SELECT base.tag,base.members,base.max_sources_per_member,base.issuers,base.market_assets,
   ROUND(100.0*base.market_assets/base.members,1) market_pct,base.held_assets,
   ROUND(100.0*base.held_assets/base.members,1) held_pct,
   ROUND(AVG(CASE WHEN ranked.holder_rank IN ((ranked.n+1)/2,(ranked.n/2)+1)
@@ -57,7 +59,7 @@ export function buildTagCollectionAudit(census, overlaps, profiles, metas = []) 
     generated_at: new Date().toISOString(),
     methodology: {
       collection_sources: COLLECTION_SOURCES,
-      membership: "canonical union by tag; one retained source per entity/tag under the current schema",
+      membership: "canonical union by entity/tag with independent source evidence retained",
       profile: "current descriptive medians, breadth, and single-asset concentration; not a quality grade",
       minimum_members: 5,
     },

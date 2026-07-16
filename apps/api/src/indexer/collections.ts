@@ -13,6 +13,10 @@
  */
 import type { Env } from "#api/env";
 import { fetchPepeWtfAssets } from "#api/integrations/pepe-wtf";
+import {
+  COLLECTION_EVIDENCE_UPSERT_SQL,
+  projectCollectionMembership,
+} from "#api/indexer/collection-membership";
 
 // pepe.wtf collection slug -> our tag slug. `stamps` (26k) is intentionally excluded — we already carry a
 // protocol-derived `stamp` tag; folding all Bitcoin Stamps in here would swamp the collection layer.
@@ -57,12 +61,6 @@ interface Member {
   card: number | null;
   artist: { name: string; slug: string } | null;
 }
-
-export const COLLECTION_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,value,meta)
-  SELECT entity_id,?2,'collection',?3,?4 FROM entity_dictionary
-  WHERE entity_type='asset' AND entity_key=?1
-  ON CONFLICT(entity_id,tag) DO UPDATE SET
-    source=excluded.source,value=excluded.value,meta=excluded.meta`;
 
 export const ARTIST_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,meta)
   SELECT entity_id,?2,'artist',?3 FROM entity_dictionary
@@ -112,9 +110,9 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
     // can't nuke it, and a crash between steps just leaves the prior set intact. `source='manual'` members
     // are outside this entirely (a different source) — the crawl never sees or touches them.
     const curRows = await env.CORE_DB.prepare(
-      `SELECT entity.entity_key asset FROM tags tag
-       JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id AND entity.entity_type='asset'
-       WHERE tag.tag=? AND tag.source='collection'`,
+      `SELECT entity.entity_key asset FROM collection_membership_evidence evidence
+       JOIN entity_dictionary entity ON entity.entity_id=evidence.entity_id AND entity.entity_type='asset'
+       WHERE evidence.tag=? AND evidence.source='collection'`,
     )
       .bind(tag)
       .all<{ asset: string }>();
@@ -129,7 +127,7 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
         env.CORE_DB.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('asset',?)`).bind(
           m.name,
         ),
-        env.CORE_DB.prepare(COLLECTION_TAG_UPSERT_SQL).bind(m.name, tag, value, meta),
+        env.CORE_DB.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).bind(m.name, tag, "collection", value, meta),
       );
       if (m.artist) {
         stmts.push(
@@ -152,16 +150,19 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
     if (stale.length && stale.length <= cap) {
       const del = stale.map((n) =>
         env.CORE_DB.prepare(
-          `DELETE FROM tags WHERE tag=? AND source='collection'
+          `DELETE FROM collection_membership_evidence WHERE tag=? AND source='collection'
            AND entity_id=(SELECT entity_id FROM entity_dictionary WHERE entity_type='asset' AND entity_key=?)`,
         ).bind(tag, n),
       );
       for (let i = 0; i < del.length; i += 100) await env.CORE_DB.batch(del.slice(i, i + 100));
     }
+    await projectCollectionMembership(env, tag);
     out.collections[tag] =
       stale.length > cap ? `${members.length} (+${stale.length} stale kept — feed looked short)` : members.length;
   }
-  const nc = await env.CORE_DB.prepare(`SELECT COUNT(*) c FROM tags WHERE source='collection'`).first<{ c: number }>();
+  const nc = await env.CORE_DB.prepare(
+    `SELECT COUNT(*) c FROM collection_membership_evidence WHERE source='collection'`,
+  ).first<{ c: number }>();
   const na = await env.CORE_DB.prepare(`SELECT COUNT(DISTINCT tag) c FROM tags WHERE source='artist'`).first<{
     c: number;
   }>();

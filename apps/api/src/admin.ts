@@ -36,6 +36,7 @@ import { refreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#api/indexer/bitcoin-fees";
+import { projectCollectionMembership } from "#api/indexer/collection-membership";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -198,12 +199,15 @@ admin.post("/admin/promote-collection", async (c) => {
     await c.env.CORE_DB.batch(
       rows.results.slice(i, i + 90).map((row) =>
         c.env.CORE_DB.prepare(
-          `INSERT INTO tags(entity_id,tag,source,meta) VALUES(?,?,'discovered',?)
-             ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source,meta=excluded.meta`,
+          `INSERT INTO collection_membership_evidence(entity_id,tag,source,meta,observed_at)
+           VALUES(?,?,'discovered',?,unixepoch())
+           ON CONFLICT(entity_id,tag,source) DO UPDATE SET
+             meta=excluded.meta,observed_at=excluded.observed_at`,
         ).bind(row.entity_id, slug, meta),
       ),
     );
   }
+  await projectCollectionMembership(c.env, slug);
   await c.env.CORE_DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
   return c.json({ issuer, slug, name: name || slug, tagged: rows.results.length });
 });
