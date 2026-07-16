@@ -6,6 +6,7 @@ import {
   CUTOFFS,
   HORIZON_DAYS,
   buildReport,
+  comparePredictors,
   validateLeakage,
 } from "#ops/evaluate-reputation-baselines";
 
@@ -15,6 +16,27 @@ test("historical baseline SQL keeps features and outcomes on opposite sides of t
   assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.block_time<=past\.outcome_end/);
   assert.equal(/asset_signals|address_signals|graph_(?:rank|edges|seed)/.test(ASSET_MARKET_BASELINE_SQL), false);
   assert.match(ASSET_MARKET_BASELINE_SQL, /'balanced_market'/);
+  for (const family of ["recency", "active_months", "realized_usd"])
+    assert.match(ASSET_MARKET_BASELINE_SQL, new RegExp(`'balanced_no_${family}'`));
+  assert.match(ASSET_MARKET_BASELINE_SQL, /'compact_market'/);
+  assert.match(ASSET_MARKET_BASELINE_SQL, /'persistence_core'/);
+});
+
+test("challenger comparison exposes cutoff wins and worst regression", () => {
+  const rows = [
+    { label: "a", predictor: "candidate", return_lift: 3 },
+    { label: "a", predictor: "baseline", return_lift: 2 },
+    { label: "b", predictor: "candidate", return_lift: 1.5 },
+    { label: "b", predictor: "baseline", return_lift: 2 },
+  ];
+  const comparison = comparePredictors(rows, "candidate", "baseline", ["return_lift"]);
+  assert.deepEqual(comparison.summary.return_lift, {
+    wins: 1,
+    ties: 0,
+    losses: 1,
+    worst_delta: -0.5,
+    mean_delta: 0.25,
+  });
 });
 
 test("address baseline uses originating transactions and the same strict temporal boundary", () => {

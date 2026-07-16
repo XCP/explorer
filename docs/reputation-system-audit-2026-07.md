@@ -461,3 +461,26 @@ For addresses, `balanced_participation` combines recency, active-month breadth, 
 Decision: **reject as a return predictor**. Keep recency as a separate predictive axis. A richer address score can still describe historical track record, but combining activity dimensions does not make it a better forecast.
 
 Adding percentile windows raised the address evaluation to roughly 67.5 million rows read and 89.8 seconds of D1 SQL time. Do not iterate this query repeatedly against canonical D1; construct only the compact cutoff-safe snapshot needed for offline comparison.
+
+### Asset family ablation
+
+Leave-one-family-out evaluation of the four-family `balanced_market` challenger found:
+
+- **Active-month breadth is load-bearing:** removing it reduced return lift at all three cutoffs and reduced or failed to improve every robust outcome.
+- **Recency is load-bearing:** removing it reduced return, persistence, and buyer-breadth performance at all three cutoffs.
+- **Distinct historical buyers are redundant:** removing them slightly improved average return and persistence lift, with effectively unchanged buyer-breadth prediction. The compact challenger therefore omits this family.
+- **Realized USD is regime-dependent:** it helped materially in the oldest cutoff, was modest in the middle, and hurt in the newest cutoff.
+
+The compact three-family model (`active months + recency + realized USD`) versus the two-family persistence core (`active months + recency`) produced:
+
+| Cutoff     | Compact return | Core return | Compact persistence | Core persistence | Compact future log-USD | Core future log-USD |
+| ---------- | -------------: | ----------: | ------------------: | ---------------: | ---------------------: | ------------------: |
+| 2025-01-01 |         7.847× |      7.411× |              9.126× |           8.650× |                  3.397 |               3.195 |
+| 2025-07-01 |         6.938× |      6.899× |              9.080× |           9.045× |                  2.774 |               2.712 |
+| 2026-01-01 |         6.096× |      6.298× |              8.700× |           8.783× |                  0.944 |               0.964 |
+
+USD-value coverage is stable across these cohorts: 95.46–95.59% of assets have positive USD history, while trade-level coverage improves from 69.89% to 74.19%. Missing price coverage does not explain the newest-period reversal.
+
+Decision: do not promote either challenger into the production asset rating yet. Historical realized value belongs in the descriptive **market evidence** axis. A predictive **activity outlook** should remain separate, led by active-month breadth and recency, and must be monitored for temporal drift. A single fixed composite should not be optimized simultaneously for historical significance and future activity.
+
+Future evaluation reports must include per-cutoff results and a worst-cutoff regression gate. An average improvement cannot hide a recent regime failure.

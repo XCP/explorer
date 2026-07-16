@@ -74,10 +74,17 @@ predictors AS (
       WHEN 'buyers' THEN past_buyers
       WHEN 'active_months' THEN past_active_months
       WHEN 'realized_usd' THEN LN(1+past_usd)
-      ELSE (recency_pct+active_months_pct+buyers_pct+realized_usd_pct)/4.0
+      WHEN 'balanced_market' THEN (recency_pct+active_months_pct+buyers_pct+realized_usd_pct)/4.0
+      WHEN 'balanced_no_recency' THEN (active_months_pct+buyers_pct+realized_usd_pct)/3.0
+      WHEN 'balanced_no_active_months' THEN (recency_pct+buyers_pct+realized_usd_pct)/3.0
+      WHEN 'compact_market' THEN (recency_pct+active_months_pct+realized_usd_pct)/3.0
+      WHEN 'persistence_core' THEN (recency_pct+active_months_pct)/2.0
+      ELSE (recency_pct+active_months_pct+buyers_pct)/3.0
     END score
   FROM normalized CROSS JOIN (
-    VALUES ('recency'),('sales'),('buyers'),('active_months'),('realized_usd'),('balanced_market')
+    VALUES ('recency'),('sales'),('buyers'),('active_months'),('realized_usd'),('balanced_market'),
+      ('balanced_no_recency'),('balanced_no_active_months'),('balanced_no_realized_usd'),
+      ('compact_market'),('persistence_core')
   ) predictor
 ),
 ranked AS (
@@ -227,6 +234,44 @@ export function validateLeakage(rows) {
   }
 }
 
+export function comparePredictors(rows, challenger, baseline, metrics) {
+  const byKey = new Map(rows.map((row) => [`${row.label}:${row.predictor}`, row]));
+  const cutoffs = [...new Set(rows.map((row) => row.label))].sort();
+  const deltas = cutoffs
+    .map((label) => {
+      const candidate = byKey.get(`${label}:${challenger}`);
+      const control = byKey.get(`${label}:${baseline}`);
+      if (!candidate || !control) return null;
+      return {
+        label,
+        metrics: Object.fromEntries(
+          metrics.map((metric) => [metric, Number(candidate[metric]) - Number(control[metric])]),
+        ),
+      };
+    })
+    .filter(Boolean);
+  return {
+    challenger,
+    baseline,
+    cutoffs: deltas,
+    summary: Object.fromEntries(
+      metrics.map((metric) => {
+        const values = deltas.map((row) => row.metrics[metric]);
+        return [
+          metric,
+          {
+            wins: values.filter((value) => value > 0).length,
+            ties: values.filter((value) => value === 0).length,
+            losses: values.filter((value) => value < 0).length,
+            worst_delta: values.length ? Math.min(...values) : null,
+            mean_delta: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
+          },
+        ];
+      }),
+    ),
+  };
+}
+
 export function buildReport(assetRows, assetMeta = {}, addressRows = [], addressMeta = {}) {
   validateLeakage([...assetRows, ...addressRows]);
   return {
@@ -259,6 +304,22 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
     },
     asset_market: assetRows,
     address_activity: addressRows,
+    comparisons: {
+      asset_balanced_vs_active_months: comparePredictors(assetRows, "balanced_market", "active_months", [
+        "return_lift",
+        "persistence_lift",
+        "buyer_breadth_lift",
+      ]),
+      asset_compact_vs_persistence_core: comparePredictors(assetRows, "compact_market", "persistence_core", [
+        "return_lift",
+        "persistence_lift",
+        "top_decile_log_future_usd",
+      ]),
+      address_balanced_vs_recency: comparePredictors(addressRows, "balanced_participation", "recency", [
+        "return_lift",
+        "persistence_lift",
+      ]),
+    },
   };
 }
 
