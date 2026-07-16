@@ -352,6 +352,22 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
   if (skipUnlessLive(t)) return;
   const j = await getJson(`/v2/firsts?contract=${Date.now()}`);
   assert.ok(Array.isArray(j.result) && j.result.length >= 37, "firsts must contain the historical catalog");
+  const keys = new Set(j.result.map((row: { key?: string }) => row.key));
+  for (const key of [
+    "bet_match",
+    "rps",
+    "rps_match",
+    "enhanced_send",
+    "dispenser_refill",
+    "mpma",
+    "attach",
+    "move",
+    "detach",
+    "pool_deposit",
+    "pool_swap",
+  ]) {
+    assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
+  }
   const stamp = j.result.find((row: { key?: string }) => row.key === "stamp");
   assert.deepEqual(
     stamp,

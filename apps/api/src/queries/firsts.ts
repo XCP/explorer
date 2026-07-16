@@ -80,7 +80,9 @@ export const FIRSTS: First[] = [
     key: "subasset",
     label: "First subasset",
     sql: earliest("assets", "asset.asset ref,'asset' typ", {
-      where: "type='subasset'", bcol: "first_issuance_block_index", by: "x.asset_id",
+      where: "type='subasset'",
+      bcol: "first_issuance_block_index",
+      by: "x.asset_id",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
   },
@@ -88,7 +90,9 @@ export const FIRSTS: First[] = [
     key: "numeric",
     label: "First numeric asset",
     sql: earliest("assets", "asset.asset ref,'asset' typ", {
-      where: "type='numeric'", bcol: "first_issuance_block_index", by: "x.asset_id",
+      where: "type='numeric'",
+      bcol: "first_issuance_block_index",
+      by: "x.asset_id",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
   },
@@ -96,31 +100,109 @@ export const FIRSTS: First[] = [
     key: "destruction",
     label: "First destruction",
     sql: earliest("destructions", "asset.asset ref,'asset' typ", {
-      by: "x.event_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+      by: "x.event_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
   },
   // --- transfers & markets ---
-  { key: "send", label: "First send", sql: earliest("sends", "asset.asset ref,'asset' typ", { by: "x.tx_index,x.event_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id" }) },
-  { key: "order", label: "First DEX order", sql: earliest("orders", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }) },
-  { key: "order_match", label: "First order match", sql: earliest("order_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }) },
-  { key: "dispenser", label: "First dispenser", sql: earliest("dispensers", "asset.asset ref,'asset' typ", { by: "x.tx_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id" }) },
+  {
+    key: "send",
+    label: "First send",
+    sql: earliest("sends", "asset.asset ref,'asset' typ", {
+      by: "x.tx_index,x.event_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
+  },
+  {
+    key: "order",
+    label: "First DEX order",
+    sql: earliest("orders", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+  },
+  {
+    key: "order_match",
+    label: "First order match",
+    sql: earliest("order_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }),
+  },
+  {
+    key: "dispenser",
+    label: "First dispenser",
+    sql: earliest("dispensers", "asset.asset ref,'asset' typ", {
+      by: "x.tx_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
+  },
   {
     key: "dispense",
     label: "First dispense",
-    sql: earliest("dispenses", "asset.asset ref,'asset' typ", { by: "x.event_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id" }),
+    sql: earliest("dispenses", "asset.asset ref,'asset' typ", {
+      by: "x.event_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
   },
   // --- other message types ---
-  { key: "dividend", label: "First dividend", sql: earliest("dividends", "asset.asset ref,'asset' typ", { by: "x.tx_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id" }) },
-  { key: "broadcast", label: "First broadcast", sql: earliest("broadcasts", "source.address ref,'address' typ", { by: "x.tx_index", joins: "JOIN address_dictionary source ON source.address_id=x.source_id" }) },
-  { key: "bet", label: "First bet", sql: earliest("bets", "source.address ref,'address' typ", { by: "x.tx_index", joins: "JOIN address_dictionary source ON source.address_id=x.source_id" }) },
-  { key: "sweep", label: "First sweep", sql: earliest("sweeps", "source.address ref,'address' typ", { by: "x.tx_index", joins: "JOIN address_dictionary source ON source.address_id=x.source_id" }) },
-  { key: "cancel", label: "First cancel", sql: earliest("cancels", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }) },
-  { key: "btcpay", label: "First BTC pay", sql: earliest("btcpays", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.event_index" }) },
+  {
+    key: "dividend",
+    label: "First dividend",
+    sql: earliest("dividends", "asset.asset ref,'asset' typ", {
+      by: "x.tx_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
+  },
+  {
+    key: "broadcast",
+    label: "First broadcast",
+    sql: earliest("broadcasts", "source.address ref,'address' typ", {
+      by: "x.tx_index",
+      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
+    }),
+  },
+  {
+    key: "bet",
+    label: "First bet",
+    sql: earliest("bets", "source.address ref,'address' typ", {
+      by: "x.tx_index",
+      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
+    }),
+  },
+  {
+    key: "bet_match",
+    label: "First bet match",
+    sql: earliest("bet_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }),
+  },
+  {
+    key: "rps",
+    label: "First RPS game",
+    sql: earliest("rps", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+  },
+  {
+    key: "rps_match",
+    label: "First RPS match",
+    sql: earliest("rps_matches", "LOWER(HEX(x.tx0_hash)) ref,'tx' typ", { by: "x.tx0_index,x.tx1_index" }),
+  },
+  {
+    key: "sweep",
+    label: "First sweep",
+    sql: earliest("sweeps", "source.address ref,'address' typ", {
+      by: "x.tx_index",
+      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
+    }),
+  },
+  {
+    key: "cancel",
+    label: "First cancel",
+    sql: earliest("cancels", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index" }),
+  },
+  {
+    key: "btcpay",
+    label: "First BTC pay",
+    sql: earliest("btcpays", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.event_index" }),
+  },
   {
     key: "non_xcp_order",
     label: "First non-XCP DEX order",
     sql: earliest("orders", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
-      where: "give_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP') AND get_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')",
+      where:
+        "give_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP') AND get_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')",
       by: "x.tx_index",
     }),
   },
@@ -128,8 +210,57 @@ export const FIRSTS: First[] = [
     key: "btc_dispense",
     label: "First dispense paid in BTC",
     sql: earliest("dispenses", "asset.asset ref,'asset' typ", {
-      where: "CAST(btc_amount AS INTEGER)>0", by: "x.event_index",
+      where: "CAST(btc_amount AS INTEGER)>0",
+      by: "x.event_index",
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
+  },
+  {
+    key: "enhanced_send",
+    label: "First enhanced send",
+    sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
+      where: "send_type='enhanced_send'",
+      by: "x.tx_index,x.event_index",
+    }),
+  },
+  {
+    key: "dispenser_refill",
+    label: "First dispenser refill",
+    sql: earliest("dispenser_refills", "asset.asset ref,'asset' typ", {
+      by: "x.tx_index,x.event_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
+  },
+  {
+    key: "mpma",
+    label: "First MPMA send",
+    sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
+      where: "send_type='mpma'",
+      by: "x.tx_index,x.event_index",
+    }),
+  },
+  {
+    key: "attach",
+    label: "First UTXO attach",
+    sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
+      where: "send_type='attach'",
+      by: "x.tx_index,x.event_index",
+    }),
+  },
+  {
+    key: "move",
+    label: "First UTXO move",
+    sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
+      where: "send_type='move'",
+      by: "x.tx_index,x.event_index",
+    }),
+  },
+  {
+    key: "detach",
+    label: "First UTXO detach",
+    sql: earliest("sends", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
+      where: "send_type='detach'",
+      by: "x.tx_index,x.event_index",
     }),
   },
   // asset-PROPERTY firsts — from the ISSUANCES table (the EVENT that first set the property), NOT the assets
@@ -152,12 +283,31 @@ export const FIRSTS: First[] = [
   {
     key: "fairminter",
     label: "First fairminter",
-    sql: earliest("fairminters", "asset.asset ref,'asset' typ", { by: "x.tx_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id" }),
+    sql: earliest("fairminters", "asset.asset ref,'asset' typ", {
+      by: "x.tx_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
   },
   {
     key: "fairmint",
     label: "First fairmint",
-    sql: earliest("fairmints", "asset.asset ref,'asset' typ", { by: "x.event_index", joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id" }),
+    sql: earliest("fairmints", "asset.asset ref,'asset' typ", {
+      by: "x.event_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+    }),
+  },
+  {
+    key: "pool_deposit",
+    label: "First pool deposit",
+    sql: earliest("pool_liquidity", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", {
+      where: "kind='deposit'",
+      by: "x.tx_index,x.event_index",
+    }),
+  },
+  {
+    key: "pool_swap",
+    label: "First pool swap",
+    sql: earliest("pool_matches", "LOWER(HEX(x.tx_hash)) ref,'tx' typ", { by: "x.tx_index,x.event_index" }),
   },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
@@ -195,7 +345,9 @@ export const FIRSTS: First[] = [
     key: "btns",
     label: "First BTNS broadcast",
     sql: earliest("broadcasts", "source.address ref,'address' typ", {
-      where: "btns=1", by: "x.tx_index", joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
+      where: "btns=1",
+      by: "x.tx_index",
+      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
 ];

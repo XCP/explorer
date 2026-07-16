@@ -62,30 +62,64 @@ export function Firsts() {
         </p>
       </div>
 
-      <Card>
+      <Card bodyClassName="overflow-hidden p-0">
         {rows.length === 0 ? (
-          <Skeleton rows={12} />
+          <div className="p-4">
+            <Skeleton rows={12} />
+          </div>
         ) : (
-          <ol className="text-sm">
-            {rows.map((r) => (
-              <li
-                key={r.key}
-                className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2 border-b border-zinc-900 last:border-0"
-              >
-                <time className="font-mono text-xs text-zinc-400 w-[5.5rem] shrink-0">{r.date}</time>
-                <span className="text-zinc-200 flex-1 min-w-0">{r.label}</span>
-                <span className="text-zinc-300 min-w-0 max-w-[55%]">
-                  <Entity type={r.type} ref={r.ref} />
-                </span>
-                <Link
-                  href={`/block/${r.block}`}
-                  className="font-mono text-[10px] text-zinc-500 hover:text-zinc-200 w-16 text-right shrink-0"
+          <div role="table" aria-label="Counterparty firsts" className="text-sm">
+            <div
+              role="row"
+              className="hidden grid-cols-[6.75rem_6rem_minmax(0,1fr)_minmax(12rem,1fr)] gap-x-4 border-b border-zinc-800 bg-zinc-950/60 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-zinc-500 sm:grid"
+            >
+              <span role="columnheader">Date</span>
+              <span role="columnheader">Block</span>
+              <span role="columnheader">First</span>
+              <span role="columnheader">Milestone</span>
+            </div>
+            <ol role="rowgroup">
+              {rows.map((r) => (
+                <li
+                  key={r.key}
+                  role="row"
+                  className="relative ml-3 grid grid-cols-1 gap-y-1.5 border-b border-l border-zinc-800 py-3 pl-4 pr-3 last:border-b-0 before:absolute before:-left-1 before:top-[1.15rem] before:size-2 before:rounded-full before:bg-(--color-accent) sm:ml-0 sm:grid-cols-[6.75rem_6rem_minmax(0,1fr)_minmax(12rem,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-0 sm:border-l-0 sm:border-zinc-900 sm:px-4 sm:py-2.5 sm:before:hidden"
                 >
-                  #{commas(r.block)}
-                </Link>
-              </li>
-            ))}
-          </ol>
+                  <span role="cell" className="grid grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
+                      Date
+                    </span>
+                    <time className="font-mono text-xs text-zinc-400">{r.date}</time>
+                  </span>
+                  <span role="cell" className="grid grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
+                      Block
+                    </span>
+                    <Link
+                      href={`/block/${r.block}`}
+                      className="truncate font-mono text-xs !text-zinc-500 hover:!text-zinc-300"
+                    >
+                      #{commas(r.block)}
+                    </Link>
+                  </span>
+                  <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
+                      First
+                    </span>
+                    <span className="min-w-0 overflow-hidden text-zinc-200 [&_a]:!text-zinc-200">
+                      <Entity type={r.type} ref={r.ref} />
+                    </span>
+                  </span>
+                  <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
+                      Milestone
+                    </span>
+                    <span className="text-xs leading-4 text-zinc-400 sm:text-sm sm:text-zinc-300">{r.label}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
       </Card>
     </>

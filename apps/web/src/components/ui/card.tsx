@@ -26,7 +26,17 @@ export const Stat = ({
   </div>
 );
 
-export const Card = ({ title, icon, children }: { title?: string; icon?: ReactNode; children: ReactNode }) => (
+export const Card = ({
+  title,
+  icon,
+  children,
+  bodyClassName = "p-4",
+}: {
+  title?: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  bodyClassName?: string;
+}) => (
   // v19 .card grammar: rounded-lg, --border2, --panel; title is a mono uppercase header with a
   // bottom rule; the body carries the padding. Converges every <Card> call site onto the design.
   <section className="relative rounded-lg border border-[#1a1d24] bg-[#101216]">
@@ -36,7 +46,7 @@ export const Card = ({ title, icon, children }: { title?: string; icon?: ReactNo
         {title}
       </h2>
     )}
-    <div className="p-4">{children}</div>
+    <div className={bodyClassName}>{children}</div>
   </section>
 );
 
