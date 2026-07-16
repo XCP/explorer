@@ -11,7 +11,7 @@ Every query must return exactly these aliases:
 | `b` | Counterparty block index |
 | `t` | Unix block time |
 | `ref` | Human-readable subject, such as an asset, address, pair, or block |
-| `typ` | Subject type: `asset`, `address`, `pair`, `broadcast`, `block`, or `tx` |
+| `typ` | Subject type: `asset`, `address`, `pair`, `broadcast`, `summary`, `block`, or `tx` |
 | `tx` | Lowercase, 64-character causal Bitcoin transaction hash |
 
 Only the literal **First transaction** may use a transaction hash as `ref`. Every other row displays the thing that was first and links that subject to its causal transaction.

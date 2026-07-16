@@ -14,6 +14,7 @@ const STATUS_BACKED_FIRSTS = [
   "numeric_one_of_one", "subasset_one_of_one", "satoshi_nft", "tokenless",
   "non_ascii_description", "embedded_image",
   "description_url", "pepe_mention", "nft_term",
+  "asset_dividend", "free_numeric_subasset", "locked_feed", "indefinite_order",
 ];
 
 test("catalog keys are unique and every query satisfies the shared row contract", () => {
@@ -40,4 +41,11 @@ test("only the literal first transaction displays a transaction hash as its subj
     if (entry.key === "transaction") continue;
     assert.equal(/HEX\(.+\) ref,'tx' typ/.test(entry.sql), false, `${entry.key} exposes a hash as its subject`);
   }
+});
+
+test("joined dictionary predicates are self-contained inside earliest-block subqueries", () => {
+  const numeric = FIRSTS_CATALOG.find((entry) => entry.key === "numeric");
+  if (!numeric) throw new Error("numeric first is missing");
+  assert.match(numeric.sql, /x\.asset_id IN \(SELECT asset_id FROM asset_dictionary/);
+  assert.equal(/WHERE[^)]*asset\.asset GLOB/.test(numeric.sql), false);
 });

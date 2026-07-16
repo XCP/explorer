@@ -102,6 +102,6 @@ export interface FirstRow {
   block: number;
   date: string; // ISO yyyy-mm-dd
   ref: string; // display + link id
-  type: "block" | "tx" | "address" | "asset" | "pair" | "broadcast";
+  type: "block" | "tx" | "address" | "asset" | "pair" | "broadcast" | "summary";
   tx: string; // transaction that established the milestone
 }

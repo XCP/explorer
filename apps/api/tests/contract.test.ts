@@ -383,6 +383,16 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     "description_url",
     "pepe_mention",
     "nft_term",
+    "numeric",
+    "asset_dividend",
+    "multisig_address",
+    "p2sh_address",
+    "segwit_address",
+    "taproot_address",
+    "free_numeric_subasset",
+    "locked_feed",
+    "bundled_dispense",
+    "indefinite_order",
   ]) {
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }

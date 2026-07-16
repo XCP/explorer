@@ -11,7 +11,7 @@ import { FIRSTS_CATALOG, queryFirstRecord } from "#api/queries/firsts";
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
-  cached(c, "firsts:catalog:expanded", { ttl: 3600, edge: 600 }, async () => {
+  cached(c, "firsts:catalog:subjects", { ttl: 3600, edge: 600 }, async () => {
     const rows = await Promise.all(
       FIRSTS_CATALOG.map(async (f): Promise<FirstRow | null> => {
         const r = await queryFirstRecord(c.env.CORE_DB, f.sql);

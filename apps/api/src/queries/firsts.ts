@@ -42,7 +42,7 @@ const earliestEventSql = (
   const filt = predicate ? ` AND (${predicate})` : "";
   const minWhere = predicate ? ` WHERE ${predicate}` : "";
   return `SELECT x.${bcol} b,x.${tcol} t,${ref},${tx} tx FROM ${table} x ${joins}
-    WHERE x.${bcol}=(SELECT MIN(${bcol}) FROM ${table}${minWhere})${filt} ORDER BY ${by} LIMIT 1`;
+    WHERE x.${bcol}=(SELECT MIN(${bcol}) FROM ${table} x${minWhere})${filt} ORDER BY ${by} LIMIT 1`;
 };
 // asset-property firsts read the ISSUANCES event (first valid issuance that set the property), not assets state.
 const earliestValidIssuanceSql = (extra: string) =>
@@ -65,6 +65,20 @@ const earliestLockedSupplySql = (supply: number, extra: string) => `SELECT x.blo
       - COALESCE((SELECT SUM(CAST(d.quantity AS INTEGER)) FROM destructions d
       WHERE d.asset_id=x.asset_id AND d.status NOT LIKE 'invalid%' AND d.event_index<=x.event_index),0)=${supply}
   ORDER BY x.block_index,x.tx_index,x.event_index LIMIT 1`;
+
+// Address-format milestones are first *uses*, not activation blocks. Search source and destination
+// independently so SQLite can use both transaction indexes instead of evaluating an OR join.
+const earliestAddressUseSql = (addressPredicate: string, activationBlock: number) => `WITH uses AS (
+  SELECT tx.block_index b,tx.block_time t,address.address ref,'address' typ,
+    LOWER(HEX(tx.tx_hash)) tx,tx.tx_index
+  FROM address_dictionary address JOIN transactions tx ON tx.source_id=address.address_id
+  WHERE tx.supported=1 AND tx.block_index>=${activationBlock} AND (${addressPredicate})
+  UNION ALL
+  SELECT tx.block_index b,tx.block_time t,address.address ref,'address' typ,
+    LOWER(HEX(tx.tx_hash)) tx,tx.tx_index
+  FROM address_dictionary address JOIN transactions tx ON tx.destination_id=address.address_id
+  WHERE tx.supported=1 AND tx.block_index>=${activationBlock} AND (${addressPredicate})
+) SELECT b,t,ref,typ,tx FROM uses ORDER BY b,tx_index,ref LIMIT 1`;
 
 export const FIRSTS_CATALOG: FirstDefinition[] = [
   // --- protocol genesis ---
@@ -105,7 +119,7 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "numeric",
     label: "First numeric asset",
-    sql: earliestValidIssuanceSql("asset.asset GLOB 'A[0-9]*'"),
+    sql: earliestValidIssuanceSql("x.asset_id IN (SELECT asset_id FROM asset_dictionary WHERE asset GLOB 'A[0-9]*')"),
   },
   {
     key: "destruction",
@@ -172,10 +186,20 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "dividend",
     label: "First dividend",
-    sql: earliestEventSql("dividends", "asset.asset ref,'asset' typ", {
+    sql: earliestEventSql("dividends", "asset.asset||' / '||dividend_asset.asset ref,'pair' typ", {
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=x.dividend_asset_id",
+    }),
+  },
+  {
+    key: "asset_dividend",
+    label: "First asset-paid dividend",
+    sql: earliestEventSql("dividends", "asset.asset||' / '||dividend_asset.asset ref,'pair' typ", {
+      where: "dividend_asset_id NOT IN (SELECT asset_id FROM asset_dictionary WHERE asset IN ('BTC','XCP'))",
+      valid: true,
+      by: "x.tx_index",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=x.dividend_asset_id",
     }),
   },
   {
@@ -314,11 +338,11 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "mpma",
     label: "First MPMA send",
-    sql: earliestEventSql("sends", "source.address ref,'address' typ", {
+    sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
       where: "send_type='mpma'",
       valid: true,
       by: "x.tx_index,x.event_index",
-      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
+      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
   },
   {
@@ -351,6 +375,27 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
       joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
     }),
   },
+  // Address encodings enabled by protocol changes, derived from their first supported on-chain use.
+  {
+    key: "multisig_address",
+    label: "First multisig address",
+    sql: earliestAddressUseSql("address.address GLOB '1_*' OR address.address GLOB '2_*' OR address.address GLOB '3_*'", 333500),
+  },
+  {
+    key: "p2sh_address",
+    label: "First P2SH address",
+    sql: earliestAddressUseSql("address.address GLOB '3*'", 423888),
+  },
+  {
+    key: "segwit_address",
+    label: "First SegWit address",
+    sql: earliestAddressUseSql("address.address GLOB 'bc1q*'", 557236),
+  },
+  {
+    key: "taproot_address",
+    label: "First Taproot address",
+    sql: earliestAddressUseSql("address.address GLOB 'bc1p*'", 902000),
+  },
   // asset-PROPERTY firsts — from the ISSUANCES table (the EVENT that first set the property), NOT the assets
   // current-state table. e.g. first LOCKED = first valid issuance with locked=1, not the oldest now-locked asset.
   { key: "locked", label: "First locked issuance", sql: earliestValidIssuanceSql(`locked=1`) },
@@ -371,6 +416,11 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   { key: "pepe_mention", label: "First Pepe mention in an asset description", sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%PEPE%'`) },
   { key: "nft_term", label: "First use of “NFT” in an asset description", sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%NFT%'`) },
   { key: "description_lock", label: "First locked asset description", sql: earliestValidIssuanceSql(`asset_events='lock_description'`) },
+  {
+    key: "free_numeric_subasset",
+    label: "First free numeric subasset",
+    sql: earliestValidIssuanceSql("x.block_index>=866000 AND x.asset_longname GLOB 'A[0-9]*.*' AND CAST(x.fee_paid AS INTEGER)=0"),
+  },
   { key: "json_desc", label: "First JSON description", sql: earliestValidIssuanceSql(`TRIM(description) LIKE '{%'`) },
   {
     key: "inscription",
@@ -427,6 +477,30 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     }),
   },
   {
+    key: "locked_feed",
+    label: "First locked broadcast feed",
+    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
+      where: "locked=1",
+      valid: true,
+      by: "x.tx_index",
+      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
+    }),
+  },
+  {
+    key: "bundled_dispense",
+    label: "First bundled dispense",
+    sql: `WITH first_leg AS (
+      SELECT x.tx_index,x.block_index,x.block_time,x.tx_hash FROM dispenses x
+      WHERE EXISTS (SELECT 1 FROM dispenses sibling
+        WHERE sibling.tx_index=x.tx_index AND sibling.event_index!=x.event_index)
+      ORDER BY x.block_index,x.event_index LIMIT 1
+    ) SELECT first_leg.block_index b,first_leg.block_time t,
+      CAST(COUNT(DISTINCT dispense.asset_id) AS TEXT)||' assets' ref,'summary' typ,
+      LOWER(HEX(first_leg.tx_hash)) tx
+      FROM first_leg JOIN dispenses dispense ON dispense.tx_index=first_leg.tx_index
+      GROUP BY first_leg.tx_index`,
+  },
+  {
     key: "pool_deposit",
     label: "First pool deposit",
     sql: earliestEventSql("pool_liquidity", "asset_a.asset||' / '||asset_b.asset ref,'pair' typ", {
@@ -443,6 +517,16 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
       by: "x.tx_index,x.event_index",
       valid: true,
       joins: "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
+    }),
+  },
+  {
+    key: "indefinite_order",
+    label: "First indefinite DEX order",
+    sql: earliestEventSql("orders", "give_asset.asset||' / '||get_asset.asset ref,'pair' typ", {
+      where: "x.block_index>=952800 AND expiration=0",
+      valid: true,
+      by: "x.tx_index",
+      joins: "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id JOIN asset_dictionary get_asset ON get_asset.asset_id=x.get_asset_id",
     }),
   },
   // --- derived firsts (our classification layer) ---
