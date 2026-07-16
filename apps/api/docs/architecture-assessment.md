@@ -101,8 +101,8 @@ Target:
 
 - one `requireAdmin` Hono middleware, shared by all operational and verification routes;
 - bearer header only;
-- constant-time token comparison where practical;
-- return 401 for missing/invalid authentication, with `WWW-Authenticate`, rather than scattered 403s;
+- fixed-width hashed token comparison;
+- `401` for missing/invalid authentication with `WWW-Authenticate: Bearer`;
 - keep `/admin/*` entirely outside public CORS/cache middleware;
 - validate every admin query/body before invoking expensive work.
 
