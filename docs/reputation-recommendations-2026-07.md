@@ -51,6 +51,10 @@ The snapshot is an evaluation artifact, not a serving database, compatibility ad
 
 Acceptance: identical aggregate baseline results versus D1, immutable cutoff manifests, row counts/checksums, and no application runtime dependency.
 
+The first bounded snapshot completed for the 2026-01-01 cutoff with 213,909 eligible addresses and 1,191 future returners. Its aggregate results reproduce the prior canonical D1 evaluation after rounding: recency return lift 8.573 and persistence lift 9.389; balanced participation return lift 7.901 and persistence lift 8.836. The snapshot additionally shows that balanced participation wins the very top review budget (83% precision at 100 versus 69%), while recency wins across the ranking (average precision 0.304 versus 0.283; NDCG 0.819 versus 0.811). This supports a factual track-record profile plus separate recency, not a blended universal score.
+
+The artifact is built from exact timestamp boundaries in bounded source-ID ranges, resumes from immutable chunk files, records a fixed build frontier, hashes every chunk, and binds the ordered chunk manifest with a content checksum. It is local evaluation machinery only and is git-ignored.
+
 ### 5. Present collection profiles before considering a grade — do next
 
 Reason: membership evidence is now normalized and 7,671 memberships have multi-source corroboration. Collection behavior differs too much for total volume or maximum-card quality to be representative.
