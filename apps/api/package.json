@@ -23,6 +23,7 @@
     "evaluate:reputation": "node ops/evaluate-reputation-baselines.mjs",
     "review:asset-outlook": "node ops/review-asset-activity-outlook.mjs",
     "evaluate:asset-outlook-collections": "node ops/evaluate-asset-outlook-collections.mjs",
+    "audit:asset-outlook": "node ops/audit-asset-activity-outlook.mjs",
     "snapshot:reputation": "node ops/build-reputation-snapshot.mjs",
     "snapshot:radar-ownership": "node ops/build-radar-ownership.mjs",
     "snapshot:radar-block-times": "node ops/build-radar-block-times.mjs",

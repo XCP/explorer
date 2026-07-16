@@ -161,6 +161,13 @@ The remaining work is monitoring rather than model discovery: rerun historical a
 before changing inputs or weights; watch population/input drift; and keep integrity classifications separate from
 Rating, Track Record, Conviction, Activity Outlook, and Network Standing.
 
+Operational commands:
+
+- `npm run audit:asset-outlook -w xcp-api` checks projection completeness, rank invariants, input medians, and current
+  top-100 collection concentration. It exits non-zero on an integrity failure.
+- `npm run evaluate:asset-outlook-collections -w xcp-api` reruns every historical cutoff with and without the dominant
+  collection. Run it before changing Outlook inputs, weights, horizon language, or interpretation.
+
 ### Activity-outlook subgroup review (2026-07-16)
 
 The newest fully observed cutoff was reviewed with distribution-derived buckets rather than hand-selected activity
