@@ -14,6 +14,9 @@ export interface BitcoinFeeRow {
 }
 
 const TX_HASH = /^[0-9a-f]{64}$/;
+const FEE_PAGE_SIZE = 100;
+const FEE_FETCH_CONCURRENCY = 10;
+const FEES_PER_RUN = 400;
 
 export async function listMissingBitcoinFees(
   db: D1Database,
@@ -59,19 +62,37 @@ export async function storeBitcoinFees(db: D1Database, rows: BitcoinFeeRow[]): P
 /** Keep the staging frontier current while the one-time historical exporter walks backward. */
 export async function reconcileStagedBitcoinFees(
   env: Pick<Env, "CORE_DB" | "ELECTRS_API_BASE">,
-  limit = 100,
+  limit = FEES_PER_RUN,
 ): Promise<{ requested: number; updated: number }> {
-  const rows = await listMissingBitcoinFees(env.CORE_DB, null, limit);
-  const settled = await Promise.allSettled(
-    rows.map(async (row) => ({
-      tx_hash: row.tx_hash,
-      fee: await fetchTransactionFee(env.ELECTRS_API_BASE, row.tx_hash),
-    })),
-  );
-  const fees = settled.flatMap((result) =>
-    result.status === "fulfilled" && result.value.fee !== null
-      ? [{ tx_hash: result.value.tx_hash, fee: result.value.fee }]
-      : [],
-  );
-  return { requested: rows.length, updated: fees.length ? await storeBitcoinFees(env.CORE_DB, fees) : 0 };
+  const boundedLimit = Math.min(FEES_PER_RUN, Math.max(1, Math.trunc(limit)));
+  let requested = 0;
+  let updated = 0;
+  let after: number | null = null;
+  while (requested < boundedLimit) {
+    const pageSize = Math.min(FEE_PAGE_SIZE, boundedLimit - requested);
+    const rows = await listMissingBitcoinFees(env.CORE_DB, after, pageSize);
+    if (rows.length === 0) break;
+    requested += rows.length;
+    after = rows.at(-1)!.tx_index;
+
+    const fees: BitcoinFeeRow[] = [];
+    for (let offset = 0; offset < rows.length; offset += FEE_FETCH_CONCURRENCY) {
+      const settled = await Promise.allSettled(
+        rows.slice(offset, offset + FEE_FETCH_CONCURRENCY).map(async (row) => ({
+          tx_hash: row.tx_hash,
+          fee: await fetchTransactionFee(env.ELECTRS_API_BASE, row.tx_hash),
+        })),
+      );
+      fees.push(
+        ...settled.flatMap((result) =>
+          result.status === "fulfilled" && result.value.fee !== null
+            ? [{ tx_hash: result.value.tx_hash, fee: result.value.fee }]
+            : [],
+        ),
+      );
+    }
+    if (fees.length > 0) updated += await storeBitcoinFees(env.CORE_DB, fees);
+    if (rows.length < pageSize) break;
+  }
+  return { requested, updated };
 }
