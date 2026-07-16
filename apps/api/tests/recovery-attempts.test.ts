@@ -106,13 +106,17 @@ test("one provider failure does not block healthy recovery attempts", async () =
       return [];
     },
   } as unknown as D1Database;
+  let outspendCalls = 0;
   const providers: AttemptProviders = {
     tipHeight: async () => 900_005,
     transactionStatus: async (_baseUrl, candidate) => {
       if (candidate === broken) throw new Error("provider failure");
       return { confirmed: false, blockHeight: null, blockHash: null, blockTime: null };
     },
-    transactionOutspends: async () => [unspent],
+    transactionOutspends: async () => {
+      outspendCalls++;
+      return [unspent];
+    },
   };
   const result = await reconcileRecoveryAttempts(
     { RECOVERY_DB: db, ELECTRS_API_BASE: "https://electrs.example" } as never,
@@ -122,4 +126,5 @@ test("one provider failure does not block healthy recovery attempts", async () =
   assert.deepEqual(result, { checked: 1, failed: 1 });
   assert.equal(updates.length, 1);
   assert.equal(updates[0]?.at(-1), healthy);
+  assert.equal(outspendCalls, 0);
 });

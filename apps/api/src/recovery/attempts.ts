@@ -121,8 +121,12 @@ export async function reconcileRecoveryAttempts(
   const now = Math.floor(Date.now() / 1000);
   const reconcileAttempt = async (attempt: AttemptRow) => {
     const attemptInputs = inputs.results.filter((input) => input.recovery_txid === attempt.txid);
-    const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
     const transaction = await providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid);
+    if (transaction) {
+      const evidence = classifyAttemptEvidence(attempt.txid, transaction, [], tipHeight);
+      return recoveryAttemptUpdate(env.RECOVERY_DB, attempt.txid, evidence, now);
+    }
+    const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
     const parentOutspends = [] as ElectrsOutspend[][];
     for (const txid of parentTxids) {
       parentOutspends.push(await providers.transactionOutspends(env.ELECTRS_API_BASE, txid));
@@ -138,21 +142,7 @@ export async function reconcileRecoveryAttempts(
       }),
       tipHeight,
     );
-    return env.RECOVERY_DB.prepare(
-      `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,
-          confirmations=?,status_reason=?,chain_checked_at=?,updated_at=? WHERE txid=?`,
-    ).bind(
-      evidence.status,
-      evidence.replacementTxid,
-      evidence.blockHeight,
-      evidence.blockHash,
-      evidence.blockTime,
-      evidence.confirmations,
-      evidence.reason,
-      now,
-      now,
-      attempt.txid,
-    );
+    return recoveryAttemptUpdate(env.RECOVERY_DB, attempt.txid, evidence, now);
   };
   const settled: PromiseSettledResult<D1PreparedStatement>[] = [];
   for (let index = 0; index < attempts.results.length; index += PROVIDER_CONCURRENCY) {
@@ -163,4 +153,24 @@ export async function reconcileRecoveryAttempts(
   const updates = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   if (updates.length > 0) await env.RECOVERY_DB.batch(updates);
   return { checked: updates.length, failed: settled.length - updates.length };
+}
+
+function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEvidence, now: number) {
+  return db
+    .prepare(
+      `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,
+        confirmations=?,status_reason=?,chain_checked_at=?,updated_at=? WHERE txid=?`,
+    )
+    .bind(
+      evidence.status,
+      evidence.replacementTxid,
+      evidence.blockHeight,
+      evidence.blockHash,
+      evidence.blockTime,
+      evidence.confirmations,
+      evidence.reason,
+      now,
+      now,
+      txid,
+    );
 }
