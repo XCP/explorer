@@ -27,6 +27,7 @@ test("Emblem scam attribution converges without reset-first writes", () => {
       is_scam_shell INTEGER DEFAULT 0,is_dump INTEGER DEFAULT 0,cracked_at INTEGER,cracker_address_id INTEGER,
       PRIMARY KEY(contract_id,token_id));
     CREATE TABLE emblem_sales(token_id TEXT,contract_id INTEGER,seller_id INTEGER,block_number INTEGER);
+    CREATE TABLE ethereum_blocks(block_number INTEGER PRIMARY KEY,block_time INTEGER);
     CREATE TABLE emblem_scam_sellers(seller_id INTEGER PRIMARY KEY,scams INTEGER DEFAULT 0);
     CREATE TABLE sends(source_address_id INTEGER,destination_address_id INTEGER,asset_id INTEGER);
     CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY,shell_scams INTEGER DEFAULT 0,
@@ -45,6 +46,7 @@ test("Emblem scam attribution converges without reset-first writes", () => {
     INSERT INTO emblem_sales VALUES
       ('real-a',100,1,16000000),('real-b',100,1,16000000),('shell',100,1,16000000),
       ('dump',100,2,16000000),('cracked',100,3,16000000);
+    INSERT INTO ethereum_blocks VALUES(16000000,1668770000);
     INSERT INTO sends VALUES(10,20,2),(10,21,2),(11,22,3);
     INSERT INTO address_signals(address_id,shell_scams,dump_scams,vault_scams,in_peers)
       VALUES(12,5,5,5,600),(13,0,0,0,600);

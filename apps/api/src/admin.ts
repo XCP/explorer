@@ -13,6 +13,7 @@ import { buildTags } from "#api/indexer/tags";
 import { crawlCollections } from "#api/indexer/collections";
 import { buildHolderCohesion } from "#api/indexer/holder-cohesion";
 import { crawlEmblemSales } from "#api/indexer/emblem-sales";
+import { backfillEthereumBlockTimes } from "#api/indexer/ethereum-block-times";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
 import { classifyVaults } from "#api/indexer/vault-contents";
 import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
@@ -239,6 +240,10 @@ admin.post("/admin/cohesion", async (c) => {
 // `sample` field returns the raw Alchemy shape on the first run so we can confirm the fields.
 admin.post("/admin/crawl-emblem-sales", async (c) => {
   return c.json(await crawlEmblemSales(c.env));
+});
+
+admin.post("/admin/backfill-ethereum-block-times", async (c) => {
+  return c.json(await backfillEthereumBlockTimes(c.env));
 });
 
 // Recover post-April-2024 Emblem sales that getNFTSales stopped indexing: getAssetTransfers + Seaport decode

@@ -809,11 +809,12 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "emblem_sale",
     label: "First Emblem Vault sale",
-    sql: `SELECT trade.block_index b,trade.block_time t,asset.asset ref,'asset' typ,
+    sql: `SELECT trade.block_index b,ethereum_block.block_time t,asset.asset ref,'asset' typ,
       trade.external_tx_hash tx,'https://etherscan.io/tx/'||trade.external_tx_hash tx_url
-      FROM trades trade JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
+      FROM trades trade JOIN ethereum_blocks ethereum_block ON ethereum_block.block_number=trade.block_index
+      JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
       WHERE trade.venue='emblem' AND trade.sale_class='real' AND trade.external_tx_hash IS NOT NULL
-      ORDER BY trade.block_time,trade.ref LIMIT 1`,
+      ORDER BY ethereum_block.block_time,trade.ref LIMIT 1`,
   },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND

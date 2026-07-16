@@ -10,6 +10,7 @@ import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
 import { crawlEmblemSales } from "#api/indexer/emblem-sales";
 import { buildScamAttribution } from "#api/indexer/emblem-scam";
 import { crawlEmblemTransfers } from "#api/indexer/emblem-transfers";
+import { backfillEthereumBlockTimes } from "#api/indexer/ethereum-block-times";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
@@ -89,6 +90,7 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("crawlTokenscan", () => maybeCrawlTokenscan(env));
       await runScheduledJob("crawlEmblemSales", () => maybeCrawlEmblemSales(env));
       await runScheduledJob("crawlEmblemTransfers", () => crawlEmblemTransfers(env));
+      await runScheduledJob("backfillEthereumBlockTimes", () => backfillEthereumBlockTimes(env));
       await runScheduledJob("crawlEmblemListings", () => maybeCrawlEmblemListings(env));
       await runScheduledJob("crawlScarceSales", () => crawlScarceSales(env));
       await runScheduledJob("classifyVaults", () => classifyVaults(env));

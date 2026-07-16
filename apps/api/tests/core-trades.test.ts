@@ -93,6 +93,7 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     CREATE TABLE emblem_sales(
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,
       token_address_id INTEGER,buyer_id INTEGER,seller_id INTEGER,block_number INTEGER);
+    CREATE TABLE ethereum_blocks(block_number INTEGER PRIMARY KEY,block_time INTEGER);
     CREATE TABLE emblem_vaults(
       token_id TEXT,contract_id INTEGER,contents_asset_id INTEGER,contents_qty REAL,vault_kind TEXT,
       cracked_at INTEGER,is_scam_shell INTEGER,btc_address_id INTEGER);
@@ -126,6 +127,7 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     INSERT INTO emblem_sales VALUES
       ('0xeth',9,3,'7','1000000000000000000',4,1,2,16000000),
       ('0xeth',9,3,'8','2000000000000000000',4,1,2,16000000);
+    INSERT INTO ethereum_blocks VALUES(16000000,1668770000);
     INSERT INTO emblem_vaults VALUES
       ('7',3,3,1,'single',NULL,0,5),('8',3,3,1,'single',NULL,0,5);
     INSERT INTO scarce_city_sales VALUES(3,2000,0.25);

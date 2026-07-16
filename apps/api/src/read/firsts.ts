@@ -37,36 +37,41 @@ async function resolveAssetSubjects(db: D1Database, records: Awaited<ReturnType<
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
-  cached(c, "firsts:catalog:chronological-order", { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }, async () => {
-    const records = await queryFirstRecords(c.env.CORE_DB);
-    const displayNames = await resolveAssetSubjects(c.env.CORE_DB, records);
-    const rows = FIRSTS_CATALOG.map((f, index): FirstRow | null => {
-      const r = records[index];
-      if (!r || r.b == null) return null;
-      const t = Number(r.t) || 0;
-      const assetRefs = r.typ === "pair" ? pairAssets(r.ref) : undefined;
-      const canonicalAsset = r.typ === "asset" ? (r.icon_asset ?? r.ref) : undefined;
-      const displayRef = assetRefs
-        ? assetRefs.map((asset) => displayNames.get(asset) ?? asset).join(" / ")
-        : canonicalAsset
-          ? (displayNames.get(canonicalAsset) ?? r.ref)
-          : r.ref;
-      return {
-        key: f.key,
-        label: f.label,
-        block: r.b,
-        date: new Date(t * 1000).toISOString().slice(0, 10),
-        ref: displayRef,
-        type: r.typ,
-        tx: r.tx,
-        ...(r.tx_url ? { tx_url: r.tx_url } : {}),
-        ...(canonicalAsset && displayRef !== canonicalAsset ? { icon_asset: canonicalAsset } : {}),
-        ...(assetRefs ? { asset_refs: assetRefs } : {}),
-      };
-    });
-    const chronological = rows
-      .filter((row): row is FirstRow => row !== null)
-      .sort((a, b) => a.date.localeCompare(b.date) || a.block - b.block);
-    return { result: chronological };
-  }),
+  cached(
+    c,
+    "firsts:catalog:authoritative-ethereum-time-ready",
+    { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 },
+    async () => {
+      const records = await queryFirstRecords(c.env.CORE_DB);
+      const displayNames = await resolveAssetSubjects(c.env.CORE_DB, records);
+      const rows = FIRSTS_CATALOG.map((f, index): FirstRow | null => {
+        const r = records[index];
+        if (!r || r.b == null) return null;
+        const t = Number(r.t) || 0;
+        const assetRefs = r.typ === "pair" ? pairAssets(r.ref) : undefined;
+        const canonicalAsset = r.typ === "asset" ? (r.icon_asset ?? r.ref) : undefined;
+        const displayRef = assetRefs
+          ? assetRefs.map((asset) => displayNames.get(asset) ?? asset).join(" / ")
+          : canonicalAsset
+            ? (displayNames.get(canonicalAsset) ?? r.ref)
+            : r.ref;
+        return {
+          key: f.key,
+          label: f.label,
+          block: r.b,
+          date: new Date(t * 1000).toISOString().slice(0, 10),
+          ref: displayRef,
+          type: r.typ,
+          tx: r.tx,
+          ...(r.tx_url ? { tx_url: r.tx_url } : {}),
+          ...(canonicalAsset && displayRef !== canonicalAsset ? { icon_asset: canonicalAsset } : {}),
+          ...(assetRefs ? { asset_refs: assetRefs } : {}),
+        };
+      });
+      const chronological = rows
+        .filter((row): row is FirstRow => row !== null)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.block - b.block);
+      return { result: chronological };
+    },
+  ),
 );

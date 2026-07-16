@@ -20,10 +20,9 @@ const VAULT_SCAM_CTE = `WITH attribution AS (
     FROM emblem_vaults vault
     WHERE vault.cracker_address_id IS NOT NULL AND vault.cracked_at IS NOT NULL
       AND EXISTS(SELECT 1 FROM emblem_sales sale
+        JOIN ethereum_blocks ethereum_block ON ethereum_block.block_number=sale.block_number
         WHERE sale.contract_id=vault.contract_id AND sale.token_id=vault.token_id
-          AND (CASE WHEN sale.block_number>=15537394
-            THEN 1663224162+(sale.block_number-15537394)*12
-            ELSE CAST(1438269973+sale.block_number*13.15 AS INTEGER) END)>=vault.cracked_at)
+          AND ethereum_block.block_time>=vault.cracked_at)
   ) GROUP BY cracker_id
 )`;
 

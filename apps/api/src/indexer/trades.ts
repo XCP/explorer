@@ -122,9 +122,7 @@ export const DISPENSE_TRADE_LEGS_SQL = `${DISPENSE_PAYMENTS}
 export function emblemTradesSql(rowFilter: string): string {
   const acceptedTokens = ETH_TOKENS.map((token) => `'${token}'`).join(",");
   const isUsdc = `payment.address='${USDC}'`;
-  const saleTime = `(CASE WHEN sale.block_number>=15537394
-    THEN 1663224162+(sale.block_number-15537394)*12
-    ELSE CAST(1438269973+sale.block_number*13.15 AS INTEGER) END)`;
+  const saleTime = "ethereum_block.block_time";
   const isReal = `vault.vault_kind='single' AND (vault.cracked_at IS NULL OR ${saleTime}<vault.cracked_at)`;
   return `WITH desired AS (
     SELECT sale.tx_hash || '_' || sale.log_index || '_' || contract.address || '_' || sale.token_id ref,
@@ -141,6 +139,7 @@ export function emblemTradesSql(rowFilter: string): string {
            WHEN vault.is_scam_shell=1 THEN 'scam_empty'
            ELSE 'non_counterparty' END sale_class
     FROM emblem_sales sale
+    JOIN ethereum_blocks ethereum_block ON ethereum_block.block_number=sale.block_number
     JOIN address_dictionary contract ON contract.address_id=sale.contract_id
     JOIN address_dictionary payment ON payment.address_id=sale.token_address_id
     JOIN emblem_vaults vault ON vault.token_id=sale.token_id AND vault.contract_id=sale.contract_id
