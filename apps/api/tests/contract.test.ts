@@ -278,39 +278,49 @@ test("contract: stats quality modes remain isolated and valid", async (t) => {
     getJson(`/v2/metrics?days=90&contract=${contract}`),
     getJson(`/v2/metrics?days=90&include_hidden=1&contract=${contract}`),
   ]);
-  const countFields = [
+  const filteredCountFields = [
     "assets",
-    "addresses",
     "sends",
     "issuances",
     "dispensers",
     "dispenses",
     "orders",
     "order_matches",
-    "sweeps",
-    "broadcasts",
     "dividends",
     "fairmints",
     "destructions",
-    "burns",
     "fairminters",
-    "bets",
-    "bet_matches",
     "btcpays",
-    "cancels",
-    "rps",
-    "rps_matches",
     "pools",
     "pool_matches",
     "pool_deposits",
     "pool_withdrawals",
     "holders",
-    "btc_fees",
-    "xcp_destroyed",
   ];
-  for (const field of countFields) {
+  for (const field of filteredCountFields) {
     assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
     assert.ok(filtered.result[field] <= all.result[field], `filtered stats.${field} cannot exceed all-chain`);
+  }
+  // These relations have no asset-quality dimension. The quality modes cache independently, so a growing
+  // chain can put either snapshot slightly ahead without violating the contract.
+  for (const field of [
+    "addresses",
+    "sweeps",
+    "broadcasts",
+    "burns",
+    "bets",
+    "bet_matches",
+    "cancels",
+    "rps",
+    "rps_matches",
+    "btc_fees",
+    "xcp_destroyed",
+  ]) {
+    assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
+    assert.ok(
+      Math.abs(filtered.result[field] - all.result[field]) < 10_000,
+      `quality-mode stats.${field} snapshots must remain near the same chain position`,
+    );
   }
   assert.equal(typeof filtered.result.btc_fees_complete, "boolean");
   assert.equal(typeof all.result.btc_fees_complete, "boolean");
