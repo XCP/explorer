@@ -143,3 +143,29 @@ eligibility; evidence across temporal folds; examples helped and harmed; query/s
 priority; rollback; and the forward metric that can falsify it. Expected first recommendations are architectural—
 split the surfaces, replace maximum price with robust market evidence, and separate issuer from non-issuer sell
 pressure—while weights and thresholds remain contingent on the experiments.
+
+## Initial concentration ablation
+
+The first cutoff-safe comparison is reproducible with `npm run evaluate:radar-concentration`. It evaluates assets
+with at least three prior sales, two prior buyers, and two prior active months against sales and persistent activity
+in the following 180 days. Cohort sizes are 7,623–7,844 across the three cutoffs.
+
+- The prior **market persistence core** (sale recency plus active-month breadth) remains strongest. Its top-decile
+  return lift is 4.18–4.64x and persistence lift is 6.23–6.92x; precision at 100 is 90–98%.
+- Lower top-one concentration has a consistent but modest standalone association with future activity: top-one
+  safety produces 1.22–1.47x return lift and 1.27–1.64x persistence lift.
+- Giving concentration equal weight with the market core materially degrades every temporal fold. Even a 10%
+  top-one modifier slightly reduces precision and whole-ranking average precision in all three folds.
+- A `top1 < 50%` safety gate retains about 53% of the established-market cohort and preserves most, but not all,
+  of the market core's precision. It is therefore a plausible user-controlled risk constraint, not a demonstrated
+  demand-ranking factor.
+- Supply at or below 300 is common (about 77.5% of this cohort) and strongly predicts *less* future trading by
+  itself. This reflects the many dormant one-of-one and tiny editions. Scarcity may remain an investor preference
+  or payoff-shape constraint, but must not be presented as evidence of future demand.
+- Creator share in either direction is not a useful standalone predictor. The proposed creator exception requires
+  behavioral evidence—holding duration, outflows, and realized selling—not merely a balance percentage.
+
+Decision: keep concentration and normalized supply as explicit facts and potential filters. Do not add either to
+the main activity ranking based on this experiment. Next evaluate concentrated-holder and creator selling outcomes,
+then build the dislocation price reference; those outcomes test downside risk rather than incorrectly asking a
+risk feature to predict demand.
