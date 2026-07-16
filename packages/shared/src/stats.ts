@@ -105,4 +105,5 @@ export interface FirstRow {
   type: "block" | "tx" | "address" | "asset" | "pair" | "broadcast" | "summary";
   tx: string; // transaction that established the milestone
   icon_asset?: string | null; // canonical asset name when ref is a readable subasset longname
+  asset_refs?: string[]; // canonical asset names for pair subjects whose display names may be longnames
 }

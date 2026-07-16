@@ -9,38 +9,63 @@ import { short, commas } from "@/lib/format";
 import type { FirstRow } from "@xcp/shared/stats";
 
 // The human-readable subject behind a first. The parent link always points to the causal transaction.
-function Entity({ type, ref, icon_asset }: Pick<FirstRow, "type" | "ref" | "icon_asset">) {
+function Entity({
+  type,
+  subject,
+  iconAsset,
+  assetRefs,
+}: {
+  type: FirstRow["type"];
+  subject: string;
+  iconAsset?: string | null;
+  assetRefs?: string[];
+}) {
   if (type === "asset")
     return (
-      <span className="flex min-w-0 items-center gap-1.5">
-        <AssetIcon asset={icon_asset ?? ref} size={16} />
-        <span className="truncate">{ref}</span>
-      </span>
+      <Link href={`/asset/${iconAsset ?? subject}`} className="flex min-w-0 items-center gap-1.5 !text-zinc-200">
+        <AssetIcon asset={iconAsset ?? subject} size={16} />
+        <span className="truncate">{subject}</span>
+      </Link>
     );
   if (type === "address")
-    return <span className="break-all font-mono">{ref}</span>;
+    return (
+      <Link href={`/address/${subject}`} className="break-all font-mono !text-zinc-200">
+        {subject}
+      </Link>
+    );
   if (type === "pair") {
-    const assets = ref.split(/\s*\/\s*|_/).filter(Boolean);
+    const assets = subject.split(" / ").filter(Boolean);
     if (assets.length === 2)
       return (
         <span className="flex min-w-0 items-center gap-2">
           {assets.map((asset, index) => (
-            <span key={asset} className="flex min-w-0 items-center gap-1.5">
+            <Link
+              key={assetRefs?.[index] ?? asset}
+              href={`/asset/${assetRefs?.[index] ?? asset}`}
+              className="flex min-w-0 items-center gap-1.5 !text-zinc-200"
+            >
               {index > 0 ? <span className="text-zinc-600">/</span> : null}
-              <AssetIcon asset={asset} size={16} />
+              <AssetIcon asset={assetRefs?.[index] ?? asset} size={16} />
               <span className="truncate">{asset}</span>
-            </span>
+            </Link>
           ))}
         </span>
       );
   }
-  if (type === "broadcast")
-    return <span className="block truncate text-zinc-300">“{ref}”</span>;
+  if (type === "broadcast") return <span className="block truncate text-zinc-300">“{subject}”</span>;
   if (type === "tx")
-    return <span className="font-mono">{short(ref)}</span>;
+    return (
+      <Link href={`/tx/${subject}`} className="font-mono !text-zinc-200">
+        {short(subject)}
+      </Link>
+    );
   if (type === "block")
-    return <span className="font-mono">#{ref}</span>;
-  return <span className="truncate">{ref}</span>;
+    return (
+      <Link href={`/block/${subject}`} className="font-mono !text-zinc-200">
+        #{subject}
+      </Link>
+    );
+  return <span className="truncate">{subject}</span>;
 }
 
 // Counterparty's earliest-of-each-kind timeline. Client island rendered by the thin server page that
@@ -102,18 +127,20 @@ export function Firsts() {
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
                       Milestone
                     </span>
-                    <span className="text-xs leading-4 text-zinc-400 sm:text-sm sm:text-zinc-300">{r.label}</span>
+                    <Link
+                      href={`/tx/${r.tx}`}
+                      className="text-xs leading-4 !text-zinc-400 sm:text-sm sm:!text-zinc-300"
+                    >
+                      {r.label}
+                    </Link>
                   </span>
                   <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
                       First
                     </span>
-                    <Link
-                      href={`/tx/${r.tx}`}
-                      className="block min-w-0 overflow-hidden !text-zinc-200"
-                    >
-                      <Entity type={r.type} ref={r.ref} icon_asset={r.icon_asset} />
-                    </Link>
+                    <span className="block min-w-0 overflow-hidden text-zinc-200">
+                      <Entity type={r.type} subject={r.ref} iconAsset={r.icon_asset} assetRefs={r.asset_refs} />
+                    </span>
                   </span>
                 </li>
               ))}

@@ -34,11 +34,11 @@ const earliestEventSql = (
   ref: string,
   opts: { where?: string; by?: string; bcol?: string; joins?: string; valid?: boolean; tx?: string } = {},
 ): string => {
-  const { where, by = "x.rowid", bcol = "block_index", joins = "", valid = false,
-    tx = "LOWER(HEX(x.tx_hash))" } = opts;
+  const { where, by = "x.rowid", bcol = "block_index", joins = "", valid = false, tx = "LOWER(HEX(x.tx_hash))" } = opts;
   const tcol = bcol === "block_index" ? "block_time" : "first_issuance_block_time";
   const predicate = [valid ? "status NOT LIKE 'invalid%'" : "", where ? `(${where})` : ""]
-    .filter(Boolean).join(" AND ");
+    .filter(Boolean)
+    .join(" AND ");
   const filt = predicate ? ` AND (${predicate})` : "";
   const minWhere = predicate ? ` WHERE ${predicate}` : "";
   return `SELECT x.${bcol} b,x.${tcol} t,${ref},${tx} tx FROM ${table} x ${joins}
@@ -152,7 +152,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "order",
     label: "First DEX order",
     sql: earliestEventSql("orders", "give_asset.asset ref,'asset' typ", {
-      by: "x.tx_index", valid: true,
+      by: "x.tx_index",
+      valid: true,
       joins: "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id",
     }),
   },
@@ -160,8 +161,11 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "order_match",
     label: "First order match",
     sql: earliestEventSql("order_matches", "forward_asset.asset||' / '||backward_asset.asset ref,'pair' typ", {
-      by: "x.tx0_index,x.tx1_index", valid: true, tx: "LOWER(HEX(x.tx1_hash))",
-      joins: "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
+      by: "x.tx0_index,x.tx1_index",
+      valid: true,
+      tx: "LOWER(HEX(x.tx1_hash))",
+      joins:
+        "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
     }),
   },
   {
@@ -197,7 +201,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     sql: earliestEventSql("dividends", "asset.asset||' / '||dividend_asset.asset ref,'pair' typ", {
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=x.dividend_asset_id",
+      joins:
+        "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=x.dividend_asset_id",
     }),
   },
   {
@@ -207,7 +212,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
       where: "dividend_asset_id NOT IN (SELECT asset_id FROM asset_dictionary WHERE asset IN ('BTC','XCP'))",
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=x.dividend_asset_id",
+      joins:
+        "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id JOIN asset_dictionary dividend_asset ON dividend_asset.asset_id=x.dividend_asset_id",
     }),
   },
   {
@@ -216,6 +222,16 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     sql: earliestEventSql("broadcasts", "COALESCE(NULLIF(x.text,''),'(empty broadcast)') ref,'broadcast' typ", {
       valid: true,
       by: "x.tx_index",
+    }),
+  },
+  {
+    key: "memo_only_address",
+    label: "First address set to memo-only",
+    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
+      where: "x.block_index>=489956 AND LOWER(x.text)='options 1'",
+      valid: true,
+      by: "x.tx_index",
+      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
   {
@@ -240,7 +256,9 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "bet_match",
     label: "First bet match",
     sql: earliestEventSql("bet_matches", "feed.address ref,'address' typ", {
-      by: "x.tx0_index,x.tx1_index", valid: true, tx: "LOWER(HEX(x.tx1_hash))",
+      by: "x.tx0_index,x.tx1_index",
+      valid: true,
+      tx: "LOWER(HEX(x.tx1_hash))",
       joins: "JOIN address_dictionary feed ON feed.address_id=x.feed_address_id",
     }),
   },
@@ -248,7 +266,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "rps",
     label: "First RPS game",
     sql: earliestEventSql("rps", "source.address ref,'address' typ", {
-      by: "x.tx_index", valid: true,
+      by: "x.tx_index",
+      valid: true,
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
@@ -256,7 +275,9 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "rps_match",
     label: "First RPS match",
     sql: earliestEventSql("rps_matches", "player.address ref,'address' typ", {
-      by: "x.tx0_index,x.tx1_index", valid: true, tx: "LOWER(HEX(x.tx1_hash))",
+      by: "x.tx0_index,x.tx1_index",
+      valid: true,
+      tx: "LOWER(HEX(x.tx1_hash))",
       joins: "JOIN address_dictionary player ON player.address_id=x.tx1_address_id",
     }),
   },
@@ -283,7 +304,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "cancel",
     label: "First cancel",
     sql: earliestEventSql("cancels", "source.address ref,'address' typ", {
-      by: "x.tx_index", valid: true,
+      by: "x.tx_index",
+      valid: true,
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
@@ -291,7 +313,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "btcpay",
     label: "First BTC pay",
     sql: earliestEventSql("btcpays", "source.address ref,'address' typ", {
-      by: "x.event_index", valid: true,
+      by: "x.event_index",
+      valid: true,
       joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
@@ -303,7 +326,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
         "give_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP') AND get_asset_id!=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')",
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id JOIN asset_dictionary get_asset ON get_asset.asset_id=x.get_asset_id",
+      joins:
+        "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id JOIN asset_dictionary get_asset ON get_asset.asset_id=x.get_asset_id",
     }),
   },
   {
@@ -387,7 +411,10 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "multisig_address",
     label: "First multisig address",
-    sql: earliestAddressUseSql("address.address GLOB '1_*' OR address.address GLOB '2_*' OR address.address GLOB '3_*'", 333500),
+    sql: earliestAddressUseSql(
+      "address.address GLOB '1_*' OR address.address GLOB '2_*' OR address.address GLOB '3_*'",
+      333500,
+    ),
   },
   {
     key: "p2sh_address",
@@ -410,24 +437,67 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   { key: "divisible", label: "First divisible asset", sql: earliestValidIssuanceSql(`divisible=1`) },
   { key: "indivisible", label: "First indivisible asset", sql: earliestValidIssuanceSql(`divisible=0`) },
   { key: "one_of_one", label: "First 1/1 (single edition)", sql: earliestLockedSupplySql(1, "x.divisible=0") },
-  { key: "numeric_one_of_one", label: "First numeric 1/1", sql: earliestLockedSupplySql(1, "x.divisible=0 AND asset.asset GLOB 'A[0-9]*'") },
-  { key: "subasset_one_of_one", label: "First subasset 1/1", sql: earliestLockedSupplySql(1, "x.divisible=0 AND x.asset_longname IS NOT NULL") },
+  {
+    key: "numeric_one_of_one",
+    label: "First numeric 1/1",
+    sql: earliestLockedSupplySql(1, "x.divisible=0 AND asset.asset GLOB 'A[0-9]*'"),
+  },
+  {
+    key: "subasset_one_of_one",
+    label: "First subasset 1/1",
+    sql: earliestLockedSupplySql(1, "x.divisible=0 AND x.asset_longname IS NOT NULL"),
+  },
   { key: "satoshi_nft", label: "First one-satoshi NFT", sql: earliestLockedSupplySql(1, "x.divisible=1") },
   { key: "tokenless", label: "First locked tokenless asset", sql: earliestLockedSupplySql(0, "1=1") },
   { key: "reset", label: "First asset reset (CIP03)", sql: earliestValidIssuanceSql(`reset=1`) },
   { key: "transfer", label: "First asset transfer", sql: earliestValidIssuanceSql(`transfer=1`) },
   { key: "callable", label: "First callable asset", sql: earliestValidIssuanceSql(`callable=1`) },
-  { key: "description", label: "First asset description", sql: earliestValidIssuanceSql(`description IS NOT NULL AND description!=''`) },
-  { key: "non_ascii_description", label: "First non-ASCII asset description", sql: earliestValidIssuanceSql(`description GLOB '*[^ -~]*'`) },
-  { key: "embedded_image", label: "First embedded data-URI image", sql: earliestValidIssuanceSql(`LOWER(description) LIKE 'data:image%'`) },
-  { key: "description_url", label: "First external URL in an asset description", sql: earliestValidIssuanceSql(`LOWER(description) LIKE '%http://%' OR LOWER(description) LIKE '%https://%'`) },
-  { key: "pepe_mention", label: "First Pepe mention in an asset description", sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%PEPE%'`) },
-  { key: "nft_term", label: "First use of “NFT” in an asset description", sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%NFT%'`) },
-  { key: "description_lock", label: "First locked asset description", sql: earliestValidIssuanceSql(`asset_events='lock_description'`) },
+  {
+    key: "description",
+    label: "First asset description",
+    sql: earliestValidIssuanceSql(`description IS NOT NULL AND description!=''`),
+  },
+  {
+    key: "non_ascii_description",
+    label: "First non-ASCII asset description",
+    sql: earliestValidIssuanceSql(`description GLOB '*[^ -~]*'`),
+  },
+  {
+    key: "embedded_image",
+    label: "First embedded data-URI image",
+    sql: earliestValidIssuanceSql(`LOWER(description) LIKE 'data:image%'`),
+  },
+  {
+    key: "raw_base64_image",
+    label: "First raw Base64 image in an asset description",
+    sql: earliestValidIssuanceSql(`description GLOB 'iVBORw0KGgo*'`),
+  },
+  {
+    key: "description_url",
+    label: "First external URL in an asset description",
+    sql: earliestValidIssuanceSql(`LOWER(description) LIKE '%http://%' OR LOWER(description) LIKE '%https://%'`),
+  },
+  {
+    key: "pepe_mention",
+    label: "First Pepe mention in an asset description",
+    sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%PEPE%'`),
+  },
+  {
+    key: "nft_term",
+    label: "First use of “NFT” in an asset description",
+    sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%NFT%'`),
+  },
+  {
+    key: "description_lock",
+    label: "First locked asset description",
+    sql: earliestValidIssuanceSql(`asset_events='lock_description'`),
+  },
   {
     key: "free_numeric_subasset",
     label: "First free numeric subasset",
-    sql: earliestValidIssuanceSql("x.block_index>=866000 AND x.asset_longname GLOB 'A[0-9]*.*' AND CAST(x.fee_paid AS INTEGER)=0"),
+    sql: earliestValidIssuanceSql(
+      "x.block_index>=866000 AND x.asset_longname GLOB 'A[0-9]*.*' AND CAST(x.fee_paid AS INTEGER)=0",
+    ),
   },
   { key: "json_desc", label: "First JSON description", sql: earliestValidIssuanceSql(`TRIM(description) LIKE '{%'`) },
   {
@@ -435,7 +505,11 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     label: "First Counterparty inscription",
     sql: earliestValidIssuanceSql(`mime_type IS NOT NULL AND mime_type NOT IN ('','text/plain')`),
   },
-  { key: "easyasset", label: "First EasyAsset", sql: earliestValidIssuanceSql(`lower(description) LIKE '%easyasset%'`) },
+  {
+    key: "easyasset",
+    label: "First EasyAsset",
+    sql: earliestValidIssuanceSql(`lower(description) LIKE '%easyasset%'`),
+  },
   {
     key: "fairminter",
     label: "First fairminter",
@@ -515,7 +589,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
       where: "kind='deposit'",
       valid: true,
       by: "x.tx_index,x.event_index",
-      joins: "JOIN asset_dictionary asset_a ON asset_a.asset_id=x.asset_a_id JOIN asset_dictionary asset_b ON asset_b.asset_id=x.asset_b_id",
+      joins:
+        "JOIN asset_dictionary asset_a ON asset_a.asset_id=x.asset_a_id JOIN asset_dictionary asset_b ON asset_b.asset_id=x.asset_b_id",
     }),
   },
   {
@@ -524,7 +599,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     sql: earliestEventSql("pool_matches", "forward_asset.asset||' / '||backward_asset.asset ref,'pair' typ", {
       by: "x.tx_index,x.event_index",
       valid: true,
-      joins: "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
+      joins:
+        "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
     }),
   },
   {
@@ -534,7 +610,8 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
       where: "x.block_index>=952800 AND expiration=0",
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id JOIN asset_dictionary get_asset ON get_asset.asset_id=x.get_asset_id",
+      joins:
+        "JOIN asset_dictionary give_asset ON give_asset.asset_id=x.give_asset_id JOIN asset_dictionary get_asset ON get_asset.asset_id=x.get_asset_id",
     }),
   },
   // --- adoption and market thresholds ---
