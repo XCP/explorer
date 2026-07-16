@@ -141,6 +141,13 @@ test("sale milestones threshold executed unit price rather than aggregate volume
   }
 });
 
+test("catalog does not restate BTC payment as a special kind of dispense", () => {
+  assert.equal(
+    FIRSTS_CATALOG.some((entry) => entry.key === "btc_dispense"),
+    false,
+  );
+});
+
 test("joined dictionary predicates are self-contained inside earliest-block subqueries", () => {
   const numeric = FIRSTS_CATALOG.find((entry) => entry.key === "numeric");
   if (!numeric) throw new Error("numeric first is missing");

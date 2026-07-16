@@ -23,6 +23,10 @@ import { markets } from "#api/read/markets";
 
 export const read = router();
 
+// The Cache API is keyed before route handlers run, so D1 cache-key changes alone cannot invalidate an
+// already-cached response. Bump this contract version when a read response's historical meaning changes.
+const READ_EDGE_CACHE_VERSION = "2";
+
 // Edge cache (Cloudflare Cache API) for read GETs. SSR reads arrive via the API_WORKER service binding,
 // which BYPASSES Cloudflare's CDN edge cache — so a fresh copy of a heavy read (e.g. the 9-query AssetDetail)
 // has to be cached inside the worker itself. On a hit we serve from the colo cache with ZERO D1; on a miss we
@@ -31,7 +35,9 @@ export const read = router();
 read.use("*", async (c, next) => {
   const cache = caches.default;
   if (c.req.method !== "GET" || !cache) return next();
-  const key = new Request(c.req.url);
+  const keyUrl = new URL(c.req.url);
+  keyUrl.searchParams.set("__read_contract", READ_EDGE_CACHE_VERSION);
+  const key = new Request(keyUrl);
   const hit = await cache.match(key).catch(() => undefined);
   if (hit) {
     const r = new Response(hit.body, hit);

@@ -378,15 +378,6 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     }),
   },
   {
-    key: "btc_dispense",
-    label: "First dispense paid in BTC",
-    sql: earliestEventSql("dispenses", "asset.asset ref,'asset' typ", {
-      where: "CAST(btc_amount AS INTEGER)>0",
-      by: "x.event_index",
-      joins: "JOIN asset_dictionary asset ON asset.asset_id=x.asset_id",
-    }),
-  },
-  {
     key: "enhanced_send",
     label: "First enhanced send",
     sql: earliestEventSql("sends", "asset.asset ref,'asset' typ", {
