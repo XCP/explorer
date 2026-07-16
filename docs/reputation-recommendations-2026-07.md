@@ -147,15 +147,19 @@ Interpretation limits: these labels were originally selected by collection, qual
 
 Decision: retain flat reverse distrust as the baseline; do not adopt temporal decay globally. Promote **temporally decayed trust** as the next graph challenger because it improves held-out trust recovery by 15.4 percentage points without relying on seeded test labels. Before production use, measure its trusted-address dormancy, Radar/Conviction rank changes, and future-activity increment beyond recency. Trust and distrust may require different edge policies.
 
-## Remaining decision gates
+## Decision status
 
-1. Produce subgroup and false-positive reviews for the two-factor asset outlook.
-2. Build the compact historical snapshot and finish address AP/NDCG without using serving-query CPU.
-3. Measure graph features incrementally against the non-graph baselines.
-4. Specify collection-profile API fields and validate concentration calculations.
-5. Convert accepted recommendations into small, independently reversible implementation changes.
+The original validation gates are resolved:
 
-The project is now in recommendation and validation mode, not open-ended model discovery. Items 1, 3, and the product naming in item 5 have enough evidence to proceed; predictive weight changes and any collection grade do not.
+1. Asset Outlook subgroup, false-positive, and multi-cutoff collection-exclusion reviews are complete.
+2. Address AP/NDCG evaluation is complete; the product shows historical Track Record and exact activity separately.
+3. Graph influence was ablated from Rating and Conviction; graph output remains separate Network Standing.
+4. Collection profiles are descriptive and expose coverage, breadth, and concentration without a composite grade.
+5. Accepted changes are implemented as direct end-state contracts, without compatibility aliases.
+
+The remaining work is monitoring rather than model discovery: rerun historical and collection-exclusion evaluations
+before changing inputs or weights; watch population/input drift; and keep integrity classifications separate from
+Rating, Track Record, Conviction, Activity Outlook, and Network Standing.
 
 ### Activity-outlook subgroup review (2026-07-16)
 

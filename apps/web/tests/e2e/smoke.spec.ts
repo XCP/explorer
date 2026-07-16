@@ -29,3 +29,17 @@ test("unknown canonical records use the not-found surface", async ({ page }) => 
   await page.goto("/asset/THIS_ASSET_SHOULD_NOT_EXIST_12345", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "404", exact: true })).toBeVisible();
 });
+
+test("asset Rating and Activity Outlook remain separate and mobile-safe", async ({ page }) => {
+  await page.goto("/asset/RAREPEPE", { waitUntil: "networkidle" });
+  await expect(page.getByText("Rating", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("Activity outlook", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("relative 180-day rank", { exact: false })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("Activity outlook", { exact: true })).toBeVisible();
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflows).toBe(false);
+});
