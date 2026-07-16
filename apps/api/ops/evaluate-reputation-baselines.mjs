@@ -88,12 +88,23 @@ predictors AS (
 ),
 ranked AS (
   SELECT predictor.label,predictor.predictor,predictor.asset_id,
-    NTILE(10) OVER (PARTITION BY predictor.label,predictor.predictor ORDER BY predictor.score DESC, predictor.asset_id) decile
+    NTILE(10) OVER (PARTITION BY predictor.label,predictor.predictor ORDER BY predictor.score DESC,predictor.asset_id) decile,
+    ROW_NUMBER() OVER (PARTITION BY predictor.label,predictor.predictor
+      ORDER BY predictor.score DESC,predictor.asset_id) rank_position,
+    COUNT(*) OVER (PARTITION BY predictor.label,predictor.predictor) cohort_size
   FROM predictors predictor
 ),
 evaluated AS (
-  SELECT ranked.label,ranked.predictor,ranked.decile,cohort.*
+  SELECT ranked.label,ranked.predictor,ranked.decile,ranked.rank_position,ranked.cohort_size,cohort.*,
+    CASE WHEN cohort.future_sales>0 THEN 1 ELSE 0 END returned
   FROM ranked JOIN cohort ON cohort.label=ranked.label AND cohort.asset_id=ranked.asset_id
+),
+scored AS (
+  SELECT evaluated.*,
+    SUM(returned) OVER (PARTITION BY label,predictor) total_positives,
+    SUM(returned) OVER (PARTITION BY label,predictor ORDER BY rank_position ROWS UNBOUNDED PRECEDING)
+      cumulative_positives
+  FROM evaluated
 )
 SELECT label,predictor,
   COUNT(*) eligible_assets,
@@ -117,9 +128,24 @@ SELECT label,predictor,
   ROUND(AVG(CASE WHEN decile=1 THEN future_buyers END)/NULLIF(AVG(future_buyers),0),3) buyer_lift,
   ROUND(AVG(LN(1+future_usd)),3) population_log_future_usd,
   ROUND(AVG(CASE WHEN decile=1 THEN LN(1+future_usd) END),3) top_decile_log_future_usd,
+  ROUND(AVG(CASE WHEN rank_position<=100 THEN returned END),6) precision_at_100,
+  ROUND(SUM(CASE WHEN rank_position<=100 THEN returned ELSE 0 END)*1.0/NULLIF(MAX(total_positives),0),6)
+    recall_at_100,
+  ROUND(AVG(CASE WHEN rank_position<=500 THEN returned END),6) precision_at_500,
+  ROUND(SUM(CASE WHEN rank_position<=500 THEN returned ELSE 0 END)*1.0/NULLIF(MAX(total_positives),0),6)
+    recall_at_500,
+  ROUND(AVG(CASE WHEN rank_position<=MAX(1,CAST(cohort_size*0.01+0.999999 AS INTEGER)) THEN returned END),6)
+    precision_at_1pct,
+  ROUND(SUM(CASE WHEN rank_position<=MAX(1,CAST(cohort_size*0.01+0.999999 AS INTEGER)) THEN returned ELSE 0 END)
+    *1.0/NULLIF(MAX(total_positives),0),6) recall_at_1pct,
+  ROUND(SUM(CASE WHEN returned=1 THEN cumulative_positives*1.0/rank_position ELSE 0 END)
+    /NULLIF(MAX(total_positives),0),6) average_precision,
+  ROUND(SUM(returned/(LN(rank_position+1)/LN(2.0)))
+    /NULLIF(SUM(CASE WHEN rank_position<=total_positives THEN 1.0/(LN(rank_position+1)/LN(2.0)) ELSE 0 END),0),6)
+    ndcg,
   MIN(first_outcome_time) first_outcome_time,
   MAX(last_outcome_time) last_outcome_time
-FROM evaluated
+FROM scored
 GROUP BY label,predictor
 ORDER BY label,predictor`;
 
@@ -177,11 +203,15 @@ predictors AS (
 ranked AS (
   SELECT predictor.label,predictor.predictor,predictor.address_id,
     NTILE(10) OVER (PARTITION BY predictor.label,predictor.predictor
-      ORDER BY predictor.score DESC,predictor.address_id) decile
+      ORDER BY predictor.score DESC,predictor.address_id) decile,
+    ROW_NUMBER() OVER (PARTITION BY predictor.label,predictor.predictor
+      ORDER BY predictor.score DESC,predictor.address_id) rank_position,
+    COUNT(*) OVER (PARTITION BY predictor.label,predictor.predictor) cohort_size
   FROM predictors predictor
 ),
 evaluated AS (
-  SELECT ranked.label,ranked.predictor,ranked.decile,cohort.*
+  SELECT ranked.label,ranked.predictor,ranked.decile,ranked.rank_position,ranked.cohort_size,cohort.*,
+    CASE WHEN cohort.future_transactions>0 THEN 1 ELSE 0 END returned
   FROM ranked JOIN cohort ON cohort.label=ranked.label AND cohort.address_id=ranked.address_id
 )
 SELECT label,predictor,
@@ -197,6 +227,16 @@ SELECT label,predictor,
     top_decile_persistent_rate,
   ROUND(AVG(CASE WHEN decile=1 THEN CASE WHEN future_active_months>=2 THEN 1.0 ELSE 0 END END)
     / NULLIF(AVG(CASE WHEN future_active_months>=2 THEN 1.0 ELSE 0 END),0),3) persistence_lift,
+  ROUND(AVG(CASE WHEN rank_position<=100 THEN returned END),6) precision_at_100,
+  ROUND(SUM(CASE WHEN rank_position<=100 THEN returned ELSE 0 END)*1.0/NULLIF(SUM(returned),0),6)
+    recall_at_100,
+  ROUND(AVG(CASE WHEN rank_position<=500 THEN returned END),6) precision_at_500,
+  ROUND(SUM(CASE WHEN rank_position<=500 THEN returned ELSE 0 END)*1.0/NULLIF(SUM(returned),0),6)
+    recall_at_500,
+  ROUND(AVG(CASE WHEN rank_position<=MAX(1,CAST(cohort_size*0.01+0.999999 AS INTEGER)) THEN returned END),6)
+    precision_at_1pct,
+  ROUND(SUM(CASE WHEN rank_position<=MAX(1,CAST(cohort_size*0.01+0.999999 AS INTEGER)) THEN returned ELSE 0 END)
+    *1.0/NULLIF(SUM(returned),0),6) recall_at_1pct,
   MIN(first_outcome_time) first_outcome_time,
   MAX(last_outcome_time) last_outcome_time
 FROM evaluated
@@ -260,7 +300,7 @@ export function comparePredictors(rows, challenger, baseline, metrics) {
 export function buildReport(assetRows, assetMeta = {}, addressRows = [], addressMeta = {}) {
   validateLeakage([...assetRows, ...addressRows]);
   return {
-    schema: "xcp-reputation-baseline/1",
+    schema: "xcp-reputation-baseline/2",
     generated_at: new Date().toISOString(),
     database: "xcpio-core",
     horizon_days: HORIZON_DAYS,
@@ -271,6 +311,11 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
       features: "canonical history at or before cutoff only; current signal snapshots prohibited",
       outcomes: "canonical history strictly after cutoff through cutoff + horizon",
       top_bucket: "highest predictor decile, deterministic asset_id tie-break",
+      ranking_metrics: {
+        precision_recall: "binary future return at fixed review budgets (100, 500, and top 1%)",
+        average_precision: "mean precision at every returning entity's rank",
+        ndcg: "binary-return discounted cumulative gain normalized to the ideal ranking",
+      },
       challengers: {
         balanced_market: "equal mean of within-cutoff recency, active-month, buyer, and realized-USD percentiles",
         balanced_participation: "equal mean of within-cutoff recency, active-month, and transaction percentiles",
@@ -294,11 +339,15 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
         "return_lift",
         "persistence_lift",
         "buyer_breadth_lift",
+        "average_precision",
+        "ndcg",
       ]),
       asset_compact_vs_persistence_core: comparePredictors(assetRows, "compact_market", "persistence_core", [
         "return_lift",
         "persistence_lift",
         "top_decile_log_future_usd",
+        "average_precision",
+        "ndcg",
       ]),
       address_balanced_vs_recency: comparePredictors(addressRows, "balanced_participation", "recency", [
         "return_lift",
