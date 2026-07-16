@@ -28,12 +28,22 @@ The reproducible coverage audit is `npm run audit:radar` from `apps/api`. On 202
 | assets with collection evidence | 27,516 | collection membership and provenance |
 | assets with corroborated collection evidence | 7,668 | higher-confidence membership |
 | current balance snapshots | 4,783 rows across 2,381 assets | only recent historical ownership |
+| immutable ownership ledger | 7,159,272 events from blocks 278,319–958,303 | cutoff-safe ownership reconstruction |
+| UTXO-holder ledger events | 92,481 | preserve polymorphic Counterparty holder semantics |
 
 The balance snapshot range was only blocks 955,875–958,303. Therefore current supply, holder count, and
 concentration can support a **current descriptive screen**, but cannot be joined to older cutoffs in a predictive
 backtest. Historical holder state must first be reconstructed from cutoff-safe ledger events. Current Emblem asks
 likewise cannot be projected backward. Counterparty dispenser states can be reconstructed from their on-chain
 open, refill, close, and dispense lifecycle.
+
+The ownership ledger stores both ordinary addresses and UTXO holders in `address_dictionary`; UTXO identities use
+the canonical `txid:vout` form and may separately retain their controlling address. A validation query found no
+holder/asset pair with a negative lifetime net quantity. Historical replay must nevertheless use signed 64-bit
+integer quantities in event order. Server-side `REAL` aggregation would lose satoshi-level precision, while a
+comparison that joins only `balances.address_id` silently drops UTXO balances. The safe implementation is a
+resumable, event-indexed export replayed into a local exact-integer balance state, emitting derived concentration
+features at frozen cutoffs rather than copying millions of balance rows back into production.
 
 ## Shared factual layer
 
@@ -107,8 +117,11 @@ the model does not learn that expensive issuance alone means quality.
 
 ## Research sequence and recommendation gate
 
-1. **Build cutoff-safe ownership states.** Reconstruct balances at selected cutoffs and validate totals against the
-   canonical current balances. Add issuer/non-issuer concentration and holder activity excluding the target asset.
+1. **Build cutoff-safe ownership states.** Export immutable ledger events in bounded `event_index` chunks, replay
+   exact signed integers in order, and emit features at selected cutoffs. Preserve address and `txid:vout` holder
+   identities; attribute UTXOs to controlling addresses only in a separately named view. Validate the final replay
+   against both branches of canonical `balances`, then add issuer/non-issuer concentration and holder activity
+   excluding the target asset.
 2. **Reconstruct historical Counterparty offers.** Model dispenser inventory/state at each cutoff. Treat historical
    external listings as unavailable unless a timestamped source exists.
 3. **Generate cohorts.** Established-market observations for Dislocations; fixed post-issuance ages for New.
@@ -124,4 +137,3 @@ eligibility; evidence across temporal folds; examples helped and harmed; query/s
 priority; rollback; and the forward metric that can falsify it. Expected first recommendations are architectural—
 split the surfaces, replace maximum price with robust market evidence, and separate issuer from non-issuer sell
 pressure—while weights and thresholds remain contingent on the experiments.
-

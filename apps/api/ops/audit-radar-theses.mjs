@@ -38,6 +38,14 @@ export const RADAR_COVERAGE_QUERIES = {
         AND (expiry=0 OR expiry>=unixepoch())) emblem_assets`,
   balance_snapshots: `SELECT COUNT(*) rows,COUNT(DISTINCT asset_id) assets,
     MIN(block_index) min_block,MAX(block_index) max_block FROM balance_snapshots`,
+  ownership_ledger: `SELECT COUNT(*) events,COUNT(DISTINCT asset_id) assets,
+    COUNT(DISTINCT address_id) holder_identities,MIN(block_index) min_block,MAX(block_index) max_block
+    FROM ledger_events`,
+  polymorphic_holders: `SELECT
+    SUM(instr(dictionary.address,':')=0) address_events,
+    SUM(instr(dictionary.address,':')>0) utxo_events,
+    COUNT(DISTINCT CASE WHEN instr(dictionary.address,':')>0 THEN event.address_id END) utxo_identities
+    FROM ledger_events event JOIN address_dictionary dictionary ON dictionary.address_id=event.address_id`,
 };
 
 function run() {
@@ -59,7 +67,7 @@ function run() {
           historical_offers:
             "Counterparty dispenser lifecycle can be reconstructed; current Emblem listings cannot be projected backward.",
           historical_ownership:
-            "Current balances are descriptive only. Historical concentration requires cutoff-safe ledger reconstruction.",
+            "Current balances are descriptive only. Historical concentration requires exact-integer, cutoff-safe ledger reconstruction preserving address and txid:vout holders.",
           issuer_exception:
             "Needs issuer identity plus cutoff-safe issuer balance and outflow/sale history; current top1_pct is insufficient.",
         },
