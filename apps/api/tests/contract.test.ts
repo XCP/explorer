@@ -470,6 +470,25 @@ test("contract: GET /v2/collections/candidates — compact discovery projection"
   assert.ok(Array.isArray(j.result.candidates[0].samples), "candidate samples must be an array");
 });
 
+test("contract: GET /v2/collections — descriptive collection profiles", async (t) => {
+  if (skipUnlessLive(t)) return;
+  const result = (await getJson(`/v2/collections?contract=${Date.now()}`)).result;
+  assertRows(
+    result,
+    {
+      tag: "string",
+      name: "string",
+      members: "number",
+      market_pct: "number",
+      median_events: "number",
+      issuers: "number",
+      total_realized_usd: "number",
+    },
+    "collections.result",
+  );
+  assert.ok(result.length > 0, "collection profiles must not be empty");
+});
+
 test("contract: GET /v2/assets/RAREPEPE/related — compact holder overlap", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson(`/v2/assets/RAREPEPE/related?contract=${Date.now()}`);

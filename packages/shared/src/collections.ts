@@ -16,3 +16,24 @@ export interface CollectionCandidate {
 export interface CollectionCandidatesPayload {
   candidates: CollectionCandidate[];
 }
+
+/** A descriptive collection profile. These are independent observed axes, not a composite grade. */
+export interface CollectionProfile {
+  tag: string;
+  name: string;
+  site: string | null;
+  sources: number;
+  source_list: string;
+  members: number;
+  issuers: number;
+  market_assets: number;
+  market_pct: number;
+  held_assets: number;
+  held_pct: number;
+  median_holders: number;
+  median_events: number;
+  total_realized_usd: number;
+  total_holders: number;
+  top_asset_event_pct: number;
+  top_asset_value_pct: number;
+}

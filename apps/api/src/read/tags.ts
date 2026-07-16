@@ -17,6 +17,7 @@ import {
 } from "#api/reputation/score";
 import { ASSET_PENALTY } from "#api/reputation/config";
 import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "#api/queries/tags";
+import { listCollectionProfiles } from "#api/queries/collections";
 
 export const tags = router();
 
@@ -27,6 +28,12 @@ const ASSET_RAW = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 
 // The Conviction RAW expression (who holds it + scarcity, no market inputs) — the community-strength axis the
 // aggregate rolls up per collection. The query zeroes it for low_quality members (mirrors scoreConviction).
 const CONV_RAW = rawSqlExpr(CONVICTION_FACTORS, 0);
+
+tags.get("/v2/collections", async (c) =>
+  cached(c, "collections:profiles", { ttl: 86400, edge: 300, swr: 86400 }, async () => ({
+    result: await listCollectionProfiles(c.env.CORE_DB),
+  })),
+);
 
 // Enrich the aggregate with the headline tier + 0-100 scores derived from the median/mean raws (the single
 // source of truth for raw→tier/percentile lives in reputation/score, so it's applied here, not in the web).
