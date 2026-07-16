@@ -422,6 +422,14 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }
   assert.equal(keys.has("mime"), false, "migration-defaulted MIME values are not historical milestones");
+  for (let index = 1; index < j.result.length; index += 1) {
+    const previous = j.result[index - 1] as { date: string; block: number };
+    const current = j.result[index] as { date: string; block: number };
+    assert.ok(
+      previous.date < current.date || (previous.date === current.date && previous.block <= current.block),
+      `firsts must be ordered by date then block (${previous.date}/${previous.block} before ${current.date}/${current.block})`,
+    );
+  }
   const oneBtc = j.result.find((row: { key?: string }) => row.key === "sale_1_btc");
   assert.equal(oneBtc?.ref, "MPBTC", "the BTC threshold must use executed unit price, not total trade volume");
   assert.equal(oneBtc?.block, 290948);

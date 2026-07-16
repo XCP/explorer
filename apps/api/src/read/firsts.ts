@@ -37,7 +37,7 @@ async function resolveAssetSubjects(db: D1Database, records: Awaited<ReturnType<
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
-  cached(c, "firsts:catalog:semantic-cleanup", { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }, async () => {
+  cached(c, "firsts:catalog:chronological-order", { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }, async () => {
     const records = await queryFirstRecords(c.env.CORE_DB);
     const displayNames = await resolveAssetSubjects(c.env.CORE_DB, records);
     const rows = FIRSTS_CATALOG.map((f, index): FirstRow | null => {
@@ -64,6 +64,9 @@ firsts.get("/v2/firsts", async (c) =>
         ...(assetRefs ? { asset_refs: assetRefs } : {}),
       };
     });
-    return { result: rows.filter(Boolean).sort((a, b) => a!.block - b!.block) };
+    const chronological = rows
+      .filter((row): row is FirstRow => row !== null)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.block - b.block);
+    return { result: chronological };
   }),
 );
