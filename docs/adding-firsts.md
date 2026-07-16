@@ -1,6 +1,6 @@
 # Adding a historical first
 
-The Firsts page is generated from `apps/api/src/queries/firsts.ts`. Each catalog entry is an independent SQL query that derives one milestone from canonical Counterparty history. The API runs the ordered catalog in one D1 batch, then sorts the results by block. A query error fails the request rather than silently caching an incomplete history.
+The Firsts page is generated from `apps/api/src/queries/firsts.ts`. Each catalog entry is an independent SQL query that derives one milestone from canonical Counterparty history. The API runs the ordered catalog in bounded D1 batches, then sorts the results by block. A query error fails the request rather than silently caching an incomplete history.
 
 ## Query contract
 
@@ -17,7 +17,12 @@ Every query must return exactly these aliases:
 Asset rows may additionally return `icon_asset`. Use it when `ref` is a readable subasset longname but
 the CDN must receive the canonical numeric asset name.
 
-Only the literal **First transaction** may use a transaction hash as `ref`. Every other row displays the thing that was first and links that subject to its causal transaction.
+Pair rows may additionally return `asset_refs`, the canonical asset names behind their two readable labels.
+An externally indexed event may return `tx_url` when its causal transaction lives on another chain.
+
+Only the literal **First transaction** may use a transaction hash as `ref`. Every other row displays the thing
+that was first. The milestone label links to its causal transaction; the subject links to its natural asset,
+address, pair, or block destination.
 
 ## Preferred query builders
 

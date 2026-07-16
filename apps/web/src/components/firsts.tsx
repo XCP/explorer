@@ -8,7 +8,8 @@ import { Skeleton } from "@/components/ui/feedback";
 import { short, commas } from "@/lib/format";
 import type { FirstRow } from "@xcp/shared/stats";
 
-// The human-readable subject behind a first. The parent link always points to the causal transaction.
+// The human-readable subject behind a first. Its natural destination is independent from the milestone's
+// causal transaction link.
 function Entity({
   type,
   subject,
@@ -104,7 +105,7 @@ export function Firsts() {
                 <li
                   key={r.key}
                   role="row"
-                  className="relative ml-3 grid grid-cols-1 gap-y-1.5 border-b border-l border-zinc-800 py-3 pl-4 pr-3 last:border-b-0 before:absolute before:-left-1 before:top-[1.15rem] before:size-2 before:rounded-full before:bg-(--color-accent) sm:ml-0 sm:grid-cols-[6.75rem_6rem_minmax(0,1fr)_minmax(12rem,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-0 sm:border-l-0 sm:border-zinc-900 sm:px-4 sm:py-2.5 sm:before:hidden"
+                  className="relative ml-3 grid grid-cols-1 gap-y-1.5 border-b border-l border-zinc-800 py-3 pl-4 pr-3 last:border-b-0 before:absolute before:-left-1 before:top-[1.15rem] before:size-2 before:rounded-full before:bg-(--color-accent) hover:bg-white/[0.028] focus-within:bg-white/[0.028] sm:ml-0 sm:grid-cols-[6.75rem_6rem_minmax(0,1fr)_minmax(12rem,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-0 sm:border-l-0 sm:border-zinc-900 sm:px-4 sm:py-2.5 sm:before:hidden"
                 >
                   <span role="cell" className="grid grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
@@ -127,12 +128,21 @@ export function Firsts() {
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
                       Milestone
                     </span>
-                    <Link
-                      href={`/tx/${r.tx}`}
-                      className="text-xs leading-4 !text-zinc-400 sm:text-sm sm:!text-zinc-300"
-                    >
-                      {r.label}
-                    </Link>
+                    {r.tx_url ? (
+                      <a
+                        href={r.tx_url}
+                        className="text-xs font-medium leading-4 !text-zinc-400 sm:text-sm sm:!text-zinc-300"
+                      >
+                        {r.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={`/tx/${r.tx}`}
+                        className="text-xs font-medium leading-4 !text-zinc-400 sm:text-sm sm:!text-zinc-300"
+                      >
+                        {r.label}
+                      </Link>
+                    )}
                   </span>
                   <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">

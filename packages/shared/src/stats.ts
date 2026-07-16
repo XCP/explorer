@@ -104,6 +104,7 @@ export interface FirstRow {
   ref: string; // display + link id
   type: "block" | "tx" | "address" | "asset" | "pair" | "broadcast" | "summary";
   tx: string; // transaction that established the milestone
+  tx_url?: string | null; // external causal transaction when the event occurred off Bitcoin
   icon_asset?: string | null; // canonical asset name when ref is a readable subasset longname
   asset_refs?: string[]; // canonical asset names for pair subjects whose display names may be longnames
 }

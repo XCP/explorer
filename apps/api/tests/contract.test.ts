@@ -380,9 +380,23 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     "tokenless",
     "non_ascii_description",
     "embedded_image",
+    "raw_base64_image",
+    "jpeg_media",
+    "png_media",
+    "gif_media",
+    "mp4_media",
+    "ipfs_media",
+    "arweave_media",
+    "imgur_media",
+    "ordinals_media",
+    "svg_media",
     "description_url",
     "pepe_mention",
     "nft_term",
+    "nft_name",
+    "tokenless_named",
+    "issuance_rights_burned",
+    "max_int_supply",
     "numeric",
     "asset_dividend",
     "multisig_address",
@@ -398,6 +412,12 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     "sale_1_btc",
     "sale_10_btc",
     "sale_1000000_pepecash",
+    "memo_only_address",
+    "cex_deposit",
+    "send_to_burn",
+    "emblem_deposit",
+    "emblem_withdrawal",
+    "emblem_sale",
   ]) {
     assert.ok(keys.has(key), `firsts catalog is missing ${key}`);
   }
@@ -416,8 +436,11 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     },
     "the curated Stamp genesis must remain stable",
   );
-  for (const row of j.result as Array<{ key: string; type: string; tx: string }>) {
-    assert.match(row.tx, /^[0-9a-f]{64}$/, `${row.key} must link to its causal transaction`);
+  for (const row of j.result as Array<{ key: string; type: string; tx: string; tx_url?: string }>) {
+    if (row.tx_url) {
+      assert.match(row.tx, /^0x[0-9a-f]{64}$/, `${row.key} must expose its external causal transaction`);
+      assert.equal(row.tx_url, `https://etherscan.io/tx/${row.tx}`, `${row.key} external transaction URL drifted`);
+    } else assert.match(row.tx, /^[0-9a-f]{64}$/, `${row.key} must link to its causal transaction`);
     if (row.key !== "transaction") assert.notEqual(row.type, "tx", `${row.key} must display a meaningful subject`);
   }
 });

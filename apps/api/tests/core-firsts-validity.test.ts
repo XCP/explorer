@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FIRSTS_CATALOG } from "#api/queries/firsts";
+import { FIRST_QUERY_BATCH_SIZE, FIRSTS_CATALOG, queryFirstRecords } from "#api/queries/firsts";
 
 const STATUS_BACKED_FIRSTS = [
   "burn",
@@ -58,15 +58,32 @@ const STATUS_BACKED_FIRSTS = [
   "non_ascii_description",
   "embedded_image",
   "raw_base64_image",
+  "jpeg_media",
+  "png_media",
+  "gif_media",
+  "mp4_media",
+  "ipfs_media",
+  "arweave_media",
+  "imgur_media",
+  "ordinals_media",
+  "svg_media",
   "description_url",
   "pepe_mention",
   "nft_term",
+  "nft_name",
+  "tokenless_named",
+  "issuance_rights_burned",
+  "max_int_supply",
   "asset_dividend",
   "free_numeric_subasset",
   "locked_feed",
   "indefinite_order",
   "memo_only_address",
   "sale_1000000_pepecash",
+  "cex_deposit",
+  "send_to_burn",
+  "emblem_deposit",
+  "emblem_withdrawal",
 ];
 
 test("catalog keys are unique and every query satisfies the shared row contract", () => {
@@ -77,6 +94,25 @@ test("catalog keys are unique and every query satisfies the shared row contract"
       assert.ok(entry.sql.includes(alias), `${entry.key} does not return the ${alias.trim()} alias`);
     }
   }
+});
+
+test("catalog execution stays below D1's statement ceiling and preserves order", async () => {
+  const batches: unknown[][] = [];
+  const db = {
+    prepare: (sql: string) => sql,
+    batch: async (statements: unknown[]) => {
+      batches.push(statements);
+      return statements.map((sql) => ({ results: [{ ref: sql }] }));
+    },
+  } as unknown as D1Database;
+  const rows = await queryFirstRecords(db);
+
+  assert.ok(batches.length > 1, "the current catalog should exercise chunking");
+  assert.ok(batches.every((batch) => batch.length <= FIRST_QUERY_BATCH_SIZE));
+  assert.deepEqual(
+    rows.map((row) => row?.ref),
+    FIRSTS_CATALOG.map((definition) => definition.sql),
+  );
 });
 
 test("every first backed by a protocol-status table excludes invalid records", () => {

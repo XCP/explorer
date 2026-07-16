@@ -1,8 +1,8 @@
 /**
  * /v2/firsts — Counterparty's origin story: the earliest record of each kind of on-chain moment, with date
  * and the entity (linkable). Includes our derived firsts (stamp/SRC-20/SRC-721/BTNS) from the tag +
- * classification layer. Pure read off the mirror; cached an hour (history doesn't change). SQL + catalog
- * live in queries/firsts.ts.
+ * classification layer. These facts do not change after chain finality: cache them for a year and bump the
+ * versioned cache key whenever the catalog changes. SQL + catalog live in queries/firsts.ts.
  */
 import type { FirstRow } from "@xcp/shared/stats";
 import { router, cached } from "#api/read/respond";
@@ -37,7 +37,7 @@ async function resolveAssetSubjects(db: D1Database, records: Awaited<ReturnType<
 export const firsts = router();
 
 firsts.get("/v2/firsts", async (c) =>
-  cached(c, "firsts:catalog:linked-subjects", { ttl: 3600, edge: 600 }, async () => {
+  cached(c, "firsts:catalog:complete-media", { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }, async () => {
     const records = await queryFirstRecords(c.env.CORE_DB);
     const displayNames = await resolveAssetSubjects(c.env.CORE_DB, records);
     const rows = FIRSTS_CATALOG.map((f, index): FirstRow | null => {
@@ -46,19 +46,21 @@ firsts.get("/v2/firsts", async (c) =>
       const t = Number(r.t) || 0;
       const assetRefs = r.typ === "pair" ? pairAssets(r.ref) : undefined;
       const canonicalAsset = r.typ === "asset" ? (r.icon_asset ?? r.ref) : undefined;
+      const displayRef = assetRefs
+        ? assetRefs.map((asset) => displayNames.get(asset) ?? asset).join(" / ")
+        : canonicalAsset
+          ? (displayNames.get(canonicalAsset) ?? r.ref)
+          : r.ref;
       return {
         key: f.key,
         label: f.label,
         block: r.b,
         date: new Date(t * 1000).toISOString().slice(0, 10),
-        ref: assetRefs
-          ? assetRefs.map((asset) => displayNames.get(asset) ?? asset).join(" / ")
-          : canonicalAsset
-            ? (displayNames.get(canonicalAsset) ?? r.ref)
-            : r.ref,
+        ref: displayRef,
         type: r.typ,
         tx: r.tx,
-        ...(canonicalAsset ? { icon_asset: canonicalAsset } : {}),
+        ...(r.tx_url ? { tx_url: r.tx_url } : {}),
+        ...(canonicalAsset && displayRef !== canonicalAsset ? { icon_asset: canonicalAsset } : {}),
         ...(assetRefs ? { asset_refs: assetRefs } : {}),
       };
     });

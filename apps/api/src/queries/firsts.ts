@@ -25,6 +25,7 @@ export interface FirstQueryRow {
   ref: string;
   typ: FirstRow["type"];
   tx: string;
+  tx_url?: string | null;
   icon_asset?: string | null;
 }
 
@@ -87,6 +88,51 @@ const earliestTradeThresholdSql = (currency: "BTC" | "XCP", total: number) => `S
   FROM trades trade JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
   WHERE trade.currency='${currency}' AND trade.total>=${total} AND trade.tx_hash IS NOT NULL
   ORDER BY trade.block_index,trade.block_time,trade.ref LIMIT 1`;
+
+/** Earliest valid send touching a dynamic address cohort. Each cohort address performs one indexed seek,
+ * avoiding a scan of the complete send history. Both canonical and explicit address columns are required
+ * because Counterparty sends may also use polymorphic UTXO locations. */
+const earliestCohortSendSql = (cohortSql: string, direction: "source" | "destination", excludeXcp = false) => {
+  const assetFilter = excludeXcp
+    ? "AND candidate.asset_id<>(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')"
+    : "";
+  return `WITH cohort AS (${cohortSql}), candidates AS (
+    SELECT send.block_index,send.block_time,send.event_index,send.tx_hash,send.asset_id
+    FROM cohort JOIN sends send ON send.event_index=(
+      SELECT event_index FROM sends candidate INDEXED BY idx_sends_${direction}
+      WHERE candidate.${direction}_id=cohort.address_id AND candidate.status NOT LIKE 'invalid%'
+        ${assetFilter}
+      ORDER BY candidate.block_index,candidate.event_index LIMIT 1)
+    UNION ALL
+    SELECT send.block_index,send.block_time,send.event_index,send.tx_hash,send.asset_id
+    FROM cohort JOIN sends send ON send.event_index=(
+      SELECT event_index FROM sends candidate INDEXED BY idx_sends_${direction}_address
+      WHERE candidate.${direction}_address_id=cohort.address_id AND candidate.status NOT LIKE 'invalid%'
+        ${assetFilter}
+      ORDER BY candidate.block_index,candidate.event_index LIMIT 1)
+  ) SELECT candidate.block_index b,candidate.block_time t,asset.asset ref,'asset' typ,
+      LOWER(HEX(candidate.tx_hash)) tx
+    FROM candidates candidate JOIN asset_dictionary asset ON asset.asset_id=candidate.asset_id
+    ORDER BY candidate.block_index,candidate.event_index LIMIT 1`;
+};
+
+const MEDIA_PREDICATES = {
+  png: `(LOWER(description) GLOB 'data:image/png*' OR description GLOB 'iVBORw0KGgo*'
+    OR (LOWER(substr(description,1,6))='stamp:' AND substr(description,7,12)='iVBORw0KGgo')
+    OR LOWER(description) GLOB '*.png*')`,
+  gif: `(LOWER(description) GLOB 'data:image/gif*' OR description GLOB 'R0lGOD*'
+    OR (LOWER(substr(description,1,6))='stamp:' AND substr(description,7,6)='R0lGOD')
+    OR LOWER(description) GLOB '*.gif*')`,
+  jpeg: `(LOWER(description) GLOB 'data:image/jpeg*' OR description GLOB '/9j/*'
+    OR LOWER(description) GLOB '*.jpg*' OR LOWER(description) GLOB '*.jpeg*')`,
+  mp4: `(LOWER(description) GLOB 'data:video/mp4*' OR LOWER(description) GLOB '*.mp4*')`,
+  ipfs: `(LOWER(description) GLOB '*/ipfs/*' OR LOWER(description) GLOB 'ipfs://*')`,
+  arweave: `(LOWER(description) GLOB '*arweave.net/*' OR LOWER(description) GLOB '*.ar.io/*'
+    OR LOWER(description) GLOB '*ardrive.net*')`,
+  ordinals: `(LOWER(description) GLOB 'ord:*' OR LOWER(description) GLOB '*ordinals.com/content/*')`,
+  imgur: `LOWER(description) GLOB '*imgur.com/*'`,
+  svg: `(LOWER(description) GLOB 'data:image/svg*' OR LOWER(description) GLOB '*.svg*')`,
+} as const;
 
 export const FIRSTS_CATALOG: FirstDefinition[] = [
   // --- protocol genesis ---
@@ -449,9 +495,28 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   },
   { key: "satoshi_nft", label: "First one-satoshi NFT", sql: earliestLockedSupplySql(1, "x.divisible=1") },
   { key: "tokenless", label: "First locked tokenless asset", sql: earliestLockedSupplySql(0, "1=1") },
+  {
+    key: "tokenless_named",
+    label: "First locked tokenless named asset",
+    sql: earliestLockedSupplySql(0, "x.asset_longname IS NOT NULL OR asset.asset NOT GLOB 'A[0-9]*'"),
+  },
   { key: "reset", label: "First asset reset (CIP03)", sql: earliestValidIssuanceSql(`reset=1`) },
   { key: "transfer", label: "First asset transfer", sql: earliestValidIssuanceSql(`transfer=1`) },
+  {
+    key: "issuance_rights_burned",
+    label: "First issuance rights sent to a burn address",
+    sql: earliestValidIssuanceSql(
+      `transfer=1 AND issuer_id IN (
+        SELECT address.address_id FROM curated burn
+        JOIN address_dictionary address ON address.address=burn.key WHERE burn.kind='burn')`,
+    ),
+  },
   { key: "callable", label: "First callable asset", sql: earliestValidIssuanceSql(`callable=1`) },
+  {
+    key: "max_int_supply",
+    label: "First maximum-supply asset",
+    sql: earliestValidIssuanceSql(`CAST(quantity AS INTEGER)=9223372036854775807`),
+  },
   {
     key: "description",
     label: "First asset description",
@@ -473,6 +538,51 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     sql: earliestValidIssuanceSql(`description GLOB 'iVBORw0KGgo*'`),
   },
   {
+    key: "jpeg_media",
+    label: "First JPEG media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.jpeg),
+  },
+  {
+    key: "png_media",
+    label: "First PNG media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.png),
+  },
+  {
+    key: "gif_media",
+    label: "First GIF media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.gif),
+  },
+  {
+    key: "mp4_media",
+    label: "First MP4 media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.mp4),
+  },
+  {
+    key: "ipfs_media",
+    label: "First IPFS media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.ipfs),
+  },
+  {
+    key: "arweave_media",
+    label: "First Arweave media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.arweave),
+  },
+  {
+    key: "imgur_media",
+    label: "First Imgur-hosted media",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.imgur),
+  },
+  {
+    key: "ordinals_media",
+    label: "First Ordinals media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.ordinals),
+  },
+  {
+    key: "svg_media",
+    label: "First SVG media reference",
+    sql: earliestValidIssuanceSql(MEDIA_PREDICATES.svg),
+  },
+  {
     key: "description_url",
     label: "First external URL in an asset description",
     sql: earliestValidIssuanceSql(`LOWER(description) LIKE '%http://%' OR LOWER(description) LIKE '%https://%'`),
@@ -486,6 +596,14 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
     key: "nft_term",
     label: "First use of “NFT” in an asset description",
     sql: earliestValidIssuanceSql(`UPPER(description) LIKE '%NFT%'`),
+  },
+  {
+    key: "nft_name",
+    label: "First asset name containing NFT",
+    sql: earliestValidIssuanceSql(
+      `UPPER(COALESCE(x.asset_longname,'')) GLOB '*NFT*'
+        OR x.asset_id IN (SELECT asset_id FROM asset_dictionary WHERE asset GLOB '*NFT*')`,
+    ),
   },
   {
     key: "description_lock",
@@ -660,6 +778,51 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
         AND other.asset NOT IN ('BTC','XCP','PEPECASH')
     ) SELECT b,t,ref,'asset' typ,tx FROM candidates ORDER BY b,tx0_index,tx1_index LIMIT 1`,
   },
+  {
+    key: "cex_deposit",
+    label: "First CEX deposit",
+    sql: earliestCohortSendSql(
+      `SELECT address.address_id FROM curated item
+        JOIN address_dictionary address ON address.address=item.key WHERE item.kind='exchange'`,
+      "destination",
+    ),
+  },
+  {
+    key: "send_to_burn",
+    label: "First send to a known burn address",
+    sql: earliestCohortSendSql(
+      `SELECT address.address_id FROM curated item
+        JOIN address_dictionary address ON address.address=item.key WHERE item.kind='burn'`,
+      "destination",
+    ),
+  },
+  {
+    key: "emblem_deposit",
+    label: "First asset deposited into an Emblem Vault",
+    sql: earliestCohortSendSql(
+      `SELECT DISTINCT btc_address_id address_id FROM emblem_vaults WHERE btc_address_id IS NOT NULL`,
+      "destination",
+      true,
+    ),
+  },
+  {
+    key: "emblem_withdrawal",
+    label: "First asset withdrawn from an Emblem Vault",
+    sql: earliestCohortSendSql(
+      `SELECT DISTINCT btc_address_id address_id FROM emblem_vaults WHERE btc_address_id IS NOT NULL`,
+      "source",
+      true,
+    ),
+  },
+  {
+    key: "emblem_sale",
+    label: "First Emblem Vault sale",
+    sql: `SELECT trade.block_index b,trade.block_time t,asset.asset ref,'asset' typ,
+      trade.external_tx_hash tx,'https://etherscan.io/tx/'||trade.external_tx_hash tx_url
+      FROM trades trade JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
+      WHERE trade.venue='emblem' AND trade.sale_class='real' AND trade.external_tx_hash IS NOT NULL
+      ORDER BY trade.block_time,trade.ref LIMIT 1`,
+  },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
   // pass keyburn validation, which we can't derive from Counterparty alone (multiple stamp: assets share the
@@ -705,8 +868,16 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   },
 ];
 
-/** Run the catalog in one ordered D1 round trip. Query errors are intentionally not swallowed. */
+/** Leave headroom below D1's 100-statement batch ceiling so adding a First never breaks the endpoint. */
+export const FIRST_QUERY_BATCH_SIZE = 50;
+
+/** Run bounded batches in catalog order. Query errors are intentionally not swallowed or partially cached. */
 export async function queryFirstRecords(db: D1Database): Promise<Array<FirstQueryRow | null>> {
-  const results = await db.batch(FIRSTS_CATALOG.map((definition) => db.prepare(definition.sql)));
-  return results.map((result) => (result.results[0] as FirstQueryRow | undefined) ?? null);
+  const records: Array<FirstQueryRow | null> = [];
+  for (let start = 0; start < FIRSTS_CATALOG.length; start += FIRST_QUERY_BATCH_SIZE) {
+    const definitions = FIRSTS_CATALOG.slice(start, start + FIRST_QUERY_BATCH_SIZE);
+    const results = await db.batch(definitions.map((definition) => db.prepare(definition.sql)));
+    records.push(...results.map((result) => (result.results[0] as FirstQueryRow | undefined) ?? null));
+  }
+  return records;
 }
