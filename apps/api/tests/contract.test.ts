@@ -272,11 +272,10 @@ test("contract: GET /v2/status - cheap SyncOverview heartbeat", async (t) => {
 test("contract: stats quality modes remain isolated and valid", async (t) => {
   if (skipUnlessLive(t)) return;
   const contract = Date.now();
-  const [filtered, all, filteredMetrics, allMetrics] = await Promise.all([
+  const [filtered, all, metrics] = await Promise.all([
     getJson(`/v2/stats?contract=${contract}`),
     getJson(`/v2/stats?include_hidden=1&contract=${contract}`),
     getJson(`/v2/metrics?days=90&contract=${contract}`),
-    getJson(`/v2/metrics?days=90&include_hidden=1&contract=${contract}`),
   ]);
   const filteredCountFields = [
     "assets",
@@ -345,11 +344,9 @@ test("contract: stats quality modes remain isolated and valid", async (t) => {
     "btc_fees",
     "xcp_burned",
   ]) {
-    assert.ok(Array.isArray(filteredMetrics.result[field]), `filtered metrics.${field} must be an array`);
-    assert.ok(Array.isArray(allMetrics.result[field]), `all metrics.${field} must be an array`);
+    assert.ok(Array.isArray(metrics.result[field]), `metrics.${field} must be an array`);
     const total = (rows: Array<{ v: number }>) => rows.reduce((sum, row) => sum + row.v, 0);
-    assert.ok(Number.isFinite(total(filteredMetrics.result[field])), `filtered metrics.${field} total must be finite`);
-    assert.ok(Number.isFinite(total(allMetrics.result[field])), `all metrics.${field} total must be finite`);
+    assert.ok(Number.isFinite(total(metrics.result[field])), `metrics.${field} total must be finite`);
   }
 });
 

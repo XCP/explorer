@@ -32,10 +32,9 @@ stats.get("/v2/status", async (c) => J(c, { result: await coreSyncOverview(c.env
 /* ---------- metrics: daily time-series for charts (cached; GROUP BY day on block_time) ---------- */
 stats.get("/v2/metrics", async (c) => {
   const days = boundedInteger(c.req.query("days"), { defaultValue: 90, min: 7, max: 5000 });
-  const includeHidden = c.req.query("include_hidden") === "1";
   // Daily buckets do not justify full-history regrouping every 30 minutes. Six hours keeps today's partial
   // bucket useful while bounding each low-cardinality days variant to four producers/day.
-  return cached(c, `metrics:v2:${days}:${includeHidden ? 1 : 0}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
+  return cached(c, `metrics:v2:${days}`, { ttl: 21600, edge: 300, swr: 86400 }, async () => {
     // each series is newest-first daily buckets; map to {t,v} points and reverse to oldest-first for the chart
     const names: MetricName[] = [
       "transactions",
@@ -48,7 +47,7 @@ stats.get("/v2/metrics", async (c) => {
       "btc_fees",
       "xcp_burned",
     ];
-    const rows = await coreMetricSeriesSet(c.env.CORE_DB, names, days, includeHidden);
+    const rows = await coreMetricSeriesSet(c.env.CORE_DB, names, days);
     const series = (name: MetricName) => rows[name].map((r) => ({ t: r.d * 86400, v: Number(r.v) || 0 })).reverse();
     const [transactions, bitcoin_transactions, xcp_share, issuances, dispenses, trades, sends, btc_fees, xcp_burned] =
       names.map(series);

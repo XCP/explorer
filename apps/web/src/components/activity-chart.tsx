@@ -36,7 +36,7 @@ export function ActivityChart({ btcFeesComplete }: { btcFeesComplete: boolean })
   const [days, setDays] = useState(90);
   const [cumulative, setCumulative] = useState(false);
   const { data } = useSWR<Envelope<Record<string, Point[]>>>(
-    apiUrl("/v2/metrics", { days, include_hidden: 1, revision: 2 }),
+    apiUrl("/v2/metrics", { days, revision: 2 }),
   );
   const grouped = days > 365;
   let series = grouped ? monthly(data?.result?.[metric] ?? []) : (data?.result?.[metric] ?? []);

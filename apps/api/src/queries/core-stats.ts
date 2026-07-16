@@ -150,68 +150,17 @@ const CORE_METRICS: Record<MetricName, string> = {
   xcp_burned: "xcp_burned",
 };
 
-const CLEAN_METRICS: Record<Exclude<MetricName, "transactions" | "bitcoin_transactions" | "xcp_share">, string> = {
-  issuances: `SELECT item.block_time/86400 d,COUNT(*) v FROM issuances item
-    LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-    WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND COALESCE(signal.low_quality,0)=0 GROUP BY d`,
-  dispenses: `SELECT item.block_time/86400 d,COUNT(*) v FROM dispenses item
-    LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-    WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND COALESCE(signal.low_quality,0)=0 GROUP BY d`,
-  trades: `SELECT item.block_time/86400 d,COUNT(*) v FROM order_matches item
-    LEFT JOIN asset_signals forward_signal ON forward_signal.asset_id=item.forward_asset_id
-    LEFT JOIN asset_signals backward_signal ON backward_signal.asset_id=item.backward_asset_id
-    WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks)
-      AND COALESCE(forward_signal.low_quality,0)=0 AND COALESCE(backward_signal.low_quality,0)=0 GROUP BY d`,
-  sends: `SELECT item.block_time/86400 d,COUNT(*) v FROM sends item
-    LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-    WHERE item.block_index>(SELECT MAX(block_index)-? FROM blocks) AND COALESCE(signal.low_quality,0)=0 GROUP BY d`,
-  btc_fees: `SELECT tx.block_time/86400 d,SUM(CAST(tx.fee AS REAL))/100000000.0 v FROM transactions tx
-    WHERE tx.block_index>(SELECT MAX(block_index)-? FROM blocks) AND tx.fee IS NOT NULL AND NOT EXISTS (
-      SELECT 1 FROM (
-        SELECT asset_id FROM sends WHERE tx_index=tx.tx_index
-        UNION SELECT asset_id FROM issuances WHERE tx_index=tx.tx_index
-        UNION SELECT asset_id FROM dispensers WHERE tx_index=tx.tx_index
-        UNION SELECT asset_id FROM dispenses WHERE tx_index=tx.tx_index
-        UNION SELECT give_asset_id FROM orders WHERE tx_index=tx.tx_index
-      ) event JOIN asset_signals signal ON signal.asset_id=event.asset_id WHERE signal.low_quality=1
-    ) AND NOT EXISTS (
-      SELECT 1 FROM (
-        SELECT get_asset_id asset_id FROM orders WHERE tx_index=tx.tx_index
-        UNION SELECT asset_id FROM dividends WHERE tx_index=tx.tx_index
-        UNION SELECT asset_id FROM fairmints WHERE tx_index=tx.tx_index
-        UNION SELECT asset_id FROM destructions WHERE tx_index=tx.tx_index
-      ) event JOIN asset_signals signal ON signal.asset_id=event.asset_id WHERE signal.low_quality=1
-    ) GROUP BY d`,
-  xcp_burned: `WITH cutoff AS (SELECT MAX(block_index)-? block FROM blocks)
-    SELECT block_time/86400 d,SUM(amount)/100000000.0 v FROM (
-      SELECT item.block_time,CAST(item.fee_paid AS REAL) amount FROM issuances item
-        LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE item.block_index>(SELECT block FROM cutoff) AND item.status LIKE 'valid%'
-          AND item.fee_paid IS NOT NULL AND COALESCE(signal.low_quality,0)=0
-      UNION ALL SELECT block_time,CAST(fee_paid AS REAL) FROM sweeps
-        WHERE block_index>(SELECT block FROM cutoff) AND fee_paid IS NOT NULL
-      UNION ALL SELECT item.block_time,CAST(item.fee_paid AS REAL) FROM dividends item
-        LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
-        WHERE item.block_index>(SELECT block FROM cutoff) AND item.fee_paid IS NOT NULL
-          AND COALESCE(signal.low_quality,0)=0
-      UNION ALL SELECT item.block_time,CAST(item.quantity AS REAL) FROM destructions item
-        WHERE item.block_index>(SELECT block FROM cutoff) AND item.status LIKE 'valid%'
-          AND item.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
-    ) GROUP BY d`,
-};
-
 export function coreMetricSeries(
   db: D1Database,
   name: MetricName,
   days: number,
-  includeHidden = true,
 ): Promise<MetricDayRow[]> {
-  return metricStatement(db, name, days, includeHidden)
+  return metricStatement(db, name, days)
     .all<MetricDayRow>()
     .then((result) => result.results);
 }
 
-function metricStatement(db: D1Database, name: MetricName, days: number, includeHidden: boolean): D1PreparedStatement {
+function metricStatement(db: D1Database, name: MetricName, days: number): D1PreparedStatement {
   if (name === "xcp_share")
     return db
       .prepare(
@@ -220,12 +169,6 @@ function metricStatement(db: D1Database, name: MetricName, days: number, include
       )
       .bind(days);
   const column = CORE_METRICS[name];
-  if (!includeHidden && name !== "transactions" && name !== "bitcoin_transactions") {
-    const sql = CLEAN_METRICS[name];
-    const cutoff = (days + 2) * 144;
-    const binds = Array(sql.matchAll(/\?/g)).map(() => cutoff);
-    return db.prepare(`SELECT d,v FROM (${sql}) WHERE d IS NOT NULL ORDER BY d DESC LIMIT ?`).bind(...binds, days);
-  }
   return db
     .prepare(`SELECT day d,${column} v FROM daily_metrics WHERE ${column} IS NOT NULL ORDER BY day DESC LIMIT ?`)
     .bind(days);
@@ -236,9 +179,8 @@ export async function coreMetricSeriesSet(
   db: D1Database,
   names: MetricName[],
   days: number,
-  includeHidden: boolean,
 ): Promise<Record<MetricName, MetricDayRow[]>> {
-  const results = await db.batch(names.map((name) => metricStatement(db, name, days, includeHidden)));
+  const results = await db.batch(names.map((name) => metricStatement(db, name, days)));
   return Object.fromEntries(
     names.map((name, index) => [name, (results[index]?.results ?? []) as unknown as MetricDayRow[]]),
   ) as Record<MetricName, MetricDayRow[]>;
