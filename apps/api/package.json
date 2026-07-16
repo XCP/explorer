@@ -24,6 +24,7 @@
     "snapshot:reputation": "node ops/build-reputation-snapshot.mjs",
     "snapshot:radar-ownership": "node ops/build-radar-ownership.mjs",
     "validate:radar-ownership": "node ops/validate-radar-ownership.mjs",
+    "snapshot:radar-issuances": "node ops/build-radar-issuance-history.mjs",
     "evaluate:graph-heldout": "node --max-old-space-size=2048 ops/evaluate-graph-heldout.mjs",
     "audit:tags": "node ops/audit-tags-collections.mjs",
     "audit:radar": "node ops/audit-radar-theses.mjs",
