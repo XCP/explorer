@@ -24,6 +24,7 @@
     "snapshot:reputation": "node ops/build-reputation-snapshot.mjs",
     "evaluate:graph-heldout": "node --max-old-space-size=2048 ops/evaluate-graph-heldout.mjs",
     "audit:tags": "node ops/audit-tags-collections.mjs",
+    "audit:radar": "node ops/audit-radar-theses.mjs",
     "deploy": "wrangler deploy && npm run test:contract",
     "migrate:local": "wrangler d1 migrations apply xcpio-core --local",
     "migrate:remote": "wrangler d1 migrations apply xcpio-core --remote",
