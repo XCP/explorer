@@ -117,6 +117,21 @@ Removing the gate alone has no effect on today’s undervalued top 40 because th
 
 Decision: **do not make an unreviewed production ranking change**. The graph is both influential and unevaluated, so neither “leave it because it is small” nor “remove it because it is invalid” is justified without named review. Treat Radar as an experimental discovery surface, label graph contribution explicitly, and use the checked-in `/admin/graph-influence` ablation for review. The next model experiment must partition trust/distrust seeds and test propagation on held-out seeds, including a temporal-decay variant; current-state ranking agreement cannot validate the graph.
 
+### Five-fold held-out graph results
+
+The full published graph—1,722,964 edges and 9,756 seed rows—was exported into a checksum-bound local artifact. Each deterministic fold withholds roughly 20% of trust and distrust labels before teleport vectors are constructed. Held-out labels receive no seed mass. The evaluator uses the production damping, 20 passes, three-way Min-k trust, reverse distrust, and percentile cuts.
+
+| Variant | Trust recall | Fold range | Distrust recall | Fold range |
+| --- | ---: | ---: | ---: | ---: |
+| Flat production weights | 34.7% | 32.3–36.1% | 67.1% | 63.0–71.4% |
+| One-year transaction-edge half-life | 50.1% | 48.2–51.2% | 64.4% | 56.5–69.2% |
+
+The temporal improvement in trust recovery is stable across all five folds and is strongest for asset labels. Address-label trust improves much less. Distrust weakens slightly overall and has materially higher variance because there are only 225 total distrust seeds. Some labels remain unreachable under either variant, which is expected when a withheld node is disconnected from every remaining seed subset.
+
+Interpretation limits: these labels were originally selected by collection, quality, archetype, and scam rules. Recovery shows that graph relationships can reconstruct some withheld curation; it does not prove general trustworthiness, causal value, precision over unlabeled nodes, or future market performance.
+
+Decision: retain flat reverse distrust as the baseline; do not adopt temporal decay globally. Promote **temporally decayed trust** as the next graph challenger because it improves held-out trust recovery by 15.4 percentage points without relying on seeded test labels. Before production use, measure its trusted-address dormancy, Radar/Conviction rank changes, and future-activity increment beyond recency. Trust and distrust may require different edge policies.
+
 ## Remaining decision gates
 
 1. Produce subgroup and false-positive reviews for the two-factor asset outlook.

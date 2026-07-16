@@ -22,6 +22,7 @@
     "test:contract": "tsc -p tsconfig.test.json && node tests/contract-runner.mjs",
     "evaluate:reputation": "node ops/evaluate-reputation-baselines.mjs",
     "snapshot:reputation": "node ops/build-reputation-snapshot.mjs",
+    "evaluate:graph-heldout": "node --max-old-space-size=2048 ops/evaluate-graph-heldout.mjs",
     "audit:tags": "node ops/audit-tags-collections.mjs",
     "deploy": "wrangler deploy && npm run test:contract",
     "migrate:local": "wrangler d1 migrations apply xcpio-core --local",
