@@ -1,18 +1,14 @@
-// Asset art URLs through Cloudflare Image Resizing (enabled on the cdn.xcp.io zone). `format=auto` serves
-// AVIF/WebP by the browser's Accept header; `fit=scale-down` shrinks large card art but NEVER upscales, so
-// pixel-art stamps stay crisp and already-tiny images are untouched. A 200KB card JPEG becomes a ~26KB AVIF —
-// the biggest single image win, and it needs no change to the CDN itself. `width` is the max render width in
-// device px (pass ~2× the CSS size for retina); the origin path stays /img/{kind}/{asset}.
-// Bumped after missing asset-specific responses stopped caching the default placeholder. Existing browsers
-// may still hold that formerly immutable response, so media URLs need a one-time revision boundary.
+// Explorer media uses a deliberately small variant set. Each additional width can create another billable
+// Cloudflare transformation per asset, so callers choose a named display role instead of arbitrary pixels.
 const MEDIA_CACHE_REVISION = "3";
+export const ART_WIDTH = { thumbnail: 320, card: 640 } as const;
+export type ArtWidth = (typeof ART_WIDTH)[keyof typeof ART_WIDTH];
 
-export function artUrl(asset: string, width: number, kind: "full" | "icon" = "full"): string {
+export function artUrl(asset: string, width: ArtWidth, kind: "full" | "icon" = "full"): string {
   return `https://cdn.xcp.io/cdn-cgi/image/format=auto,fit=scale-down,width=${width},quality=82,onerror=redirect/img/${kind}/${encodeURIComponent(asset)}?v=${MEDIA_CACHE_REVISION}`;
 }
 
-/** The un-resized origin URL — the fallback when Image Resizing refuses the file (video/mp4 card art,
- *  oversized GIFs → error 9412). AssetArt cascades: resized → raw <img> → <video>. */
+/** Untouched R2 media for primary artwork and the image/video fallback. */
 export function rawArtUrl(asset: string, kind: "full" | "icon" = "full"): string {
   return `https://cdn.xcp.io/img/${kind}/${encodeURIComponent(asset)}?v=${MEDIA_CACHE_REVISION}`;
 }

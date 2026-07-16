@@ -7,6 +7,7 @@ import type { TradeRow } from "@xcp/shared/trades";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { useTrades } from "@/lib/hooks";
 import { AssetArt } from "@/features/assets/components/asset-art";
+import { ART_WIDTH } from "@/lib/art";
 import { AssetIcon } from "@/components/ui/badges";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -147,6 +148,7 @@ export function HomeDashboard() {
               >
                 <AssetArt
                   asset={a.asset}
+                  w={ART_WIDTH.thumbnail}
                   className="aspect-[5/7] w-full rounded-lg border border-zinc-800 transition group-hover:border-(--color-accent)"
                 />
                 <div className="mt-1 truncate text-[10px] text-zinc-500 group-hover:text-zinc-200">

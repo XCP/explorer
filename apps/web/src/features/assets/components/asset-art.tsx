@@ -1,26 +1,15 @@
 "use client";
 import { useState } from "react";
-import { artUrl, rawArtUrl } from "@/lib/art";
+import { ART_WIDTH, artUrl, rawArtUrl, type ArtWidth } from "@/lib/art";
 
-/**
- * Asset art from the CDN. Display problems this solves (ported from the old xcp.io media.jsx):
- *  1. Crop — images aren't square (lots are portrait card art), so we object-contain (show the whole image,
- *     letterboxed on bg) instead of object-cover (which crops). With `natural`, the box takes the image's
- *     own aspect ratio (read on load) so portraits render as portraits.
- *  2. Fuzzy stamps — tiny pixel-art blown up looks blurry, so we render `image-rendering: pixelated` when the
- *     image is small (≤96px either side), is a numeric asset (A… — overwhelmingly stamps/SRC pixel art), or is
- *     a known stamp. The natural-size check on load is the universal signal; no per-asset metadata needed.
- *  3. Non-image media — Cloudflare Image Resizing 9412s when the origin file isn't an image (TRAMPS is a
- *     video/mp4). The cascade catches the error: resized <img> → RAW un-scaled <img> → <video muted loop>.
- *     No per-asset metadata needed; each stage only triggers on the previous one's onError.
- */
+/** Whole-frame asset media with pixel-art detection and image → original → video fallback. */
 export function AssetArt({
   asset,
   className = "",
   natural = false,
   stamp = false,
   priority = false,
-  w = 640,
+  w = ART_WIDTH.card,
   video = false,
   original = false,
 }: {
@@ -29,7 +18,7 @@ export function AssetArt({
   natural?: boolean;
   stamp?: boolean;
   priority?: boolean;
-  w?: number;
+  w?: ArtWidth;
   video?: boolean;
   original?: boolean;
 }) {

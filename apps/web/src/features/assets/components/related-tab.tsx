@@ -5,14 +5,15 @@ import useSWR from "swr";
 import type { AssetCohortRow, AssetRelated } from "@xcp/shared/assets";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { collectionLabel, commas } from "@/lib/format";
-import { artUrl } from "@/lib/art";
+import { AssetArt } from "@/features/assets/components/asset-art";
+import { ART_WIDTH } from "@/lib/art";
 
 // One v19 gallery card: full art on top, mono name, one-line "why it's here".
 function GalleryCard({ asset, name, why }: { asset: string; name: string; why: ReactNode }) {
   return (
     <Link className="g-card" href={`/asset/${encodeURIComponent(asset)}`}>
       <div className="g-art">
-        <img src={artUrl(asset, 640, "full")} loading="lazy" alt="" />
+        <AssetArt asset={asset} w={ART_WIDTH.card} className="size-full" />
       </div>
       <div className="g-meta">
         <div className="g-name">{name}</div>
