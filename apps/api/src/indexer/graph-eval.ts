@@ -7,6 +7,7 @@
  * precise tiers, gaming resistance, and good curation candidates — decomposed into the criteria below.
  */
 import type { Env } from "#api/env";
+import { DISTRUST_SLOT, K } from "#api/indexer/graph-core";
 
 // Known-legit assets that must NOT read distrusted (coverage watchlist — the BITCRYSTALS class + anchors).
 const LEGIT_WATCHLIST = [
@@ -21,7 +22,6 @@ const LEGIT_WATCHLIST = [
   "XCP",
   "PEPECASH",
   "BITCORN",
-  "FLDC",
 ];
 
 async function cut(env: Env, key: string): Promise<number> {
@@ -56,16 +56,31 @@ export async function graphEval(env: Env): Promise<Record<string, unknown>> {
     `SELECT SUM(CASE WHEN ${rTrust} THEN 1 ELSE 0 END) trusted, SUM(CASE WHEN ${rDist} THEN 1 ELSE 0 END) distrusted, COUNT(*) total FROM address_signals`,
   );
 
-  // C1 — catches known-bad: recall of curated lowq assets, and of derived scam-actor addresses, in distrust.
+  // Seed reproduction is a pipeline check, not recall. Held-out labels are reported separately so the graph
+  // never receives evaluation credit for labels supplied directly as axioms.
   const recallLowq = await one(
     env,
-    `SELECT SUM(CASE WHEN ${aDist} THEN 1 ELSE 0 END) hit, COUNT(*) total
-     FROM asset_signals signal JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+    `SELECT SUM(seed.entity_id IS NOT NULL) seeded,SUM(seed.entity_id IS NULL) heldout,
+       SUM(seed.entity_id IS NULL AND ${aDist}) heldout_hit,COUNT(*) total
+     FROM asset_signals signal
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
+     JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+     LEFT JOIN graph_seed seed
+       ON seed.generation=(SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_generation')
+       AND seed.entity_id=entity.entity_id AND seed.slot=${DISTRUST_SLOT}
      WHERE dictionary.asset IN (SELECT key FROM curated WHERE kind='lowq')`,
   );
   const recallScam = await one(
     env,
-    `SELECT SUM(CASE WHEN ${rDist} THEN 1 ELSE 0 END) hit, COUNT(*) total FROM address_signals WHERE COALESCE(shell_scams,0)>0 OR COALESCE(vault_scams,0)>0`,
+    `SELECT SUM(seed.entity_id IS NOT NULL) seeded,SUM(seed.entity_id IS NULL) heldout,
+       SUM(seed.entity_id IS NULL AND ${rDist}) heldout_hit,COUNT(*) total
+     FROM address_signals signal
+     JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+     JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
+     LEFT JOIN graph_seed seed
+       ON seed.generation=(SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_generation')
+       AND seed.entity_id=entity.entity_id AND seed.slot=${DISTRUST_SLOT}
+     WHERE COALESCE(shell_scams,0)>0 OR COALESCE(vault_scams,0)>0 OR COALESCE(dump_scams,0)>0`,
   );
 
   // C2 — no false-flags: established-CLEAN assets (real market, not lowq) that read distrusted. Target ≤2.
@@ -87,6 +102,18 @@ export async function graphEval(env: Env): Promise<Record<string, unknown>> {
   const dormant = await one(
     env,
     `SELECT SUM(CASE WHEN ${rTrust} THEN 1 ELSE 0 END) trusted, SUM(CASE WHEN ${rTrust} AND ${tip}-last_block>52560 THEN 1 ELSE 0 END) dormant FROM address_signals`,
+  );
+  const heldoutDormant = await one(
+    env,
+    `SELECT COUNT(*) trusted,SUM(${tip}-signal.last_block>52560) dormant
+     FROM address_signals signal
+     JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
+     JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
+     WHERE ${rTrust} AND NOT EXISTS (
+       SELECT 1 FROM graph_seed seed
+       WHERE seed.generation=(SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_generation')
+         AND seed.entity_id=entity.entity_id AND seed.slot<${K}
+     )`,
   );
 
   // C6 — legit coverage: of the watchlist, how many read trusted (good) vs distrusted (bad).
@@ -114,20 +141,24 @@ export async function graphEval(env: Env): Promise<Record<string, unknown>> {
         unscored_pct: pct((rTiers.total ?? 0) - (rTiers.trusted ?? 0) - (rTiers.distrusted ?? 0), rTiers.total ?? 0),
       },
     },
-    c1_known_bad_recall: {
-      lowq_assets_pct: pct(recallLowq.hit ?? 0, recallLowq.total ?? 0),
-      scam_addrs_pct: pct(recallScam.hit ?? 0, recallScam.total ?? 0),
+    c1_known_bad_detection: {
+      evaluation_status:
+        (recallLowq.heldout ?? 0) + (recallScam.heldout ?? 0) > 0 ? "heldout labels available" : "no heldout labels",
+      lowq_assets_heldout_recall_pct: pct(recallLowq.heldout_hit ?? 0, recallLowq.heldout ?? 0),
+      scam_addrs_heldout_recall_pct: pct(recallScam.heldout_hit ?? 0, recallScam.heldout ?? 0),
       lowq: recallLowq,
       scam: recallScam,
     },
     c2_false_flag_established: falseFlag.n,
     c3_distrust_contamination_pct: pct(contam.clean ?? 0, contam.distrusted ?? 0),
     c5_trusted_dormant_pct: pct(dormant.dormant ?? 0, dormant.trusted ?? 0),
+    c5_heldout_trusted_dormant_pct: pct(heldoutDormant.dormant ?? 0, heldoutDormant.trusted ?? 0),
+    c5_heldout_trusted: heldoutDormant,
     c6_watchlist_coverage: {
       trusted: coverage.trusted,
       distrusted: coverage.distrusted,
       present: coverage.present,
-      of: LEGIT_WATCHLIST.length,
+      of: new Set(LEGIT_WATCHLIST).size,
     },
   };
 }
