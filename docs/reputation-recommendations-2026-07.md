@@ -105,6 +105,18 @@ Other live findings:
 
 Decision: **do not describe current graph tiers as validated reputation or trust**. Keep the graph available as network standing and an exploratory explanation. Before it remains a hard Radar eligibility gate or a Conviction factor, run two ablations: Radar/Conviction with versus without graph influence, and held-out graph evaluation where seed labels are partitioned before propagation. The 89.1% held-out dormancy rate makes temporal edge decay the first graph variant worth testing.
 
+The current-state Radar/Conviction ablation is complete:
+
+| Variant | Top-40 overlap with current | Mean rank change among shared assets |
+| --- | ---: | ---: |
+| Remove hard graph gate only | 40/40 | 0.0 |
+| Remove graph score factor only | 22/40 | 10.1 |
+| Remove gate and factor | 10/40 | 18.6 |
+
+Removing the gate alone has no effect on today’s undervalued top 40 because the graph factor already pushes graph-favored assets above excluded candidates. Removing the factor is material: 18 cards change even while the gate remains. Removing graph influence entirely replaces 30 cards. Current results are strongly concentrated in graph-seeded Bitcorn and related assets; the no-graph ranking introduces Ordinal-themed and other holder-profile candidates such as `RASPUTIN`, `ORDINALBLOCK`, `OLDINAL`, `WHATTHEFOX`, and `DANKHONKLER`.
+
+Decision: **do not make an unreviewed production ranking change**. The graph is both influential and unevaluated, so neither “leave it because it is small” nor “remove it because it is invalid” is justified without named review. Treat Radar as an experimental discovery surface, label graph contribution explicitly, and use the checked-in `/admin/graph-influence` ablation for review. The next model experiment must partition trust/distrust seeds and test propagation on held-out seeds, including a temporal-decay variant; current-state ranking agreement cannot validate the graph.
+
 ## Remaining decision gates
 
 1. Produce subgroup and false-positive reviews for the two-factor asset outlook.
