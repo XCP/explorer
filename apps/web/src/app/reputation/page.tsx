@@ -27,7 +27,7 @@ import { commas } from "@/lib/format";
 export const metadata: Metadata = {
   title: "Reputation",
   description:
-    "On Counterparty there are no accounts — just Bitcoin wallets. Reputation scores every real wallet on twelve years of on-chain history and ranks it into four tiers. Here's how.",
+    "Counterparty Reputation ranks eligible Bitcoin addresses by the strength of their observable on-chain track record.",
 };
 
 // The signals that earn a score, ranked by weight (mirrors reputation/config.ts ADDRESS_FACTORS, grouped).
@@ -53,7 +53,7 @@ const FACTORS: { name: string; share: number; color: string; Icon: LucideIcon; d
     share: 22,
     color: "#0ea5e9",
     Icon: Coins,
-    desc: "Bitcoin actually put at risk — miner fees paid, BTC spent collecting, BTC earned dispensing. No faking it without spending.",
+    desc: "Bitcoin actually put at risk — miner fees paid, BTC spent collecting, BTC earned dispensing. These signals require observable on-chain spending.",
     subs: ["BTC fees", "BTC spent", "dispense revenue"],
   },
   {
@@ -169,11 +169,11 @@ export default async function ReputationPage() {
           Counterparty reputation
         </div>
         <h1 className="mx-auto mt-4 max-w-[22ch] text-4xl font-semibold tracking-tight text-zinc-50 text-balance sm:text-5xl">
-          Anyone can make a wallet. Trust has to be earned.
+          Anyone can make a wallet. A track record has to be earned.
         </h1>
         <p className="mx-auto mt-5 max-w-[54ch] text-base leading-relaxed text-zinc-400 sm:text-lg">
-          Counterparty runs on Bitcoin — no logins, no profiles, just addresses. So we score every real wallet on its
-          full on-chain history and rank it. This is how a decade-long track record earns its place.
+          Counterparty runs on Bitcoin — no logins, no profiles, just addresses. Reputation ranks eligible addresses by
+          observable history: longevity, participation, economic activity, creation, and pro-holder actions.
         </p>
       </section>
 
@@ -222,7 +222,7 @@ export default async function ReputationPage() {
       </section>
 
       {/* ── I · THE ENGINE ── */}
-      <Movement n="I" eyebrow="What earns it" title="A wallet's rank is a weighted sum of five signals.">
+      <Movement n="I" eyebrow="What earns it" title="A wallet's rank combines five signal families.">
         <div className="flex h-11 overflow-hidden rounded-lg ring-1 ring-inset ring-white/10">
           {FACTORS.map((x) => (
             <div
@@ -325,7 +325,7 @@ export default async function ReputationPage() {
             <p className="border-t border-zinc-900 pt-3 text-sm leading-relaxed text-zinc-500">
               There's no &ldquo;no-history&rdquo; bucket. If we have a row for an address, it did something on-chain —
               received, sent, minted, traded, dispensed, or paid a fee. Take away the infrastructure and everything left
-              is a real user with a real record.
+              has an observable Counterparty record eligible for comparison.
             </p>
           </div>
         </div>
@@ -413,6 +413,11 @@ export default async function ReputationPage() {
           </Link>
         </div>
       </Movement>
+
+      <p className="border-t border-[var(--border2)] pt-6 text-sm leading-relaxed text-zinc-500">
+        Reputation summarizes observable on-chain history. It is not an identity check, endorsement, guarantee of future
+        behavior, or investment recommendation.
+      </p>
     </div>
   );
 }

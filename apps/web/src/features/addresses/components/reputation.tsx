@@ -57,7 +57,7 @@ const TAG_ICON: Record<string, LucideIcon> = {
   "BTNS User": Tag,
 };
 // Persona = the dominant ROLE (what it does). Its own icon + colour so it reads as a headline identity,
-// distinct from the reputation band (whether to trust it) below it.
+// distinct from the reputation band (the strength of its earned on-chain record) below it.
 const PERSONA_STYLE: Record<string, { icon: LucideIcon; color: string }> = {
   creator: { icon: Hammer, color: "text-fuchsia-400" },
   collector: { icon: Wallet, color: "text-sky-400" },
@@ -87,7 +87,7 @@ export function ReputationHeader({ address }: { address: string }) {
     if (ev.survived_assets)
       lines.push([`${commas(ev.survived_assets)} assets found an audience (10+ holders)`, "Creator"]);
     if (ev.assets_hits) lines.push([`${commas(ev.assets_hits)} became hits (50+ holders)`, "Standout"]);
-    if (ev.inbound_peers) lines.push([`Credited by ${commas(ev.inbound_peers)} addresses`, "Trust"]);
+    if (ev.inbound_peers) lines.push([`Credited by ${commas(ev.inbound_peers)} addresses`, "Network"]);
     if (ev.dispense_btc) lines.push([`${ev.dispense_btc} BTC dispensed`, "Commerce"]);
     if (ev.btc_spent) lines.push([`${ev.btc_spent} BTC spent collecting`, "Economic"]);
     if (ev.dividends) lines.push([`Paid dividends ${commas(ev.dividends)}×`, "Pro-holder"]);
@@ -120,9 +120,7 @@ export function ReputationHeader({ address }: { address: string }) {
             <span className={`font-semibold ${b.color}`}>{track.tier}</span>
             {ev?.span_years ? <span className="text-xs text-zinc-400">· active {ev.span_years} yrs</span> : null}
             {r.activity && (
-              <span className="text-xs text-zinc-400">
-                · last active {timeAgo(r.activity.last_active_at)}
-              </span>
+              <span className="text-xs text-zinc-400">· last active {timeAgo(r.activity.last_active_at)}</span>
             )}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">

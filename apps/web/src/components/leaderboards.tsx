@@ -114,12 +114,12 @@ export function Leaderboards() {
           )}
         />
         <Board
-          title="Trusted dispensers"
+          title="Longest dispenser track records"
           rows={d.top_dispensers ?? []}
           render={(r) => (
             <>
               {Addr(r.address)}
-              {val(`trust ${r.disp_trust} · ${commas(r.dispenses)} sales`)}
+              {val(`record ${r.disp_trust} · ${commas(r.dispenses)} sales`)}
             </>
           )}
         />
@@ -212,7 +212,7 @@ export function Leaderboards() {
           )}
         />
         <Board
-          title="Highest quality (Bluechip)"
+          title="Highest rated (Bluechip)"
           rows={d.top_quality ?? []}
           render={(r) => (
             <>
