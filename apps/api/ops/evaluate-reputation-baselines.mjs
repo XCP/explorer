@@ -3,10 +3,12 @@
 /**
  * Historical, leakage-safe reputation/rating baselines over canonical D1 events.
  *
- * This first stage deliberately uses only the immutable trades ledger. Current asset_signals rows are
- * snapshots and MUST NOT be projected into historical cutoffs. Run from apps/api:
+ * This first stage deliberately uses only immutable trades and originating-transaction ledgers. Current
+ * signal rows are snapshots and MUST NOT be projected into historical cutoffs. Run from apps/api:
  *
  *   npm run evaluate:reputation
+ *   npm run evaluate:reputation -- --assets-only
+ *   npm run evaluate:reputation -- --addresses-only
  *
  * The JSON report is written to stdout. Redirect it to a dated artifact when establishing a release baseline.
  */
@@ -56,12 +58,27 @@ cohort AS (
     future.first_outcome_time,future.last_outcome_time
   FROM past JOIN future USING(label,asset_id)
 ),
+normalized AS MATERIALIZED (
+  SELECT cohort.*,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY last_sale_time) recency_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_active_months) active_months_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_buyers) buyers_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_usd) realized_usd_pct
+  FROM cohort
+),
 predictors AS (
-  SELECT label,asset_id,'recency' predictor,last_sale_time score FROM cohort
-  UNION ALL SELECT label,asset_id,'sales',past_sales FROM cohort
-  UNION ALL SELECT label,asset_id,'buyers',past_buyers FROM cohort
-  UNION ALL SELECT label,asset_id,'active_months',past_active_months FROM cohort
-  UNION ALL SELECT label,asset_id,'realized_usd',LN(1+past_usd) FROM cohort
+  SELECT normalized.label,normalized.asset_id,predictor.column1 predictor,
+    CASE predictor.column1
+      WHEN 'recency' THEN last_sale_time
+      WHEN 'sales' THEN past_sales
+      WHEN 'buyers' THEN past_buyers
+      WHEN 'active_months' THEN past_active_months
+      WHEN 'realized_usd' THEN LN(1+past_usd)
+      ELSE (recency_pct+active_months_pct+buyers_pct+realized_usd_pct)/4.0
+    END score
+  FROM normalized CROSS JOIN (
+    VALUES ('recency'),('sales'),('buyers'),('active_months'),('realized_usd'),('balanced_market')
+  ) predictor
 ),
 ranked AS (
   SELECT predictor.label,predictor.predictor,predictor.asset_id,
@@ -132,10 +149,24 @@ cohort AS (
     future.first_outcome_time,future.last_outcome_time
   FROM past JOIN future USING(label,address_id)
 ),
+normalized AS MATERIALIZED (
+  SELECT cohort.*,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY last_transaction_time) recency_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_active_months) active_months_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_transactions) transactions_pct
+  FROM cohort
+),
 predictors AS (
-  SELECT label,address_id,'recency' predictor,last_transaction_time score FROM cohort
-  UNION ALL SELECT label,address_id,'transactions',past_transactions FROM cohort
-  UNION ALL SELECT label,address_id,'active_months',past_active_months FROM cohort
+  SELECT normalized.label,normalized.address_id,predictor.column1 predictor,
+    CASE predictor.column1
+      WHEN 'recency' THEN last_transaction_time
+      WHEN 'transactions' THEN past_transactions
+      WHEN 'active_months' THEN past_active_months
+      ELSE (recency_pct+active_months_pct+transactions_pct)/3.0
+    END score
+  FROM normalized CROSS JOIN (
+    VALUES ('recency'),('transactions'),('active_months'),('balanced_participation')
+  ) predictor
 ),
 ranked AS (
   SELECT predictor.label,predictor.predictor,predictor.address_id,
@@ -205,11 +236,16 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
     horizon_days: HORIZON_DAYS,
     cutoffs: CUTOFFS.map(([date, timestamp]) => ({ date, timestamp })),
     methodology: {
-      population: "assets with at least one canonical trade at or before each cutoff",
-      features: "canonical trades at or before cutoff only",
-      outcomes: "canonical trades strictly after cutoff through cutoff + horizon",
+      asset_population: "assets with at least one canonical trade at or before each cutoff",
+      address_population: "addresses originating a supported Counterparty transaction at or before each cutoff",
+      features: "canonical history at or before cutoff only; current signal snapshots prohibited",
+      outcomes: "canonical history strictly after cutoff through cutoff + horizon",
       top_bucket: "highest predictor decile, deterministic asset_id tie-break",
-      warning: "market-history baselines only; current signal snapshots are intentionally excluded",
+      challengers: {
+        balanced_market: "equal mean of within-cutoff recency, active-month, buyer, and realized-USD percentiles",
+        balanced_participation: "equal mean of within-cutoff recency, active-month, and transaction percentiles",
+      },
+      warning: "history-only baselines; current signal snapshots are intentionally excluded",
     },
     d1: {
       asset_market: {
@@ -238,8 +274,13 @@ function execute(wrangler, sql) {
 
 function run() {
   const wrangler = fileURLToPath(new URL("../../../node_modules/wrangler/bin/wrangler.js", import.meta.url));
-  const asset = execute(wrangler, ASSET_MARKET_BASELINE_SQL);
-  const addressParts = CUTOFFS.map((cutoff) => execute(wrangler, addressActivityBaselineSql([cutoff])));
+  const assetsOnly = process.argv.includes("--assets-only");
+  const addressesOnly = process.argv.includes("--addresses-only");
+  if (assetsOnly && addressesOnly) throw new Error("Choose at most one evaluation scope");
+  const asset = addressesOnly ? { rows: [], meta: {} } : execute(wrangler, ASSET_MARKET_BASELINE_SQL);
+  const addressParts = assetsOnly
+    ? []
+    : CUTOFFS.map((cutoff) => execute(wrangler, addressActivityBaselineSql([cutoff])));
   const addressRows = addressParts.flatMap((part) => part.rows);
   const addressMeta = {
     rows_read: addressParts.reduce((sum, part) => sum + Number(part.meta.rows_read ?? 0), 0),

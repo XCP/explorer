@@ -435,3 +435,29 @@ Only 0.56–1.01% of eligible addresses returned in each future window. Recency 
 ### Evaluation operating cost
 
 The asset query read about 7.1 million rows and used about 9 seconds of D1 SQL time. The first address run read about 54.8 million rows and used about 72 seconds. The address methodology is sound but too expensive for rapid iteration against canonical D1. Repeated experiments should use a compact, reproducible analytics snapshot or separate analytics database—not a new serving dependency and not another production compatibility layer.
+
+### First family-budget challengers
+
+The first challenger averaged within-cutoff feature percentiles, giving each conceptual family equal influence rather than allowing raw scales or correlated event counts to dominate.
+
+For assets, `balanced_market` combines recency, active-month breadth, distinct buyers, and realized USD. It beat the strongest single baseline (`active_months`) at all three cutoffs:
+
+| Cutoff     | Active-month return lift | Balanced return lift | Active-month persistence lift | Balanced persistence lift |
+| ---------- | -----------------------: | -------------------: | ----------------------------: | ------------------------: |
+| 2025-01-01 |                   7.659× |               7.834× |                        8.813× |                    9.154× |
+| 2025-07-01 |                   6.749× |               6.866× |                        9.010× |                    9.045× |
+| 2026-01-01 |                   6.127× |               6.157× |                        8.574× |                    8.700× |
+
+Buyer-breadth lift also improved at every cutoff. The gain is small but consistent. Decision: **retain as a challenger**, not yet a production replacement.
+
+For addresses, `balanced_participation` combines recency, active-month breadth, and transaction frequency. It lost to recency alone on return and persistence at every cutoff:
+
+| Cutoff     | Recency return lift | Balanced return lift | Recency persistence lift | Balanced persistence lift |
+| ---------- | ------------------: | -------------------: | -----------------------: | ------------------------: |
+| 2025-01-01 |              7.345× |               7.101× |                   9.035× |                    8.114× |
+| 2025-07-01 |              7.856× |               7.420× |                   8.849× |                    8.773× |
+| 2026-01-01 |              8.573× |               7.901× |                   9.389× |                    8.836× |
+
+Decision: **reject as a return predictor**. Keep recency as a separate predictive axis. A richer address score can still describe historical track record, but combining activity dimensions does not make it a better forecast.
+
+Adding percentile windows raised the address evaluation to roughly 67.5 million rows read and 89.8 seconds of D1 SQL time. Do not iterate this query repeatedly against canonical D1; construct only the compact cutoff-safe snapshot needed for offline comparison.

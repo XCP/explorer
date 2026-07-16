@@ -14,6 +14,7 @@ test("historical baseline SQL keeps features and outcomes on opposite sides of t
   assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.block_time>past\.cutoff/);
   assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.block_time<=past\.outcome_end/);
   assert.equal(/asset_signals|address_signals|graph_(?:rank|edges|seed)/.test(ASSET_MARKET_BASELINE_SQL), false);
+  assert.match(ASSET_MARKET_BASELINE_SQL, /'balanced_market'/);
 });
 
 test("address baseline uses originating transactions and the same strict temporal boundary", () => {
@@ -23,6 +24,7 @@ test("address baseline uses originating transactions and the same strict tempora
   assert.match(ADDRESS_ACTIVITY_BASELINE_SQL, /tx\.block_time>past\.cutoff/);
   assert.match(ADDRESS_ACTIVITY_BASELINE_SQL, /tx\.block_time<=past\.outcome_end/);
   assert.equal(/address_signals|graph_(?:rank|edges|seed)/.test(ADDRESS_ACTIVITY_BASELINE_SQL), false);
+  assert.match(ADDRESS_ACTIVITY_BASELINE_SQL, /'balanced_participation'/);
 });
 
 test("baseline report rejects temporal leakage and records methodology", () => {
@@ -38,4 +40,5 @@ test("baseline report rejects temporal leakage and records methodology", () => {
   const report = buildReport(valid);
   assert.equal(report.schema, "xcp-reputation-baseline/1");
   assert.match(report.methodology.warning, /snapshots are intentionally excluded/);
+  assert.match(report.methodology.challengers.balanced_market, /equal mean/);
 });
