@@ -5,8 +5,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 
+const arg = (name, fallback) => {
+  const prefix = `--${name}=`;
+  return process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? fallback;
+};
 const root = resolve(".analytics/radar/ownership");
-const evaluation = JSON.parse(readFileSync(resolve(root, "new-evaluation.json"), "utf8"));
+const observationDays = Number(arg("observation-days", "30"));
+if (![7, 30, 90].includes(observationDays)) throw new Error("observation-days must be 7, 30, or 90");
+const evaluation = JSON.parse(readFileSync(resolve(root, `new-evaluation-${observationDays}d.json`), "utf8"));
 if (evaluation.schema !== "xcp-radar-new-evaluation/1") throw new Error("New Radar evaluation is missing");
 const ids = [...new Set(evaluation.evaluations.flatMap((fold) => fold.review.map((row) => row.asset_id)))];
 const names = new Map();
@@ -38,11 +44,12 @@ const folds = evaluation.evaluations.map((fold) => ({
 }));
 const report = {
   schema: "xcp-radar-new-named-audit/1",
+  observation_days: observationDays,
   measured_at: new Date().toISOString(),
   caveat: "Current classifications are review labels only and were not available to the historical predictor.",
   folds,
 };
-writeFileSync(resolve(root, "new-named-audit.json"), `${JSON.stringify(report, null, 2)}\n`);
+writeFileSync(resolve(root, `new-named-audit-${observationDays}d.json`), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify({
   measured_at: report.measured_at,
   folds: folds.map((fold) => ({ fold: fold.fold, candidates: fold.candidates.slice(0, 20) })),

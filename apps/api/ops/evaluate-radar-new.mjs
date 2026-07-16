@@ -6,9 +6,19 @@ import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { percentileRanks } from "./lib/reputation-snapshot.mjs";
 
+const arg = (name, fallback) => {
+  const prefix = `--${name}=`;
+  return process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? fallback;
+};
 const root = resolve(".analytics/radar/ownership");
+const observationDays = Number(arg("observation-days", "30"));
+const outcomeDays = 180;
+const marketOutcomeStartDays = Number(arg("market-outcome-start-days", String(observationDays)));
+if (![7, 30, 90].includes(observationDays)) throw new Error("observation-days must be 7, 30, or 90");
+if (!Number.isInteger(marketOutcomeStartDays) || marketOutcomeStartDays < observationDays || marketOutcomeStartDays >= outcomeDays)
+  throw new Error("market-outcome-start-days must be at least the observation age and less than 180");
 const ownership = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
-for (const age of [30, 180]) {
+for (const age of [observationDays, outcomeDays]) {
   const receipt = JSON.parse(readFileSync(resolve(root, `new-features-${age}d.json`), "utf8"));
   if (!receipt.complete) throw new Error(`${age}-day New Radar features are incomplete`);
 }
@@ -20,33 +30,36 @@ const rows = db
         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) issuer_prior_assets
     FROM radar_new_features early JOIN radar_new_cohort_members member
       ON member.age_days=early.age_days AND member.asset_id=early.asset_id
-    WHERE early.age_days=30 AND member.frontier_event_index=${Number(ownership.frontier_event_index)}
+    WHERE early.age_days=${observationDays} AND member.frontier_event_index=${Number(ownership.frontier_event_index)}
   ), early_market AS (
     SELECT issued.asset_id,COUNT(trade.trade_rowid) early_trades,
       COUNT(DISTINCT trade.buyer_id) early_buyers,COUNT(DISTINCT trade.seller_id) early_sellers,
       COUNT(DISTINCT trade.venue) early_venues,
       COUNT(DISTINCT strftime('%Y-%m-%d',trade.block_time,'unixepoch')) early_active_days,
-      COUNT(DISTINCT CASE WHEN trade.block_time>=issued.issued_at+14*86400 THEN trade.buyer_id END) late_buyers,
-      COUNT(DISTINCT CASE WHEN trade.block_time>=issued.issued_at+14*86400
+      COUNT(DISTINCT CASE WHEN trade.block_time>=issued.issued_at+${Math.ceil(observationDays / 2)}*86400 THEN trade.buyer_id END) late_buyers,
+      COUNT(DISTINCT CASE WHEN trade.block_time>=issued.issued_at+${Math.ceil(observationDays / 2)}*86400
         THEN strftime('%Y-%m-%d',trade.block_time,'unixepoch') END) late_active_days,
       COALESCE((MAX(trade.block_time)-MIN(trade.block_time))/86400.0,0) early_market_span_days
     FROM issued LEFT JOIN market_trades trade ON trade.asset_id=issued.asset_id
       AND trade.block_time>=issued.issued_at AND trade.block_time<=issued.observed_at
+      AND (trade.buyer_id IS NULL OR trade.seller_id IS NULL OR trade.buyer_id<>trade.seller_id)
     GROUP BY issued.asset_id
   ), future_market AS (
     SELECT issued.asset_id,COUNT(trade.trade_rowid) future_trades,
       COUNT(DISTINCT trade.buyer_id) future_buyers,COUNT(DISTINCT trade.seller_id) future_sellers,
       COUNT(DISTINCT strftime('%Y-%m',trade.block_time,'unixepoch')) future_active_months
     FROM issued LEFT JOIN market_trades trade ON trade.asset_id=issued.asset_id
-      AND trade.block_time>issued.observed_at AND trade.block_time<=issued.issued_at+180*86400
+      AND trade.block_time>issued.issued_at+${marketOutcomeStartDays}*86400
+      AND trade.block_time<=issued.issued_at+${outcomeDays}*86400
+      AND (trade.buyer_id IS NULL OR trade.seller_id IS NULL OR trade.buyer_id<>trade.seller_id)
     GROUP BY issued.asset_id
   ), retention AS (
     SELECT early.asset_id,COUNT(*) ordinary_nonissuer_holders30,
       SUM(later.holder_id IS NOT NULL) retained_ordinary_nonissuer_holders
     FROM radar_new_holders early
-    LEFT JOIN radar_new_holders later ON later.age_days=180 AND later.asset_id=early.asset_id
+    LEFT JOIN radar_new_holders later ON later.age_days=${outcomeDays} AND later.asset_id=early.asset_id
       AND later.holder_id=early.holder_id
-    WHERE early.age_days=30 AND early.is_utxo=0 AND early.is_issuer=0
+    WHERE early.age_days=${observationDays} AND early.is_utxo=0 AND early.is_issuer=0
     GROUP BY early.asset_id
   )
   SELECT issued.asset_id id,issued.issued_at,issued.issuer_prior_assets,
@@ -57,8 +70,8 @@ const rows = db
     COALESCE(retention.ordinary_nonissuer_holders30,0) ordinary_nonissuer_holders30,
     COALESCE(retention.retained_ordinary_nonissuer_holders,0) retained_ordinary_nonissuer_holders
   FROM issued JOIN radar_new_cohort_members later_member ON later_member.asset_id=issued.asset_id
-    AND later_member.age_days=180 AND later_member.frontier_event_index=${Number(ownership.frontier_event_index)}
-  JOIN radar_new_features later ON later.asset_id=issued.asset_id AND later.age_days=180
+    AND later_member.age_days=${outcomeDays} AND later_member.frontier_event_index=${Number(ownership.frontier_event_index)}
+  JOIN radar_new_features later ON later.asset_id=issued.asset_id AND later.age_days=${outcomeDays}
   JOIN early_market USING(asset_id) JOIN future_market USING(asset_id)
   LEFT JOIN retention ON retention.asset_id=issued.asset_id
   WHERE issued.raw_supply>0 AND issued.holders>0`)
@@ -87,12 +100,27 @@ function evaluateRank(cohort, name, score, outcome) {
   const top = ranked.slice(0, Math.min(100, ranked.length));
   const rate = (items) => items.filter(outcome).length / Math.max(1, items.length);
   const population = rate(ranked);
+  const positives = ranked.filter(outcome).length;
+  let hits = 0;
+  let precisionSum = 0;
+  let dcg = 0;
+  for (const [index, row] of ranked.entries()) {
+    if (!outcome(row)) continue;
+    hits++;
+    precisionSum += hits / (index + 1);
+    dcg += 1 / Math.log2(index + 2);
+  }
+  let idealDcg = 0;
+  for (let index = 0; index < positives; index++) idealDcg += 1 / Math.log2(index + 2);
   return {
     predictor: name,
     eligible: ranked.length,
     population_rate: population,
     precision_at_100: rate(top),
+    precision_at_500: rate(ranked.slice(0, Math.min(500, ranked.length))),
     lift_at_100: population ? rate(top) / population : 0,
+    average_precision: positives ? precisionSum / positives : 0,
+    ndcg: idealDcg ? dcg / idealDcg : 0,
   };
 }
 
@@ -168,8 +196,11 @@ const evaluations = folds.map((fold) => {
 });
 const report = {
   schema: "xcp-radar-new-evaluation/1",
-  observation: "exact holder and completed-market state 30 days after first valid issuance",
-  outcome: "holder and completed-market state from day 30 through day 180",
+  observation_days: observationDays,
+  outcome_days: outcomeDays,
+  market_outcome_start_days: marketOutcomeStartDays,
+  observation: `exact holder and completed-market state ${observationDays} days after first valid issuance`,
+  outcome: `holder state at day ${outcomeDays} and completed-market activity from day ${marketOutcomeStartDays} through day ${outcomeDays}`,
   caveats: [
     "The additive challenger uses transparent provisional weights and must beat its component baselines across folds.",
     "Exact retention follows ordinary non-issuer holder identities; native UTXO identities are excluded because moving a UTXO changes its identity.",
@@ -178,5 +209,6 @@ const report = {
   population: rows.length,
   evaluations,
 };
-writeFileSync(resolve(root, "new-evaluation.json"), `${JSON.stringify(report, null, 2)}\n`);
+const outcomeSuffix = marketOutcomeStartDays === observationDays ? "" : `-market-from-${marketOutcomeStartDays}d`;
+writeFileSync(resolve(root, `new-evaluation-${observationDays}d${outcomeSuffix}.json`), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

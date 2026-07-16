@@ -268,3 +268,39 @@ Decision: a New Radar is empirically better grounded than the current historical
 iteration must add identity-level holder retention, exclude target-asset evidence from holder reputation, and audit
 named false positives for wash trading, services, airdrops, and issuer-controlled distribution. Do not call the early
 signal “organic” until those controls are implemented and validated.
+
+### Observation-clock comparison
+
+The same exact replay now evaluates 7-, 30-, and 90-day observations. A naive comparison made day 7 appear strongest
+because its future-market outcome window was 83 days longer than day 90. The corrected comparison makes every clock
+predict the identical day-90-through-day-180 market period.
+
+- Day 90 is generally the strongest market predictor, particularly in the newest fold (29% precision at 100 for any
+  future trade versus 18% at day 30 and 13% at day 7), but waiting 90 days defeats much of a discovery product's value.
+- Day 30 retains much of the day-90 precision in older folds and leaves a meaningful 60-day discovery window. It is
+  the justified primary New Radar observation age.
+- Day 7 is useful as an explicitly preliminary evidence view. It should not share the day-30 ranking label or imply
+  comparable confidence.
+- Day 90 should be a graduation/checkpoint: confirm whether early adoption persisted, then move the asset out of New.
+
+Product decision: use staged states—**Fresh** (7-29 days, preliminary facts), **Emerging** (30-89 days, ranked from
+the validated day-30 feature set), and **Graduated** at day 90. Keep the common-window clock evaluation as the model
+selection test; never compare models whose outcome exposure differs merely because their observation ages differ.
+
+### Day-30 model selection
+
+The completed-trade layer contains 18,399 same-identity trades across 1,486 assets (11,494 DEX and 6,905 Emblem
+rows). The evaluator now excludes those rows from both early evidence and future-success outcomes while retaining
+provider sales whose participant identity is unavailable. Results and clock ordering remain materially unchanged.
+
+Whole-ranking evaluation adds precision at 500, average precision, and NDCG to the top-100 review metric. Richer
+holder/distribution challengers improve some older folds, but fail to dominate and regress materially in the newest
+regime. For the common day-90-through-180 broad-market outcome in the newest fold, the two-factor market core has
+average precision 0.292 and NDCG 0.607, versus 0.054/0.329 for the early-adoption challenger and 0.090/0.385 for the
+persistence-weighted challenger.
+
+Current recommendation: rank Emerging assets with the transparent **market core**—equal percentile weight for
+distinct non-self paid buyers and active trading days observed by day 30. Keep late buyers, market span, holder
+breadth, exact retention, supply, issuer share, and concentration as visible evidence or filters. Do not add their
+weights unless a challenger improves both bounded-review precision and whole-ranking quality without a worst-fold
+regression.
