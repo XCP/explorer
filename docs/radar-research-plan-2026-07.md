@@ -225,3 +225,41 @@ duplicate observation timestamp atomically. The first prospective cohort contain
 on 2026-07-16. Re-observe it after 30, 90, and 180 days to measure offer removal, completed-sale coverage, subsequent
 unit return, and movement toward the prior reference. Do not tune thresholds against those outcomes before the final
 checkpoint; doing so would turn the holdout into training data.
+
+## Initial New Radar evaluation
+
+`npm run snapshot:radar-block-times` imports the exact 680,040-row Bitcoin timestamp spine. It avoids approximating
+age with an assumed block interval. `npm run snapshot:radar-new-features` then replays the local exact-integer ledger
+to an asset-specific age after first valid issuance. The first evaluation compares day-30 evidence with day-180
+holder and completed-market outcomes. It covers 148,560 issued assets with positive supply and at least one holder;
+the 30- and 180-day replays contain no negative balances.
+
+Cohort membership is bound to the frozen ownership `frontier_event_index`, not the independently advancing block-time
+spine. Membership is append-only by frontier, so a newer block timestamp cannot admit an asset whose corresponding
+ledger events were not present, and prior analytical runs remain auditable without delete-and-replace cleanup.
+
+- Paid buyer breadth and active-day persistence in the first 30 days are the strongest later market-formation
+  signals. Precision at 100 for any later trade is 72%-94% in the first three temporal folds and 29%-30% in the
+  newest fold, versus population rates of 3%-10%.
+- For a later broad market (at least two buyers across at least two months), paid buyers or active days produce
+  roughly 12-49x lift in every fold. The outcome is rare, so lift must be read alongside precision (10%-92%).
+- The provisional additive challenger does not consistently beat its best component. Keep buyer breadth, active
+  days, holder breadth, and distribution visible as separate evidence instead of publishing an opaque score.
+- Holder breadth is especially useful for holder survival and recent holder growth. Distribution safety is useful
+  context but weaker and less stable for market formation.
+- Exact identity retention confirms that this is not merely replacement growth. Among assets with at least two
+  ordinary non-issuer holders at day 30, holder-breadth ranking has 96%-100% precision at 100 for retaining at least
+  75% of those same identities through day 180. Native UTXO holder identities are excluded from this retention
+  outcome because spending creates a new UTXO identity; only 72 of 619,862 day-30 holder rows are UTXO identities.
+- Raw issuer prior-asset count is neutral to strongly harmful in most folds. Prolific issuance is not issuer quality;
+  any issuer feature must measure prior outcomes, retention, and market formation rather than output volume.
+- Named review exposes mass-airdrop false positives with roughly 9,400 holders but only one or two paid buyers.
+  Holder breadth must never stand in for acquisition breadth. Short launch bursts are another distinct failure mode.
+- Late-period buyers and first-to-last market span add useful persistence evidence, particularly in the 2023-2024
+  fold, where late buyer breadth reaches 61% precision at 100 for a later broad market. They do not dominate every
+  fold, so persistence should remain a named fact/challenger rather than a hard-coded universal weight.
+
+Decision: a New Radar is empirically better grounded than the current historical-maximum-price screen, but the next
+iteration must add identity-level holder retention, exclude target-asset evidence from holder reputation, and audit
+named false positives for wash trading, services, airdrops, and issuer-controlled distribution. Do not call the early
+signal “organic” until those controls are implemented and validated.
