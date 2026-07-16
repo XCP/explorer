@@ -65,9 +65,7 @@ const fullDate = (sec?: number | null) => {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 };
 
-// The band's stat strip — identity-first, then the market, with our editorial RATING as the payoff at the
-// end (v19 reference: Circulating, Holders, Issued, Floor price, Last price, Volume, Rating). Mobile shows
-// the identity head (Circulating/Holders/Issued); the market + rating tail hides (mobile-hide).
+// The stat strip is identity-first, followed by current market facts and historical Market Evidence.
 function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[] {
   const stats: SectionStat[] = [];
   // Circulating = supply − burned (the derived circulating_normalized when present, else compute it).

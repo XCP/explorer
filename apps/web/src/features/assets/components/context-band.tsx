@@ -20,7 +20,7 @@ export function ContextBand({
   // Integrity verdicts — each flag is its own plain sentence; both can apply (low_quality = fake flow,
   // insular = the holder ring behind it). The insular sentence carries the raw counts in its title.
   const integrity: { text: string; title?: string }[] = [];
-  if (detail.quality?.low_quality) integrity.push({ text: "high self-trade share — see Quality" });
+  if (detail.quality?.low_quality) integrity.push({ text: "high self-trade share" });
   if (detail.cohesion?.insular)
     integrity.push({
       text: "insular holder base — top holders trade mostly among themselves",
