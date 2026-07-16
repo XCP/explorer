@@ -2,15 +2,21 @@ import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const FULL_REPAIR_INTERVAL = 1_008;
 
-const ACTIVITY_BOUNDS = `SELECT min(first_block) first_block,max(last_block) last_block FROM (
-  SELECT min(block_index) first_block,max(block_index) last_block FROM sends
-    WHERE source_address_id=?1 OR destination_address_id=?1
-  UNION ALL SELECT min(block_index),max(block_index) FROM dispenses WHERE source_id=?1 OR destination_id=?1
-  UNION ALL SELECT min(block_index),max(block_index) FROM issuances WHERE issuer_id=?1
-  UNION ALL SELECT min(block_index),max(block_index) FROM fairmints WHERE source_id=?1
-  UNION ALL SELECT min(block_index),max(block_index) FROM order_matches WHERE tx0_address_id=?1 OR tx1_address_id=?1
-  UNION ALL SELECT min(block_index),max(block_index) FROM dispensers WHERE source_id=?1 OR origin_id=?1
-)`;
+const isBitcoinAddress = (address: string) =>
+  address.startsWith("1") || address.startsWith("3") || address.toLowerCase().startsWith("bc1");
+
+const ACTIVITY_QUERIES = [
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM sends
+    WHERE source_address_id=?1 OR destination_address_id=?1`,
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM dispenses
+    WHERE source_id=?1 OR destination_id=?1`,
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM issuances WHERE issuer_id=?1`,
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM fairmints WHERE source_id=?1`,
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM order_matches
+    WHERE tx0_address_id=?1 OR tx1_address_id=?1`,
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM dispensers
+    WHERE source_id=?1 OR origin_id=?1`,
+] as const;
 
 const UPSERT = `INSERT INTO address_signals(
   address_id,first_block,last_block,out_peers,in_peers,dispense_btc,dispenses,dividends,
@@ -102,7 +108,9 @@ WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
   src20_deploys=excluded.src20_deploys,is_btns_user=excluded.is_btns_user`;
 
 export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
-  const unique = [...new Set(addresses)].filter(Boolean);
+  // Counterparty also uses txid:vout keys as balance locations. They remain first-class dictionary identities,
+  // but they are UTXOs rather than addresses and must not receive address reputation projections.
+  const unique = [...new Set(addresses)].filter(isBitcoinAddress);
   // Keep the small multi-table activity query separate from the large projection UPSERT. Combining them can
   // exceed D1's compound-SELECT limit, while each address remains independently replay-safe.
   for (const address of unique) {
@@ -111,11 +119,19 @@ export async function rebuildCoreAddressSignals(db: D1Database, addresses: Itera
       .bind(address)
       .first<{ address_id: number }>();
     if (!identity) continue;
-    const activity = await db
-      .prepare(ACTIVITY_BOUNDS)
-      .bind(identity.address_id)
-      .first<{ first_block: number | null; last_block: number | null }>();
-    await db.prepare(UPSERT).bind(address, activity?.first_block ?? null, activity?.last_block ?? null).run();
+    const activity = [] as { first_block: number | null; last_block: number | null }[];
+    for (const query of ACTIVITY_QUERIES) {
+      const bounds = await db
+        .prepare(query)
+        .bind(identity.address_id)
+        .first<{ first_block: number | null; last_block: number | null }>();
+      if (bounds) activity.push(bounds);
+    }
+    const firstBlocks = activity.flatMap((row) => (row.first_block === null ? [] : [row.first_block]));
+    const lastBlocks = activity.flatMap((row) => (row.last_block === null ? [] : [row.last_block]));
+    const firstBlock = firstBlocks.length > 0 ? Math.min(...firstBlocks) : null;
+    const lastBlock = lastBlocks.length > 0 ? Math.max(...lastBlocks) : null;
+    await db.prepare(UPSERT).bind(address, firstBlock, lastBlock).run();
   }
   return unique.length;
 }
@@ -175,7 +191,11 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 60, forc
     if (tip - completed < FULL_REPAIR_INTERVAL) return { processed: 0, cursor: 0, cycleComplete: true };
   }
   const rows = await db
-    .prepare(`SELECT address_id,address FROM address_dictionary WHERE address_id>? ORDER BY address_id LIMIT ?`)
+    .prepare(
+      `SELECT address_id,address FROM address_dictionary
+       WHERE address_id>? AND (address GLOB '1*' OR address GLOB '3*' OR lower(address) LIKE 'bc1%')
+       ORDER BY address_id LIMIT ?`,
+    )
     .bind(cursor, limit)
     .all<{ address_id: number; address: string }>();
   if (rows.results.length === 0) {

@@ -134,6 +134,13 @@ admin.post("/admin/refresh-signals", async (c) => {
   return c.json({ assets, addresses });
 });
 
+// Address projection is intentionally isolated from the larger asset batch because D1 applies a compound-statement
+// budget across one Worker invocation. This route is also the operator control for advancing an initial rebuild.
+admin.post("/admin/refresh-address-signals", async (c) => {
+  const limit = boundedInteger(c.req.query("limit"), { defaultValue: 60, min: 1, max: 1000 });
+  return c.json(await runCoreAddressSignalsStep(c.env.CORE_DB, limit, true));
+});
+
 // Force an atomic rebuild of the tiny exchange leaderboard. Normally maintained daily by cron.
 admin.post("/admin/refresh-exchange-top-assets", async (c) => {
   return c.json(await refreshExchangeTopAssets(c.env));
