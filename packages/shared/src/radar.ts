@@ -1,7 +1,7 @@
 /** Established and currently available assets ranked by holder-and-scarcity Conviction. */
 
-/** A scored asset on the radar. `conviction` is the calibrated 0-100 score (higher = stronger holder base +
- *  scarcer float + more network trust); the rest are the components behind it, for the plain-English reason. */
+/** A scored asset on the radar. `conviction` is the calibrated 0-100 holder-and-scarcity score; the rest
+ *  are observable components behind it. */
 export interface RadarAsset {
   asset: string;
   asset_longname: string | null;

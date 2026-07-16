@@ -20,8 +20,8 @@ The moat is the **judgment layer** on top of the mirror, not the mirror itself:
 - **Address reputation** — evidence-led trust/distrust, tiers OG/Established/Active/Casual, explicit
   bad-actor penalties (Emblem vault/shell/dump scams). Infra (exchange/deposit/vault/burn/service)
   is curated in the D1 `curated` table and never user-scored.
-- **Conviction** — who HOLDS an asset + scarcity, deliberately market-blind. Powers Radar
-  (undervalued = conviction ≫ realized price) and now shows on asset pages.
+- **Conviction** — who holds an asset + scarcity, deliberately market-blind. Powers Radar's
+  Established and Available views and appears on asset pages.
 - **Holder cohesion** — wash/insularity detector (edges among top holders ÷ holders; traded-asset
   median ≈ 4; `insular` chip fires at ≥9 AND ≥$1k realized).
 - **The Emblem census** — ~60k Ethereum-wrapped vaults attributed to Counterparty assets, ~117k
@@ -86,7 +86,8 @@ design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — p
   QA index (temporary — one deep link per kind × status; delete after review).
 - **Holder cohesion** as a stored signal (migration 0040, all 8.5k traded candidates scored) + the
   insular chip and integrity band.
-- **Conviction on asset pages** + the `undervalued` pill (Radar-parity math and gates).
+- **Evidence-backed Radar** — Fresh and Emerging use observed early adoption; Established and
+  Available expose mature holder conviction without making expected-return claims.
 - **AssetArt media cascade** — resized → raw → `<video>` (fixes 9412 on video assets like TRAMPS).
 - **Persona classifier** (`reputation/persona.ts` + PERSONA config + headline on the reputation
   card) — built mid-pivot, live, but the owner never formally blessed it: it owes a keep/delete

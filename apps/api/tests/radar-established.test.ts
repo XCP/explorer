@@ -21,20 +21,24 @@ class Statement {
   }
 }
 
-test("Established ranks eligible conviction regardless of realized market value", async () => {
+test("Established ranks eligible conviction regardless of market value or graph classification", async () => {
   const sqlite = new DatabaseSync(":memory:");
   for (const migration of migrations) sqlite.exec(migration);
   sqlite.exec(`
-    INSERT INTO asset_dictionary(asset) VALUES('ESTABLISHED');
-    INSERT INTO assets(asset_id,supply_normalized) SELECT asset_id,'100' FROM asset_dictionary WHERE asset='ESTABLISHED';
+    INSERT INTO asset_dictionary(asset) VALUES('ESTABLISHED'),('UNCLASSIFIED');
+    INSERT INTO assets(asset_id,supply_normalized) SELECT asset_id,'100' FROM asset_dictionary;
     INSERT INTO asset_signals(asset_id,holders,supply,graph_trust,graph_distrust,max_realized_usd,
       avg_holder_dex,pct_creator_holders) SELECT asset_id,20,100,2,0,10000,10,20
       FROM asset_dictionary WHERE asset='ESTABLISHED';
+    INSERT INTO asset_signals(asset_id,holders,supply,graph_trust,graph_distrust,max_realized_usd,
+      avg_holder_dex,pct_creator_holders) SELECT asset_id,20,100,0,0,0,10,20
+      FROM asset_dictionary WHERE asset='UNCLASSIFIED';
   `);
   const db = { prepare: (sql: string) => new Statement(sqlite, sql) } as unknown as D1Database;
   const rows = await radarEstablished(db);
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, 2);
   assert.equal(rows[0].asset, "ESTABLISHED");
   assert.equal(rows[0].market_usd, 10000);
+  assert.equal(rows[1].asset, "UNCLASSIFIED");
   sqlite.close();
 });

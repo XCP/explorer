@@ -10,14 +10,15 @@ import { CONVICTION_FACTORS, CONVICTION_PCT } from "#api/reputation/config";
 // asset_signals inside the CTEs below (no join there ⇒ no ambiguity with the assets table's `supply`).
 const CONVICTION = rawSqlExpr(CONVICTION_FACTORS, 0);
 
-// The base "grail-shaped" population: real, network-trusted, broadly held, named (not numeric stamps).
-const ELIGIBLE = `signal.low_quality=0 AND signal.graph_trust>signal.graph_distrust AND signal.holders>=15
+// The base population: real, broadly held, named assets (not numeric stamps). Network standing remains a
+// score component, not an eligibility gate: held-out graph recovery does not validate asset quality.
+const ELIGIBLE = `signal.low_quality=0 AND signal.holders>=15
    AND NOT EXISTS (
      SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
       WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tag.tag='numeric'
    )`;
 
-/** Undervalued: high Conviction, low realized value, real holder base, network-trusted, not spam/numeric. */
+/** Established: the strongest mature holder-conviction profiles in the eligible population. */
 export function radarEstablished(db: D1Database, limit = 40): Promise<RadarAsset[]> {
   return q<RadarAsset>(
     db,

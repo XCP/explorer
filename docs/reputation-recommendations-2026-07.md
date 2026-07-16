@@ -113,7 +113,9 @@ The current-state Radar/Conviction ablation is complete:
 | Remove graph score factor only | 22/40 | 10.1 |
 | Remove gate and factor | 10/40 | 18.6 |
 
-Removing the gate alone has no effect on today’s undervalued top 40 because the graph factor already pushes graph-favored assets above excluded candidates. Removing the factor is material: 18 cards change even while the gate remains. Removing graph influence entirely replaces 30 cards. Current results are strongly concentrated in graph-seeded Bitcorn and related assets; the no-graph ranking introduces Ordinal-themed and other holder-profile candidates such as `RASPUTIN`, `ORDINALBLOCK`, `OLDINAL`, `WHATTHEFOX`, and `DANKHONKLER`.
+Removing the gate alone had no effect on the then-current Established top 40 because the graph factor already pushed graph-favored assets above excluded candidates. Removing the factor was material: 18 cards changed even while the gate remained. Removing graph influence entirely replaced 30 cards. Results were strongly concentrated in graph-seeded Bitcorn and related assets; the no-graph ranking introduced Ordinal-themed and other holder-profile candidates such as `RASPUTIN`, `ORDINALBLOCK`, `OLDINAL`, `WHATTHEFOX`, and `DANKHONKLER`.
+
+The hard graph eligibility gate was subsequently removed: it excluded 4,409 of 10,478 otherwise eligible assets while changing none of the top 40, and held-out curation recovery is not sufficient evidence for categorical exclusion. The graph score factor remains pending the named ranking review because removing it materially changes the result.
 
 Decision: **do not make an unreviewed production ranking change**. The graph is both influential and unevaluated, so neither “leave it because it is small” nor “remove it because it is invalid” is justified without named review. Treat Radar as an experimental discovery surface, label graph contribution explicitly, and use the checked-in `/admin/graph-influence` ablation for review. The next model experiment must partition trust/distrust seeds and test propagation on held-out seeds, including a temporal-decay variant; current-state ranking agreement cannot validate the graph.
 

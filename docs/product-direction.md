@@ -44,7 +44,7 @@ hurry. The others are served as byproducts, deliberately cheap:
    surfaces the computed bad-actor penalties (today only positive chips show); collection =
    strength + median tier + art. Pure re-composition of data already on the wire. Zero new pipeline.
 2. **Rebuild the home front door around the collector's four questions** — what's good (Bluechip/
-   grail wall), what's undervalued (Radar's Conviction≫price cut), who's real (top collectors +
+   grail wall), what's emerging (Radar's observed adoption evidence), who's real (top collectors +
    reputation), what happened (Firsts) — and lift Radar/Collections/Leaderboards/Firsts out of the
    dropdowns into persistent nav. The tape collapses to one secondary Activity strip.
 3. **Render what we compute but never show:** Conviction on the asset page itself (today it exists
@@ -64,7 +64,7 @@ hurry. The others are served as byproducts, deliberately cheap:
 
 - **Home:** one honest orienting line ("Counterparty is a 2014 Bitcoin protocol; its living culture
   is Rare Pepe, Stamps, and card NFTs — this site scores what's good and proves who's real") over a
-  four-question launcher: grail wall · Radar undervalued · Collections (with art) · top collectors +
+  four-question launcher: grail wall · Radar emerging · Collections (with art) · top collectors +
   Firsts. Tape demoted to a collapsed strip.
 - **Asset:** verdict header (tier badge top, Conviction beside price, plain trust verdict, one
   plain-English "what is this" line: year · collection · Series X Card Y · N of M) + buy CTA with
