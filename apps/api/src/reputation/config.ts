@@ -304,7 +304,7 @@ export const CONVICTION_FACTORS: Factor[] = [
     weight: 1.0,
     transform: "log",
     label: "network",
-    why: "sits in the trusted collector/creator network (graph trust) — provenance, not stats",
+    why: "network standing within the seeded collector/creator graph — relational evidence, not a trust verdict",
   },
   {
     key: "holders",

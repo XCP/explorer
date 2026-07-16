@@ -138,7 +138,7 @@ export function Collections() {
         <h1>Collections</h1>
         <p>
           Counterparty art &amp; collectible projects, scored as <b>communities</b>. <b>Strength</b> rolls up who holds
-          the cards — sophisticated collectors, proven creators, genuine scarcity, standing in the trusted network —
+          the cards — sophisticated collectors, proven creators, genuine scarcity, and seeded network standing —
           into one 0&ndash;100 signal, independent of price. <b>Quality</b> is the typical member&rsquo;s composed tier.
           Ranked by community strength; click a column to re-sort.{" "}
           <Link href="/collections/candidates">Discover untagged candidates →</Link>

@@ -163,7 +163,6 @@ assets.get("/v2/assets/:asset", async (c) => {
     sig &&
     sig.low_quality !== 1 &&
     (sig.holders ?? 0) >= 15 &&
-    Number(sig.graph_trust ?? 0) > Number(sig.graph_distrust ?? 0) &&
     !tags.includes("numeric");
   const convictionRaw = convictionEligible ? scoreConviction(sig).raw : null;
   const body: AssetDetail = {

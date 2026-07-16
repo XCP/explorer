@@ -1,11 +1,18 @@
 # Graph reputation — literature review & Phase C design basis
 
+> Current interpretation (2026-07-16): this document records the design basis and original hypotheses.
+> The subsequent five-fold held-out evaluation is authoritative and lives in
+> `docs/reputation-recommendations-2026-07.md`. The graph recovers some withheld curation, especially with
+> temporally decayed positive edges, but that does not validate general trustworthiness or investment quality.
+> Product language therefore treats it as seeded **network standing**, not a reputation verdict. It is no longer
+> a hard Radar eligibility gate; its remaining Conviction weight is under explicit production ablation review.
+
 *2026-07-06. Deep-research harness: 106 agents, 25 falsifiable claims extracted from primary sources,
 24 confirmed under 3-vote adversarial verification. Primary sources: Gyöngyi et al. (TrustRank,
 VLDB 2004), Whang et al. (Anti-TrustRank/Min-k-PPR, MIS2/WSDM 2018), Cheng & Friedman (sybilproofness
 impossibility), SybilRank/SybilGuard evaluations, PHT (Personalized Hitting Time) literature.*
 
-## The verdict
+## Original model-family verdict
 
 **Seed-personalized (biased) PageRank is the right family — but only in hardened form.** Everything
 else we considered is disqualified by proof or measurement.
@@ -52,8 +59,9 @@ Seeded PPR only reaches nodes with inbound paths from seeds; in the original stu
 nodes scored exactly zero. For us this cuts both ways: **fresh sybils default to zero trust
 (resistance by default), but legitimate newcomers are unscored, not "bad."**
 
-**UI consequence (binding):** graph trust is presented as **trusted / distrusted / unscored**
-tiers — never a 0-100 continuum — and the zero-score fraction is a monitored metric.
+**Original UI consequence (superseded):** the first implementation used **trusted / distrusted / unscored**
+tiers. User-facing copy now describes seeded network connection or a review flag because held-out label recovery
+does not establish a general trust verdict. The zero-score fraction remains a useful coverage metric.
 
 ## Validation plan on our data (before any factor weight)
 

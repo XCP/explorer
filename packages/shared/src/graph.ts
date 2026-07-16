@@ -1,6 +1,5 @@
-/** Graph-reputation trait (Min-k-PPR trust / Anti-TrustRank distrust — see apps/api/docs/graph-reputation.md).
- *  Presented as TIERS, never a continuum: trusted / distrusted / unscored (unscored = no path from the
- *  curated seed circle yet — newcomers and sybils alike; it means "no evidence", not "bad"). */
+/** Seeded money-flow graph trait (Min-k-PPR / reverse PPR — see apps/api/docs/graph-reputation.md).
+ * The tier reports network standing relative to curated seed sets; it is not a general reputation verdict. */
 
 export type GraphTier = "trusted" | "distrusted" | "unscored";
 

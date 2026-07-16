@@ -5,9 +5,9 @@ import type { Envelope } from "@xcp/shared/envelope";
 import { apiUrl } from "@/lib/api/url";
 
 /**
- * The graph-reputation trait chip (see apps/api/docs/graph-reputation.md). Tier display rules:
- *  - trusted    -> accent-ringed chip (the seeded trust web reaches this entity meaningfully)
- *  - distrusted -> amber chip (scam-seed neighborhood; amber not red — red is market semantics only)
+ * Seeded money-flow network-standing chip (see apps/api/docs/graph-reputation.md). Display rules:
+ *  - trusted    -> connected to all curated positive-seed subsets
+ *  - distrusted -> reverse scam-seed mass dominates; a review flag, not a verdict
  *  - unscored   -> renders NOTHING ("no evidence" is not a badge; most entities are unscored)
  */
 export function GraphTrustChip({ kind, id }: { kind: "addresses" | "assets"; id: string }) {
@@ -15,12 +15,12 @@ export function GraphTrustChip({ kind, id }: { kind: "addresses" | "assets"; id:
   const tier = data?.result?.tier;
   if (tier !== "trusted" && tier !== "distrusted") return null;
   return tier === "trusted" ? (
-    <span title="Money-flow graph trust" className="chip trusted">
-      TRUSTED
+    <span title="Connected in the seeded money-flow graph" className="chip trusted">
+      CONNECTED
     </span>
   ) : (
-    <span title="Money-flow graph distrust" className="chip distrusted">
-      DISTRUSTED
+    <span title="Flagged by reverse scam-seed network standing" className="chip distrusted">
+      FLAGGED
     </span>
   );
 }
