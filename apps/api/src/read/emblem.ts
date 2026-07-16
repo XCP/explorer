@@ -3,7 +3,7 @@
  * vaults, the vault records themselves, and the funded/cracked/deposit segmentation. Contents are always
  * derived from our OWN Counterparty ledger — Emblem is never trusted for what's inside.
  */
-import { router, J, lim, off } from "#api/read/respond";
+import { router, J, lim, off, cached } from "#api/read/respond";
 import { emblemStats, emblemAssets, emblemVaults } from "#api/queries/emblem";
 
 export const emblem = router();
@@ -17,8 +17,12 @@ emblem.get("/v2/emblem/stats", async (c) => {
 
 // Assets currently locked inside Emblem vaults (held by a vault Bitcoin address), by vault count.
 emblem.get("/v2/emblem/assets", async (c) => {
-  const result = await emblemAssets(c.env.CORE_DB, { limit: lim(c), offset: off(c) });
-  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null }, 600);
+  const limit = lim(c);
+  const offset = off(c);
+  return cached(c, `emblem-assets:${limit}:${offset}`, { ttl: 600, edge: 120, swr: 3600 }, async () => {
+    const result = await emblemAssets(c.env.CORE_DB, { limit, offset });
+    return { result, next_offset: result.length === limit ? offset + limit : null };
+  });
 });
 
 // The vaults themselves: token id + contract + BTC address, and whether they currently hold Counterparty value.
