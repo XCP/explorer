@@ -4,17 +4,18 @@ const RETENTION_DAYS = 90;
 
 const UPSERT = `INSERT INTO asset_emergence(
     asset_id,issued_at,observation_cutoff,observed_through,finalized,trades,buyers,sellers,
-    active_days,late_buyers,late_active_days,market_span_days,venues,updated_at)
+    active_days,late_buyers,late_active_days,market_span_days,venues,fairmints,minters,
+    paid_minters,mint_active_days,late_minters,updated_at)
   WITH candidate AS MATERIALIZED (
     SELECT asset.asset_id,asset.first_issuance_block_time issued_at,
-      asset.first_issuance_block_time+${OBSERVATION_DAYS * DAY} observation_cutoff
+      asset.first_issuance_block_time+${OBSERVATION_DAYS * DAY} observation_cutoff,asset.issuer_id
     FROM assets asset
     WHERE asset.type='asset' AND asset.first_issuance_block_time>0
       AND asset.first_issuance_block_time<=?1
       AND (asset.first_issuance_block_time>=?1-${RETENTION_DAYS * DAY} OR EXISTS(
         SELECT 1 FROM asset_emergence prior WHERE prior.asset_id=asset.asset_id AND prior.finalized=0
       ))
-  ), evidence AS (
+  ), market_evidence AS (
     SELECT candidate.asset_id,candidate.issued_at,candidate.observation_cutoff,
       MIN(?1,candidate.observation_cutoff) observed_through,
       COUNT(trade.ref) trades,
@@ -31,16 +32,35 @@ const UPSERT = `INSERT INTO asset_emergence(
       AND trade.block_time<=MIN(?1,candidate.observation_cutoff)
       AND (trade.buyer_id IS NULL OR trade.seller_id IS NULL OR trade.buyer_id<>trade.seller_id)
     GROUP BY candidate.asset_id,candidate.issued_at,candidate.observation_cutoff
+  ), primary_evidence AS (
+    SELECT candidate.asset_id,
+      COUNT(mint.event_index) fairmints,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>candidate.issuer_id THEN mint.source_id END) minters,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>candidate.issuer_id
+        AND CAST(mint.paid_quantity AS INTEGER)>0 THEN mint.source_id END) paid_minters,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>candidate.issuer_id
+        THEN strftime('%Y-%m-%d',mint.block_time,'unixepoch') END) mint_active_days,
+      COUNT(DISTINCT CASE WHEN mint.source_id<>candidate.issuer_id
+        AND mint.block_time>=candidate.issued_at+${15 * DAY} THEN mint.source_id END) late_minters
+    FROM candidate LEFT JOIN fairmints mint ON mint.asset_id=candidate.asset_id
+      AND mint.status='valid' AND mint.block_time>=candidate.issued_at
+      AND mint.block_time<=MIN(?1,candidate.observation_cutoff)
+    GROUP BY candidate.asset_id
   )
-  SELECT asset_id,issued_at,observation_cutoff,observed_through,
-    observation_cutoff<=?1,trades,buyers,sellers,active_days,late_buyers,late_active_days,
-    market_span_days,venues,?1 FROM evidence WHERE 1
+  SELECT market.asset_id,market.issued_at,market.observation_cutoff,market.observed_through,
+    market.observation_cutoff<=?1,market.trades,market.buyers,market.sellers,market.active_days,
+    market.late_buyers,market.late_active_days,market.market_span_days,market.venues,
+    minting.fairmints,minting.minters,minting.paid_minters,minting.mint_active_days,
+    minting.late_minters,?1 FROM market_evidence market JOIN primary_evidence minting USING(asset_id)
   ON CONFLICT(asset_id) DO UPDATE SET
     issued_at=excluded.issued_at,observation_cutoff=excluded.observation_cutoff,
     observed_through=excluded.observed_through,finalized=excluded.finalized,trades=excluded.trades,
     buyers=excluded.buyers,sellers=excluded.sellers,active_days=excluded.active_days,
     late_buyers=excluded.late_buyers,late_active_days=excluded.late_active_days,
-    market_span_days=excluded.market_span_days,venues=excluded.venues,updated_at=excluded.updated_at`;
+    market_span_days=excluded.market_span_days,venues=excluded.venues,fairmints=excluded.fairmints,
+    minters=excluded.minters,paid_minters=excluded.paid_minters,
+    mint_active_days=excluded.mint_active_days,late_minters=excluded.late_minters,
+    updated_at=excluded.updated_at`;
 
 export interface EmergenceRefresh {
   refreshed: number;

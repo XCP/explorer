@@ -11,7 +11,10 @@ const migrations = readdirSync("migrations-core")
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...values: unknown[]) {
     this.values = values;
     return this;
@@ -35,10 +38,10 @@ test("emergence evidence updates while fresh, freezes at day 30, and excludes se
   db.exec(`
     INSERT INTO asset_dictionary(asset) VALUES('FRESH'),('EMERGING');
     INSERT INTO address_dictionary(address_id,address) VALUES(1,'buyer'),(2,'seller'),(3,'other');
-    INSERT INTO assets(asset_id,type,first_issuance_block_time)
-      SELECT asset_id,'asset',${now - 20 * DAY} FROM asset_dictionary WHERE asset='FRESH';
-    INSERT INTO assets(asset_id,type,first_issuance_block_time)
-      SELECT asset_id,'asset',${now - 40 * DAY} FROM asset_dictionary WHERE asset='EMERGING';
+    INSERT INTO assets(asset_id,type,first_issuance_block_time,issuer_id)
+      SELECT asset_id,'asset',${now - 20 * DAY},2 FROM asset_dictionary WHERE asset='FRESH';
+    INSERT INTO assets(asset_id,type,first_issuance_block_time,issuer_id)
+      SELECT asset_id,'asset',${now - 40 * DAY},2 FROM asset_dictionary WHERE asset='EMERGING';
     INSERT INTO trades(venue,ref,asset_id,block_time,buyer_id,seller_id)
       SELECT 'dex','fresh-real',asset_id,${now - 19 * DAY},1,2 FROM asset_dictionary WHERE asset='FRESH';
     INSERT INTO trades(venue,ref,asset_id,block_time,buyer_id,seller_id)
@@ -49,23 +52,56 @@ test("emergence evidence updates while fresh, freezes at day 30, and excludes se
       SELECT 'emblem','late',asset_id,${now - 15 * DAY},3,2 FROM asset_dictionary WHERE asset='EMERGING';
     INSERT INTO trades(venue,ref,asset_id,block_time,buyer_id,seller_id)
       SELECT 'dex','after-cutoff',asset_id,${now - 5 * DAY},3,2 FROM asset_dictionary WHERE asset='EMERGING';
+    INSERT INTO fairmints(event_index,tx_index,tx_hash,block_index,block_time,source_id,asset_id,
+      earn_quantity,paid_quantity,commission,status) SELECT 1,1,X'01',1,${now - 39 * DAY},1,asset_id,
+      '1','0','0','valid' FROM asset_dictionary WHERE asset='EMERGING';
+    INSERT INTO fairmints(event_index,tx_index,tx_hash,block_index,block_time,source_id,asset_id,
+      earn_quantity,paid_quantity,commission,status) SELECT 2,2,X'02',2,${now - 15 * DAY},3,asset_id,
+      '1','100','0','valid' FROM asset_dictionary WHERE asset='EMERGING';
   `);
 
   assert.deepEqual(await refreshAssetEmergence(d1(db), now), { refreshed: 2, fresh: 1, emerging: 1 });
-  const fresh = db.prepare(`SELECT finalized,trades,buyers,active_days FROM asset_emergence
-    WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='FRESH')`).get();
+  const fresh = db
+    .prepare(
+      `SELECT finalized,trades,buyers,active_days FROM asset_emergence
+    WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='FRESH')`,
+    )
+    .get();
   assert.deepEqual({ ...fresh }, { finalized: 0, trades: 1, buyers: 1, active_days: 1 });
-  const emerging = db.prepare(`SELECT finalized,trades,buyers,active_days,late_buyers,venues FROM asset_emergence
-    WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='EMERGING')`).get();
+  const emerging = db
+    .prepare(
+      `SELECT finalized,trades,buyers,active_days,late_buyers,venues,
+    fairmints,minters,paid_minters,mint_active_days,late_minters FROM asset_emergence
+    WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='EMERGING')`,
+    )
+    .get();
   assert.deepEqual(
     { ...emerging },
-    { finalized: 1, trades: 2, buyers: 2, active_days: 2, late_buyers: 1, venues: 2 },
+    {
+      finalized: 1,
+      trades: 2,
+      buyers: 2,
+      active_days: 2,
+      late_buyers: 1,
+      venues: 2,
+      fairmints: 2,
+      minters: 2,
+      paid_minters: 1,
+      mint_active_days: 2,
+      late_minters: 1,
+    },
   );
 
   await refreshAssetEmergence(d1(db), now + 10 * DAY);
   assert.deepEqual(
-    { ...db.prepare(`SELECT trades,buyers,active_days,late_buyers,venues FROM asset_emergence
-      WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='EMERGING')`).get() },
+    {
+      ...db
+        .prepare(
+          `SELECT trades,buyers,active_days,late_buyers,venues FROM asset_emergence
+      WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='EMERGING')`,
+        )
+        .get(),
+    },
     { trades: 2, buyers: 2, active_days: 2, late_buyers: 1, venues: 2 },
   );
   db.close();

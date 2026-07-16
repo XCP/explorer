@@ -18,6 +18,11 @@ export interface EmergingAsset {
   late_active_days: number;
   market_span_days: number;
   venues: number;
+  fairmints: number;
+  minters: number;
+  paid_minters: number;
+  mint_active_days: number;
+  late_minters: number;
   holders: number;
   supply: number;
 }
@@ -51,7 +56,8 @@ export function listEmergingAssets(
             CAST((?1-issued_at)/${DAY} AS INTEGER) age_days,
             ROUND(50.0*buyer_rank+50.0*active_day_rank,2) market_formation,
             trades,buyers,sellers,active_days,late_buyers,late_active_days,
-            ROUND(market_span_days,1) market_span_days,venues,holders,
+            ROUND(market_span_days,1) market_span_days,venues,fairmints,minters,paid_minters,
+            mint_active_days,late_minters,holders,
             CAST(ROUND(supply) AS INTEGER) supply
        FROM ranked
       ORDER BY market_formation DESC,buyers DESC,active_days DESC,issued_at ASC,asset ASC
