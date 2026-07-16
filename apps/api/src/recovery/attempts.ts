@@ -17,6 +17,18 @@ interface AttemptInputRow {
   input_vout: number;
 }
 
+export interface AttemptProviders {
+  tipHeight(baseUrl: string): Promise<number>;
+  transactionStatus(baseUrl: string, txid: string): Promise<ElectrsTransactionStatus | null>;
+  transactionOutspends(baseUrl: string, txid: string): Promise<ElectrsOutspend[]>;
+}
+
+const DEFAULT_PROVIDERS: AttemptProviders = {
+  tipHeight: fetchTipHeight,
+  transactionStatus: fetchTransactionStatus,
+  transactionOutspends: fetchTransactionOutspends,
+};
+
 export interface AttemptEvidence {
   status: "pending" | "confirmed" | "replaced" | "failed";
   replacementTxid: string | null;
@@ -85,13 +97,17 @@ export function classifyAttemptEvidence(
   };
 }
 
-export async function reconcileRecoveryAttempts(env: Env, limit: number): Promise<{ checked: number }> {
+export async function reconcileRecoveryAttempts(
+  env: Env,
+  limit: number,
+  providers: AttemptProviders = DEFAULT_PROVIDERS,
+): Promise<{ checked: number; failed: number }> {
   const attempts = await env.RECOVERY_DB.prepare(
     `SELECT txid FROM recovery_attempts ORDER BY chain_checked_at,reported_at,txid LIMIT ?`,
   )
     .bind(limit)
     .all<AttemptRow>();
-  if (attempts.results.length === 0) return { checked: 0 };
+  if (attempts.results.length === 0) return { checked: 0, failed: 0 };
 
   const placeholders = attempts.results.map(() => "?").join(",");
   const inputs = await env.RECOVERY_DB.prepare(
@@ -100,43 +116,45 @@ export async function reconcileRecoveryAttempts(env: Env, limit: number): Promis
   )
     .bind(...attempts.results.map((row) => row.txid))
     .all<AttemptInputRow>();
-  const parentTxids = [...new Set(inputs.results.map((row) => row.input_txid))];
-  const [tipHeight, statuses, parentOutspends] = await Promise.all([
-    fetchTipHeight(env.ELECTRS_API_BASE),
-    Promise.all(attempts.results.map((row) => fetchTransactionStatus(env.ELECTRS_API_BASE, row.txid))),
-    Promise.all(parentTxids.map((txid) => fetchTransactionOutspends(env.ELECTRS_API_BASE, txid))),
-  ]);
-  const outspends = new Map(parentTxids.map((txid, index) => [txid, parentOutspends[index]]));
+  const tipHeight = await providers.tipHeight(env.ELECTRS_API_BASE);
   const now = Math.floor(Date.now() / 1000);
-  const updates = attempts.results.map((attempt, index) => {
-    const evidence = classifyAttemptEvidence(
-      attempt.txid,
-      statuses[index],
-      inputs.results
-        .filter((input) => input.recovery_txid === attempt.txid)
-        .map((input) => {
+  const settled = await Promise.allSettled(
+    attempts.results.map(async (attempt) => {
+      const attemptInputs = inputs.results.filter((input) => input.recovery_txid === attempt.txid);
+      const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
+      const [transaction, ...parentOutspends] = await Promise.all([
+        providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid),
+        ...parentTxids.map((txid) => providers.transactionOutspends(env.ELECTRS_API_BASE, txid)),
+      ]);
+      const outspends = new Map(parentTxids.map((txid, index) => [txid, parentOutspends[index]]));
+      const evidence = classifyAttemptEvidence(
+        attempt.txid,
+        transaction,
+        attemptInputs.map((input) => {
           const output = outspends.get(input.input_txid)?.[input.input_vout];
           if (!output) throw new Error(`Electrs omitted recovery input ${input.input_txid}:${input.input_vout}`);
           return output;
         }),
-      tipHeight,
-    );
-    return env.RECOVERY_DB.prepare(
-      `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,
+        tipHeight,
+      );
+      return env.RECOVERY_DB.prepare(
+        `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,
           confirmations=?,status_reason=?,chain_checked_at=?,updated_at=? WHERE txid=?`,
-    ).bind(
-      evidence.status,
-      evidence.replacementTxid,
-      evidence.blockHeight,
-      evidence.blockHash,
-      evidence.blockTime,
-      evidence.confirmations,
-      evidence.reason,
-      now,
-      now,
-      attempt.txid,
-    );
-  });
-  await env.RECOVERY_DB.batch(updates);
-  return { checked: attempts.results.length };
+      ).bind(
+        evidence.status,
+        evidence.replacementTxid,
+        evidence.blockHeight,
+        evidence.blockHash,
+        evidence.blockTime,
+        evidence.confirmations,
+        evidence.reason,
+        now,
+        now,
+        attempt.txid,
+      );
+    }),
+  );
+  const updates = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  if (updates.length > 0) await env.RECOVERY_DB.batch(updates);
+  return { checked: updates.length, failed: settled.length - updates.length };
 }

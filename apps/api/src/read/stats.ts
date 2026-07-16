@@ -3,6 +3,7 @@ import { router, cached, J } from "#api/read/respond";
 import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "#api/reputation/score";
 import { ASSET_PENALTY } from "#api/reputation/config";
 import { boundedInteger } from "#api/http/numbers";
+import { networkStatsCacheKey } from "#api/http/cache-keys";
 import { maxBlock, leaderboards, type MetricName } from "#api/queries/stats";
 import {
   coreHomeOverview,
@@ -70,7 +71,7 @@ stats.get("/v2/metrics", async (c) => {
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) => {
   const includeHidden = c.req.query("include_hidden") === "1";
-  return cached(c, `stats:fee-completeness:${includeHidden ? 1 : 0}`, { ttl: 86400, edge: 120, swr: 604800 }, async () => {
+  return cached(c, networkStatsCacheKey(includeHidden), { ttl: 86400, edge: 120, swr: 604800 }, async () => {
     if (!includeHidden) return { result: await coreQualityNetworkStats(c.env.CORE_DB) };
     const counts = await coreNetworkCounts(c.env.CORE_DB);
     const totals = await coreNetworkTotals(c.env.CORE_DB);

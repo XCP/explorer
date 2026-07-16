@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyAttemptEvidence } from "#api/recovery/attempts";
+import { classifyAttemptEvidence, reconcileRecoveryAttempts, type AttemptProviders } from "#api/recovery/attempts";
 
 const txid = "11".repeat(32);
 const unspent = { spent: false, txid: null, block_height: null };
@@ -74,4 +74,52 @@ test("multiple conflicting spenders deterministically make the original impossib
   assert.equal(result.status, "failed");
   assert.equal(result.replacementTxid, null);
   assert.equal(result.reason, "inputs-spent-by-multiple-transactions");
+});
+
+test("one provider failure does not block healthy recovery attempts", async () => {
+  const healthy = "55".repeat(32);
+  const broken = "66".repeat(32);
+  const parent = "77".repeat(32);
+  const updates: unknown[][] = [];
+  class Statement {
+    values: unknown[] = [];
+    constructor(readonly sql: string) {}
+    bind(...values: unknown[]) {
+      this.values = values;
+      return this;
+    }
+    async all<T>() {
+      if (this.sql.includes("SELECT txid FROM recovery_attempts"))
+        return { results: [{ txid: healthy }, { txid: broken }] as T[] };
+      return {
+        results: [
+          { recovery_txid: healthy, input_txid: parent, input_vout: 0 },
+          { recovery_txid: broken, input_txid: parent, input_vout: 0 },
+        ] as T[],
+      };
+    }
+  }
+  const db = {
+    prepare: (sql: string) => new Statement(sql),
+    batch: async (statements: Statement[]) => {
+      updates.push(...statements.map((statement) => statement.values));
+      return [];
+    },
+  } as unknown as D1Database;
+  const providers: AttemptProviders = {
+    tipHeight: async () => 900_005,
+    transactionStatus: async (_baseUrl, candidate) => {
+      if (candidate === broken) throw new Error("provider failure");
+      return { confirmed: false, blockHeight: null, blockHash: null, blockTime: null };
+    },
+    transactionOutspends: async () => [unspent],
+  };
+  const result = await reconcileRecoveryAttempts(
+    { RECOVERY_DB: db, ELECTRS_API_BASE: "https://electrs.example" } as never,
+    2,
+    providers,
+  );
+  assert.deepEqual(result, { checked: 1, failed: 1 });
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0]?.at(-1), healthy);
 });

@@ -1,7 +1,7 @@
 import { getCoreStateInt } from "#api/indexer/core-state";
 import { coreQualityNetworkStats } from "#api/queries/core-stats";
+import { networkStatsCacheKey } from "#api/http/cache-keys";
 
-const CACHE_KEY = "stats:0";
 const REFRESH_INTERVAL_SECONDS = 6 * 60 * 60;
 const CACHE_LIFETIME_SECONDS = 12 * 60 * 60;
 
@@ -20,7 +20,7 @@ export async function refreshQualityNetworkStats(db: D1Database): Promise<{ refr
          ON CONFLICT(key) DO UPDATE SET body=excluded.body,ctype=excluded.ctype,
            expires_at=excluded.expires_at,refreshing_until=0`,
       )
-      .bind(CACHE_KEY, JSON.stringify({ result }), updatedAt + CACHE_LIFETIME_SECONDS),
+      .bind(networkStatsCacheKey(false), JSON.stringify({ result }), updatedAt + CACHE_LIFETIME_SECONDS),
     db
       .prepare(
         `INSERT INTO core_state(key,value) VALUES('quality_stats_refreshed_at',?1)
