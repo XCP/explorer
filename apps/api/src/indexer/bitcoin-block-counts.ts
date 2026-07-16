@@ -2,7 +2,9 @@ import type { Env } from "#api/env";
 import { fetchBlockPage, type ElectrsBlockSummary } from "#api/integrations/electrs";
 import { getCoreState, getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
-const PAGES_PER_STEP = 50;
+// One Electrs page covers ten consecutive blocks. At one request at a time with a 100 ms inter-page delay,
+// 100 pages remains a gentle provider load (~10 seconds/tick) while halving the historical catch-up window.
+const PAGES_PER_STEP = 100;
 const PAGE_CONCURRENCY = 1;
 const PAGE_DELAY_MS = 100;
 const CURSOR_KEY = "bitcoin_block_counts_cursor";
