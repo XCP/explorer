@@ -70,11 +70,17 @@ export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]
      emb AS (
        SELECT asset_id,ask_usd,marketplace,url FROM emb_ranked WHERE rank=1
      ),
+     offers AS MATERIALIZED (
+       SELECT asset_id FROM disp
+       UNION
+       SELECT asset_id FROM emb
+     ),
      conv AS (
        SELECT signal.asset_id,dictionary.asset, (${CONVICTION}) conviction,
               COALESCE(signal.max_realized_usd,0) market_usd,
               signal.holders,signal.supply,signal.avg_holder_dex,signal.pct_creator_holders
-         FROM asset_signals signal
+         FROM offers
+         JOIN asset_signals signal ON signal.asset_id=offers.asset_id
          JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
         WHERE ${ELIGIBLE} AND (${CONVICTION}) >= ${CONVICTION_PCT.p90}
      )
