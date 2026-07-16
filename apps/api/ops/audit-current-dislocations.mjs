@@ -87,6 +87,7 @@ const candidates = offers
     const reference = referenceById.get(Number(offer.asset_id));
     const ask = Number(offer.ask_usd);
     return {
+      asset_id: Number(offer.asset_id),
       asset: offer.asset,
       asset_longname: offer.asset_longname ?? null,
       venue: offer.venue,

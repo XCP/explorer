@@ -218,3 +218,10 @@ market-depth confidence, and distribution risk separately, and say “below its 
 to its old price.” Current candidates use canonical dispenser asks only. Emblem asks require inventory-aware vault
 normalization before they can be compared to per-token history. The next evidence milestone is a frozen forward
 tracker of executable asks plus named-candidate review.
+
+`npm run audit:current-dislocations` now joins the robust on-chain reference to current canonical dispenser asks.
+`npm run snapshot:current-dislocations` freezes an append-only cohort in the local analytical database and rejects a
+duplicate observation timestamp atomically. The first prospective cohort contains 133 discounted candidates measured
+on 2026-07-16. Re-observe it after 30, 90, and 180 days to measure offer removal, completed-sale coverage, subsequent
+unit return, and movement toward the prior reference. Do not tune thresholds against those outcomes before the final
+checkpoint; doing so would turn the holdout into training data.
