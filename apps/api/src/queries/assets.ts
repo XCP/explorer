@@ -205,7 +205,7 @@ export function assetReviewDistribution(
   return one<AssetReviewDistribution>(
     db,
     `WITH r AS (
-       SELECT (${expr}) raw FROM asset_signals WHERE trades>0 OR dispenses>0
+       SELECT COALESCE((${expr}),0) raw FROM asset_signals WHERE trades>0 OR dispenses>0
      )
      SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max, ROUND(MIN(raw),2) min,
        SUM(CASE WHEN raw>=${bluechipCut} THEN 1 ELSE 0 END) bluechip,
