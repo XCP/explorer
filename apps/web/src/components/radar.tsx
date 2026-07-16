@@ -5,7 +5,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import type {
   AssetEmergencePayload,
-  BuyableAsset,
+  AvailableAsset,
   EmergenceEvidence,
   EmergingAsset,
   RadarAsset,
@@ -18,7 +18,7 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { commas, usdCompact } from "@/lib/format";
 
 type View = "emerging" | "fresh" | "established" | "available";
-const isBuyable = (row: RadarAsset | BuyableAsset): row is BuyableAsset => "venue" in row;
+const isAvailable = (row: RadarAsset | AvailableAsset): row is AvailableAsset => "venue" in row;
 
 function EmergenceRow({ row, rank }: { row: EmergenceEvidence | EmergingAsset; rank?: number }) {
   const emerging = "market_formation" in row;
@@ -51,7 +51,7 @@ function EmergenceRow({ row, rank }: { row: EmergenceEvidence | EmergingAsset; r
   );
 }
 
-function EstablishedRow({ row, rank }: { row: RadarAsset | BuyableAsset; rank: number }) {
+function EstablishedRow({ row, rank }: { row: RadarAsset | AvailableAsset; rank: number }) {
   return (
     <li className="flex items-center gap-3 border-b border-zinc-900 py-2.5 last:border-0">
       <span className="w-5 shrink-0 text-right font-mono text-xs text-zinc-600">{rank}</span>
@@ -69,14 +69,14 @@ function EstablishedRow({ row, rank }: { row: RadarAsset | BuyableAsset; rank: n
       </div>
       <div className="w-24 shrink-0 text-right">
         <div className="font-mono text-sm tabular-nums text-zinc-100">
-          {isBuyable(row)
+          {isAvailable(row)
             ? row.ask_btc != null
               ? `${parseFloat(row.ask_btc.toFixed(8))} BTC`
               : usdCompact(row.ask_usd)
             : row.conviction}
         </div>
         <div className="text-[10px] uppercase tracking-wide text-zinc-600">
-          {isBuyable(row) ? row.venue : "Conviction"}
+          {isAvailable(row) ? row.venue : "Conviction"}
         </div>
       </div>
     </li>
@@ -129,7 +129,7 @@ export function Radar() {
   const established = establishedData?.result;
   const earlyRows = view === "emerging" ? emergence?.emerging : view === "fresh" ? emergence?.fresh : undefined;
   const olderRows =
-    view === "established" ? established?.undervalued : view === "available" ? established?.buyable : undefined;
+    view === "established" ? established?.established : view === "available" ? established?.available : undefined;
   const loading = view === "emerging" || view === "fresh" ? !emergence : !established;
   const titles: Record<View, string> = {
     emerging: "Emerging Markets",
@@ -152,8 +152,8 @@ export function Radar() {
         counts={{
           emerging: emergence?.emerging.length,
           fresh: emergence?.fresh.length,
-          established: established?.undervalued.length,
-          available: established?.buyable.length,
+          established: established?.established.length,
+          available: established?.available.length,
         }}
       />
       <Card title={titles[view]}>

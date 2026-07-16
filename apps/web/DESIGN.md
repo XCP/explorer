@@ -65,7 +65,7 @@ compelling sentence this product can say; "look at the art" is the most beautifu
 The home is the collector's front door, organized around four questions rather than raw protocol feeds.
 
 1. Orienting hero: Counterparty culture, provenance, and search.
-2. Four-question launcher: Collections (what's good), Radar (what's undervalued), Leaderboards
+2. Four-question launcher: Collections (what's good), Radar (what's emerging), Leaderboards
    (who's real), and Firsts (what happened first).
 3. **Grails on-chain** — quality-scored assets with media; the museum face is the primary evidence.
 4. Live previews for Radar, top collectors, and Counterparty Firsts.

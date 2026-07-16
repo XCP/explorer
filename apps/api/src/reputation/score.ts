@@ -132,9 +132,7 @@ export function percentile(raw: number, a: Anchors): number {
 export const addressScore = (raw: number) => Math.round(percentile(raw, ADDRESS_PCT));
 export const assetScore = (raw: number) => Math.round(percentile(raw, ASSET_PCT));
 
-/** Conviction — the "who holds it + how scarce" score, ORTHOGONAL to market (no trade/realized inputs).
- *  Junk (low_quality) has zero conviction. Pairs with assetScore to surface undervalued grails (Conviction
- *  high, market low). Uses the same config-driven scorer, so it shares factorValue/rawSqlExpr parity. */
+/** Conviction describes holder participation and scarcity without trade-price or realized-value inputs. */
 export function scoreConviction(row: Partial<AssetSignalsRow>): Scored {
   if (num((row as unknown as FeatureRow).low_quality) === 1) return { raw: 0, breakdown: {} };
   return sumFactors(CONVICTION_FACTORS, row as unknown as FeatureRow, 0);

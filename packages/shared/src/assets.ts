@@ -82,16 +82,12 @@ export interface AssetDetail {
   artist?: { tag: string; name: string; slug: string } | null; // pepe.wtf artist; `tag` is the /tags/<artist-slug> route
   feed_counts?: AssetFeedCounts | null; // per-feed tab counts; null when the count read failed
   cohesion?: AssetCohesion | null; // holder-cohesion coordination signal; null until the batch has scored this asset
-  conviction?: AssetConviction | null; // who-holds-it + scarcity score; null when the asset isn't in the grail-shaped population
+  conviction?: AssetConviction | null; // who-holds-it + scarcity score; null outside the eligible population
 }
 
-/** Conviction — WHO holds the asset + how scarce it is, with ZERO market/volume inputs (the Radar signal, on
- *  the asset itself). Only computed for the same grail-shaped population Radar ranks (real, network-trusted,
- *  ≥15 holders, named), so the number always means the same thing in both places. `undervalued` mirrors
- *  Radar's dislocation cut: top-decile conviction while realized value is still under its threshold. */
+/** Conviction describes holder participation and scarcity without market-price inputs. */
 export interface AssetConviction {
   score: number; // 0-100 (percentile against the scored population)
-  undervalued: boolean; // high conviction, unpriced market — the dislocation read
 }
 
 /** Holder cohesion — interaction edges among the asset's top holders ÷ holder count. Among traded assets the

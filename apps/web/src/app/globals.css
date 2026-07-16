@@ -236,7 +236,6 @@ a.view:hover { color:var(--accent); }
 .pill.insular { color:var(--amber); border-color:#8a6420; background:rgba(120,86,27,.12); } /* holder base trades among itself — airdrop cohort / wash / clique */
 /* Radar's dislocation read on the asset page: top-decile conviction, unpriced market. Green = opportunity,
    and it's a link (to /radar) so it must not pick up link underline/colour. */
-.pill.undervalued { color:#86efac !important; border-color:#1d7f42; background:rgba(22,101,52,.15); text-decoration:none; }
 
 /* type chips — EXCEPTIONS ONLY (attach/move); a plain send gets nothing */
 .tchip { display:inline-flex; align-items:center; justify-self:start; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--t3); white-space:nowrap; }

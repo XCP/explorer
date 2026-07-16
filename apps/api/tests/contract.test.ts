@@ -665,7 +665,7 @@ test("contract: GET /v2/emblem/vaults?limit=2 - EmblemVaultRow list", async (t) 
   );
 });
 
-test("contract: GET /v2/radar - non-empty compact conviction rankings", async (t) => {
+test("contract: GET /v2/radar - established and available conviction rankings", async (t) => {
   if (skipUnlessLive(t)) return;
   const result = (await getJson("/v2/radar")).result;
   const asset = {
@@ -678,11 +678,11 @@ test("contract: GET /v2/radar - non-empty compact conviction rankings", async (t
     holder_dex: "number",
     creator_pct: "number",
   };
-  assert.ok(Array.isArray(result.undervalued) && result.undervalued.length > 0, "radar undervalued rows required");
-  assert.ok(Array.isArray(result.buyable) && result.buyable.length > 0, "radar buyable rows required");
-  assertRows(result.undervalued, asset, "radar.undervalued");
+  assert.ok(Array.isArray(result.established) && result.established.length > 0, "radar established rows required");
+  assert.ok(Array.isArray(result.available) && result.available.length > 0, "radar available rows required");
+  assertRows(result.established, asset, "radar.established");
   assertRows(
-    result.buyable,
+    result.available,
     {
       ...asset,
       venue: "string",
@@ -691,7 +691,7 @@ test("contract: GET /v2/radar - non-empty compact conviction rankings", async (t
       marketplace: "string|null",
       listing_url: "string|null",
     },
-    "radar.buyable",
+    "radar.available",
   );
 });
 

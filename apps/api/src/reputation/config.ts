@@ -269,13 +269,7 @@ export const ASSET_FACTORS: Factor[] = [
 ];
 export const ASSET_PENALTY = { lowQuality: -6.0 }; // wash/bridge/curated junk
 
-/* ---------- CONVICTION (2026-07-09) — WHO holds it, deliberately ORTHOGONAL to market/realized value ----------
-// The dislocation engine: the asset-quality score above answers "what has the market PAID for this?"; Conviction
-// answers "who HOLDS it, and how scarce is it?" — with ZERO trade/realized/volume inputs. When Conviction is high
-// but realized value is low → an undervalued / undiscovered grail (the smart money holds it, the market hasn't
-// priced it). When market ≫ conviction → a pumped shell. Same signals as the community axis, promoted and
-// isolated from the market family. NOT gameable the way volume is: you can't fake being held by proven creators
-// and active traders across a scarce supply. Radar surface ranks by Conviction with realized value held low. */
+/* ---------- CONVICTION — holder participation and scarcity, separate from market-price evidence ---------- */
 export const CONVICTION_FACTORS: Factor[] = [
   {
     key: "avg_holder_dex",

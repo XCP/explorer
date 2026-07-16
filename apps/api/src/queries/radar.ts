@@ -1,10 +1,7 @@
 /**
- * Radar queries — the SQL behind GET /v2/radar (the "undervalued grail" surface). The dislocation engine:
- * CONVICTION (who holds it + how scarce, config-driven, ZERO market inputs) ranked where MARKET (realized USD)
- * is low → assets the smart money holds that the market hasn't priced. Conviction is computed from the SAME
- * CONVICTION_FACTORS the scorer uses (rawSqlExpr parity), so the board and the per-asset score never drift.
+ * Established and available asset queries. Conviction uses the same holder-and-scarcity factors as asset pages.
  */
-import type { RadarAsset, BuyableAsset } from "@xcp/shared/radar";
+import type { AvailableAsset, RadarAsset } from "@xcp/shared/radar";
 import { q } from "#api/db";
 import { rawSqlExpr } from "#api/reputation/score";
 import { CONVICTION_FACTORS, CONVICTION_PCT } from "#api/reputation/config";
@@ -21,7 +18,7 @@ const ELIGIBLE = `signal.low_quality=0 AND signal.graph_trust>signal.graph_distr
    )`;
 
 /** Undervalued: high Conviction, low realized value, real holder base, network-trusted, not spam/numeric. */
-export function radarUndervalued(db: D1Database, marketMax = 500, limit = 40): Promise<RadarAsset[]> {
+export function radarEstablished(db: D1Database, limit = 40): Promise<RadarAsset[]> {
   return q<RadarAsset>(
     db,
     `WITH conv AS (
@@ -30,7 +27,7 @@ export function radarUndervalued(db: D1Database, marketMax = 500, limit = 40): P
               signal.holders,signal.supply,signal.avg_holder_dex,signal.pct_creator_holders
          FROM asset_signals signal
          JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
-        WHERE ${ELIGIBLE} AND COALESCE(signal.max_realized_usd,0) < ${marketMax}
+        WHERE ${ELIGIBLE}
      )
      SELECT c.asset,state.asset_longname,
             ROUND(c.conviction,2) conviction, ROUND(c.market_usd) market_usd,
@@ -41,13 +38,13 @@ export function radarUndervalued(db: D1Database, marketMax = 500, limit = 40): P
   );
 }
 
-/** Buyable now: high-Conviction assets (raw ≥ calibrated p90) purchasable RIGHT NOW, ranked by Conviction,
+/** Available now: high-Conviction assets (raw ≥ calibrated p90) purchasable right now, ranked by Conviction,
  *  showing the CHEAPEST path per asset (in USD) across two venues:
  *   - dispenser: cheapest open Counterparty dispenser holding stock (fixed-price BTC vending, instant buy)
  *   - emblem:    cheapest live Ethereum listing of a vault wrapping the card (Sequence-aggregated ask, USD)
  *  The dispenser ask converts to USD at the latest daily BTC rate so the two venues are comparable. */
-export function radarBuyable(db: D1Database, limit = 40): Promise<BuyableAsset[]> {
-  return q<BuyableAsset>(
+export function radarAvailable(db: D1Database, limit = 40): Promise<AvailableAsset[]> {
+  return q<AvailableAsset>(
     db,
     `WITH px AS (SELECT usd FROM prices WHERE currency='BTC' ORDER BY day DESC LIMIT 1),
      disp AS ( -- cheapest open dispenser per asset, per UNIT of the card (satoshirate is priced per dispense,

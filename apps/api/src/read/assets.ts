@@ -16,7 +16,7 @@ import {
   ASSET_FACTORS,
   ADDRESS_FACTORS,
 } from "#api/reputation/score";
-import { ASSET_PENALTY, ASSET_TIERS, ADDRESS_TIERS, CONVICTION_PCT } from "#api/reputation/config";
+import { ASSET_PENALTY, ASSET_TIERS, ADDRESS_TIERS } from "#api/reputation/config";
 import {
   featuredAssets,
   chainTip,
@@ -158,10 +158,7 @@ assets.get("/v2/assets/:asset", async (c) => {
   const score = scored && state === "market" ? assetScore(scored.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
   const tags = tagsRes;
-  // Conviction (the Radar signal, on the asset itself): who holds it + scarcity, zero market inputs. Computed
-  // only for the grail-shaped population Radar ranks (real, network-trusted, ≥15 holders, named) so the number
-  // means the same thing in both places. undervalued mirrors Radar's dislocation cut (raw ≥ calibrated p90,
-  // realized still under the same $500 marketMax radarUndervalued() uses).
+  // Conviction describes holder participation and scarcity without using market prices.
   const convictionEligible =
     sig &&
     sig.low_quality !== 1 &&
@@ -212,13 +209,7 @@ assets.get("/v2/assets/:asset", async (c) => {
             insular: sig.holder_cohesion >= 9 && (sig.max_realized_usd ?? 0) >= 1000,
           }
         : null,
-    conviction:
-      convictionRaw != null && sig
-        ? {
-            score: convictionScore(convictionRaw),
-            undervalued: convictionRaw >= CONVICTION_PCT.p90 && (sig.max_realized_usd ?? 0) < 500,
-          }
-        : null,
+    conviction: convictionRaw != null ? { score: convictionScore(convictionRaw) } : null,
   };
   // 120s: the asset's headline data (supply, holders, score, tags) drifts slowly; a 2-min cache window cuts
   // cold-miss recomputes 4× vs the 30s default while staying fresh enough for an explorer.

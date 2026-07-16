@@ -2,7 +2,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import type { FeaturedAsset } from "@xcp/shared/assets";
-import type { RadarPayload } from "@xcp/shared/radar";
+import type { AssetEmergencePayload } from "@xcp/shared/radar";
 import type { TradeRow } from "@xcp/shared/trades";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { useTrades } from "@/lib/hooks";
@@ -31,9 +31,9 @@ const questions = [
     tone: "from-violet-500/15",
   },
   {
-    eyebrow: "What’s undervalued?",
+    eyebrow: "What’s emerging?",
     title: "Radar",
-    body: "Find scarce assets held by proven collectors before price catches up.",
+    body: "See where independent buyers and active trading days are forming an early market.",
     href: "/radar",
     tone: "from-sky-500/15",
   },
@@ -72,11 +72,11 @@ function saleValue(row: TradeRow) {
 export function HomeDashboard() {
   const { rows: trades } = useTrades({}, 0, 5);
   const { data: featuredData } = useSWR<Envelope<FeaturedAsset[]>>(apiUrl("/v2/featured?limit=12"));
-  const { data: radarData } = useSWR<Envelope<RadarPayload>>(apiUrl("/v2/radar"));
+  const { data: radarData } = useSWR<Envelope<AssetEmergencePayload>>(apiUrl("/v2/radar/emergence"));
   const { data: leaderboardData } = useSWR<Envelope<Record<string, LeaderboardRow[]>>>(apiUrl("/v2/leaderboards"));
   const { data: firstsData } = useSWR<Envelope<First[]>>(apiUrl("/v2/firsts"));
   const featured = featuredData?.result ?? [];
-  const radar = radarData?.result?.undervalued.slice(0, 4) ?? [];
+  const radar = radarData?.result?.emerging.slice(0, 4) ?? [];
   const collectors = leaderboardData?.result?.top_collectors?.slice(0, 4) ?? [];
   const firsts = firstsData?.result?.slice(0, 4) ?? [];
 
@@ -161,7 +161,7 @@ export function HomeDashboard() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card title="Radar — Undervalued">
+        <Card title="Radar — Emerging">
           <Link href="/radar" className="absolute right-4 top-4 text-xs !text-zinc-400">
             Full radar →
           </Link>
@@ -176,8 +176,8 @@ export function HomeDashboard() {
                     <AssetName asset={r.asset} longname={r.asset_longname} />
                   </div>
                   <div className="text-right">
-                    <div className="font-mono text-sm text-(--color-xcp)">{r.conviction}</div>
-                    <div className="text-[9px] uppercase text-zinc-600">conviction</div>
+                    <div className="font-mono text-sm text-(--color-xcp)">{r.market_formation}</div>
+                    <div className="text-[9px] uppercase text-zinc-600">formation</div>
                   </div>
                 </li>
               ))}

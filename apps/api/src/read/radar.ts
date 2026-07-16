@@ -1,13 +1,8 @@
-/**
- * GET /v2/radar — the "undervalued grail" board. Ranks assets by CONVICTION (who holds it + how scarce,
- * built purely from holder/scarcity/network signals — no market inputs) two ways: `undervalued` (realized
- * value still low — the discovery watchlist) and `buyable` (an open dispenser exists right now — the
- * actionable cut). Thin route over queries/radar.ts; D1-cached (low-cardinality key).
- */
+/** Established holder Conviction, current availability, and early market formation. */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { AssetEmergencePayload, EmergenceEvidence, RadarPayload } from "@xcp/shared/radar";
 import { router, cached } from "#api/read/respond";
-import { radarUndervalued, radarBuyable } from "#api/queries/radar";
+import { radarAvailable, radarEstablished } from "#api/queries/radar";
 import { listEmergingAssets, listFreshAssets } from "#api/queries/asset-emergence";
 import { convictionScore } from "#api/reputation/score";
 
@@ -40,11 +35,13 @@ radar.get("/v2/radar/emergence", (c) =>
 );
 
 radar.get("/v2/radar", (c) =>
-  cached(c, "radar:conviction", { ttl: 600, edge: 120 }, async (): Promise<Envelope<RadarPayload>> => {
-    const [under, buy] = await Promise.all([radarUndervalued(c.env.CORE_DB), radarBuyable(c.env.CORE_DB)]);
-    // Rows arrive ranked by RAW conviction (SQL); map each raw to the calibrated 0-100 score for display.
-    const undervalued = under.map((r) => ({ ...r, conviction: convictionScore(r.conviction) }));
-    const buyable = buy.map((r) => ({ ...r, conviction: convictionScore(r.conviction) }));
-    return { result: { undervalued, buyable } };
+  cached(c, "radar:established", { ttl: 600, edge: 120 }, async (): Promise<Envelope<RadarPayload>> => {
+    const [establishedRows, availableRows] = await Promise.all([
+      radarEstablished(c.env.CORE_DB),
+      radarAvailable(c.env.CORE_DB),
+    ]);
+    const established = establishedRows.map((row) => ({ ...row, conviction: convictionScore(row.conviction) }));
+    const available = availableRows.map((row) => ({ ...row, conviction: convictionScore(row.conviction) }));
+    return { result: { established, available } };
   }),
 );

@@ -259,8 +259,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                   <span className="amt mono">{amount(item.burned_normalized, item.divisible)}</span>
                 </div>
               )}
-              {/* Conviction — who holds it + how scarce (the Radar signal, on the asset itself; zero market
-                  inputs). The undervalued pill is Radar's dislocation cut: top-decile conviction, unpriced. */}
+              {/* Conviction describes holder participation and scarcity without market-price inputs. */}
               {item.conviction && (
                 <div className="row">
                   <span className="k">Conviction</span>
@@ -270,18 +269,6 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                   >
                     <span>{item.conviction.score}</span>
                     <span className="time">/100</span>
-                    {item.conviction.undervalued && (
-                      <>
-                        {" "}
-                        <Link
-                          href="/radar"
-                          className="pill undervalued"
-                          title="Top-decile conviction but almost no realized sales — the smart money holds it and the market hasn't priced it. See Radar."
-                        >
-                          undervalued
-                        </Link>
-                      </>
-                    )}
                   </span>
                 </div>
               )}
