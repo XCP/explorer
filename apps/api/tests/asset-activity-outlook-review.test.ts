@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SUBGROUP_SQL, REVIEW_SQL, buildReview } from "#ops/review-asset-activity-outlook";
+import {
+  SUBGROUP_SQL,
+  REVIEW_SQL,
+  COLLECTION_SQL,
+  buildReview,
+  leaveCollectionOutSql,
+} from "#ops/review-asset-activity-outlook";
 
 test("asset outlook review is cutoff-safe and uses distribution-derived subgroups", () => {
   for (const sql of [SUBGROUP_SQL, REVIEW_SQL]) {
@@ -12,6 +18,8 @@ test("asset outlook review is cutoff-safe and uses distribution-derived subgroup
   assert.match(SUBGROUP_SQL, /NTILE\(4\)/);
   assert.match(SUBGROUP_SQL, /NTILE\(10\)/);
   assert.match(REVIEW_SQL, /top_false_positive/);
+  assert.match(COLLECTION_SQL, /current|collection/i);
+  assert.match(leaveCollectionOutSql("rare-pepe"), /collection<>'rare-pepe'/);
 });
 
 test("asset outlook review documents its horizon and avoids categorical cutoffs", () => {
@@ -19,4 +27,5 @@ test("asset outlook review documents its horizon and avoids categorical cutoffs"
   assert.equal(report.horizon_days, 180);
   assert.match(report.model, /active-month/);
   assert.match(report.subgroup_buckets, /no hand-selected/);
+  assert.match(report.collection_note, /post-hoc diagnostic/);
 });

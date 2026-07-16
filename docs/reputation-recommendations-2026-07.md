@@ -173,3 +173,13 @@ Decision: **do not publish Activity Outlook yet**. First run collection-clustere
 performance by collection, leave the largest collection out, and bootstrap by collection rather than by asset. The
 public `Rating` name remains unchanged. Active months and last activity remain factual supporting evidence alongside
 Rating, not a forecast and not an input added to Rating by this work.
+
+The first collection-clustered pass confirmed the concern. Rare Pepe occupied 95 of the newest cutoff's top 100 and
+supplied 85 of its 90 returning assets. Removing Rare Pepe reduced precision at 100 from 90% to 38%. The residual
+signal is still meaningful rather than collapsing: 38% top-100 return versus a 2.56% residual population rate, and
+11.51% top-decile return with 2.93% persistent across at least two future months. The honest interpretation is that
+the two-factor core generalizes beyond Rare Pepe, while its headline precision was substantially cluster-inflated.
+
+The remaining gate is now narrower: repeat leave-one-collection-out evaluation at every historical cutoff and report
+collection-bootstrap uncertainty. Do not present the 90% asset-level precision as independent evidence, and do not
+turn the ranking percentile into a probability.

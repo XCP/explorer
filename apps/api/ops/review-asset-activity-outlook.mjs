@@ -65,7 +65,48 @@ WHERE (ranked.rank_position<=100 AND ranked.future_sales=0)
 ORDER BY CASE WHEN ranked.rank_position<=100 THEN 0 ELSE 1 END,ranked.rank_position
 LIMIT 200`;
 
-export function buildReview(subgroups, cases, meta = {}) {
+const COLLECTION_MEMBERSHIP = `
+, collection_ranked AS (
+  SELECT dictionary.asset_id,tags.tag,
+    ROW_NUMBER() OVER(PARTITION BY dictionary.asset_id ORDER BY
+      CASE tags.source WHEN 'manual' THEN 1 WHEN 'collection' THEN 2 WHEN 'tokenscan' THEN 3
+        WHEN 'digirare' THEN 4 WHEN 'issuer' THEN 5 ELSE 6 END,tags.tag) membership_rank
+  FROM entity_dictionary entity JOIN tags ON tags.entity_id=entity.entity_id
+  JOIN asset_dictionary dictionary ON dictionary.asset=entity.entity_key
+  WHERE entity.entity_type='asset'
+    AND tags.source IN ('manual','collection','tokenscan','digirare','issuer','discovered')
+), collection AS (
+  SELECT asset_id,tag FROM collection_ranked WHERE membership_rank=1
+), labeled AS (
+  SELECT ranked.*,COALESCE(collection.tag,'(unclassified)') collection
+  FROM ranked LEFT JOIN collection USING(asset_id)
+)`;
+
+export const COLLECTION_SQL = `${COHORT.trimEnd()}${COLLECTION_MEMBERSHIP}
+SELECT collection,COUNT(*) assets,SUM(rank_position<=100) top_100_assets,
+  SUM(rank_position<=100 AND future_sales>0) top_100_returns,
+  ROUND(AVG(future_sales>0),6) return_rate,ROUND(AVG(future_active_months>=2),6) persistence_rate
+FROM labeled GROUP BY collection
+ORDER BY top_100_assets DESC,assets DESC,collection`;
+
+export function leaveCollectionOutSql(collection) {
+  const escaped = String(collection).replaceAll("'", "''");
+  return `${COHORT.trimEnd()}${COLLECTION_MEMBERSHIP}, filtered AS (
+    SELECT * FROM labeled WHERE collection<>'${escaped}'
+  ), reranked AS (
+    SELECT filtered.*,ROW_NUMBER() OVER(ORDER BY outlook_score DESC,asset_id) filtered_rank,
+      NTILE(10) OVER(ORDER BY outlook_score DESC,asset_id) filtered_decile
+    FROM filtered
+  )
+  SELECT '${escaped}' excluded_collection,COUNT(*) assets,ROUND(AVG(future_sales>0),6) population_return_rate,
+    ROUND(AVG(CASE WHEN filtered_rank<=100 THEN future_sales>0 END),6) precision_at_100,
+    ROUND(AVG(CASE WHEN filtered_rank<=500 THEN future_sales>0 END),6) precision_at_500,
+    ROUND(AVG(CASE WHEN filtered_decile=1 THEN future_sales>0 END),6) top_decile_return_rate,
+    ROUND(AVG(CASE WHEN filtered_decile=1 THEN future_active_months>=2 END),6) top_decile_persistence_rate
+  FROM reranked`;
+}
+
+export function buildReview(subgroups, cases, collections = [], leaveCollectionOut = null, meta = {}) {
   return {
     schema: "xcp-asset-activity-outlook-review/1",
     generated_at: new Date().toISOString(),
@@ -74,8 +115,11 @@ export function buildReview(subgroups, cases, meta = {}) {
     horizon_days: 180,
     model: "equal mean of within-cutoff active-month and last-sale-time percentile ranks",
     subgroup_buckets: "within-cutoff quartiles/deciles; no hand-selected activity thresholds",
+    collection_note: "current collection labels are post-hoc diagnostic groups, never model features",
     subgroups,
     cases,
+    collections,
+    leave_collection_out: leaveCollectionOut,
     d1: meta,
   };
 }
@@ -83,13 +127,17 @@ export function buildReview(subgroups, cases, meta = {}) {
 function run() {
   const subgroupResult = executeRemoteD1(SUBGROUP_SQL);
   const caseResult = executeRemoteD1(REVIEW_SQL);
+  const collectionResult = executeRemoteD1(COLLECTION_SQL);
+  const dominantCollection = collectionResult.rows.find((row) => row.collection !== "(unclassified)")?.collection;
+  const leaveOutResult = dominantCollection
+    ? executeRemoteD1(leaveCollectionOutSql(dominantCollection))
+    : { rows: [], meta: {} };
+  const parts = [subgroupResult, caseResult, collectionResult, leaveOutResult];
   process.stdout.write(
     `${JSON.stringify(
-      buildReview(subgroupResult.rows, caseResult.rows, {
-        rows_read: Number(subgroupResult.meta.rows_read ?? 0) + Number(caseResult.meta.rows_read ?? 0),
-        sql_duration_ms:
-          Number(subgroupResult.meta.timings?.sql_duration_ms ?? 0) +
-          Number(caseResult.meta.timings?.sql_duration_ms ?? 0),
+      buildReview(subgroupResult.rows, caseResult.rows, collectionResult.rows, leaveOutResult.rows[0] ?? null, {
+        rows_read: parts.reduce((sum, part) => sum + Number(part.meta.rows_read ?? 0), 0),
+        sql_duration_ms: parts.reduce((sum, part) => sum + Number(part.meta.timings?.sql_duration_ms ?? 0), 0),
       }),
       null,
       2,
