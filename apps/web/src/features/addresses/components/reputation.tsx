@@ -23,7 +23,7 @@ import type { AddressReputation } from "@xcp/shared/addresses";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { apiUrl, type Envelope } from "@/lib/api/url";
-import { commas } from "@/lib/format";
+import { commas, timeAgo } from "@/lib/format";
 
 // Composed address reputation: intrinsic, earned-only (mud/dust-proof), validated predictive.
 // Leads with band + tags + EVIDENCE so it's explainable, never a black-box number. New = neutral.
@@ -79,7 +79,8 @@ export function ReputationHeader({ address }: { address: string }) {
       </Card>
     );
   if (!r) return null;
-  const b = BAND[r.band] || BAND.New;
+  const track = r.track_record;
+  const b = BAND[track.tier] || BAND.New;
   const ev = r.evidence;
   const lines: [string, string][] = [];
   if (ev) {
@@ -98,8 +99,8 @@ export function ReputationHeader({ address }: { address: string }) {
     <Card>
       <div className="flex items-start gap-4 flex-wrap">
         <div className={`shrink-0 rounded-xl ${b.bg} ring-1 ring-inset ${b.ring} px-5 py-3 text-center min-w-[88px]`}>
-          <div className={`text-3xl font-bold tabular-nums ${b.color}`}>{r.score ?? "—"}</div>
-          <div className="text-[10px] uppercase tracking-wider text-zinc-400">reputation</div>
+          <div className={`text-3xl font-bold tabular-nums ${b.color}`}>{track.score ?? "—"}</div>
+          <div className="text-[10px] uppercase tracking-wider text-zinc-400">track record</div>
         </div>
         <div className="flex-1 min-w-0">
           {r.persona &&
@@ -116,8 +117,13 @@ export function ReputationHeader({ address }: { address: string }) {
             })()}
           <div className="flex items-center gap-2 flex-wrap">
             <ShieldCheck className={`size-4 ${b.color}`} />
-            <span className={`font-semibold ${b.color}`}>{r.band}</span>
+            <span className={`font-semibold ${b.color}`}>{track.tier}</span>
             {ev?.span_years ? <span className="text-xs text-zinc-400">· active {ev.span_years} yrs</span> : null}
+            {r.activity && (
+              <span className="text-xs text-zinc-400">
+                · last active {timeAgo(r.activity.last_active_at)}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
             {(r.tags || []).map((t: string) => {
@@ -138,7 +144,7 @@ export function ReputationHeader({ address }: { address: string }) {
       </div>
       {lines.length > 0 && (
         <div className="mt-4 border-t border-zinc-800 pt-3">
-          <div className="text-[11px] uppercase tracking-wider text-zinc-400 mb-2">Why · the evidence</div>
+          <div className="text-[11px] uppercase tracking-wider text-zinc-400 mb-2">Historical evidence</div>
           <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1">
             {lines.map(([txt, label], i) => (
               <div key={i} className="flex items-center justify-between text-sm gap-2">

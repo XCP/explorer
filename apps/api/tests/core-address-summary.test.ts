@@ -24,7 +24,7 @@ test("compact address summary derives identity counts without scanning string ke
     CREATE TABLE address_signals(
       address_id INTEGER PRIMARY KEY,assets_held INTEGER,first_block INTEGER,last_block INTEGER,disp_trust REAL
     );
-    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY,block_time INTEGER);
     INSERT INTO address_dictionary VALUES(1,'holder');
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CARD'),(3,'OTHER');
     INSERT INTO balances VALUES(1,1,'12.50000000');
@@ -32,7 +32,7 @@ test("compact address summary derives identity counts without scanning string ke
     INSERT INTO dispensers VALUES(1,1,0),(2,1,10);
     INSERT INTO orders VALUES(1,1,'open'),(2,1,'filled');
     INSERT INTO address_signals VALUES(1,3,100,200,7.26);
-    INSERT INTO blocks VALUES(199),(200);
+    INSERT INTO blocks VALUES(199,1700000000),(200,1700000600);
   `);
 
   assert.deepEqual({ ...(await addressSummary(d1(db), "holder")) }, {
@@ -45,6 +45,7 @@ test("compact address summary derives identity counts without scanning string ke
   });
   assert.deepEqual({ ...(await addressReputationRow(d1(db), "holder")) }, {
     address_id: 1,assets_held: 3,first_block: 100,last_block: 200,disp_trust: 7.26,xcp: 12.5,tip: 200,
+    last_active_at: 1700000600,observed_at: 1700000600,
   });
   assert.equal(await addressReputationRow(d1(db), "unknown"), null);
 });

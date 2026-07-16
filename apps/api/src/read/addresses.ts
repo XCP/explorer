@@ -13,6 +13,7 @@ import {
   ADDRESS_FACTORS,
 } from "#api/reputation/score";
 import { classifyPersona } from "#api/reputation/persona";
+import { addressCurrentActivity } from "#api/reputation/activity";
 import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "#api/reputation/config";
 import {
   listIssuances,
@@ -87,10 +88,12 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
       c,
       {
         result: {
-          score: null,
-          tier: "No history",
-          band: "No history",
-          tier_meaning: ADDRESS_TIER_MEANING["No history"],
+          track_record: {
+            score: null,
+            tier: "No history",
+            meaning: ADDRESS_TIER_MEANING["No history"],
+          },
+          activity: null,
           tags: [],
           evidence: null,
           persona: null,
@@ -134,6 +137,7 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
               : "ranked";
   const tier = addressTier(raw, state);
   const score = state === "ranked" ? addressScore(raw) : null; // only real users get a 0-100 percentile
+  const activity = addressCurrentActivity(r.last_active_at, r.observed_at);
   // PERSONA — the dominant ROLE (what it does), orthogonal to the reputation score (whether to trust it).
   // Composed from the same signals as the archetype tags below, so the headline and the chips agree.
   const persona = classifyPersona(r, state);
@@ -162,10 +166,8 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
     c,
     {
       result: {
-        score,
-        tier,
-        band: tier,
-        tier_meaning: ADDRESS_TIER_MEANING[tier] ?? null,
+        track_record: { score, tier, meaning: ADDRESS_TIER_MEANING[tier] ?? null },
+        activity,
         tags,
         persona,
         evidence: {

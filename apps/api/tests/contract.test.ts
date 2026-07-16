@@ -198,10 +198,8 @@ const ADDRESS_SUMMARY: Spec = {
   dispenser_trust: "number|null",
 };
 const ADDRESS_REPUTATION: Spec = {
-  score: "number|null",
-  tier: "string",
-  band: "string",
-  tier_meaning: "string|null",
+  track_record: "object",
+  activity: "object|null",
   tags: "array",
   evidence: "object|null",
   raw: "number?",
@@ -847,6 +845,13 @@ test("contract: GET /v2/addresses/:a/reputation — AddressReputation + evidence
   if (skipUnlessLive(t)) return;
   const j = await getJson(`/v2/addresses/${ADDR}/reputation`);
   assertShape(j.result, ADDRESS_REPUTATION, "reputation.");
+  assertShape(j.result.track_record, { score: "number|null", tier: "string", meaning: "string|null" }, "track_record.");
+  if (j.result.activity !== null)
+    assertShape(
+      j.result.activity,
+      { last_active_at: "number", days_since_active: "number" },
+      "activity.",
+    );
   if (j.result.evidence !== null) assertShape(j.result.evidence, REP_EVIDENCE, "reputation.evidence.");
   assert.ok(Array.isArray(j.result.tags), "reputation.tags must be an array");
 });

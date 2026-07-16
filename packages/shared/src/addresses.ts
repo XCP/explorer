@@ -140,11 +140,20 @@ export interface AddressPersona {
 
 /** GET /v2/addresses/:address/reputation — composed, explainable address score. New/quiet addresses
  *  read neutral (score/evidence null). */
-export interface AddressReputation {
-  score: number | null; // 0-100 percentile; null for infra/dormant/no-history
+export interface AddressTrackRecord {
+  score: number | null;
   tier: AddressTier | string;
-  band: AddressTier | string; // alias of tier
-  tier_meaning: string | null;
+  meaning: string | null;
+}
+
+export interface AddressCurrentActivity {
+  last_active_at: number;
+  days_since_active: number;
+}
+
+export interface AddressReputation {
+  track_record: AddressTrackRecord;
+  activity: AddressCurrentActivity | null;
   tags: string[]; // archetype labels (Creator/Collector/Whale/OG/…)
   persona: AddressPersona | null; // the dominant role headline
   evidence: AddressReputationEvidence | null;

@@ -30,7 +30,12 @@ export interface Page {
 }
 
 /** The address_signals row plus the read-time extras the scorer needs (XCP balance + chain tip). */
-export type AddressReputationRow = AddressSignalsRow & { xcp: number | null; tip: number | null };
+export type AddressReputationRow = AddressSignalsRow & {
+  xcp: number | null;
+  tip: number | null;
+  last_active_at: number | null;
+  observed_at: number | null;
+};
 
 /** Provenance ledger — every raw credit (in) and debit (out) for an address, newest first (credits/debits,
  *  migration 0038). ?1 is the address (used by both legs); a 2-term union stays under D1's compound-SELECT cap. */
@@ -167,7 +172,9 @@ export function addressReputationRow(db: D1Database, address: string): Promise<A
             (SELECT CAST(balance.quantity_normalized AS REAL) FROM balances balance
               WHERE balance.address_id=signal.address_id
                 AND balance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')) xcp,
-            (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip
+            (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip,
+            (SELECT block_time FROM blocks WHERE block_index=signal.last_block) last_active_at,
+            (SELECT block_time FROM blocks ORDER BY block_index DESC LIMIT 1) observed_at
        FROM address_signals signal
       WHERE signal.address_id=(SELECT address_id FROM identity)`,
     address,

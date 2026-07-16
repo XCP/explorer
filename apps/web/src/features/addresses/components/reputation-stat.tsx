@@ -13,8 +13,10 @@ export function ReputationStat({ address }: { address: string }) {
   const r = data?.result;
   return (
     <>
-      {r?.score ?? "—"}
-      {r?.tier && <span className="ml-1.5 text-[11px] font-normal text-zinc-400">{r.tier}</span>}
+      {r?.track_record.score ?? "—"}
+      {r?.track_record.tier && (
+        <span className="ml-1.5 text-[11px] font-normal text-zinc-400">{r.track_record.tier}</span>
+      )}
     </>
   );
 }

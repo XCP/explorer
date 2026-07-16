@@ -70,6 +70,10 @@ Decision: **reject one universal address predictor**. Recency is the stable acti
 
 Presentation consequence: show historical track record, last-active/recency, and evidence strength separately. If an internal review queue is useful, balanced participation may order a bounded shortlist, but it must not be relabeled as public reputation or future-return probability.
 
+Implemented 2026-07-16: the address contract and page now expose `track_record` separately from exact
+timestamp-based activity (`last_active_at` and `days_since_active`). No predictive weight changed. Categorical
+cutoffs were deliberately rejected because the evaluation validates continuous recency, not arbitrary day labels.
+
 ### 5. Present collection profiles before considering a grade — do next
 
 Reason: membership evidence is now normalized and 7,671 memberships have multi-source corroboration. Collection behavior differs too much for total volume or maximum-card quality to be representative.
