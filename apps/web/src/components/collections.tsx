@@ -70,11 +70,27 @@ const COLS: Col<CollectionProfile>[] = [
     cell: (row) => commas(row.issuers),
   },
   {
+    label: "Evidence",
+    numeric: true,
+    priority: 3,
+    w: "90px",
+    sortKey: "evidence",
+    cell: (row) => `${row.sources} ${row.sources === 1 ? "source" : "sources"}`,
+  },
+  {
     label: "Realized USD",
     numeric: true,
     priority: 2,
     sortKey: "realized",
     cell: (row) => usd(row.total_realized_usd),
+  },
+  {
+    label: "Top value share",
+    numeric: true,
+    priority: 4,
+    w: "120px",
+    sortKey: "concentration",
+    cell: (row) => (row.top_asset_value_pct > 0 ? `${row.top_asset_value_pct}%` : "—"),
   },
   {
     label: "Holders",
@@ -90,7 +106,9 @@ const VALUE: Record<string, (row: CollectionProfile) => number> = {
   members: (row) => row.members,
   events: (row) => row.median_events,
   issuers: (row) => row.issuers,
+  evidence: (row) => row.sources,
   realized: (row) => row.total_realized_usd,
+  concentration: (row) => row.top_asset_value_pct,
   holders: (row) => row.total_holders,
 };
 
@@ -119,7 +137,10 @@ export function Collections() {
         <p>
           Counterparty art &amp; collectible projects described by breadth, typical activity, issuers, holders, and
           realized value. No single collection grade: each axis stays visible and auditable. Ranked by market coverage;
-          click a column to re-sort. <Link href="/collections/candidates">Discover untagged candidates →</Link>
+          click a column to re-sort.{" "}
+          <Link href="/collections/candidates" className="underline underline-offset-2">
+            Discover untagged candidates →
+          </Link>
         </p>
       </div>
       <Card>

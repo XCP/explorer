@@ -84,6 +84,10 @@ Expose:
 
 Do not create one collection grade until time-aware membership data supports leakage-safe validation.
 
+Implemented 2026-07-16: `/v2/collections` and the Collections board now expose descriptive membership evidence,
+market coverage, typical activity, issuer breadth, holders, realized value, and single-card value concentration.
+The prior composite Strength grade and editorial ranking were removed; the default order is market coverage.
+
 ### 6. Admit graph factors only on incremental evidence — later
 
 Reason: network algorithms can reproduce volume, infrastructure hubs, seed choices, or Sybil structure while appearing sophisticated. A graph factor must improve held-out outcomes beyond ordinary behavioral features and survive seed, edge-family, dusting, ring, and address-farm sensitivity tests.
