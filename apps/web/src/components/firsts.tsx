@@ -6,20 +6,10 @@ import { Card } from "@/components/ui/card";
 import { AssetIcon } from "@/components/ui/badges";
 import { Skeleton } from "@/components/ui/feedback";
 import { short, commas } from "@/lib/format";
-
-interface First {
-  key: string;
-  label: string;
-  block: number;
-  time: number;
-  date: string;
-  ref: string;
-  type: string;
-  tx: string;
-}
+import type { FirstRow } from "@xcp/shared/stats";
 
 // The human-readable subject behind a first. The parent link always points to the causal transaction.
-function Entity({ type, ref }: { type: string; ref: string }) {
+function Entity({ type, ref }: Pick<FirstRow, "type" | "ref">) {
   if (type === "asset")
     return (
       <span className="flex min-w-0 items-center gap-1.5">
@@ -29,6 +19,23 @@ function Entity({ type, ref }: { type: string; ref: string }) {
     );
   if (type === "address")
     return <span className="break-all font-mono">{ref}</span>;
+  if (type === "pair") {
+    const assets = ref.split(/\s*\/\s*|_/).filter(Boolean);
+    if (assets.length === 2)
+      return (
+        <span className="flex min-w-0 items-center gap-2">
+          {assets.map((asset, index) => (
+            <span key={asset} className="flex min-w-0 items-center gap-1.5">
+              {index > 0 ? <span className="text-zinc-600">/</span> : null}
+              <AssetIcon asset={asset} size={16} />
+              <span className="truncate">{asset}</span>
+            </span>
+          ))}
+        </span>
+      );
+  }
+  if (type === "broadcast")
+    return <span className="block truncate text-zinc-300">“{ref}”</span>;
   if (type === "tx")
     return <span className="font-mono">{short(ref)}</span>;
   if (type === "block")
@@ -39,7 +46,7 @@ function Entity({ type, ref }: { type: string; ref: string }) {
 // Counterparty's earliest-of-each-kind timeline. Client island rendered by the thin server page that
 // owns the static metadata.
 export function Firsts() {
-  const { data } = useSWR<Envelope<First[]>>(apiUrl("/v2/firsts"));
+  const { data } = useSWR<Envelope<FirstRow[]>>(apiUrl("/v2/firsts"));
   const rows = data?.result ?? [];
 
   return (

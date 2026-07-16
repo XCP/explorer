@@ -10,6 +10,7 @@
  * the identical row while turning the SCAN+TEMP-B-TREE into a SEARCH ... USING INDEX (block_index=?).
  */
 import { one } from "#api/db";
+import type { FirstRow } from "@xcp/shared/stats";
 
 /** One firsts-catalog entry: a display label + the SQL that finds its earliest row. */
 export interface FirstDefinition {
@@ -23,7 +24,7 @@ export interface FirstQueryRow {
   b: number | null;
   t: number | null;
   ref: string;
-  typ: string;
+  typ: FirstRow["type"];
   tx: string;
 }
 
@@ -180,20 +181,18 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "broadcast",
     label: "First broadcast",
-    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
+    sql: earliestEventSql("broadcasts", "COALESCE(NULLIF(x.text,''),'(empty broadcast)') ref,'broadcast' typ", {
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
   {
     key: "priced_oracle",
     label: "First priced oracle broadcast",
-    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
+    sql: earliestEventSql("broadcasts", "COALESCE(NULLIF(x.text,''),'Oracle')||' · '||x.value ref,'broadcast' typ", {
       where: "CAST(fee_fraction_int AS INTEGER)>0",
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
   {
@@ -440,7 +439,11 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "pool_swap",
     label: "First pool swap",
-    sql: earliestEventSql("pool_matches", "COALESCE(x.pair,x.lp_asset) ref,'pair' typ", { by: "x.tx_index,x.event_index", valid: true }),
+    sql: earliestEventSql("pool_matches", "forward_asset.asset||' / '||backward_asset.asset ref,'pair' typ", {
+      by: "x.tx_index,x.event_index",
+      valid: true,
+      joins: "JOIN asset_dictionary forward_asset ON forward_asset.asset_id=x.forward_asset_id JOIN asset_dictionary backward_asset ON backward_asset.asset_id=x.backward_asset_id",
+    }),
   },
   // --- derived firsts (our classification layer) ---
   // CURATED: the canonical first Bitcoin Stamp (Stamp #0) is protocol-defined — it must be a NUMERIC asset AND
@@ -479,11 +482,10 @@ export const FIRSTS_CATALOG: FirstDefinition[] = [
   {
     key: "btns",
     label: "First BTNS broadcast",
-    sql: earliestEventSql("broadcasts", "source.address ref,'address' typ", {
+    sql: earliestEventSql("broadcasts", "COALESCE(NULLIF(x.text,''),x.btns_tick) ref,'broadcast' typ", {
       where: "btns=1",
       valid: true,
       by: "x.tx_index",
-      joins: "JOIN address_dictionary source ON source.address_id=x.source_id",
     }),
   },
 ];
