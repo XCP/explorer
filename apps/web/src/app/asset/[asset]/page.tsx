@@ -338,6 +338,14 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                     <span className="amt mono">{timeAgo(item.activity.last_trade_time)}</span>
                   </div>
                 )}
+                {item.activity_outlook && (
+                  <div className="row">
+                    <span className="k">Activity outlook</span>
+                    <span className="amt mono">
+                      {item.activity_outlook.score} <span className="time">/100 relative rank</span>
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}

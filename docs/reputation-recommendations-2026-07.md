@@ -169,10 +169,9 @@ The review also exposed a dependency the aggregate metrics hide. The oldest age 
 misses included `PEPELIBRARY`, `PEPESMURF`, `SCORPEPE`, and `FRYPEPE`. Collection-wide trading regimes therefore make
 asset observations non-independent and may make ordinary precision look more robust than it is.
 
-Decision: **do not publish Activity Outlook yet**. First run collection-clustered evaluation: report macro-averaged
-performance by collection, leave the largest collection out, and bootstrap by collection rather than by asset. The
-public `Rating` name remains unchanged. Active months and last activity remain factual supporting evidence alongside
-Rating, not a forecast and not an input added to Rating by this work.
+This finding triggered collection-clustered evaluation before publication. The public `Rating` name remains
+unchanged. Active months and last activity remain factual supporting evidence alongside Rating and are not added to
+Rating by this work.
 
 The first collection-clustered pass confirmed the concern. Rare Pepe occupied 95 of the newest cutoff's top 100 and
 supplied 85 of its 90 returning assets. Removing Rare Pepe reduced precision at 100 from 90% to 38%. The residual
@@ -180,6 +179,14 @@ signal is still meaningful rather than collapsing: 38% top-100 return versus a 2
 11.51% top-decile return with 2.93% persistent across at least two future months. The honest interpretation is that
 the two-factor core generalizes beyond Rare Pepe, while its headline precision was substantially cluster-inflated.
 
-The remaining gate is now narrower: repeat leave-one-collection-out evaluation at every historical cutoff and report
-collection-bootstrap uncertainty. Do not present the 90% asset-level precision as independent evidence, and do not
-turn the ranking percentile into a probability.
+Leave-Rare-Pepe-out validation was then repeated at all three historical cutoffs. Precision at 100 remained 52%, 67%,
+and 38%, against residual population return rates of 1.86%, 3.08%, and 2.56%. Top-decile return lift remained 6.36x,
+5.77x, and 4.49x. This adversarial exclusion is more stringent and more interpretable here than an ordinary
+asset-level bootstrap: it removes the dominant correlated regime instead of resampling its members as though they
+were independent.
+
+Decision: publish the two-factor result only as a **population-relative Activity Outlook rank**. It is not a
+probability, expected return, or part of Rating. Materialize it daily from active-month and last-trade-time percentile
+ranks; retain the exact active-month and last-activity facts beside it. Monitor the same three cutoff metrics and the
+leave-dominant-collection-out result when changing its inputs or interpretation. Never present the cluster-inflated
+90% top-100 figure as independent evidence.

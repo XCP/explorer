@@ -121,6 +121,13 @@ const ASSET_ACTIVITY: Spec = {
   active_months: "number",
   last_trade_time: "number|null",
 };
+const ASSET_ACTIVITY_OUTLOOK: Spec = {
+  score: "number",
+  rank: "number",
+  population: "number",
+  horizon_days: "number",
+  calculated_at: "number",
+};
 const ASSET_FEED_COUNTS: Spec = {
   sales: "number",
   issuances: "number",
@@ -525,6 +532,8 @@ test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (
   assertShape(j.result, ASSET_DETAIL, "RAREPEPE.");
   if (j.result.quality) assertShape(j.result.quality, ASSET_QUALITY, "RAREPEPE.quality.");
   if (j.result.activity) assertShape(j.result.activity, ASSET_ACTIVITY, "RAREPEPE.activity.");
+  if (j.result.activity_outlook)
+    assertShape(j.result.activity_outlook, ASSET_ACTIVITY_OUTLOOK, "RAREPEPE.activity_outlook.");
   assert.ok(!("tags" in j.result) || Array.isArray(j.result.tags), "RAREPEPE.tags must be an array when present");
 });
 

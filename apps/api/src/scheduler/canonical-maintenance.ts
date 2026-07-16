@@ -18,6 +18,7 @@ import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets"
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
 import { maybeRefreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
+import { maybeRefreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
 import { buildTags } from "#api/indexer/tags";
 import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
@@ -85,6 +86,7 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
       await runScheduledJob("reconcileRecentDailyTransactions", () => reconcileRecentDailyTransactions(env.CORE_DB));
       await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
+      await runScheduledJob("maybeRefreshAssetActivityOutlook", () => maybeRefreshAssetActivityOutlook(env.CORE_DB));
       await runScheduledJob("maybeRefreshQualityNetworkStats", () => maybeRefreshQualityNetworkStats(env.CORE_DB));
       await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
       await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));

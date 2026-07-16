@@ -188,6 +188,19 @@ assets.get("/v2/assets/:asset", async (c) => {
           last_trade_time: sig.last_trade_time ?? null,
         }
       : null,
+    activity_outlook:
+      sig?.activity_outlook_score != null &&
+      sig.activity_outlook_rank != null &&
+      sig.activity_outlook_population != null &&
+      sig.activity_outlook_calculated_at != null
+        ? {
+            score: round(sig.activity_outlook_score, 1),
+            rank: sig.activity_outlook_rank,
+            population: sig.activity_outlook_population,
+            horizon_days: 180,
+            calculated_at: sig.activity_outlook_calculated_at,
+          }
+        : null,
     tags,
     sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
     collection: collectionRes?.tag ?? null,

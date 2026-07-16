@@ -6,28 +6,31 @@
  */
 import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 
-const CUTOFF = 1767225600; // 2026-01-01; newest fully observed 180-day window
-const OUTCOME_END = CUTOFF + 180 * 86400;
+export const CUTOFF = 1767225600; // 2026-01-01; newest fully observed 180-day window
+const horizonSeconds = 180 * 86400;
+const OUTCOME_END = CUTOFF + horizonSeconds;
 
-const COHORT = `
+export function cohortSql(cutoff = CUTOFF) {
+  const outcomeEnd = cutoff + horizonSeconds;
+  return `
 WITH past AS (
   SELECT trade.asset_id,COUNT(*) past_sales,COUNT(DISTINCT trade.buyer_id) past_buyers,
     COUNT(DISTINCT strftime('%Y-%m',trade.block_time,'unixepoch')) past_active_months,
     MIN(trade.block_time) first_sale_time,MAX(trade.block_time) last_sale_time
-  FROM trades trade WHERE trade.asset_id IS NOT NULL AND trade.block_time>0 AND trade.block_time<=${CUTOFF}
+  FROM trades trade WHERE trade.asset_id IS NOT NULL AND trade.block_time>0 AND trade.block_time<=${cutoff}
   GROUP BY trade.asset_id
 ), future AS (
   SELECT past.asset_id,COUNT(trade.ref) future_sales,
     COUNT(DISTINCT CASE WHEN trade.ref IS NOT NULL THEN strftime('%Y-%m',trade.block_time,'unixepoch') END)
       future_active_months
   FROM past LEFT JOIN trades trade ON trade.asset_id=past.asset_id
-    AND trade.block_time>${CUTOFF} AND trade.block_time<=${OUTCOME_END}
+    AND trade.block_time>${cutoff} AND trade.block_time<=${outcomeEnd}
   GROUP BY past.asset_id
 ), normalized AS (
   SELECT past.*,future.future_sales,future.future_active_months,
     PERCENT_RANK() OVER(ORDER BY past.last_sale_time) recency_pct,
     PERCENT_RANK() OVER(ORDER BY past.past_active_months) active_months_pct,
-    NTILE(4) OVER(ORDER BY ${CUTOFF}-past.first_sale_time) age_quartile,
+    NTILE(4) OVER(ORDER BY ${cutoff}-past.first_sale_time) age_quartile,
     NTILE(4) OVER(ORDER BY past.past_active_months) history_quartile
   FROM past JOIN future USING(asset_id)
 ), ranked AS (
@@ -37,6 +40,9 @@ WITH past AS (
   FROM normalized
 )
 `;
+}
+
+const COHORT = cohortSql();
 
 export const SUBGROUP_SQL = `${COHORT}
 SELECT 'age_quartile' dimension,age_quartile bucket,COUNT(*) assets,
@@ -82,16 +88,20 @@ const COLLECTION_MEMBERSHIP = `
   FROM ranked LEFT JOIN collection USING(asset_id)
 )`;
 
-export const COLLECTION_SQL = `${COHORT.trimEnd()}${COLLECTION_MEMBERSHIP}
+export function collectionSql(cutoff = CUTOFF) {
+  return `${cohortSql(cutoff).trimEnd()}${COLLECTION_MEMBERSHIP}
 SELECT collection,COUNT(*) assets,SUM(rank_position<=100) top_100_assets,
   SUM(rank_position<=100 AND future_sales>0) top_100_returns,
   ROUND(AVG(future_sales>0),6) return_rate,ROUND(AVG(future_active_months>=2),6) persistence_rate
 FROM labeled GROUP BY collection
 ORDER BY top_100_assets DESC,assets DESC,collection`;
+}
 
-export function leaveCollectionOutSql(collection) {
+export const COLLECTION_SQL = collectionSql();
+
+export function leaveCollectionOutSql(collection, cutoff = CUTOFF) {
   const escaped = String(collection).replaceAll("'", "''");
-  return `${COHORT.trimEnd()}${COLLECTION_MEMBERSHIP}, filtered AS (
+  return `${cohortSql(cutoff).trimEnd()}${COLLECTION_MEMBERSHIP}, filtered AS (
     SELECT * FROM labeled WHERE collection<>'${escaped}'
   ), reranked AS (
     SELECT filtered.*,ROW_NUMBER() OVER(ORDER BY outlook_score DESC,asset_id) filtered_rank,

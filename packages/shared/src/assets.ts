@@ -74,6 +74,7 @@ export interface AssetDetail {
   holder_count: number;
   quality?: AssetQuality;
   activity?: AssetMarketActivity | null;
+  activity_outlook?: AssetActivityOutlook | null;
   tags?: string[];
   sales?: AssetSales;
   collection?: string | null; // collection tag (pepe.wtf source='collection' or tokenscan), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
@@ -90,6 +91,15 @@ export interface AssetDetail {
 export interface AssetMarketActivity {
   active_months: number;
   last_trade_time: number | null;
+}
+
+/** Population-relative future-activity rank; explicitly not an event probability. */
+export interface AssetActivityOutlook {
+  score: number;
+  rank: number;
+  population: number;
+  horizon_days: 180;
+  calculated_at: number;
 }
 
 /** Conviction describes holder participation and scarcity without market-price inputs. */

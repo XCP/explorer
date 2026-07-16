@@ -67,6 +67,10 @@ export interface AssetSignalsRow {
   cohesion_strong: number | null; // migration 0040 (edges with w≥1.6 ⇔ ~4+ repeated interactions)
   active_trade_months: number; // migration 0060 (distinct UTC months in the unified trade ledger)
   last_trade_time: number | null; // migration 0060 (exact unix time of latest unified-ledger trade)
+  activity_outlook_score: number | null;
+  activity_outlook_rank: number | null;
+  activity_outlook_population: number | null;
+  activity_outlook_calculated_at: number | null;
 }
 
 /** Mirror of the `address_signals` table (ADDR_DDL in signals.ts). */
