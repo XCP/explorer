@@ -71,8 +71,8 @@ export function Firsts() {
             >
               <span role="columnheader">Date</span>
               <span role="columnheader">Block</span>
-              <span role="columnheader">First</span>
               <span role="columnheader">Milestone</span>
+              <span role="columnheader">First</span>
             </div>
             <ol role="rowgroup">
               {rows.map((r) => (
@@ -100,6 +100,12 @@ export function Firsts() {
                   </span>
                   <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
                     <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
+                      Milestone
+                    </span>
+                    <span className="text-xs leading-4 text-zinc-400 sm:text-sm sm:text-zinc-300">{r.label}</span>
+                  </span>
+                  <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
                       First
                     </span>
                     <Link
@@ -109,12 +115,6 @@ export function Firsts() {
                     >
                       <Entity type={r.type} ref={r.ref} />
                     </Link>
-                  </span>
-                  <span role="cell" className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] sm:block">
-                    <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-600 sm:hidden">
-                      Milestone
-                    </span>
-                    <span className="text-xs leading-4 text-zinc-400 sm:text-sm sm:text-zinc-300">{r.label}</span>
                   </span>
                 </li>
               ))}
