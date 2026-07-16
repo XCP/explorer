@@ -1,4 +1,12 @@
-import type { AssetActiveUser, AssetCohortRow, AssetFeedCounts, AssetIndexRow, AssetListRow, AssetSales, BalanceRow } from "@xcp/shared/assets";
+import type {
+  AssetActiveUser,
+  AssetCohortRow,
+  AssetFeedCounts,
+  AssetIndexRow,
+  AssetListRow,
+  AssetSales,
+  BalanceRow,
+} from "@xcp/shared/assets";
 import type {
   DestructionRow,
   DispenseRow,
@@ -303,9 +311,12 @@ export function coreAssetAccounting(db: D1Database, asset: string): Promise<Asse
               WHERE asset_id=(SELECT asset_id FROM identity) AND status LIKE 'valid%')
           - (SELECT coalesce(SUM(CAST(quantity AS INTEGER)),0) FROM destructions
               WHERE asset_id=(SELECT asset_id FROM identity) AND status LIKE 'valid%') AS TEXT) supply,
-       CAST((SELECT coalesce(SUM(CAST(balance.quantity AS INTEGER)),0) FROM balances balance
-              JOIN address_signals signal ON signal.address_id=balance.address_id
-             WHERE balance.asset_id=(SELECT asset_id FROM identity) AND signal.is_burn=1) AS TEXT) burned,
+       CAST((SELECT coalesce(SUM(CAST(balance.quantity AS INTEGER)),0)
+               FROM address_signals signal INDEXED BY idx_address_signals_burns
+               JOIN balances balance INDEXED BY idx_balances_address_asset
+                 ON balance.address_id=signal.address_id
+                AND balance.asset_id=(SELECT asset_id FROM identity)
+              WHERE signal.is_burn=1) AS TEXT) burned,
        CAST((SELECT coalesce(SUM(CAST(give_remaining AS INTEGER)),0) FROM dispensers
               WHERE asset_id=(SELECT asset_id FROM identity) AND status=0)
           + (SELECT coalesce(SUM(CAST(give_remaining AS INTEGER)),0) FROM orders
@@ -355,7 +366,17 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
 export function coreAssetQualitySignals(
   db: D1Database,
   asset: string,
-): Promise<Pick<AssetSignalsRow, "holders" | "top1_pct" | "trades" | "self_trade_pct" | "low_quality" | "holder_breadth" | "pct_creator_holders" | "burned_pct"> | null> {
+): Promise<Pick<
+  AssetSignalsRow,
+  | "holders"
+  | "top1_pct"
+  | "trades"
+  | "self_trade_pct"
+  | "low_quality"
+  | "holder_breadth"
+  | "pct_creator_holders"
+  | "burned_pct"
+> | null> {
   return one(
     db,
     `SELECT signal.holders,signal.top1_pct,signal.trades,signal.self_trade_pct,signal.low_quality,
