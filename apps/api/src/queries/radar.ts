@@ -13,10 +13,8 @@ const CONVICTION = rawSqlExpr(CONVICTION_FACTORS, 0);
 // The base population: real, broadly held, named assets (not numeric stamps). Network standing remains a
 // score component, not an eligibility gate: held-out graph recovery does not validate asset quality.
 const ELIGIBLE = `signal.low_quality=0 AND signal.holders>=15
-   AND NOT EXISTS (
-     SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
-      WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tag.tag='numeric'
-   )`;
+   AND EXISTS (SELECT 1 FROM assets eligible_state
+                WHERE eligible_state.asset_id=signal.asset_id AND eligible_state.type<>'numeric')`;
 
 /** Established: the strongest mature holder-conviction profiles in the eligible population. */
 export function radarEstablished(db: D1Database, limit = 40): Promise<RadarAsset[]> {
@@ -98,7 +96,7 @@ export function radarAvailable(db: D1Database, limit = 40): Promise<AvailableAss
                  THEN emb.url ELSE NULL END listing_url
        FROM conv c
        LEFT JOIN disp ON disp.asset_id=c.asset_id
-       LEFT JOIN emb ON emb.asset_id=c.asset_id
+      LEFT JOIN emb ON emb.asset_id=c.asset_id
        LEFT JOIN assets state ON state.asset_id=c.asset_id
       WHERE disp.asset_id IS NOT NULL OR emb.asset_id IS NOT NULL
       ORDER BY c.conviction DESC,c.asset ASC LIMIT ${limit}`,
