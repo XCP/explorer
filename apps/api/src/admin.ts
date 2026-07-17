@@ -290,7 +290,11 @@ admin.post("/admin/build-trades", async (c) => {
 });
 
 admin.post("/admin/reconcile-emblem-trades", async (c) => {
-  return c.json(await reconcileDirtyEmblemTrades(c.env.CORE_DB));
+  try {
+    return c.json(await reconcileDirtyEmblemTrades(c.env.CORE_DB));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Emblem reconciliation failed" }, 500);
+  }
 });
 
 // Force the final Rating projection after an operator drains trade and signal repairs.

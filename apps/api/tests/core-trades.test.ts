@@ -247,3 +247,43 @@ test("trade identity migration replaces source-local and lossy references", () =
     ],
   );
 });
+
+test("trade signal triggers tolerate repeated assets inside a parent upsert", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE asset_signal_dirty(asset_id INTEGER PRIMARY KEY);
+    CREATE TABLE trades(
+      venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,total REAL,usd_value REAL,
+      buyer_id INTEGER,seller_id INTEGER,sale_class TEXT,PRIMARY KEY(venue,ref)
+    );
+    CREATE TRIGGER asset_signal_dirty_trade_insert AFTER INSERT ON trades
+    WHEN NEW.asset_id IS NOT NULL BEGIN
+      INSERT OR IGNORE INTO asset_signal_dirty(asset_id) VALUES(NEW.asset_id);
+    END;
+    CREATE TRIGGER asset_signal_dirty_trade_update AFTER UPDATE ON trades
+    WHEN OLD.asset_id IS NOT NEW.asset_id OR OLD.block_time IS NOT NEW.block_time
+      OR OLD.total IS NOT NEW.total OR OLD.usd_value IS NOT NEW.usd_value
+      OR OLD.buyer_id IS NOT NEW.buyer_id OR OLD.seller_id IS NOT NEW.seller_id
+      OR OLD.sale_class IS NOT NEW.sale_class BEGIN
+      INSERT OR IGNORE INTO asset_signal_dirty(asset_id) SELECT OLD.asset_id WHERE OLD.asset_id IS NOT NULL;
+      INSERT OR IGNORE INTO asset_signal_dirty(asset_id) SELECT NEW.asset_id WHERE NEW.asset_id IS NOT NULL;
+    END;
+    CREATE TRIGGER asset_signal_dirty_trade_delete AFTER DELETE ON trades
+    WHEN OLD.asset_id IS NOT NULL BEGIN
+      INSERT OR IGNORE INTO asset_signal_dirty(asset_id) VALUES(OLD.asset_id);
+    END;
+  `);
+  db.exec(readFileSync("migrations-core/0066_trade_signal_trigger_conflicts.sql", "utf8"));
+  db.exec(`
+    INSERT INTO trades(venue,ref,asset_id,sale_class) VALUES
+      ('emblem','one',7,'real'),('emblem','two',7,'real')
+    ON CONFLICT(venue,ref) DO UPDATE SET sale_class=excluded.sale_class;
+  `);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT asset_id FROM asset_signal_dirty`)
+      .all()
+      .map((row) => ({ ...row })),
+    [{ asset_id: 7 }],
+  );
+});
