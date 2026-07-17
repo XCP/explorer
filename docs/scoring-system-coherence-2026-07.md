@@ -56,3 +56,18 @@ that data, not competing models of the ledger. Each output answers one question:
 
 No new score, table, compatibility layer, or graph influence should be added until it fits this contract and improves
 a frozen outcome or a clearly factual product requirement.
+
+## Exchange-deposit fake-volume audit
+
+`OXBT`, `ORDIPEPE`, and `OGPASS` demonstrate a real boundary of the current data. Their dispenser sources and origins
+are not classified as exchanges or deposit addresses. This is not evidence that the reviewed classification is wrong:
+the current `is_deposit` rule identifies Counterparty addresses that forward Counterparty assets to a curated exchange
+wallet. A Bitcoin exchange deposit address used as a dispenser can receive ordinary BTC deposits without producing
+that Counterparty forwarding pattern. The canonical database does not contain the full Bitcoin address graph needed
+to prove the relationship.
+
+Do not add a heuristic that calls high price, high volume, many dispensers, or a shared origin an exchange deposit;
+all occur legitimately. Keep the reviewed asset-level `low_quality` classification as the protection for these known
+cases. A general detector requires independently sourced exchange-wallet attribution plus Bitcoin transaction-flow
+evidence, evaluated against reviewed positive and negative examples. Until those inputs exist, it belongs in a review
+queue rather than an automatic reputation or Rating penalty.
