@@ -14,7 +14,7 @@ const BLOCK_WINDOW = 250_000;
 const EMBLEM_WINDOW = 5_000;
 // A vault can fan out to thousands of historical sales. Keep each reconciliation
 // invocation bounded by vault count so D1 can finish the projection atomically.
-const EMBLEM_DIRTY_BATCH = 25;
+const EMBLEM_DIRTY_BATCH = 1;
 const DEX_RECONCILE_INTERVAL_BLOCKS = 6;
 
 export function coreDexTradesSql(): string {
@@ -238,6 +238,35 @@ async function advanceDispenseVenue(
 }
 
 /** Advance every venue from canonical inputs using bounded, replay-safe upserts. */
+export async function reconcileDirtyEmblemTrades(db: D1Database): Promise<{
+  written: number;
+  cleared: number;
+  remaining: number;
+}> {
+  const dirtyFilter = `AND (sale.contract_id,sale.token_id) IN (
+    SELECT contract_id,token_id FROM emblem_trade_dirty
+    ORDER BY contract_id,token_id LIMIT ?
+  )`;
+  const results = await db.batch([
+    db.prepare(emblemTradesSql(dirtyFilter)).bind(EMBLEM_DIRTY_BATCH),
+    db.prepare(
+      `DELETE FROM emblem_trade_dirty WHERE (contract_id,token_id) IN (
+         SELECT contract_id,token_id FROM emblem_trade_dirty
+         ORDER BY contract_id,token_id LIMIT ?
+       )`,
+    ).bind(EMBLEM_DIRTY_BATCH),
+  ]);
+  const remaining = Number(
+    (await db.prepare(`SELECT COUNT(*) remaining FROM emblem_trade_dirty`).first<{ remaining: number }>())?.remaining ??
+      0,
+  );
+  return {
+    written: results[0].meta.rows_written ?? 0,
+    cleared: results[1].meta.rows_written ?? 0,
+    remaining,
+  };
+}
+
 export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const tip = Number(
     (await env.CORE_DB.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip ?? 0,
@@ -273,21 +302,9 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
     await setCoreState(env.CORE_DB, "trades_cur_emblem", high);
   }
 
-  const dirtyFilter = `AND (sale.contract_id,sale.token_id) IN (
-    SELECT contract_id,token_id FROM emblem_trade_dirty
-    ORDER BY contract_id,token_id LIMIT ?
-  )`;
-  const dirtyResults = await env.CORE_DB.batch([
-    env.CORE_DB.prepare(emblemTradesSql(dirtyFilter)).bind(EMBLEM_DIRTY_BATCH),
-    env.CORE_DB.prepare(
-      `DELETE FROM emblem_trade_dirty WHERE (contract_id,token_id) IN (
-         SELECT contract_id,token_id FROM emblem_trade_dirty
-         ORDER BY contract_id,token_id LIMIT ?
-       )`,
-    ).bind(EMBLEM_DIRTY_BATCH),
-  ]);
-  writes.emblem_reconcile = dirtyResults[0].meta.rows_written ?? 0;
-  writes.emblem_dirty_cleared = dirtyResults[1].meta.rows_written ?? 0;
+  const emblemReconcile = await reconcileDirtyEmblemTrades(env.CORE_DB);
+  writes.emblem_reconcile = emblemReconcile.written;
+  writes.emblem_dirty_cleared = emblemReconcile.cleared;
 
   const scarce = await env.CORE_DB.prepare(SCARCE_TRADES_SQL).run();
   writes.scarce = scarce.meta.rows_written ?? 0;

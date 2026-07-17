@@ -22,7 +22,7 @@ import { crawlEmblemListings } from "#api/indexer/emblem-listings";
 import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
 import { buildScamAttribution } from "#api/indexer/emblem-scam";
 import { graphEval } from "#api/indexer/graph-eval";
-import { buildTrades } from "#api/indexer/trades";
+import { buildTrades, reconcileDirtyEmblemTrades } from "#api/indexer/trades";
 import { buildGraphTrust } from "#api/indexer/graph";
 import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated";
@@ -287,6 +287,10 @@ admin.post("/admin/crawl-emblem-meta", async (c) => {
 // venues advance a Counterparty-block window per call, Emblem is re-folded whole each pass.
 admin.post("/admin/build-trades", async (c) => {
   return c.json(await buildTrades(c.env));
+});
+
+admin.post("/admin/reconcile-emblem-trades", async (c) => {
+  return c.json(await reconcileDirtyEmblemTrades(c.env.CORE_DB));
 });
 
 // Force the final Rating projection after an operator drains trade and signal repairs.
