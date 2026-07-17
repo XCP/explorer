@@ -33,6 +33,7 @@ import { operationalStatus } from "#api/operations/status";
 import { backfillStatus } from "#api/operations/backfill-status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { refreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
+import { refreshAssetRatings } from "#api/indexer/asset-rating";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#api/indexer/bitcoin-fees";
@@ -286,6 +287,11 @@ admin.post("/admin/crawl-emblem-meta", async (c) => {
 // venues advance a Counterparty-block window per call, Emblem is re-folded whole each pass.
 admin.post("/admin/build-trades", async (c) => {
   return c.json(await buildTrades(c.env));
+});
+
+// Force the final Rating projection after an operator drains trade and signal repairs.
+admin.post("/admin/refresh-ratings", async (c) => {
+  return c.json(await refreshAssetRatings(c.env.CORE_DB));
 });
 
 // Backfill the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP). Loop a couple times to backfill.

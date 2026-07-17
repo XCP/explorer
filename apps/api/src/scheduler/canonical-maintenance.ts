@@ -85,6 +85,9 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
       await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
       await runScheduledJob("reconcileRecentDailyTransactions", () => reconcileRecentDailyTransactions(env.CORE_DB));
+      // Preserve projection dependency order: trades enqueue affected assets,
+      // signals consume those assets, and Rating consumes the repaired signals.
+      await runScheduledJob("buildTrades", () => buildTrades(env));
       await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetRatings", () => maybeRefreshAssetRatings(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetActivityOutlook", () => maybeRefreshAssetActivityOutlook(env.CORE_DB));
@@ -104,7 +107,6 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("classifyVaults", () => classifyVaults(env));
       await runScheduledJob("crawlEmblemMeta", () => crawlEmblemMeta(env));
       await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
-      await runScheduledJob("buildTrades", () => buildTrades(env));
       await runScheduledJob("refreshAssetEmergence", () => maybeRefreshAssetEmergence(env));
       await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
       await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));

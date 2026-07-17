@@ -72,6 +72,7 @@ test("compact trades restore public identities, filters, and venue totals", asyn
       { venue: "emblem", trades: 1, assets: 1, last_time: 10, usd_known: 6000 },
     ],
   );
+
 });
 
 test("compact venue builders preserve canonical identities and bundled Emblem sales", () => {
@@ -210,6 +211,15 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       { leg_index: 0, asset_id: 3, quantity: 3 },
       { leg_index: 1, asset_id: 4, quantity: 5 },
     ],
+  );
+  // A vault can be classified as a dump after its sales were first projected.
+  // Reconciliation must remove the asset attribution instead of preserving stale
+  // buyers, volume, and Rating evidence.
+  db.prepare(`UPDATE emblem_vaults SET is_dump=1 WHERE token_id='7' AND contract_id=3`).run();
+  db.prepare(emblemTradesSql("AND sale.contract_id=3 AND sale.token_id='7'")).run();
+  assert.deepEqual(
+    { ...db.prepare(`SELECT asset_id,sale_class FROM trades WHERE venue='emblem' AND ref LIKE '%_7'`).get() },
+    { asset_id: null, sale_class: "scam_dump" },
   );
 });
 

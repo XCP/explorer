@@ -12,7 +12,9 @@ const ETH_TOKENS = [
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const BLOCK_WINDOW = 250_000;
 const EMBLEM_WINDOW = 5_000;
-const EMBLEM_DIRTY_BATCH = 500;
+// A vault can fan out to thousands of historical sales. Keep each reconciliation
+// invocation bounded by vault count so D1 can finish the projection atomically.
+const EMBLEM_DIRTY_BATCH = 25;
 const DEX_RECONCILE_INTERVAL_BLOCKS = 6;
 
 export function coreDexTradesSql(): string {
