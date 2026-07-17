@@ -8,7 +8,8 @@ const UPSERT = `INSERT INTO asset_signals(
   first_trade_blk,last_trade_blk,dispenses,dispense_btc,distinct_traders,distinct_dispensers,
   age_blocks,recent_events,recency_blocks,max_dispense_btc,max_trade_xcp,supply,
   max_realized_usd,distinct_dispense_buyers,max_dispense_btc_clean,emblem_trades,
-  active_trade_months,last_trade_time
+  active_trade_months,last_trade_time,clean_realized_usd,distinct_paid_buyers,
+  clean_active_trade_months,market_venue_count
 )
 WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
   tip AS (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1),
@@ -71,6 +72,17 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
       count(DISTINCT strftime('%Y-%m',block_time,'unixepoch')) active_trade_months,
       max(block_time) last_trade_time
     FROM trades WHERE asset_id=(SELECT asset_id FROM identity)
+  ),
+  clean_sales AS (
+    SELECT coalesce(sum(CASE WHEN usd_value>0 THEN usd_value ELSE 0 END),0) clean_realized_usd,
+      count(DISTINCT buyer_id) distinct_paid_buyers,
+      count(DISTINCT strftime('%Y-%m',block_time,'unixepoch')) clean_active_trade_months,
+      count(DISTINCT venue) market_venue_count
+    FROM trades
+    WHERE asset_id=(SELECT asset_id FROM identity) AND block_time>0 AND total>0
+      AND buyer_id IS NOT NULL AND seller_id IS NOT NULL AND buyer_id<>seller_id
+      AND (venue='dex' OR (venue='dispense' AND sale_class='single')
+        OR (venue='emblem' AND sale_class='real'))
   )
 SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,
   holding.holders,holding.top1_pct,holding.burned_pct,holding.holder_breadth,
@@ -88,9 +100,10 @@ SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,
   coalesce((SELECT block_index FROM tip)-market.last_trade_blk,0),dispense.max_dispense_btc,
   market.max_trade_xcp,coalesce(CAST(asset.supply_normalized AS REAL),0),sales.max_realized_usd,
   dispense.distinct_dispense_buyers,dispense.max_dispense_btc_clean,sales.emblem_trades,
-  sales.active_trade_months,sales.last_trade_time
+  sales.active_trade_months,sales.last_trade_time,clean_sales.clean_realized_usd,
+  clean_sales.distinct_paid_buyers,clean_sales.clean_active_trade_months,clean_sales.market_venue_count
 FROM identity LEFT JOIN assets asset ON asset.asset_id=identity.asset_id
-CROSS JOIN holding CROSS JOIN market CROSS JOIN dispense CROSS JOIN recent CROSS JOIN sales
+CROSS JOIN holding CROSS JOIN market CROSS JOIN dispense CROSS JOIN recent CROSS JOIN sales CROSS JOIN clean_sales
 WHERE 1
 ON CONFLICT(asset_id) DO UPDATE SET
   issuer_id=excluded.issuer_id,divisible=excluded.divisible,locked=excluded.locked,
@@ -107,7 +120,9 @@ ON CONFLICT(asset_id) DO UPDATE SET
   max_realized_usd=excluded.max_realized_usd,
   distinct_dispense_buyers=excluded.distinct_dispense_buyers,
   max_dispense_btc_clean=excluded.max_dispense_btc_clean,emblem_trades=excluded.emblem_trades,
-  active_trade_months=excluded.active_trade_months,last_trade_time=excluded.last_trade_time`;
+  active_trade_months=excluded.active_trade_months,last_trade_time=excluded.last_trade_time,
+  clean_realized_usd=excluded.clean_realized_usd,distinct_paid_buyers=excluded.distinct_paid_buyers,
+  clean_active_trade_months=excluded.clean_active_trade_months,market_venue_count=excluded.market_venue_count`;
 
 /** Refresh volatile asset features from canonical relations for identities touched by an event batch. */
 export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<string>): Promise<number> {

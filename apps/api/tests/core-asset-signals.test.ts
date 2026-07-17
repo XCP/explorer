@@ -87,6 +87,46 @@ test("compact asset signals refresh volatile fields from canonical relations", a
   assert.equal(fresh?.recency_blocks, 201);
 });
 
+test("market evidence requires an attributable asset, independent buyer, and single-asset sale", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO asset_dictionary(asset) VALUES('A');
+    INSERT INTO address_dictionary(address_id,address)
+      VALUES(10,'issuer'),(20,'buyer-one'),(21,'seller'),(22,'buyer-two');
+    INSERT INTO blocks(block_index,block_hash,block_time) VALUES(200,zeroblob(32),1);
+    INSERT INTO assets(asset_id,type,issuer_id,divisible,locked,supply_normalized,first_issuance_block_index)
+      VALUES((SELECT asset_id FROM asset_dictionary WHERE asset='A'),'asset',10,0,1,'100',100);
+    INSERT INTO trades(venue,ref,asset_id,block_time,quantity,currency,total,usd_value,buyer_id,seller_id,sale_class)
+      VALUES
+      ('dex','clean-dex',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1704067200,1,'XCP',10,20,20,21,NULL),
+      ('dex','self-dex',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1706745600,1,'XCP',10,900,20,20,NULL),
+      ('dispense','clean-dispense',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1706745600,1,'BTC',0.1,30,22,21,'single'),
+      ('dispense','bundle',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1709251200,1,'BTC',0.1,800,22,21,'bundle'),
+      ('emblem','clean-emblem',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1709251200,1,'ETH',1,50,20,21,'real'),
+      ('emblem','shell',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1711929600,1,'ETH',1,700,22,21,'scam_cracked'),
+      ('scarce.city','unknown',(SELECT asset_id FROM asset_dictionary WHERE asset='A'),1714521600,1,'BTC',0.1,600,NULL,NULL,NULL);
+  `);
+
+  await rebuildCoreAssetSignals(d1(db), ["A"]);
+  assert.deepEqual(
+    {
+      ...(db
+        .prepare(
+          `SELECT clean_realized_usd,distinct_paid_buyers,clean_active_trade_months,market_venue_count
+           FROM asset_signals WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`,
+        )
+        .get() as Record<string, number>),
+    },
+    {
+      clean_realized_usd: 100,
+      distinct_paid_buyers: 2,
+      clean_active_trade_months: 3,
+      market_venue_count: 3,
+    },
+  );
+});
+
 test("compact asset signal repair walks every identity and durably completes a cycle", async () => {
   const db = new DatabaseSync(":memory:");
   for (const migration of migrations) db.exec(migration);

@@ -20,6 +20,17 @@ formula.
 
 Status: decision draft after leakage-safe historical evaluation. Production score changes remain gated where noted.
 
+The evaluation was rerun with the production eligibility boundary: both counterparties must be known and distinct;
+DEX matches, single-asset dispenses, and real single-asset Emblem sales qualify. Mixed-asset bundle payments remain
+valuable bundle evidence but are not duplicated into every asset's realized value. Identity-less Scarce City rows
+remain descriptive history rather than buyer-validated Rating evidence. The conclusion survived at every cutoff and
+metric. Against buyer-gated peak value, the clean market-depth challenger's worst improvements were +0.715 return
+lift, +0.795 persistence lift, +0.868 buyer-breadth lift, +0.125 average precision, and +0.036 NDCG.
+
+Migration 0063 materializes the four direct-sale inputs alongside existing production inputs. It does not change
+Rating weights. Bundle payments stay canonical in `trades`; dispenser asset participation stays canonical in
+`trade_legs`. Emblem bundle legs and bundle-specific asset/collection participation are the next normalization step.
+
 ## Product contracts
 
 | Product | Decision it supports | It must not claim |

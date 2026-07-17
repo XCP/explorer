@@ -15,6 +15,10 @@ test("historical baseline SQL keeps features and outcomes on opposite sides of t
   assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.block_time>past\.cutoff/);
   assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.block_time<=past\.outcome_end/);
   assert.equal(/asset_signals|address_signals|graph_(?:rank|edges|seed)/.test(ASSET_MARKET_BASELINE_SQL), false);
+  assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.buyer_id<>trade\.seller_id/);
+  assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.venue='dispense' AND trade\.sale_class='single'/);
+  assert.match(ASSET_MARKET_BASELINE_SQL, /trade\.venue='emblem' AND trade\.sale_class='real'/);
+  assert.equal(/trade\.venue='scarce\.city'/.test(ASSET_MARKET_BASELINE_SQL), false);
   assert.match(ASSET_MARKET_BASELINE_SQL, /'balanced_market'/);
   for (const family of ["recency", "active_months", "realized_usd"])
     assert.match(ASSET_MARKET_BASELINE_SQL, new RegExp(`'balanced_no_${family}'`));

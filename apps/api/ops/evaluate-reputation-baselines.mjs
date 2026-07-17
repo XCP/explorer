@@ -26,6 +26,14 @@ const cutoffSql = CUTOFFS.map(([label, timestamp]) => `('${label}',${timestamp},
   ",",
 );
 
+// A Rating-eligible trade must identify independent counterparties and attribute the whole payment to one asset.
+// Scarce City remains useful descriptive history, but its feed lacks buyer/seller identities. Dispense bundles and
+// non-real Emblem sales cannot attribute the payment to one Counterparty asset.
+const cleanTrade = (alias) => `${alias}.asset_id IS NOT NULL AND ${alias}.block_time>0 AND ${alias}.total>0
+  AND ${alias}.buyer_id IS NOT NULL AND ${alias}.seller_id IS NOT NULL AND ${alias}.buyer_id<>${alias}.seller_id
+  AND (${alias}.venue='dex' OR (${alias}.venue='dispense' AND ${alias}.sale_class='single')
+    OR (${alias}.venue='emblem' AND ${alias}.sale_class='real'))`;
+
 export const ASSET_MARKET_BASELINE_SQL = `
 WITH cutoffs(label,cutoff,outcome_end) AS (VALUES ${cutoffSql}),
 past AS (
@@ -38,7 +46,7 @@ past AS (
     MAX(CASE WHEN trade.usd_value>0 THEN trade.usd_value ELSE 0 END) past_peak_usd,
     SUM(CASE WHEN trade.usd_value>0 THEN trade.usd_value ELSE 0 END) past_usd
   FROM cutoffs cutoff JOIN trades trade
-    ON trade.asset_id IS NOT NULL AND trade.block_time>0 AND trade.block_time<=cutoff.cutoff
+    ON ${cleanTrade("trade")} AND trade.block_time<=cutoff.cutoff
   GROUP BY cutoff.label,cutoff.cutoff,cutoff.outcome_end,trade.asset_id
 ),
 future AS (
@@ -51,7 +59,8 @@ future AS (
     MIN(trade.block_time) first_outcome_time,
     MAX(trade.block_time) last_outcome_time
   FROM past LEFT JOIN trades trade
-    ON trade.asset_id=past.asset_id AND trade.block_time>past.cutoff AND trade.block_time<=past.outcome_end
+    ON trade.asset_id=past.asset_id AND ${cleanTrade("trade")}
+      AND trade.block_time>past.cutoff AND trade.block_time<=past.outcome_end
   GROUP BY past.label,past.asset_id
 ),
 cohort AS (
