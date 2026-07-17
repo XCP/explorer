@@ -537,6 +537,14 @@ test("contract: GET /v2/assets/XCP — AssetDetail native reduced path", async (
   assertShape(j.result, ASSET_DETAIL, "XCP.");
   assert.equal(j.result.type, "native", "XCP must report type=native");
   assertShape(j.result.feed_counts, ASSET_FEED_COUNTS, "XCP.feed_counts.");
+  assertShape(j.result.rating, ASSET_RATING, "XCP.rating.");
+  assert.equal(j.result.rating.status, "rated", "XCP must use the canonical Rating projection");
+  assertShape(
+    j.result.sales,
+    { realized_usd: "number|null", last_price_usd: "number|null", last_sale_time: "number|null" },
+    "XCP.sales.",
+  );
+  assert.ok(j.result.sales.realized_usd > 0, "XCP must expose its historical market volume");
   assert.ok(j.result.feed_counts.sends > 0, "XCP should earn its Sends tab");
   assert.ok(j.result.feed_counts.orders > 0, "XCP should earn its Orders tab");
 });

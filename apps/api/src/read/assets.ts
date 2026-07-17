@@ -94,10 +94,13 @@ assets.get("/v2/assets/:asset", async (c) => {
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
     const A = a.toUpperCase();
     if (A === "XCP" || A === "BTC") {
-      const [sup, holder_count, feed_counts] = await Promise.all([
+      const [sup, holder_count, feed_counts, signals, sales, tags] = await Promise.all([
         A === "XCP" ? coreXcpSupply(c.env.CORE_DB) : Promise.resolve(null),
         coreAssetAccounting(c.env.CORE_DB, A).then((accounting) => accounting?.holder_count ?? 0),
         coreAssetFeedCounts(c.env.CORE_DB, A, null).catch(() => null),
+        coreAssetSignals(c.env.CORE_DB, A).catch(() => null),
+        coreAssetSales(c.env.CORE_DB, A).catch(() => null),
+        coreAssetTags(c.env.CORE_DB, A).catch((): string[] => []),
       ]);
       const supply_normalized = A === "XCP" ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8) : null;
       const body: AssetDetail = {
@@ -112,6 +115,12 @@ assets.get("/v2/assets/:asset", async (c) => {
         supply_normalized,
         holder_count,
         feed_counts,
+        rating: assetRating(signals),
+        activity: signals
+          ? { active_months: signals.active_trade_months ?? 0, last_trade_time: signals.last_trade_time ?? null }
+          : null,
+        tags,
+        sales: sales ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
       };
       return J(c, { result: body }, 300); // native token — near-static
     }

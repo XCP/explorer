@@ -43,8 +43,8 @@ export interface AssetFeedCounts {
   pools: number; // AMM pools the asset participates in (either reserve leg, or as the LP token)
 }
 
-/** GET /v2/assets/:asset — full assets row + derived supply/burned/circulating + quality + tags.
- *  Native XCP/BTC take a reduced path, so many issuance fields are optional. Mirror: assets. */
+/** GET /v2/assets/:asset — full assets row + derived supply/burned/circulating + Rating + tags.
+ *  Native XCP/BTC lack issuance fields but retain available market enrichment. Mirror: assets. */
 export interface AssetDetail {
   asset: string;
   asset_longname: string | null;
