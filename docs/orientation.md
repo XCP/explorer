@@ -43,8 +43,34 @@ apps/web        Next.js 16 on OpenNext/Cloudflare — xcp.io / xcp-web.me-bbe.wo
                 grammar), format.ts, art.ts (CDN image URLs), tx.ts
   src/components/ flat; RecordTable renders every table on the v20 grammar
 packages/shared the WIRE contract only (one file per domain); D1 row shapes live in apps/api/src/storage-types.ts
-design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — port VERBATIM, never freelance
+design-lab/     concept history and implementation references; current live design authority is listed below
 ```
+
+## Frontend design authority
+
+The owner has spent the most deliberate design and iteration time on these live surfaces. Treat them as the current
+visual language, in this order of relevance to the component being changed:
+
+1. `/asset/:asset` — especially the header and Overview tab: primary entity-page hierarchy, identity, metadata,
+   headline facts, and content grouping.
+2. `/stats` — primary reference for analytical page rhythm, headline statistics, controls, and charts.
+3. `/recovery` — primary reference for explanatory utility pages, user input, evidence summaries, and chart framing.
+4. `/firsts` — primary reference for historical/editorial tables and dense chronological information.
+
+The HTML files in `design-lab/` preserve useful concepts and experiments, but they do not outrank these implemented
+pages. The rest of the live frontend is provisional unless the owner explicitly blesses a surface. In particular:
+
+- the address page has not received the same active design iteration as the asset page;
+- most record tables should not be assumed to represent the final table system;
+- the existing tab treatment is provisional and should be evaluated as a reusable system;
+- visual consistency work should pull provisional pages toward the four references, not average every existing page
+  into a new style;
+- preserve information architecture and behavior while assessing a component; do not use “consistency” as permission
+  to flatten the deliberate differences among analytical, utility, historical, and entity pages.
+
+Before a broad table, tab, entity-header, or page-layout refactor, capture desktop and mobile screenshots of the
+relevant reference pages and the target. Compare typography, density, alignment, responsive behavior, empty/loading
+states, and interaction—not just colors and border radii.
 
 ## How we work here (learned the hard way)
 
@@ -71,7 +97,8 @@ design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — p
 
 ## Shipped (highlights, newest first)
 
-- **The transaction page, rebuilt end-to-end** — the session's centerpiece. Concept (owner's): a tx
+- **The transaction page, rebuilt end-to-end** — a substantial implementation, but not a general visual authority.
+  Concept (owner's): a tx
   page has one of three JOBS. ① **Offer** — a dispenser/fairminter/order has no page but its tx page,
   so the page IS the storefront: art + collection + supply under the image, price-first, live
   stock/fill bars, how-to blocks with copy buttons and a wallet-wired "Fill order" button, sales/
@@ -106,8 +133,8 @@ design-lab/     the owner-approved HTML references (v19 frame, v20 tables) — p
   statistics, and current-chain scanning continue as bounded scheduled maintenance after catch-up.
 - **Emblem maintenance** — the historical sales cursor is complete. Transfer and vault-content verification remain
   recurring indexed sweeps.
-- **The tx-page framework iteration** — owner is actively refining copy/layout in short loops; the
-  order tab is the most-dialed exemplar of the pattern.
+- **Frontend convergence** — Stats, Recovery, Firsts, and the asset header/Overview are the deliberate references.
+  Tables, tabs, the address page, and most remaining surfaces are still provisional and need a separate system pass.
 
 ## Slated / decided-but-not-built (the backlog that matters)
 
