@@ -15,7 +15,6 @@ const requestedProviderNames = new Set(
 );
 const requestedProviders = BITCOIN_FEE_PROVIDERS.filter((provider) => requestedProviderNames.has(provider.name));
 if (requestedProviders.length !== requestedProviderNames.size) throw new Error("unknown Bitcoin fee provider");
-if (!requestedProviderNames.has("counterparty")) throw new Error("counterparty must remain the canary provider");
 // Resolve local credentials relative to this script so unattended runners do not depend on their working directory.
 const devToken = process.env.ADMIN_TOKEN
   ? undefined
@@ -47,7 +46,11 @@ async function fetchFee(provider, txHash) {
   return fetchProviderFee(provider, txHash);
 }
 
-async function resolvePage(rows, providers, availableAt) {
+const FAILURE_THRESHOLD = 2;
+const FAILURE_COOLDOWN_MS = 60_000;
+const WINDOW_BUDGET_MS = 10_000;
+
+async function resolvePage(rows, providers, providerState) {
   const fees = [];
   const failures = [];
   const providerStats = Object.fromEntries(providers.map((provider) => [provider.name, { verified: 0, failed: 0 }]));
@@ -56,12 +59,17 @@ async function resolvePage(rows, providers, availableAt) {
   const startedAt = Date.now();
   await Promise.all(
     providers.map(async (provider) => {
+      const state = providerState.get(provider.name) ?? { availableAt: 0, consecutiveFailures: 0, cooldownUntil: 0 };
+      providerState.set(provider.name, state);
       for (;;) {
-        let wait = Math.max(0, (availableAt.get(provider.name) ?? 0) - Date.now());
-        while (wait > 0 && cursor < rows.length) {
+        if (Date.now() - startedAt >= WINDOW_BUDGET_MS) break;
+        if (state.cooldownUntil > Date.now()) break;
+        let wait = Math.max(0, state.availableAt - Date.now());
+        while (wait > 0 && cursor < rows.length && Date.now() - startedAt < WINDOW_BUDGET_MS) {
           await delay(Math.min(250, wait));
-          wait = Math.max(0, (availableAt.get(provider.name) ?? 0) - Date.now());
+          wait = Math.max(0, state.availableAt - Date.now());
         }
+        if (Date.now() - startedAt >= WINDOW_BUDGET_MS) break;
         if (cursor >= rows.length) break;
         const row = rows[cursor++];
         try {
@@ -70,15 +78,21 @@ async function resolvePage(rows, providers, availableAt) {
             fees.push({ tx_hash: row.tx_hash, fee });
             providerStats[provider.name].verified += 1;
           }
+          state.consecutiveFailures = 0;
         } catch (error) {
           providerStats[provider.name].failed += 1;
+          state.consecutiveFailures += 1;
+          if (state.consecutiveFailures >= FAILURE_THRESHOLD) {
+            const retryAfterMs = Number.isSafeInteger(error?.retryAfter) ? error.retryAfter * 1_000 : 0;
+            state.cooldownUntil = Date.now() + Math.max(FAILURE_COOLDOWN_MS, retryAfterMs);
+          }
           failures.push({
             tx_index: row.tx_index,
             provider: provider.name,
             error: error instanceof Error ? error.message : String(error),
           });
         }
-        availableAt.set(provider.name, Date.now() + provider.minIntervalMs);
+        state.availableAt = Date.now() + provider.minIntervalMs;
         completed += 1;
         if (completed % 50 === 0 || completed === rows.length)
           console.log(
@@ -88,6 +102,7 @@ async function resolvePage(rows, providers, availableAt) {
               requested: rows.length,
               verified: fees.length,
               failed: failures.length,
+              deferred: rows.length - completed,
               providers: providerStats,
               duration_ms: Date.now() - startedAt,
             }),
@@ -95,7 +110,7 @@ async function resolvePage(rows, providers, availableAt) {
       }
     }),
   );
-  return { fees, failures, providerStats };
+  return { fees, failures, deferred: rows.length - completed, providerStats };
 }
 
 let total = 0;
@@ -103,7 +118,7 @@ let pages = 0;
 let after = null;
 let passUpdated = 0;
 let complete = false;
-const providerAvailableAt = new Map();
+const providerState = new Map();
 for (;;) {
   if (MAX_PAGES > 0 && pages >= MAX_PAGES) break;
   const page = await api(`/admin/bitcoin-fees?limit=${PAGE_SIZE}${after == null ? "" : `&after=${after}`}`);
@@ -120,26 +135,29 @@ for (;;) {
 
   let updated = 0;
   let failed = 0;
+  let deferred = 0;
   for (let window = 0; window < page.rows.length; window += 100) {
-    const { fees, failures } = await resolvePage(
+    const result = await resolvePage(
       page.rows.slice(window, window + 100),
       requestedProviders,
-      providerAvailableAt,
+      providerState,
     );
+    const { fees, failures } = result;
     failed += failures.length;
+    deferred += result.deferred;
     if (fees.length === 0) continue;
-    const result = await api("/admin/bitcoin-fees", {
+    const writeResult = await api("/admin/bitcoin-fees", {
       method: "POST",
       body: JSON.stringify(fees),
     });
-    updated += Number(result.updated ?? 0);
+    updated += Number(writeResult.updated ?? 0);
   }
   total += updated;
   passUpdated += updated;
   pages += 1;
   after = page.next;
   console.log(
-    JSON.stringify({ event: "fee_page_complete", total, requested: page.rows.length, updated, failed, next_tx: after }),
+    JSON.stringify({ event: "fee_page_complete", total, requested: page.rows.length, updated, failed, deferred, next_tx: after }),
   );
 }
 

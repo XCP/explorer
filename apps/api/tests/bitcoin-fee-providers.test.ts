@@ -18,10 +18,10 @@ test("fee providers encode their documented response shapes and pacing", async (
   assert.equal(await fetchProviderFee(byName.mempool, txid, async () => response({ fee: 1_200 })), 1_200);
   assert.equal(await fetchProviderFee(byName.blockchain, txid, async () => response("1200")), 1_200);
   assert.equal(await fetchProviderFee(byName.blockcypher, txid, async () => response({ fees: 1_200 })), 1_200);
-  assert.equal(await fetchProviderFee(byName.trezor1, txid, async () => response({ fees: "1200" })), 1_200);
+  assert.equal(await fetchProviderFee(byName.trezor, txid, async () => response({ fees: "1200" })), 1_200);
   assert.equal(await fetchProviderFee(byName.trusteeglobal, txid, async () => response({ fees: "1200" })), 1_200);
   assert.equal(await fetchProviderFee(byName.bitaps, txid, async () => response({ data: { fee: 1_200 } })), 1_200);
   assert.equal(byName.blockchain.minIntervalMs, 10_000);
   assert.equal(byName.blockcypher.minIntervalMs, 36_000);
-  assert.equal(BITCOIN_FEE_PROVIDERS.length, 12);
+  assert.equal(BITCOIN_FEE_PROVIDERS.length, 8);
 });

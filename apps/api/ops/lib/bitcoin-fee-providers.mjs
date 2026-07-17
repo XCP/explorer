@@ -35,12 +35,14 @@ export const BITCOIN_FEE_PROVIDERS = [
     url: (txid) => `https://api.blockcypher.com/v1/btc/main/txs/${txid}?limit=1`,
     parse: (value) => integerFee(value?.fees, "blockcypher"),
   },
-  ...[1, 2, 3, 4, 5].map((node) => ({
-    name: `trezor${node}`,
+  {
+    // Trezor's numbered Blockbook hosts share rate limiting. Treat them as one
+    // source rather than multiplying requests across aliases of the same service.
+    name: "trezor",
     minIntervalMs: 1_000,
-    url: (txid) => `https://btc${node}.trezor.io/api/v2/tx/${txid}`,
-    parse: (value) => integerFee(Number(value?.fees), `trezor${node}`),
-  })),
+    url: (txid) => `https://btc1.trezor.io/api/v2/tx/${txid}`,
+    parse: (value) => integerFee(Number(value?.fees), "trezor"),
+  },
   {
     name: "trusteeglobal",
     minIntervalMs: 1_000,
