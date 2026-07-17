@@ -280,6 +280,33 @@ The graph earns a place in address standing only if adding it improves held-out 
 
 ### Asset market rating
 
+#### Price and volume challenger evaluation (2026-07-16)
+
+The production Rating's dominant `max_realized_usd` input is the largest single sale consideration. It is not an
+asset price, lifetime volume, or a robust typical price. Per-unit prices are meaningful within one asset's own
+history (for dislocation), but are not directly comparable across assets with different divisibility and supply.
+
+`evaluate-reputation-baselines.mjs` now compares six leakage-safe market formulations at the existing three
+cutoffs and 180-day outcome horizon: raw peak sale, buyer-gated peak sale, buyer-gated total realized USD,
+market depth without value, market depth with peak value, and market depth with total realized USD. The
+evaluation read 26,145,136 rows once and records the exact SQL and D1 metadata in its report.
+
+Results were directionally identical at all three cutoffs:
+
+- buyer-gated peak beat raw peak on return, persistence, future buyer breadth, future log USD, average precision,
+  and NDCG;
+- buyer-gated total USD beat buyer-gated peak;
+- equal percentile ranks of active months, distinct buyers, and total realized USD (`market_depth_total`) beat
+  buyer-gated peak on every metric in every fold;
+- active-month breadth remained as strong as, and sometimes stronger than, the composite. Value is corroborating
+  market evidence; it should not overwhelm evidence that a market persisted across time and people.
+
+The implication is not to copy the experimental equal weights directly into production. The current signal table
+does not yet retain clean lifetime realized USD or active-market-month breadth, and raw total volume is vulnerable
+to repeated wash flow. The production challenger should materialize buyer-aware, self-trade-excluded total USD,
+active months, distinct paid buyers across venues, and venue count. Compare that challenger with the existing
+Rating on the same frozen outcomes before changing the public weights or percentile anchors.
+
 **User decision:** “How much durable, independently corroborated market evidence does this asset have?” This deliberately avoids claiming artistic merit.
 
 Primary future outcomes, measured 90, 180, and 365 days after a cutoff:

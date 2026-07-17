@@ -7,6 +7,22 @@ How the read API stays fast on D1. Three layers, in priority order: **(1) query 
 
 ## 2026-07-12 production findings
 
+## 2026-07-16 follow-up
+
+Seven-day Insights still contained signatures from code that had already been replaced, so candidates were
+cross-checked against the current source before editing. This prevented adding indexes for the retired
+cross-table asset identity `OR` and retired dynamic subasset `LIKE` query.
+
+The current `/v2/radar` availability query averaged 73,999,859 rows read and 3,691ms over 18 cache refreshes.
+Its eligibility predicate resolved the canonical numeric-asset classification through generic entity/tag rows.
+`assets.type` reported 124,050 numeric assets while the derived tag projection reported 124,045; the five
+differences were all canonical numeric assets missing the tag. Commit `f1f8475` now performs a primary-key
+existence check against canonical `assets.type`. A forced production cache miss after deployment completed the
+whole Radar producer in 621ms, down 83% from the Insights duration, with the same response size.
+
+Research/evaluation SQL was separated mentally from serving and maintenance costs when ranking Insights. The
+historical rating experiments are deliberately expensive operator queries and must not motivate serving indexes.
+
 Seven-day D1 Insights showed the old `/v2/` heartbeat query ran **3,840 times**, averaging
 **5,233,723 rows read** per run: about **20.1 billion rows**. The UI only consumed `tip` and
 `indexed_block`. `/v2/status` now serves those two indexed scalar reads; `/v2/` keeps its

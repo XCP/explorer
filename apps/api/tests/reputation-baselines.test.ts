@@ -20,6 +20,15 @@ test("historical baseline SQL keeps features and outcomes on opposite sides of t
     assert.match(ASSET_MARKET_BASELINE_SQL, new RegExp(`'balanced_no_${family}'`));
   assert.match(ASSET_MARKET_BASELINE_SQL, /'compact_market'/);
   assert.match(ASSET_MARKET_BASELINE_SQL, /'persistence_core'/);
+  for (const predictor of [
+    "peak_usd",
+    "buyer_gated_peak_usd",
+    "buyer_gated_total_usd",
+    "market_depth",
+    "market_depth_peak",
+    "market_depth_total",
+  ])
+    assert.match(ASSET_MARKET_BASELINE_SQL, new RegExp(`'${predictor}'`));
   for (const metric of ["precision_at_100", "recall_at_500", "precision_at_1pct", "average_precision", "ndcg"])
     assert.match(ASSET_MARKET_BASELINE_SQL, new RegExp(metric));
 });

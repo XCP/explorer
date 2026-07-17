@@ -32,8 +32,10 @@ past AS (
   SELECT cutoff.label,cutoff.cutoff,cutoff.outcome_end,trade.asset_id,
     COUNT(*) past_sales,
     COUNT(DISTINCT trade.buyer_id) past_buyers,
+    COUNT(DISTINCT trade.venue) past_venues,
     COUNT(DISTINCT strftime('%Y-%m',trade.block_time,'unixepoch')) past_active_months,
     MAX(trade.block_time) last_sale_time,
+    MAX(CASE WHEN trade.usd_value>0 THEN trade.usd_value ELSE 0 END) past_peak_usd,
     SUM(CASE WHEN trade.usd_value>0 THEN trade.usd_value ELSE 0 END) past_usd
   FROM cutoffs cutoff JOIN trades trade
     ON trade.asset_id IS NOT NULL AND trade.block_time>0 AND trade.block_time<=cutoff.cutoff
@@ -62,6 +64,8 @@ normalized AS MATERIALIZED (
     PERCENT_RANK() OVER (PARTITION BY label ORDER BY last_sale_time) recency_pct,
     PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_active_months) active_months_pct,
     PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_buyers) buyers_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_sales) sales_pct,
+    PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_peak_usd) peak_usd_pct,
     PERCENT_RANK() OVER (PARTITION BY label ORDER BY past_usd) realized_usd_pct
   FROM cohort
 ),
@@ -73,6 +77,12 @@ predictors AS (
       WHEN 'buyers' THEN past_buyers
       WHEN 'active_months' THEN past_active_months
       WHEN 'realized_usd' THEN LN(1+past_usd)
+      WHEN 'peak_usd' THEN LN(1+past_peak_usd)
+      WHEN 'buyer_gated_peak_usd' THEN LN(1+past_peak_usd)*(past_buyers*1.0/(past_buyers+3.0))
+      WHEN 'buyer_gated_total_usd' THEN LN(1+past_usd)*(past_buyers*1.0/(past_buyers+3.0))
+      WHEN 'market_depth' THEN (active_months_pct+buyers_pct+sales_pct)/3.0
+      WHEN 'market_depth_peak' THEN (active_months_pct+buyers_pct+peak_usd_pct)/3.0
+      WHEN 'market_depth_total' THEN (active_months_pct+buyers_pct+realized_usd_pct)/3.0
       WHEN 'balanced_market' THEN (recency_pct+active_months_pct+buyers_pct+realized_usd_pct)/4.0
       WHEN 'balanced_no_recency' THEN (active_months_pct+buyers_pct+realized_usd_pct)/3.0
       WHEN 'balanced_no_active_months' THEN (recency_pct+buyers_pct+realized_usd_pct)/3.0
@@ -81,7 +91,9 @@ predictors AS (
       ELSE (recency_pct+active_months_pct+buyers_pct)/3.0
     END score
   FROM normalized CROSS JOIN (
-    VALUES ('recency'),('sales'),('buyers'),('active_months'),('realized_usd'),('balanced_market'),
+    VALUES ('recency'),('sales'),('buyers'),('active_months'),('realized_usd'),('peak_usd'),
+      ('buyer_gated_peak_usd'),('buyer_gated_total_usd'),('market_depth'),('market_depth_peak'),
+      ('market_depth_total'),('balanced_market'),
       ('balanced_no_recency'),('balanced_no_active_months'),('balanced_no_realized_usd'),
       ('compact_market'),('persistence_core')
   ) predictor
@@ -318,6 +330,12 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
       },
       challengers: {
         balanced_market: "equal mean of within-cutoff recency, active-month, buyer, and realized-USD percentiles",
+        peak_usd: "largest single historical sale consideration; this mirrors the Rating's dominant value input",
+        buyer_gated_peak_usd: "largest sale consideration damped by distinct historical buyer breadth",
+        buyer_gated_total_usd: "total realized USD damped by distinct historical buyer breadth",
+        market_depth: "equal mean of active-month, distinct-buyer, and sale-count percentiles; no price input",
+        market_depth_peak: "equal mean of active-month, distinct-buyer, and peak-sale percentiles",
+        market_depth_total: "equal mean of active-month, distinct-buyer, and total-realized-USD percentiles",
         balanced_participation: "equal mean of within-cutoff recency, active-month, and transaction percentiles",
       },
       warning: "history-only baselines; current signal snapshots are intentionally excluded",
@@ -345,6 +363,22 @@ export function buildReport(assetRows, assetMeta = {}, addressRows = [], address
       asset_compact_vs_persistence_core: comparePredictors(assetRows, "compact_market", "persistence_core", [
         "return_lift",
         "persistence_lift",
+        "top_decile_log_future_usd",
+        "average_precision",
+        "ndcg",
+      ]),
+      asset_gated_peak_vs_peak: comparePredictors(assetRows, "buyer_gated_peak_usd", "peak_usd", [
+        "return_lift",
+        "persistence_lift",
+        "buyer_breadth_lift",
+        "top_decile_log_future_usd",
+        "average_precision",
+        "ndcg",
+      ]),
+      asset_depth_total_vs_gated_peak: comparePredictors(assetRows, "market_depth_total", "buyer_gated_peak_usd", [
+        "return_lift",
+        "persistence_lift",
+        "buyer_breadth_lift",
         "top_decile_log_future_usd",
         "average_precision",
         "ndcg",

@@ -1,5 +1,23 @@
 # Reputation and rating recommendations
 
+## Price and volume decision
+
+Do not treat largest sale, total volume, and price as interchangeable:
+
+1. Keep robust per-unit price history in the Dislocation Radar, where an asset is compared with itself.
+2. Replace the Rating's dependence on a single peak sale only after adding clean total realized USD and
+   active-market-month signals.
+3. Gate/cap value by independent buyer breadth and exclude self trades; raw turnover is too easy to recycle.
+4. Treat venue diversity as corroboration, not a dominant weight. It did not improve the New Radar market core,
+   although it remains useful descriptive evidence.
+5. Promote a challenger only if it improves all frozen historical folds without materially worsening named-asset
+   face checks or concentration/wash sensitivity.
+
+The 2026-07-16 cutoff evaluation found `active months + distinct buyers + total realized USD` consistently
+superior to the current buyer-gated peak-sale proxy for future return, persistence, buyer breadth, future log USD,
+average precision, and NDCG. This is the next Rating challenger to implement and validate—not yet the production
+formula.
+
 Status: decision draft after leakage-safe historical evaluation. Production score changes remain gated where noted.
 
 ## Product contracts
