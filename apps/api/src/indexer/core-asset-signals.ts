@@ -140,6 +140,28 @@ export async function runCoreAssetSignalsStep(
   force = false,
 ): Promise<{ processed: number; cursor: number; cycleComplete: boolean }> {
   const cursor = await getCoreStateInt(db, "asset_signals_cursor");
+  const dirty = await db
+    .prepare(
+      `SELECT dirty.asset_id,dictionary.asset FROM asset_signal_dirty dirty
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=dirty.asset_id
+       ORDER BY dirty.asset_id LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{ asset_id: number; asset: string }>();
+  if (dirty.results.length > 0) {
+    await rebuildCoreAssetSignals(
+      db,
+      dirty.results.map((row) => row.asset),
+    );
+    for (let index = 0; index < dirty.results.length; index += 90) {
+      const ids = dirty.results.slice(index, index + 90).map((row) => row.asset_id);
+      await db
+        .prepare(`DELETE FROM asset_signal_dirty WHERE asset_id IN (${ids.map(() => "?").join(",")})`)
+        .bind(...ids)
+        .run();
+    }
+    return { processed: dirty.results.length, cursor, cycleComplete: false };
+  }
   if (cursor === 0 && !force && (await getCoreStateInt(db, "asset_signals_cycles")) > 0) {
     const tip =
       Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;

@@ -5,6 +5,7 @@ import { OUTLOOK_INVARIANT_SQL, OUTLOOK_CONCENTRATION_SQL, buildOutlookAudit } f
 test("activity outlook audit covers completeness, stale rows, ranks, and drift inputs", () => {
   for (const token of [
     "missing_rows",
+    "ineligible_rows",
     "stale_rows",
     "invalid_rows",
     "distinct_ranks",
@@ -21,6 +22,7 @@ test("activity outlook audit fails closed on any projection mismatch", () => {
     eligible_assets: 10,
     projection_rows: 10,
     missing_rows: 0,
+    ineligible_rows: 0,
     stale_rows: 0,
     invalid_rows: 0,
     distinct_ranks: 10,

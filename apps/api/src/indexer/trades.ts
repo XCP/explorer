@@ -124,7 +124,8 @@ export function emblemTradesSql(rowFilter: string): string {
   const acceptedTokens = ETH_TOKENS.map((token) => `'${token}'`).join(",");
   const isUsdc = `payment.address='${USDC}'`;
   const saleTime = "ethereum_block.block_time";
-  const isReal = `vault.vault_kind='single' AND (vault.cracked_at IS NULL OR ${saleTime}<vault.cracked_at)`;
+  const isReal = `vault.vault_kind='single' AND COALESCE(vault.is_dump,0)=0
+    AND (vault.cracked_at IS NULL OR ${saleTime}<vault.cracked_at)`;
   return `WITH desired AS (
     SELECT sale.tx_hash || '_' || sale.log_index || '_' || contract.address || '_' || sale.token_id ref,
       CASE WHEN ${isReal} THEN vault.contents_asset_id END asset_id,${saleTime} block_time,
@@ -134,7 +135,8 @@ export function emblemTradesSql(rowFilter: string): string {
       CAST(sale.price_raw AS REAL)/CASE WHEN ${isUsdc} THEN 1e6 ELSE 1e18 END total,
       CASE WHEN ${isUsdc} THEN CAST(sale.price_raw AS REAL)/1e6 END usd_value,
       sale.buyer_id,sale.seller_id,sale.tx_hash external_tx_hash,
-      CASE WHEN ${isReal} THEN 'real'
+      CASE WHEN vault.is_dump=1 THEN 'scam_dump'
+           WHEN ${isReal} THEN 'real'
            WHEN vault.vault_kind='multi' THEN 'bundle'
            WHEN vault.vault_kind='single' THEN 'scam_cracked'
            WHEN vault.is_scam_shell=1 THEN 'scam_empty'

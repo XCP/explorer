@@ -182,3 +182,31 @@ test("compact asset signals derive holder community features and propagate issue
   assert.equal(community.avg_holder_dex, 4);
   assert.equal(db.prepare(`SELECT sum(low_quality) count FROM asset_signals`).get()?.count, 8);
 });
+
+test("trade mutations enqueue and converge the affected asset signal", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO blocks(block_index,block_hash,block_time) VALUES(200,zeroblob(32),1);
+    INSERT INTO address_dictionary(address_id,address) VALUES(10,'buyer'),(11,'seller');
+    INSERT INTO asset_dictionary(asset) VALUES('QUEUED');
+    INSERT INTO assets(asset_id,type,divisible,locked,supply_normalized,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,'1',100 FROM asset_dictionary WHERE asset='QUEUED';
+    INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,buyer_id,seller_id,sale_class)
+      SELECT 'dispense','queued',asset_id,1000,200,1,'BTC',1,50,10,11,'single'
+      FROM asset_dictionary WHERE asset='QUEUED';
+  `);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM asset_signal_dirty`).get()?.n, 1);
+  const result = await runCoreAssetSignalsStep(d1(db), 10);
+  assert.equal(result.processed, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM asset_signal_dirty`).get()?.n, 0);
+  assert.equal(
+    db
+      .prepare(
+        `SELECT clean_realized_usd FROM asset_signals signal JOIN asset_dictionary dictionary USING(asset_id)
+         WHERE dictionary.asset='QUEUED'`,
+      )
+      .get()?.clean_realized_usd,
+    50,
+  );
+});

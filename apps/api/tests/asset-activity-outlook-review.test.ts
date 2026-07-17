@@ -7,6 +7,7 @@ import {
   buildReview,
   leaveCollectionOutSql,
 } from "#ops/review-asset-activity-outlook";
+import { OUTLOOK_INVARIANT_SQL, buildOutlookAudit } from "#ops/audit-asset-activity-outlook";
 
 test("asset outlook review is cutoff-safe and uses distribution-derived subgroups", () => {
   for (const sql of [SUBGROUP_SQL, REVIEW_SQL]) {
@@ -20,6 +21,26 @@ test("asset outlook review is cutoff-safe and uses distribution-derived subgroup
   assert.match(REVIEW_SQL, /top_false_positive/);
   assert.match(COLLECTION_SQL, /current|collection/i);
   assert.match(leaveCollectionOutSql("rare-pepe"), /collection<>'rare-pepe'/);
+});
+
+test("asset outlook production audit enforces ranked-product eligibility", () => {
+  assert.match(OUTLOOK_INVARIANT_SQL, /low_quality=0/);
+  assert.match(OUTLOOK_INVARIANT_SQL, /ineligible_rows/);
+  const base = {
+    missing_rows: 0,
+    stale_rows: 0,
+    ineligible_rows: 0,
+    invalid_rows: 0,
+    eligible_assets: 2,
+    projection_rows: 2,
+    distinct_ranks: 2,
+    min_rank: 1,
+    max_rank: 2,
+    distinct_populations: 1,
+    stored_population: 2,
+  };
+  assert.equal(buildOutlookAudit(base, []).healthy, true);
+  assert.equal(buildOutlookAudit({ ...base, ineligible_rows: 1 }, []).healthy, false);
 });
 
 test("asset outlook review documents its horizon and avoids categorical cutoffs", () => {

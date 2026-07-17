@@ -6,7 +6,7 @@ import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 export const OUTLOOK_INVARIANT_SQL = `
 WITH eligible AS MATERIALIZED (
   SELECT asset_id,active_trade_months,last_trade_time FROM asset_signals
-  WHERE active_trade_months>0 AND last_trade_time IS NOT NULL
+  WHERE low_quality=0 AND active_trade_months>0 AND last_trade_time IS NOT NULL
 ), active_ordered AS (
   SELECT active_trade_months,ROW_NUMBER() OVER(ORDER BY active_trade_months) n,COUNT(*) OVER() total FROM eligible
 ), recency_ordered AS (
@@ -20,6 +20,8 @@ SELECT
     WHERE asset_activity_outlook.asset_id IS NULL) missing_rows,
   (SELECT COUNT(*) FROM asset_activity_outlook outlook LEFT JOIN eligible USING(asset_id)
     WHERE eligible.asset_id IS NULL) stale_rows,
+  (SELECT COUNT(*) FROM asset_activity_outlook outlook JOIN asset_signals signal USING(asset_id)
+    WHERE signal.low_quality=1) ineligible_rows,
   (SELECT COUNT(*) FROM asset_activity_outlook
     WHERE score<0 OR score>100 OR rank_position<1 OR rank_position>population
       OR population<1 OR calculated_at<1) invalid_rows,
@@ -58,6 +60,7 @@ export function buildOutlookAudit(invariants, concentration, meta = {}) {
   const healthy =
     Number(invariants.missing_rows) === 0 &&
     Number(invariants.stale_rows) === 0 &&
+    Number(invariants.ineligible_rows) === 0 &&
     Number(invariants.invalid_rows) === 0 &&
     Number(invariants.eligible_assets) === Number(invariants.projection_rows) &&
     Number(invariants.distinct_ranks) === Number(invariants.projection_rows) &&

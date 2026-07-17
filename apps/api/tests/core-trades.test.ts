@@ -96,7 +96,7 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     CREATE TABLE ethereum_blocks(block_number INTEGER PRIMARY KEY,block_time INTEGER);
     CREATE TABLE emblem_vaults(
       token_id TEXT,contract_id INTEGER,contents_asset_id INTEGER,contents_qty REAL,vault_kind TEXT,
-      cracked_at INTEGER,is_scam_shell INTEGER,btc_address_id INTEGER);
+      cracked_at INTEGER,is_scam_shell INTEGER,btc_address_id INTEGER,is_dump INTEGER DEFAULT 0);
     CREATE TABLE scarce_city_sales(asset_id INTEGER,sold_at INTEGER,price_btc REAL);
     CREATE TABLE trades(
       venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,
@@ -126,10 +126,12 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       (81,11,1,4,1003,103,'5','70000000',1,2,x'${"55".repeat(32)}');
     INSERT INTO emblem_sales VALUES
       ('0xeth',9,3,'7','1000000000000000000',4,1,2,16000000),
-      ('0xeth',9,3,'8','2000000000000000000',4,1,2,16000000);
+      ('0xeth',9,3,'8','2000000000000000000',4,1,2,16000000),
+      ('0xeth',9,3,'9','3000000000000000000',4,1,2,16000000);
     INSERT INTO ethereum_blocks VALUES(16000000,1668770000);
     INSERT INTO emblem_vaults VALUES
-      ('7',3,3,1,'single',NULL,0,5),('8',3,3,1,'single',NULL,0,5);
+      ('7',3,3,1,'single',NULL,0,5,0),('8',3,3,1,'single',NULL,0,5,0),
+      ('9',3,3,1,'single',NULL,0,5,1);
     INSERT INTO scarce_city_sales VALUES(3,2000,0.25);
   `);
   db.prepare(coreDexTradesSql()).run(0, 200);
@@ -142,6 +144,10 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
   assert.equal(db.prepare(DISPENSE_TRADE_LEGS_SQL).run(0, 200).changes, 0);
   assert.equal(db.prepare(emblemTradesSql("")).run().changes, 0);
   assert.equal(db.prepare(SCARCE_TRADES_SQL).run().changes, 0);
+  assert.deepEqual(
+    { ...db.prepare(`SELECT asset_id,sale_class FROM trades WHERE venue='emblem' AND ref LIKE '%_9'`).get() },
+    { asset_id: null, sale_class: "scam_dump" },
+  );
   assert.deepEqual(
     db
       .prepare(`SELECT venue,ref,asset_id,quantity,currency,total FROM trades ORDER BY venue,ref`)
@@ -175,6 +181,7 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       },
       { venue: "emblem", ref: "0xeth_9_0xcontract_7", asset_id: 3, quantity: 1, currency: "ETH", total: 1 },
       { venue: "emblem", ref: "0xeth_9_0xcontract_8", asset_id: 3, quantity: 1, currency: "ETH", total: 2 },
+      { venue: "emblem", ref: "0xeth_9_0xcontract_9", asset_id: null, quantity: 1, currency: "ETH", total: 3 },
       { venue: "scarce.city", ref: "CARD_2000", asset_id: 3, quantity: 1, currency: "BTC", total: 0.25 },
     ],
   );
