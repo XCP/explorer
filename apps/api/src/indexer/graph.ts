@@ -4,9 +4,8 @@
  * the signals tables. The Env-free math (edge/pass/finalize SQL, k-split, tier) lives in graph-core.ts so the
  * validation harness can import it without the Worker Env. See docs/graph-reputation.md for the basis.
  *
- * This does not enter the address-reputation or asset market-evidence scorers. It is served on its own as
- * trusted / distrusted / unscored tiers and contributes one small, explicit factor to the separate asset
- * Conviction profile.
+ * This does not enter Address Reputation, Asset Rating, or Conviction. It is served on its own as
+ * trusted / distrusted / unscored relationship evidence and supports holder-cohesion analysis.
  *
  * PIPELINE (graph_edges -> graph_node -> graph_rank -> signals):
  *   EDGES: address->address from sends (source->destination), order_matches (BOTH directions), dispenses

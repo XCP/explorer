@@ -67,7 +67,7 @@ const maybeCrawlEmblemListings = (env: Env) =>
 
 const maybeRebuildTags = (env: Env) =>
   runCoreBlockGated(env.CORE_DB, "tags_rebuilt_blk", 144, async () => {
-    await buildTags(env, { includeTypes: false });
+    await buildTags(env);
     await buildIssuerCollections(env);
     await buildCuratedCollections(env);
   });

@@ -47,10 +47,10 @@ const RULES: Rule[] = [
       WHERE send.destination_address_id IS NOT NULL`,
   },
   { tag: "service", scope: "address", select: addressSelect("signal.likely_service=1") },
-  { tag: "trader", scope: "address", select: addressSelect("signal.dex_trades>=10") },
-  { tag: "active_trader", scope: "address", select: addressSelect("signal.dex_trades>=100") },
+  { tag: "dex_trader", scope: "address", select: addressSelect("signal.dex_trades>=10") },
+  { tag: "frequent_dex_trader", scope: "address", select: addressSelect("signal.dex_trades>=100") },
   { tag: "collector", scope: "address", select: addressSelect("signal.assets_held>=100") },
-  { tag: "whale", scope: "address", select: addressSelect("signal.assets_held>=500") },
+  { tag: "prolific_collector", scope: "address", select: addressSelect("signal.assets_held>=500") },
   { tag: "merchant", scope: "address", select: addressSelect("signal.dispenses>=5") },
   { tag: "creator", scope: "address", select: addressSelect("signal.survived_assets>=1") },
   { tag: "prolific_creator", scope: "address", select: addressSelect("signal.survived_assets>=20") },
@@ -60,15 +60,7 @@ const RULES: Rule[] = [
   { tag: "stamp_collector", scope: "address", select: addressSelect("signal.stamps_collected>=20") },
   { tag: "src20_deployer", scope: "address", select: addressSelect("signal.src20_deploys>=1") },
   { tag: "btns_user", scope: "address", select: addressSelect("signal.is_btns_user=1") },
-  {
-    tag: "og",
-    scope: "address",
-    select: addressSelect(
-      "signal.first_block<=(SELECT max(block_index)-43800 FROM blocks) AND signal.last_block>=850000",
-    ),
-  },
-  { tag: "wash", scope: "asset", select: assetSelect("signal.low_quality=1") },
-  { tag: "liquid", scope: "asset", select: assetSelect("signal.trades>=10") },
+  { tag: "low_quality", scope: "asset", select: assetSelect("signal.low_quality=1") },
   { tag: "durable", scope: "asset", select: assetSelect("signal.last_trade_blk-signal.first_trade_blk>=43800") },
   { tag: "broad", scope: "asset", select: assetSelect("signal.holders>=50") },
   {
@@ -84,9 +76,6 @@ const RULES: Rule[] = [
     scope: "asset",
     select: assetRecordSelect("asset.first_issuance_block_index<470436"),
   },
-  { tag: "named", scope: "asset", select: assetRecordSelect("asset.type='asset'") },
-  { tag: "subasset", scope: "asset", select: assetRecordSelect("asset.type='subasset'") },
-  { tag: "numeric", scope: "asset", select: assetRecordSelect("asset.type='numeric'") },
 ];
 
 const chunks = <T>(items: T[], size = 800): T[][] => {
@@ -129,11 +118,10 @@ async function reconcileRule(db: D1Database, rule: Rule, keys?: string[]): Promi
   return write.meta.rows_written ?? 0;
 }
 
-export async function buildTags(env: Env, opts: { includeTypes?: boolean } = {}): Promise<Record<string, unknown>> {
+export async function buildTags(env: Env): Promise<Record<string, unknown>> {
   const db = env.CORE_DB;
   await ensureEntities(db);
-  const rules =
-    opts.includeTypes === false ? RULES.filter((rule) => !["named", "subasset", "numeric"].includes(rule.tag)) : RULES;
+  const rules = RULES;
   let written = 0;
   for (const rule of rules) written += await reconcileRule(db, rule);
   await db

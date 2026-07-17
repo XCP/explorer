@@ -72,12 +72,12 @@ test("compact computed tags converge while preserving independently owned tags",
       .all()
       .map((row) => ({ ...row }));
   assert.equal(
-    tags().some((row) => row.entity_key === "trader" && row.tag === "active_trader"),
+    tags().some((row) => row.entity_key === "trader" && row.tag === "frequent_dex_trader"),
     true,
   );
   assert.equal(
-    tags().some((row) => row.entity_key === "CARD" && row.tag === "liquid"),
-    true,
+    tags().some((row) => ["named", "subasset", "numeric", "liquid", "og"].includes(String(row.tag))),
+    false,
   );
   assert.equal(
     tags().some((row) => row.entity_key === "CARD" && row.tag === "stamp" && row.source === "protocol"),
@@ -91,7 +91,7 @@ test("compact computed tags converge while preserving independently owned tags",
   sqlite.exec(`UPDATE address_signals SET dex_trades=0; UPDATE asset_signals SET trades=0,holders=0`);
   await buildTagsScoped(env, { assets: ["CARD"], addrs: ["trader"] });
   assert.equal(
-    tags().some((row) => row.tag === "active_trader" || row.tag === "liquid"),
+    tags().some((row) => row.tag === "frequent_dex_trader"),
     false,
   );
   assert.equal(
