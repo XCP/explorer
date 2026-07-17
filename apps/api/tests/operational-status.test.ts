@@ -32,11 +32,26 @@ class Database {
 }
 
 test("operational status aggregates durable frontiers without counting recovery outputs", async () => {
-  const core = new Database(() => [
-    { key: "last_event_index", value: "120" },
-    { key: "last_block_index", value: "101" },
-    { key: "last_block_hash", value: "abc" },
-  ]);
+  const core = new Database((sql) =>
+    sql.includes("FROM asset_activity_outlook")
+      ? [
+          {
+            rows: 10,
+            distinct_ranks: 10,
+            min_rank: 1,
+            max_rank: 10,
+            min_population: 10,
+            max_population: 10,
+            ineligible: 0,
+            calculated_at: 100,
+          },
+        ]
+      : [
+          { key: "last_event_index", value: "120" },
+          { key: "last_block_index", value: "101" },
+          { key: "last_block_hash", value: "abc" },
+        ],
+  );
   const recovery = new Database((sql) => {
     if (sql.includes("FROM recovery_state"))
       return [
@@ -58,6 +73,7 @@ test("operational status aggregates durable frontiers without counting recovery 
   assert.equal(result.generated_at, 123);
   assert.deepEqual(result.core, {
     replay: { last_event_index: 120, last_block_index: 101, last_block_hash: "abc" },
+    activity_outlook: { healthy: true, rows: 10, ineligible: 0, calculated_at: 100 },
   });
   assert.equal(result.recovery.import.rows_seen, 12_000);
   assert.equal(result.recovery.verification.complete, false);

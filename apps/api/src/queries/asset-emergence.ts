@@ -1,7 +1,9 @@
 import type { EmergingAsset, FreshAsset } from "@xcp/shared/radar";
 import { q } from "#api/db";
+import { assetRankingEligibleSql } from "#api/reputation/eligibility";
 
 const DAY = 86_400;
+const ELIGIBLE = assetRankingEligibleSql("signal");
 
 type EmergingRow = Omit<EmergingAsset, "reason">;
 type FreshRow = Omit<FreshAsset, "reason">;
@@ -22,7 +24,7 @@ export function listFreshAssets(db: D1Database, now: number, limit = 40): Promis
          JOIN assets state ON state.asset_id=evidence.asset_id
          JOIN asset_signals signal ON signal.asset_id=evidence.asset_id
         WHERE evidence.finalized=0 AND evidence.issued_at<=?1-${7 * DAY}
-          AND evidence.issued_at>?1-${30 * DAY} AND signal.low_quality=0 AND signal.supply>0
+          AND evidence.issued_at>?1-${30 * DAY} AND ${ELIGIBLE} AND signal.supply>0
      )
      SELECT ${EVIDENCE_COLUMNS} FROM eligible
       ORDER BY issued_at DESC,asset ASC LIMIT ?2`,
@@ -49,7 +51,7 @@ export function listEmergingAssets(
         WHERE evidence.finalized=1 AND evidence.trades>0
           AND evidence.issued_at<=?1-${30 * DAY}
           AND evidence.issued_at>?1-${90 * DAY}
-          AND signal.low_quality=0 AND signal.supply>0
+          AND ${ELIGIBLE} AND signal.supply>0
      ), ranked AS (
        SELECT eligible.*,
               PERCENT_RANK() OVER (ORDER BY buyers) buyer_rank,

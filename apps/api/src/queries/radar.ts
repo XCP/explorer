@@ -3,6 +3,7 @@
  */
 import type { AvailableAsset, RadarAsset } from "@xcp/shared/radar";
 import { q } from "#api/db";
+import { assetRankingEligibleSql } from "#api/reputation/eligibility";
 import { rawSqlExpr } from "#api/reputation/score";
 import { CONVICTION_FACTORS, CONVICTION_PCT } from "#api/reputation/config";
 
@@ -12,7 +13,7 @@ const CONVICTION = rawSqlExpr(CONVICTION_FACTORS, 0);
 
 // The base population: real, broadly held, named assets (not numeric stamps). Network standing remains a
 // score component, not an eligibility gate: held-out graph recovery does not validate asset quality.
-const ELIGIBLE = `signal.low_quality=0 AND signal.holders>=15
+const ELIGIBLE = `${assetRankingEligibleSql("signal")} AND signal.holders>=15
    AND EXISTS (SELECT 1 FROM assets eligible_state
                 WHERE eligible_state.asset_id=signal.asset_id AND eligible_state.type<>'numeric')`;
 

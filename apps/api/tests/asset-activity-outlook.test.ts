@@ -19,10 +19,10 @@ test("activity outlook uses the validated equal-weight rank and convergent upser
   assert.match(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL, /PERCENT_RANK\(\).*active_trade_months/);
   assert.match(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL, /\(recency_pct\+active_months_pct\)\/2\.0/);
   assert.match(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL, /ON CONFLICT\(asset_id\) DO UPDATE/);
-  assert.match(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL, /low_quality=0/);
+  assert.match(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL, /COALESCE\(signal\.low_quality,0\)=0/);
   assert.equal(/DELETE|REPLACE/i.test(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL), false);
   assert.match(ASSET_ACTIVITY_OUTLOOK_RECONCILE_SQL, /NOT EXISTS/);
-  assert.match(ASSET_ACTIVITY_OUTLOOK_RECONCILE_SQL, /low_quality=0/);
+  assert.match(ASSET_ACTIVITY_OUTLOOK_RECONCILE_SQL, /COALESCE\(signal\.low_quality,0\)=0/);
 });
 
 test("activity outlook rejects stale reorg rows and invalid projection invariants", () => {
