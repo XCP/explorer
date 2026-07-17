@@ -82,7 +82,7 @@ stats.get("/v2/leaderboards", async (c) => {
   // Fast reads from precomputed signal tables. Low-quality assets (bridge/exchange tokens + wash) are
   // HIDDEN by default — they distort the BTC/dispense boards (?include_hidden=1 to show them).
   const incl = c.req.query("include_hidden") === "1";
-  return cached(c, `leaderboards:signals:${incl ? 1 : 0}`, { ttl: 3600, edge: 300, swr: 86400 }, async () => {
+  return cached(c, `leaderboards:ratings:v1:${incl ? 1 : 0}`, { ttl: 3600, edge: 300, swr: 86400 }, async () => {
     // reputation/quality boards use the composed score (same config as the read scorer). tip ages the terms.
     const tip = await maxBlock(c.env.CORE_DB);
     const addrExpr = rawSqlExpr(ADDRESS_FACTORS, tip);
