@@ -275,69 +275,16 @@ test("contract: GET /v2/status - cheap SyncOverview heartbeat", async (t) => {
   assert.ok(!("balances" in j.result), "status must not grow global COUNT(*) fields");
 });
 
-test("contract: stats quality modes remain isolated and valid", async (t) => {
+test("contract: stats exposes one canonical all-chain payload", async (t) => {
   if (skipUnlessLive(t)) return;
   const contract = Date.now();
-  const [filtered, all, metrics] = await Promise.all([
+  const [stats, metrics] = await Promise.all([
     getJson(`/v2/stats?contract=${contract}`),
-    getJson(`/v2/stats?include_hidden=1&contract=${contract}`),
     getJson(`/v2/metrics?days=90&contract=${contract}`),
   ]);
-  const filteredCountFields = [
-    "assets",
-    "sends",
-    "issuances",
-    "dispensers",
-    "dispenses",
-    "orders",
-    "order_matches",
-    "dividends",
-    "fairmints",
-    "destructions",
-    "fairminters",
-    "btcpays",
-    "pools",
-    "pool_matches",
-    "pool_deposits",
-    "pool_withdrawals",
-    "holders",
-  ];
-  for (const field of filteredCountFields) {
-    assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
-    assert.ok(filtered.result[field] <= all.result[field], `filtered stats.${field} cannot exceed all-chain`);
-  }
-  // These relations have no asset-quality dimension. The quality modes cache independently, so a growing
-  // chain can put either snapshot slightly ahead without violating the contract.
-  for (const field of [
-    "addresses",
-    "sweeps",
-    "broadcasts",
-    "burns",
-    "bets",
-    "bet_matches",
-    "cancels",
-    "rps",
-    "rps_matches",
-    "btc_fees",
-    "xcp_destroyed",
-  ]) {
-    assert.equal(typeof filtered.result[field], "number", `filtered stats.${field} must be numeric`);
-    assert.ok(
-      Math.abs(filtered.result[field] - all.result[field]) < 10_000,
-      `quality-mode stats.${field} snapshots must remain near the same chain position`,
-    );
-  }
-  assert.equal(typeof filtered.result.btc_fees_complete, "boolean");
-  assert.equal(typeof all.result.btc_fees_complete, "boolean");
-  assert.equal(typeof filtered.result.transactions, "number", "filtered stats.transactions must be numeric");
-  assert.equal(typeof all.result.transactions, "number", "all-chain stats.transactions must be numeric");
-  // The two quality modes have independent stale-while-revalidate cache entries. Their unfiltered chain totals
-  // can therefore differ by the small number of transactions indexed between refreshes.
-  assert.ok(
-    Math.abs(filtered.result.transactions - all.result.transactions) < 10_000,
-    "quality-mode transaction snapshots must remain near the same chain position",
-  );
-  assert.ok(filtered.result.sends < all.result.sends, "quality modes must not collapse onto one cached payload");
+  for (const field of ["assets", "transactions", "addresses", "sends", "btc_fees", "xcp_destroyed"])
+    assert.equal(typeof stats.result[field], "number", `stats.${field} must be numeric`);
+  assert.equal(typeof stats.result.btc_fees_complete, "boolean");
 
   for (const field of [
     "transactions",

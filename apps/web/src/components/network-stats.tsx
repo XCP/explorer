@@ -39,7 +39,7 @@ const COUNTS: [CountKey, string, Route?][] = [
 // Network stats dashboard — live totals + the activity chart. Client island rendered by the thin
 // server page that owns the static metadata.
 export function NetworkStats() {
-  const { data } = useSWR<Envelope<NetworkStatsPayload>>(apiUrl("/v2/stats", { include_hidden: 1 }));
+  const { data } = useSWR<Envelope<NetworkStatsPayload>>(apiUrl("/v2/stats"));
   const s = data?.result;
   const counts = s
     ? [...COUNTS].sort(([aKey, aLabel], [bKey, bLabel]) => {

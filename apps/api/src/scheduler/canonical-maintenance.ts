@@ -17,7 +17,6 @@ import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
-import { maybeRefreshQualityNetworkStats } from "#api/indexer/quality-network-stats";
 import { maybeRefreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { maybeRefreshAssetRatings } from "#api/indexer/asset-rating";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
@@ -89,7 +88,6 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetRatings", () => maybeRefreshAssetRatings(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetActivityOutlook", () => maybeRefreshAssetActivityOutlook(env.CORE_DB));
-      await runScheduledJob("maybeRefreshQualityNetworkStats", () => maybeRefreshQualityNetworkStats(env.CORE_DB));
       await runScheduledJob("maybeRefreshExchangeTopAssets", () => maybeRefreshExchangeTopAssets(env));
       await runScheduledJob("maybeRebuildTags", () => maybeRebuildTags(env));
       await runScheduledJob("crawlEmblem", () => crawlEmblemStep(env));

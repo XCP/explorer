@@ -2,14 +2,12 @@
 import { router, cached, J } from "#api/read/respond";
 import { rawSqlExpr, ADDRESS_FACTORS } from "#api/reputation/score";
 import { boundedInteger } from "#api/http/numbers";
-import { networkStatsCacheKey } from "#api/http/cache-keys";
 import { maxBlock, leaderboards, type MetricName } from "#api/queries/stats";
 import {
   coreHomeOverview,
   coreMetricSeriesSet,
   coreNetworkCounts,
   coreNetworkTotals,
-  coreQualityNetworkStats,
   coreSyncOverview,
 } from "#api/queries/core-stats";
 
@@ -68,9 +66,7 @@ stats.get("/v2/metrics", async (c) => {
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) => {
-  const includeHidden = c.req.query("include_hidden") === "1";
-  return cached(c, networkStatsCacheKey(includeHidden), { ttl: 86400, edge: 120, swr: 604800 }, async () => {
-    if (!includeHidden) return { result: await coreQualityNetworkStats(c.env.CORE_DB) };
+  return cached(c, "stats:all-chain:v1", { ttl: 86400, edge: 120, swr: 604800 }, async () => {
     const counts = await coreNetworkCounts(c.env.CORE_DB);
     const totals = await coreNetworkTotals(c.env.CORE_DB);
     return { result: { ...counts, ...totals } };
