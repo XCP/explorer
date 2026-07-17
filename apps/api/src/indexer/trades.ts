@@ -243,12 +243,13 @@ export async function reconcileDirtyEmblemTrades(db: D1Database): Promise<{
   cleared: number;
   remaining: number;
 }> {
-  const dirtyFilter = `AND (sale.contract_id,sale.token_id) IN (
-    SELECT contract_id,token_id FROM emblem_trade_dirty
-    ORDER BY contract_id,token_id LIMIT ?
-  )`;
+  const dirtyFilter = `AND sale.contract_id=(
+      SELECT contract_id FROM emblem_trade_dirty ORDER BY contract_id,token_id LIMIT ?
+    ) AND sale.token_id=(
+      SELECT token_id FROM emblem_trade_dirty ORDER BY contract_id,token_id LIMIT ?
+    )`;
   const results = await db.batch([
-    db.prepare(emblemTradesSql(dirtyFilter)).bind(EMBLEM_DIRTY_BATCH),
+    db.prepare(emblemTradesSql(dirtyFilter)).bind(EMBLEM_DIRTY_BATCH, EMBLEM_DIRTY_BATCH),
     db.prepare(
       `DELETE FROM emblem_trade_dirty WHERE (contract_id,token_id) IN (
          SELECT contract_id,token_id FROM emblem_trade_dirty
