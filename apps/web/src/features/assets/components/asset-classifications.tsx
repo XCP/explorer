@@ -3,22 +3,19 @@ import {
   Coins,
   Layers,
   Vault,
-  Waves,
   Clock,
   Users,
   AlertTriangle,
-  GitBranch,
-  Hash,
   Landmark,
   History,
   type LucideIcon,
 } from "lucide-react";
 
 // Every way an asset is classified, surfaced as one chip strip so nothing we compute stays hidden. Three
-// registers: PROTOCOL (what standard it is), STRUCTURE (how it was issued), QUALITY (behavioral signals that
-// feed the rating), and one INTEGRITY flag. Collection membership lives in the context band, the grail/locked
+// registers: PROTOCOL (what standard it is), descriptive BEHAVIOR, and one INTEGRITY flag. Tags do not feed
+// Rating merely because they exist. Collection membership lives in the context band, the grail/locked
 // badges + rating live in the header — this fills in everything else. Only tags actually present render.
-type Tone = "protocol" | "structure" | "quality" | "warn" | "provenance";
+type Tone = "protocol" | "quality" | "warn" | "provenance";
 const CLASS: Record<string, { label: string; Icon: LucideIcon; tone: Tone; title: string }> = {
   // provenance — Counterparty predates the Ethereum NFT era; these are the historical headline tags
   "pre-ethereum": {
@@ -52,27 +49,13 @@ const CLASS: Record<string, { label: string; Icon: LucideIcon; tone: Tone; title
     tone: "protocol",
     title: "SRC-721 — the Bitcoin Stamps composable-NFT standard",
   },
-  // structure — how it was issued (named is the default, so it's left implicit)
-  subasset: {
-    label: "Subasset",
-    Icon: GitBranch,
-    tone: "structure",
-    title: "A subasset — a child of a named parent asset",
-  },
-  numeric: {
-    label: "Numeric",
-    Icon: Hash,
-    tone: "structure",
-    title: "A numeric asset (A-prefixed), issued without a claimed name",
-  },
-  // quality — behavioral signals that feed the rating
+  // behavior — descriptive observations, not implicit Rating inputs
   vaulted: {
     label: "Vaulted",
     Icon: Vault,
     tone: "quality",
     title: "Some supply is wrapped in an Emblem Vault (tradable on Ethereum)",
   },
-  liquid: { label: "Liquid", Icon: Waves, tone: "quality", title: "10+ trades — an active market" },
   durable: {
     label: "Durable",
     Icon: Clock,
@@ -81,11 +64,12 @@ const CLASS: Record<string, { label: string; Icon: LucideIcon; tone: Tone; title
   },
   broad: { label: "Broad", Icon: Users, tone: "quality", title: "50+ holders — widely distributed" },
   // integrity
-  wash: {
-    label: "Wash",
+  low_quality: {
+    label: "Low quality",
     Icon: AlertTriangle,
     tone: "warn",
-    title: "Flagged: wash-trading / low-quality signals — capped to a Speculative rating",
+    title:
+      "Reviewed integrity classification — Rating is capped at Speculative and the asset is excluded from ranked recommendations",
   },
 };
 // stable display order regardless of the tag array's order
@@ -95,18 +79,14 @@ const ORDER = [
   "stamp",
   "src20",
   "src721",
-  "subasset",
-  "numeric",
   "vaulted",
-  "liquid",
   "durable",
   "broad",
-  "wash",
+  "low_quality",
 ];
 const TONE_CLASS: Record<Tone, string> = {
   provenance: "bg-purple-500/10 text-purple-300 ring-purple-500/20",
   protocol: "bg-sky-500/10 text-sky-300 ring-sky-500/20",
-  structure: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/20",
   quality: "bg-teal-500/10 text-teal-300 ring-teal-500/20",
   warn: "bg-amber-500/10 text-amber-300 ring-amber-500/20",
 };

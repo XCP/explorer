@@ -11,11 +11,17 @@ export function NetworkStandingChip({ kind, id }: { kind: "addresses" | "assets"
   const tier = data?.result?.tier;
   if (tier !== "connected" && tier !== "flagged") return null;
   return tier === "connected" ? (
-    <span title="Connected in the seeded money-flow graph" className="chip trusted">
+    <span
+      title="Connected to selected regions of the money-flow graph; this is relationship evidence, not verification"
+      className="chip trusted"
+    >
       CONNECTED
     </span>
   ) : (
-    <span title="Flagged by reverse scam-seed network standing" className="chip distrusted">
+    <span
+      title="Proximate to selected risk seeds in the reverse money-flow graph; review the relationship evidence"
+      className="chip distrusted"
+    >
       FLAGGED
     </span>
   );

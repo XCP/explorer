@@ -268,7 +268,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                   <span className="k">Conviction</span>
                   <span
                     className="amt mono"
-                    title="Who holds it + how scarce — held by proven creators and active collectors across a scarce supply. No trade/volume inputs; can't be pumped."
+                    title="Relative holder profile: breadth, distribution, concentration, collector depth, creator participation, and circulating scarcity. Excludes price, volume, and network standing."
                   >
                     <span>{item.conviction.score}</span>
                     <span className="time">/100</span>
