@@ -5,13 +5,11 @@
 import type { AssetDetail, AssetActivityMonth, RatingsOverview } from "@xcp/shared/assets";
 import { fetchExternalMetadata } from "#api/integrations/external-metadata";
 import { router, J, lim, off, round, cached } from "#api/read/respond";
-import { scoreConviction, convictionScore, rawSqlExpr, ADDRESS_FACTORS } from "#api/reputation/score";
-import { ADDRESS_TIERS } from "#api/reputation/config";
+import { scoreConviction, convictionScore } from "#api/reputation/score";
 import { assetActivityOutlook } from "#api/reputation/activity-outlook";
 import { assetRating } from "#api/reputation/rating";
 import {
   featuredAssets,
-  chainTip,
   holderTiers,
   holderArchetypes,
   assetTop1Pct,
@@ -212,15 +210,11 @@ assets.get("/v2/assets/:asset", async (c) => {
 });
 
 // Holder makeup — "who holds this asset?" by reputation tier + archetype + concentration. Surfaces the
-// quality of the holder base (a real asset is held by established collectors; a sybil-minted one by Casual
-// wallets — e.g. MINTS is ~94% Casual). Non-reputation holders get their specific label
+// quality of the holder base. Non-ranked holders get their factual classification
 // (Exchange/Deposit/Vault/Burn/Service), never a generic bucket. Rows sort by supply share, high→low.
 assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const a = c.req.param("asset").toUpperCase();
-  const tip = await chainTip(c.env.CORE_DB);
-  const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
-  const [og, est, act] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const rows = await holderTiers(c.env.CORE_DB, a, expr, og, est, act);
+  const rows = await holderTiers(c.env.CORE_DB, a);
   const arche = await holderArchetypes(c.env.CORE_DB, a);
   const top1 = await assetTop1Pct(c.env.CORE_DB, a);
   const tiers = rows.sort((x, y) => y.pct_supply - x.pct_supply);

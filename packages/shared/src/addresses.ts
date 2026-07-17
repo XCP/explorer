@@ -1,16 +1,16 @@
 /** Address surfaces — summary, reputation, relationships (GET /v2/addresses/:address/*, /v2/exchanges). */
 
 export type AddressTier =
-  | "OG"
+  | "Exceptional"
+  | "Strong"
   | "Established"
-  | "Active"
-  | "Casual" // ranked real users
+  | "Limited" // ranked user-like addresses
   | "Exchange"
   | "Exchange deposit"
   | "Vault"
   | "Burn"
   | "Service" // infrastructure states
-  | "Dormant"
+  | "Integrity flag"
   | "No history"; // non-ranked
 
 /** GET /v2/addresses/:address/balances — one held asset (raw + normalized are text; stamp flag from tags). */
@@ -146,6 +146,13 @@ export interface AddressTrackRecord {
   meaning: string | null;
 }
 
+export interface AddressReputationComponents {
+  duration: number;
+  creation: number;
+  economic: number;
+  participation: number;
+}
+
 export interface AddressCurrentActivity {
   last_active_at: number;
   days_since_active: number;
@@ -154,11 +161,14 @@ export interface AddressCurrentActivity {
 export interface AddressReputation {
   track_record: AddressTrackRecord;
   activity: AddressCurrentActivity | null;
-  tags: string[]; // archetype labels (Creator/Collector/Whale/OG/…)
+  tags: string[]; // factual archetype labels such as Creator, Collector, and Whale
   persona: AddressPersona | null; // the dominant role headline
   evidence: AddressReputationEvidence | null;
-  raw?: number;
-  breakdown?: Record<string, number>;
+  components: AddressReputationComponents | null;
+  rank_position: number | null;
+  population: number | null;
+  calculated_at: number | null;
+  model_version: number | null;
 }
 
 /** GET /v2/addresses/:address/connections — top counterparties across sends + dispenses + DEX matches. */
@@ -187,22 +197,23 @@ export interface AddressLedgerRow {
   calling_function: string | null; // send | dispense | issuance | dividend | order match | ...
 }
 
-/** GET /v2/reputation/review — population raw-score band counts (calibration view). */
+/** GET /v2/reputation/review — ranked-population band counts. */
 export interface ReputationDistribution {
   n: number;
   mean: number;
   max: number;
-  og: number;
+  exceptional: number;
+  strong: number;
   established: number;
-  active: number;
-  casual: number;
+  limited: number;
 }
 
 /** GET /v2/reputation/review + /v2/reputation/tiers/:tier — a scored address row (face-validity spot
  *  check, and the per-tier leaderboard member). */
 export interface ReputationTopRow {
   address: string;
-  raw: number;
+  score: number;
+  rank_position: number;
   survived_assets: number;
   assets_held: number;
   dex_trades: number;
@@ -213,11 +224,11 @@ export interface ReputationTopRow {
 
 /** One reputation tier's public summary (definition + population) on the /reputation overview. */
 export interface ReputationTierSummary {
-  tier: string; // OG | Established | Active | Casual
-  slug: string; // og | established | active | casual — the deep-link segment
-  min_raw: number; // inclusive raw-score cutoff
+  tier: string; // Exceptional | Strong | Established | Limited
+  slug: string; // deep-link segment
+  minimum: number; // inclusive Reputation cutoff
   meaning: string; // plain-language definition
-  count: number; // real users currently in this tier
+  count: number; // ranked addresses currently in this band
 }
 
 /** The scoring funnel — every mirror address narrowed to the scored real-user pool. `by_kind` breaks down
@@ -239,6 +250,8 @@ export interface ReputationTiersOverview {
   funnel: ReputationFunnel;
   histogram: { bin: number; count: number }[];
   tiers: ReputationTierSummary[];
+  model_version: number;
+  calculated_at: number | null;
 }
 
 /** GET /v2/reputation/tiers/:tier — one tier's definition + its ranked membership (paginated). */

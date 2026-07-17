@@ -4,17 +4,16 @@
  *  reputation logic, not SQL. */
 import { router, J, lim, off, round, cached } from "#api/read/respond";
 import { listAddressBalances, listAddressSends } from "#api/queries/core";
-import {
-  scoreAddress,
-  addressScore,
-  addressTier,
-  type AddrState,
-  rawSqlExpr,
-  ADDRESS_FACTORS,
-} from "#api/reputation/score";
 import { classifyPersona } from "#api/reputation/persona";
 import { addressCurrentActivity } from "#api/reputation/activity";
-import { ADDRESS_TIERS, ADDRESS_TIER_MEANING, OG, TAG } from "#api/reputation/config";
+import { TAG } from "#api/reputation/config";
+import {
+  ADDRESS_REPUTATION_BANDS,
+  ADDRESS_REPUTATION_MODEL_VERSION,
+  ADDRESS_REPUTATION_STATE_LABELS,
+  addressReputationState,
+  addressReputationTier,
+} from "#api/indexer/address-reputation";
 import {
   listIssuances,
   listDispensers,
@@ -25,9 +24,9 @@ import {
   addressReputationRow,
   addressConnections,
   addressLineage,
-  maxBlockIndex,
   reputationDistribution,
   reputationTop,
+  reputationMetadata,
   reputationTierMembers,
   reputationFunnel,
   reputationHistogram,
@@ -42,7 +41,6 @@ export const addresses = router();
 // historyless we wouldn't have a row for it. So the gate is "not infrastructure AND has any on-chain
 // footprint": a comprehensive first_block (any appearance — see signals.ts addr_*_seen builders), send
 // peers, BTC spent, a holding, or any earned signal. This collapses the old "no history" bucket to ~0.
-const NOT_INFRA = `is_exchange=0 AND is_deposit=0 AND is_burn=0 AND COALESCE(is_emblem_vault,0)=0 AND COALESCE(likely_service,0)=0 AND (first_block IS NOT NULL OR in_peers>0 OR out_peers>0 OR COALESCE(btc_spent,0)>0 OR assets_held>0 OR survived_assets>0 OR dex_trades>0 OR dispenses>0 OR btc_fees>0 OR assets_issued>0 OR dividends>0)`;
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
   const page = { limit: lim(c), offset: off(c) };
@@ -91,12 +89,17 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
           track_record: {
             score: null,
             tier: "No history",
-            meaning: ADDRESS_TIER_MEANING["No history"],
+            meaning: ADDRESS_REPUTATION_STATE_LABELS.unrated,
           },
           activity: null,
           tags: [],
           evidence: null,
           persona: null,
+          components: null,
+          rank_position: null,
+          population: null,
+          calculated_at: null,
+          model_version: null,
         },
       },
       300,
@@ -105,46 +108,19 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
   const T = TAG;
   const xcp = n(r.xcp),
     first = n(r.first_block),
-    last = n(r.last_block),
-    tip = n(r.tip);
+    last = n(r.last_block);
   // all scoring math lives in src/reputation/* (config + generic engine) — tune weights there.
-  const { raw, breakdown } = scoreAddress(r, tip);
+  const state = addressReputationState(r as unknown as Record<string, unknown>);
+  const score = state === "ranked" ? round(n(r.reputation), 1) : null;
+  const tier = state === "ranked" ? addressReputationTier(n(r.reputation)) : ADDRESS_REPUTATION_STATE_LABELS[state];
   // Infrastructure + throwaway addresses are NON-RANKED (their own honest state); real users get a tier.
-  const isExch = n(r.is_exchange) === 1,
-    isDep = n(r.is_deposit) === 1;
-  const og = tip - first > OG.minAgeBlocks && last >= OG.modernBlock; // OG = old AND active into the modern chain
-  // "active" = any reputation-bearing footprint; a passive one-shot recipient is Dormant, not ranked.
-  const activeUser =
-    n(r.assets_held) > 0 ||
-    n(r.survived_assets) > 0 ||
-    n(r.dex_trades) > 0 ||
-    n(r.dispenses) > 0 ||
-    n(r.btc_fees) > 0 ||
-    n(r.assets_issued) > 0 ||
-    n(r.dividends) > 0;
-  const state: AddrState = isExch
-    ? "exchange"
-    : isDep
-      ? "deposit"
-      : n(r.is_emblem_vault) === 1
-        ? "vault"
-        : n(r.is_burn) === 1
-          ? "burn"
-          : n(r.likely_service) === 1
-            ? "service"
-            : !activeUser
-              ? "dormant"
-              : "ranked";
-  const tier = addressTier(raw, state);
-  const score = state === "ranked" ? addressScore(raw) : null; // only real users get a 0-100 percentile
   const activity = addressCurrentActivity(r.last_active_at, r.observed_at);
   // PERSONA — the dominant ROLE (what it does), orthogonal to the reputation score (whether to trust it).
   // Composed from the same signals as the archetype tags below, so the headline and the chips agree.
-  const persona = classifyPersona(r, state);
+  const persona = state === "integrity" || state === "unrated" ? null : classifyPersona(r, state);
   const tags: string[] = [];
   if (state !== "ranked") tags.push(tier); // infra/dormant get their state as the tag
   if (state === "ranked") {
-    if (og) tags.push("Early Adopter"); // age signal (arrived early + still active); distinct from the OG tier
     if (n(r.survived_assets) >= 20)
       tags.push("Prolific Creator"); // matches tags.ts prolific_creator
     else if (n(r.survived_assets) >= T.creatorSurvived) tags.push("Creator");
@@ -166,7 +142,14 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
     c,
     {
       result: {
-        track_record: { score, tier, meaning: ADDRESS_TIER_MEANING[tier] ?? null },
+        track_record: {
+          score,
+          tier,
+          meaning:
+            state === "ranked"
+              ? (ADDRESS_REPUTATION_BANDS.find((band) => band.tier === tier)?.meaning ?? null)
+              : ADDRESS_REPUTATION_STATE_LABELS[state],
+        },
         activity,
         tags,
         persona,
@@ -190,36 +173,40 @@ addresses.get("/v2/addresses/:address/reputation", async (c) => {
           src20_deploys: n(r.src20_deploys),
           btns_user: n(r.is_btns_user) === 1,
         },
-        raw: round(raw, 2),
-        breakdown, // per-factor contribution — explains the score, powers weight tuning
+        components:
+          state === "ranked"
+            ? {
+                duration: round(n(r.duration_score), 1),
+                creation: round(n(r.creation_score), 1),
+                economic: round(n(r.economic_score), 1),
+                participation: round(n(r.participation_score), 1),
+              }
+            : null,
+        rank_position: state === "ranked" ? n(r.rank_position) : null,
+        population: state === "ranked" ? n(r.population) : null,
+        calculated_at: state === "ranked" ? n(r.calculated_at) : null,
+        model_version: state === "ranked" ? n(r.model_version) : null,
       },
     },
     300,
   );
 });
 
-// Reputation tuning/calibration view: the population raw-score distribution across the band boundaries +
-// band counts + the top of the table (to spot-check). Run after a weight change in reputation/config.ts to
-// recalibrate the percentile anchors (set pct.p50/p90/p99 to where the population actually lands). Cheap:
-// one GROUP BY (no window sort). Excludes infra (exchange/deposit/burn/vault) — they aren't user scores.
+// Methodology review: model identity, family weights, band distribution, and top-ranked addresses.
 addresses.get("/v2/reputation/review", async (c) => {
-  const tip = Number((await maxBlockIndex(c.env.CORE_DB))?.m) || 0;
-  const expr = rawSqlExpr(ADDRESS_FACTORS, tip); // built from the SAME factor config as the read scorer
-  const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-  const distribution = await reputationDistribution(c.env.CORE_DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(
-    () => null,
-  );
-  const top = await reputationTop(c.env.CORE_DB, expr, NOT_INFRA).catch(() => []);
+  const [distribution, top, metadata] = await Promise.all([
+    reputationDistribution(c.env.CORE_DB).catch(() => null),
+    reputationTop(c.env.CORE_DB).catch(() => []),
+    reputationMetadata(c.env.CORE_DB).catch(() => null),
+  ]);
   return J(
     c,
     {
       result: {
-        factors: ADDRESS_FACTORS.filter((f) => f.weight).map((f) => ({
-          key: f.key,
-          weight: f.weight,
-          transform: f.transform,
-        })),
-        anchors_in_use: { note: "set pct anchors in reputation/config.ts to match 'distribution' below" },
+        model_version: ADDRESS_REPUTATION_MODEL_VERSION,
+        calculated_at: metadata?.calculated_at ?? null,
+        families: ["duration", "creation", "economic", "participation"],
+        family_weight: 0.25,
         distribution,
         top,
       },
@@ -228,31 +215,27 @@ addresses.get("/v2/reputation/review", async (c) => {
   );
 });
 
-// Public reputation-tiers overview — the real-user population split across OG/Established/Active/Casual,
-// each with its raw-score cutoff, plain-language meaning, and current head count. Backs the /reputation
-// page; each tier deep-links to its membership below.
+// Public Reputation overview: fixed bands, methodology metadata, classification census, and histogram.
 addresses.get("/v2/reputation/tiers", (c) =>
-  cached(c, "reputation:tiers", { ttl: 3600, edge: 300, swr: 86400 }, async () => {
-    const tip = Number((await maxBlockIndex(c.env.CORE_DB))?.m) || 0;
-    const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
-    const [vetCut, estCut, actCut] = [ADDRESS_TIERS[0].minRaw, ADDRESS_TIERS[1].minRaw, ADDRESS_TIERS[2].minRaw];
-    const [d, f, histogram] = await Promise.all([
-      reputationDistribution(c.env.CORE_DB, expr, NOT_INFRA, vetCut, estCut, actCut).catch(() => null),
+  cached(c, "reputation:tiers:v2", { ttl: 3600, edge: 300, swr: 86400 }, async () => {
+    const [d, f, histogram, metadata] = await Promise.all([
+      reputationDistribution(c.env.CORE_DB).catch(() => null),
       reputationFunnel(c.env.CORE_DB).catch(() => null),
-      reputationHistogram(c.env.CORE_DB, expr, NOT_INFRA, 40).catch(() => []),
+      reputationHistogram(c.env.CORE_DB).catch(() => []),
+      reputationMetadata(c.env.CORE_DB).catch(() => null),
     ]);
     const counts: Record<string, number> = {
-      OG: d?.og ?? 0,
+      Exceptional: d?.exceptional ?? 0,
+      Strong: d?.strong ?? 0,
       Established: d?.established ?? 0,
-      Active: d?.active ?? 0,
-      Casual: d?.casual ?? 0,
+      Limited: d?.limited ?? 0,
     };
-    const tiers = ADDRESS_TIERS.map((t) => ({
-      tier: t.tier,
-      slug: t.tier.toLowerCase(),
-      min_raw: t.minRaw,
-      meaning: t.meaning,
-      count: counts[t.tier] ?? 0,
+    const tiers = ADDRESS_REPUTATION_BANDS.map((band) => ({
+      tier: band.tier,
+      slug: band.slug,
+      minimum: band.minimum,
+      meaning: band.meaning,
+      count: counts[band.tier] ?? 0,
     }));
     const scored = d?.n ?? 0;
     const infrastructure = f?.infra ?? 0;
@@ -272,7 +255,18 @@ addresses.get("/v2/reputation/tiers", (c) =>
         services: f?.services ?? 0,
       },
     };
-    return { result: { total: scored, mean: d?.mean ?? 0, max: d?.max ?? 0, funnel, histogram, tiers } };
+    return {
+      result: {
+        total: scored,
+        mean: d?.mean ?? 0,
+        max: d?.max ?? 0,
+        funnel,
+        histogram,
+        tiers,
+        model_version: ADDRESS_REPUTATION_MODEL_VERSION,
+        calculated_at: metadata?.calculated_at ?? null,
+      },
+    };
   }),
 );
 
@@ -280,16 +274,12 @@ addresses.get("/v2/reputation/tiers", (c) =>
 // tier labels in the Holder view and holders-table badges.
 addresses.get("/v2/reputation/tiers/:tier", async (c) => {
   const slug = c.req.param("tier").toLowerCase();
-  const idx = ADDRESS_TIERS.findIndex((t) => t.tier.toLowerCase() === slug);
+  const idx = ADDRESS_REPUTATION_BANDS.findIndex((band) => band.slug === slug);
   if (idx < 0) return c.json({ error: "Unknown reputation tier" }, 404);
-  const t = ADDRESS_TIERS[idx];
-  const maxRaw = idx === 0 ? 1e9 : ADDRESS_TIERS[idx - 1].minRaw; // upper bound = the next-higher tier's cutoff
-  const tip = Number((await maxBlockIndex(c.env.CORE_DB))?.m) || 0;
-  const expr = rawSqlExpr(ADDRESS_FACTORS, tip);
-  const members = await reputationTierMembers(c.env.CORE_DB, expr, NOT_INFRA, t.minRaw, maxRaw, lim(c), off(c)).catch(
-    () => [],
-  );
-  const summary = { tier: t.tier, slug, min_raw: t.minRaw, meaning: t.meaning, count: 0 };
+  const tier = ADDRESS_REPUTATION_BANDS[idx];
+  const maximum = idx === 0 ? 101 : ADDRESS_REPUTATION_BANDS[idx - 1].minimum;
+  const members = await reputationTierMembers(c.env.CORE_DB, tier.minimum, maximum, lim(c), off(c)).catch(() => []);
+  const summary = { tier: tier.tier, slug, minimum: tier.minimum, meaning: tier.meaning, count: 0 };
   return J(
     c,
     { result: { tier: summary, members }, next_offset: members.length === lim(c) ? off(c) + lim(c) : null },

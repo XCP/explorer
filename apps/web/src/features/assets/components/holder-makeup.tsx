@@ -7,10 +7,10 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { commas } from "@/lib/format";
 
 // The four reputation tiers deep-link to their explainer + leaderboard; infra rows (Burn/Exchange/…) don't.
-const REPUTATION_TIERS = new Set(["OG", "Established", "Active", "Casual"]);
+const REPUTATION_TIERS = new Set(["Exceptional", "Strong", "Established", "Limited"]);
 
 // "Who holds this?" — composition of the holder base by reputation tier (a real asset skews
-// OG/Established; a sybil-minted one skews Casual). Reads /v2/assets/:asset/holder-makeup and
+// Established holders; infrastructure and integrity classifications remain separate. Reads
 // renders v19's holder-makeup card: quiet .row list, tier label left, value right. Two lenses on the
 // SAME tiers, toggled in the header: Supply (each type's % of supply) and Holders (each type's head
 // count) — they diverge sharply (PEPECASH Burn is 30.7% of supply but only 10 holders). Owner

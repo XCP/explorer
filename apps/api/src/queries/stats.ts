@@ -46,10 +46,8 @@ function board(db: D1Database, sql: string): Promise<Array<Record<string, unknow
 
 type Board = Array<Record<string, unknown>>;
 
-/** Config-driven raw-score SQL composed by the handler (from reputation/config, not request input). */
 export interface LeaderboardParams {
   includeHidden: boolean; // show low-quality assets + the bridge/exchange BTC flow that distorts boards
-  addrExpr: string; // raw address score over address_signals (tip-aged)
 }
 
 /** Every leaderboard board keyed by its wire field. Rows are generic (each board picks its own columns). */
@@ -84,7 +82,6 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
   const dispCol = p.includeHidden ? "dispense_btc" : "clean_dispense_btc";
   const spendCol = p.includeHidden ? "btc_spent" : "clean_btc_spent";
   const lowqF = p.includeHidden ? "" : " AND low_quality=0";
-  const { addrExpr } = p;
   const b = (sql: string) => board(db, sql);
   const [
     topCreators,
@@ -206,14 +203,11 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
        JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='stamp'
        WHERE signal.holders>0 ORDER BY signal.holders DESC LIMIT 12`,
     ),
-    // reputation: highest-scoring real users (OG board) and highest-quality assets (Bluechip board)
+    // reputation: highest-ranked address track records and highest-rated assets
     b(
-      `WITH ranked AS (SELECT signal.address_id,(${addrExpr}) score FROM address_signals signal
-       WHERE signal.is_exchange=0 AND signal.is_deposit=0 AND signal.is_burn=0
-         AND COALESCE(signal.is_emblem_vault,0)=0 AND COALESCE(signal.likely_service,0)=0
-       ORDER BY score DESC LIMIT 12)
-       SELECT dictionary.address,ROUND(ranked.score,1) score FROM ranked
-       JOIN address_dictionary dictionary ON dictionary.address_id=ranked.address_id ORDER BY ranked.score DESC`,
+      `SELECT dictionary.address,ROUND(reputation.reputation,1) score
+       FROM address_reputations reputation JOIN address_dictionary dictionary USING(address_id)
+       ORDER BY reputation.reputation DESC,reputation.address_id LIMIT 12`,
     ),
     b(
       `SELECT dictionary.asset,state.asset_longname,rating.rating

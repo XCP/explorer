@@ -25,20 +25,22 @@ import { Skeleton } from "@/components/ui/feedback";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { commas, timeAgo } from "@/lib/format";
 
-// Composed address reputation: intrinsic, earned-only (mud/dust-proof), validated predictive.
-// Leads with band + tags + EVIDENCE so it's explainable, never a black-box number. New = neutral.
+// Reputation summarizes the breadth and duration of directly observed Counterparty track record.
 const BAND: Record<string, { color: string; ring: string; bg: string }> = {
-  OG: { color: "text-sky-400", ring: "ring-sky-500/30", bg: "bg-sky-500/10" },
+  Exceptional: { color: "text-sky-400", ring: "ring-sky-500/30", bg: "bg-sky-500/10" },
+  Strong: { color: "text-emerald-400", ring: "ring-emerald-500/30", bg: "bg-emerald-500/10" },
   Established: { color: "text-emerald-400", ring: "ring-emerald-500/30", bg: "bg-emerald-500/10" },
-  Active: { color: "text-zinc-300", ring: "ring-zinc-600", bg: "bg-zinc-800" },
-  Casual: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
+  Limited: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
   New: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
   "No history": { color: "text-zinc-500", ring: "ring-zinc-800", bg: "bg-zinc-900/60" },
   Exchange: { color: "text-violet-300", ring: "ring-violet-500/30", bg: "bg-violet-500/10" },
   "Exchange deposit": { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
+  Vault: { color: "text-violet-300", ring: "ring-violet-500/30", bg: "bg-violet-500/10" },
+  Burn: { color: "text-zinc-400", ring: "ring-zinc-700", bg: "bg-zinc-900/60" },
+  Service: { color: "text-violet-300", ring: "ring-violet-500/30", bg: "bg-violet-500/10" },
+  "Integrity flag": { color: "text-amber-400", ring: "ring-amber-500/30", bg: "bg-amber-500/10" },
 };
 const TAG_ICON: Record<string, LucideIcon> = {
-  OG: Crown,
   "Early Adopter": Sparkles,
   Creator: Stamp,
   "Prolific Creator": Hammer,
@@ -82,6 +84,7 @@ export function ReputationHeader({ address }: { address: string }) {
   const track = r.track_record;
   const b = BAND[track.tier] || BAND.New;
   const ev = r.evidence;
+  const components = r.components;
   const lines: [string, string][] = [];
   if (ev) {
     if (ev.survived_assets)
@@ -153,6 +156,16 @@ export function ReputationHeader({ address }: { address: string }) {
           </div>
         </div>
       )}
+      {components ? (
+        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-zinc-800 pt-3 sm:grid-cols-4">
+          {Object.entries(components).map(([label, value]) => (
+            <div key={label}>
+              <div className="font-mono text-sm text-zinc-200">{value.toFixed(1)}</div>
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </Card>
   );
 }

@@ -7,7 +7,7 @@ import { SectionHeader, SectionIdentity, SectionStats } from "@/components/secti
 import { addrCell } from "@/features/records/cells";
 import { commas } from "@/lib/format";
 
-const VALID = new Set(["og", "established", "active", "casual"]);
+const VALID = new Set(["exceptional", "strong", "established", "limited"]);
 
 export async function generateMetadata({ params }: { params: Promise<{ tier: string }> }): Promise<Metadata> {
   const { tier } = await params;
@@ -105,11 +105,11 @@ export default async function TierPage({ params }: { params: Promise<{ tier: str
               </tr>
             </thead>
             <tbody>
-              {members.map((m, i) => (
+              {members.map((m) => (
                 <tr key={m.address} className="border-b border-[#14171d] last:border-0 hover:bg-white/[.02]">
-                  <td className="px-3 py-2 font-mono text-zinc-500 tabular-nums">{i + 1}</td>
+                  <td className="px-3 py-2 font-mono text-zinc-500 tabular-nums">{m.rank_position}</td>
                   <td className="px-3 py-2 max-w-0">{addrCell(m.address)}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums text-zinc-100">{m.raw}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-zinc-100">{m.score}</td>
                   {COLS.map((c) => (
                     <td key={c.label} className="px-3 py-2 text-right font-mono tabular-nums text-zinc-400">
                       {commas(m[c.key] as number)}

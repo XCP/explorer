@@ -1,6 +1,4 @@
-// ScoreBadge — the unified quality/reputation TIER display (DESIGN.md v2: tier-first, neutral→accent
-// ramp). Shows the tier word + an optional 0-100 number. The ramp runs quiet-zinc (Speculative/Casual and
-// the non-ranked states) → brighter zinc (Notable/Active, Premium/Established) → accent ring for the elite (Bluechip/OG).
+// Unified tier-first display for Asset Rating and Address Reputation.
 // NEVER red/green — those are market semantics only. Used on the tag-score pages (collections + /tag).
 //
 // FLAGGED (low_quality) rule: a low_quality asset is hard-CAPPED to the Speculative tier regardless of its
@@ -13,13 +11,13 @@
 // (Untraded/Dormant/Exchange/Vault/Burn/… and any address non-ranked state) falls to QUIET.
 const RAMP: Record<string, string> = {
   Bluechip: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
-  OG: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
+  Exceptional: "text-zinc-100 ring-(--color-accent)/40 bg-(--color-accent)/10",
+  Strong: "text-zinc-200 ring-zinc-500/50 bg-zinc-800",
   Premium: "text-zinc-200 ring-zinc-500/50 bg-zinc-800", // asset rating (≈ address Established)
   Established: "text-zinc-200 ring-zinc-500/50 bg-zinc-800",
   Notable: "text-zinc-300 ring-zinc-600/60 bg-zinc-800/60", // asset rating (≈ address Active)
-  Active: "text-zinc-300 ring-zinc-600/60 bg-zinc-800/60",
   Speculative: "text-zinc-400 ring-zinc-700 bg-zinc-900/60",
-  Casual: "text-zinc-400 ring-zinc-700 bg-zinc-900/60",
+  Limited: "text-zinc-400 ring-zinc-700 bg-zinc-900/60",
 };
 const QUIET = "text-zinc-500 ring-zinc-800 bg-zinc-900/40";
 

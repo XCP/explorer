@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
+import { maybeRefreshAddressReputations } from "#api/indexer/address-reputation";
 import { maybeBuildGraph } from "#api/indexer/graph";
 import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
 import { scanRecoveryTransactions } from "#api/recovery/scanner";
@@ -12,6 +13,7 @@ export async function runRecoveryMaintenance(env: Env): Promise<void> {
   // Address projection gets a fresh CORE_DB invocation. Running it after the large asset projection can exhaust
   // D1's internal compound-statement budget even though both jobs are independently valid.
   await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
+  await runScheduledJob("maybeRefreshAddressReputations", () => maybeRefreshAddressReputations(env.CORE_DB));
   // Raw-transaction reads are already bounded to five concurrent requests and the scanner advances its
   // durable cursor only after the complete page succeeds. Use a larger page while catching up so a restart
   // does not leave the recovery index days behind the canonical transaction mirror.

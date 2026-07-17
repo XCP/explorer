@@ -17,14 +17,16 @@ test("compact reputation rankings restore address identities", async () => {
   db.exec(`
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
     CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY,survived_assets INTEGER,assets_held INTEGER,dex_trades INTEGER,stamps_created INTEGER,dividends INTEGER,btc_fees REAL,is_exchange INTEGER);
+    CREATE TABLE address_reputations(address_id INTEGER PRIMARY KEY,reputation REAL,rank_position INTEGER);
     INSERT INTO address_dictionary VALUES(1,'alice'),(2,'bob'),(3,'exchange');
     INSERT INTO address_signals VALUES(1,12,3,4,5,6,7,0),(2,8,2,3,4,5,6,0),(3,100,9,9,9,9,9,1);
+    INSERT INTO address_reputations VALUES(1,99,1),(2,80,2);
   `);
   const binding = d1(db);
-  const top = await reputationTop(binding, "survived_assets", "is_exchange=0");
+  const top = await reputationTop(binding);
   assert.deepEqual(top.map((row) => row.address), ["alice", "bob"]);
-  const tier = await reputationTierMembers(binding, "survived_assets", "is_exchange=0", 10, 20, 10, 0);
+  const tier = await reputationTierMembers(binding, 90, 100.1, 10, 0);
   assert.equal(tier.length, 1);
   assert.equal(tier[0].address, "alice");
-  assert.equal(tier[0].raw, 12);
+  assert.equal(tier[0].score, 99);
 });

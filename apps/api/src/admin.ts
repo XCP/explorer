@@ -34,6 +34,7 @@ import { backfillStatus } from "#api/operations/backfill-status";
 import { refreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { refreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { refreshAssetRatings } from "#api/indexer/asset-rating";
+import { refreshAddressReputations } from "#api/indexer/address-reputation";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#api/indexer/bitcoin-fees";
@@ -300,6 +301,10 @@ admin.post("/admin/reconcile-emblem-trades", async (c) => {
 // Force the final Rating projection after an operator drains trade and signal repairs.
 admin.post("/admin/refresh-ratings", async (c) => {
   return c.json(await refreshAssetRatings(c.env.CORE_DB));
+});
+
+admin.post("/admin/refresh-address-reputations", async (c) => {
+  return c.json(await refreshAddressReputations(c.env.CORE_DB));
 });
 
 // Backfill the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP). Loop a couple times to backfill.

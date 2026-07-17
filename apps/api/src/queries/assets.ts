@@ -125,34 +125,28 @@ export function featuredAssets(db: D1Database, limit: number): Promise<FeaturedA
 /* ---------- holder makeup ---------- */
 
 /** Chain tip (max block) — substituted into the address-decay term of the reputation expression. */
-export async function chainTip(db: D1Database): Promise<number> {
-  const r = await one<{ m: number }>(db, `SELECT MAX(block_index) m FROM blocks`);
-  return Number(r?.m) || 0;
-}
-
-/** Holder base bucketed by reputation tier. `expr` is the config-driven raw-score SQL over address_signals;
- *  `og`/`est`/`act` are the tier raw cutoffs — all interpolated (config-sourced, not user input). */
+/** Holder base bucketed by factual address classification or materialized Reputation band. */
 export function holderTiers(
   db: D1Database,
   asset: string,
-  expr: string,
-  og: number,
-  est: number,
-  act: number,
 ): Promise<HolderTierRow[]> {
   return q<HolderTierRow>(
     db,
     `WITH h AS (
-       SELECT CAST(b.quantity AS REAL) q, sg.is_exchange xch, sg.is_deposit dep,
-         sg.is_emblem_vault vlt, sg.is_burn brn, sg.likely_service svc, (${expr}) raw
+       SELECT CAST(b.quantity AS REAL) q,sg.is_exchange xch,sg.is_deposit dep,
+         sg.is_emblem_vault vlt,sg.is_burn brn,sg.likely_service svc,
+         COALESCE(sg.vault_scams,0)+COALESCE(sg.shell_scams,0)+COALESCE(sg.dump_scams,0) integrity,
+         reputation.reputation
        FROM balances b JOIN address_signals sg ON sg.address_id=b.address_id
+       LEFT JOIN address_reputations reputation ON reputation.address_id=b.address_id
        WHERE b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
          AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0),
      tot AS (SELECT SUM(q) s FROM h)
      SELECT CASE WHEN xch=1 THEN 'Exchange' WHEN dep=1 THEN 'Deposit' WHEN vlt=1 THEN 'Vault'
-                 WHEN brn=1 THEN 'Burn' WHEN svc=1 THEN 'Service'
-                 WHEN raw>=${og} THEN 'OG' WHEN raw>=${est} THEN 'Established'
-                 WHEN raw>=${act} THEN 'Active' ELSE 'Casual' END tier,
+                 WHEN brn=1 THEN 'Burn' WHEN svc=1 THEN 'Service' WHEN integrity>0 THEN 'Integrity flag'
+                 WHEN reputation>=99 THEN 'Exceptional' WHEN reputation>=90 THEN 'Strong'
+                 WHEN reputation>=50 THEN 'Established' WHEN reputation IS NOT NULL THEN 'Limited'
+                 ELSE 'Unrated' END tier,
        COUNT(*) holders, ROUND(100.0*SUM(q)/(SELECT s FROM tot),1) pct_supply
      FROM h GROUP BY tier`,
     asset,

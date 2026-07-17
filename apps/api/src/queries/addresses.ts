@@ -35,6 +35,15 @@ export type AddressReputationRow = AddressSignalsRow & {
   tip: number | null;
   last_active_at: number | null;
   observed_at: number | null;
+  reputation: number | null;
+  rank_position: number | null;
+  population: number | null;
+  duration_score: number | null;
+  creation_score: number | null;
+  economic_score: number | null;
+  participation_score: number | null;
+  calculated_at: number | null;
+  model_version: number | null;
 };
 
 /** Provenance ledger — every raw credit (in) and debit (out) for an address, newest first (credits/debits,
@@ -168,14 +177,16 @@ export function addressReputationRow(db: D1Database, address: string): Promise<A
   return one<AddressReputationRow>(
     db,
     `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1)
-     SELECT signal.*,
+     SELECT signal.*,reputation.reputation,reputation.rank_position,reputation.population,
+            reputation.duration_score,reputation.creation_score,reputation.economic_score,
+            reputation.participation_score,reputation.calculated_at,reputation.model_version,
             (SELECT CAST(balance.quantity_normalized AS REAL) FROM balances balance
               WHERE balance.address_id=signal.address_id
                 AND balance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')) xcp,
             (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip,
             (SELECT block_time FROM blocks WHERE block_index=signal.last_block) last_active_at,
             (SELECT block_time FROM blocks ORDER BY block_index DESC LIMIT 1) observed_at
-       FROM address_signals signal
+       FROM address_signals signal LEFT JOIN address_reputations reputation USING(address_id)
       WHERE signal.address_id=(SELECT address_id FROM identity)`,
     address,
   );
@@ -234,45 +245,35 @@ export function addressLineage(db: D1Database, address: string): Promise<Address
   );
 }
 
-/* ---------- reputation calibration (/v2/reputation/review) ---------- */
-// `expr` (raw-score SQL) and `notInfra` (population filter) are composed in the handler from reputation/config
-// via rawSqlExpr — config-derived, not request input. The query owns only the surrounding aggregate/select.
-
-/** Chain tip block height (0 if none), the base for age terms in the calibration expression. */
-export function maxBlockIndex(db: D1Database): Promise<{ m: number | null } | null> {
-  return one<{ m: number | null }>(db, `SELECT MAX(block_index) m FROM blocks`);
-}
-
-/** Population raw-score band counts across the tier boundaries (one GROUP BY, no window sort). */
+/* ---------- reputation methodology (/v2/reputation/review) ---------- */
+/** Population counts across the materialized Reputation bands. */
 export function reputationDistribution(
   db: D1Database,
-  expr: string,
-  notInfra: string,
-  vetCut: number,
-  estCut: number,
-  actCut: number,
 ): Promise<ReputationDistribution | null> {
   return one<ReputationDistribution>(
     db,
-    `WITH r AS (SELECT (${expr}) raw FROM address_signals WHERE ${notInfra})
-     SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max,
-       SUM(CASE WHEN raw>=${vetCut} THEN 1 ELSE 0 END) og,
-       SUM(CASE WHEN raw>=${estCut} AND raw<${vetCut} THEN 1 ELSE 0 END) established,
-       SUM(CASE WHEN raw>=${actCut} AND raw<${estCut} THEN 1 ELSE 0 END) active,
-       SUM(CASE WHEN raw<${actCut} THEN 1 ELSE 0 END) casual
-     FROM r`,
+    `SELECT COUNT(*) n,ROUND(AVG(reputation),2) mean,ROUND(MAX(reputation),2) max,
+       SUM(reputation>=99) exceptional,SUM(reputation>=90 AND reputation<99) strong,
+       SUM(reputation>=50 AND reputation<90) established,SUM(reputation<50) limited
+     FROM address_reputations`,
   );
 }
 
-/** Top of the population table — spot-check that high scorers are credible. */
-export function reputationTop(db: D1Database, expr: string, notInfra: string): Promise<ReputationTopRow[]> {
+/** Top of the population table for face-validity review. */
+export function reputationTop(db: D1Database): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
-    `SELECT dictionary.address,ROUND((${expr}),2) raw,signal.survived_assets,signal.assets_held,
+    `SELECT dictionary.address,ROUND(reputation.reputation,1) score,reputation.rank_position,
+       signal.survived_assets,signal.assets_held,
        signal.dex_trades,signal.stamps_created,signal.dividends,signal.btc_fees
-     FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
-     WHERE ${notInfra} ORDER BY (${expr}) DESC LIMIT 20`,
+     FROM address_reputations reputation JOIN address_signals signal USING(address_id)
+     JOIN address_dictionary dictionary USING(address_id)
+     ORDER BY reputation.reputation DESC,reputation.address_id LIMIT 20`,
   );
+}
+
+export function reputationMetadata(db: D1Database): Promise<{ calculated_at: number | null } | null> {
+  return one<{ calculated_at: number | null }>(db, `SELECT MAX(calculated_at) calculated_at FROM address_reputations`);
 }
 
 /** The infrastructure census: how the mirror's non-user addresses break down by kind. The read layer
@@ -304,36 +305,33 @@ export function reputationFunnel(db: D1Database): Promise<{
  *  distribution + tier reads use; `cap` is an interpolated literal (not user input). */
 export function reputationHistogram(
   db: D1Database,
-  expr: string,
-  notInfra: string,
-  cap: number,
 ): Promise<{ bin: number; count: number }[]> {
   return q<{ bin: number; count: number }>(
     db,
-    `WITH r AS (SELECT MAX(0, MIN(${cap}, CAST((${expr}) AS INTEGER))) b FROM address_signals WHERE ${notInfra})
-     SELECT b bin, COUNT(*) count FROM r GROUP BY b ORDER BY b`,
+    `SELECT MIN(100,CAST(reputation AS INTEGER)) bin,COUNT(*) count
+     FROM address_reputations GROUP BY bin ORDER BY bin`,
   );
 }
 
-/** One reputation tier's membership — real users whose raw score falls in [minRaw, maxRaw), ranked. The
- *  bounds are config-sourced tier cutoffs (interpolated, not user input); the caller passes a large sentinel
- *  for the top (OG) tier's open upper bound. Powers the /reputation/:tier deep-link leaderboard. */
+/** One Reputation band's members, with bounds supplied by the fixed model definition. */
 export function reputationTierMembers(
   db: D1Database,
-  expr: string,
-  notInfra: string,
-  minRaw: number,
-  maxRaw: number,
+  minimum: number,
+  maximum: number,
   limit: number,
   offset: number,
 ): Promise<ReputationTopRow[]> {
   return q<ReputationTopRow>(
     db,
-    `SELECT dictionary.address,ROUND((${expr}),2) raw,signal.survived_assets,signal.assets_held,
+    `SELECT dictionary.address,ROUND(reputation.reputation,1) score,reputation.rank_position,
+       signal.survived_assets,signal.assets_held,
        signal.dex_trades,signal.stamps_created,signal.dividends,signal.btc_fees
-     FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
-     WHERE ${notInfra} AND (${expr})>=${minRaw} AND (${expr})<${maxRaw}
-     ORDER BY (${expr}) DESC LIMIT ? OFFSET ?`,
+     FROM address_reputations reputation JOIN address_signals signal USING(address_id)
+     JOIN address_dictionary dictionary USING(address_id)
+     WHERE reputation.reputation>=? AND reputation.reputation<?
+     ORDER BY reputation.reputation DESC,reputation.address_id LIMIT ? OFFSET ?`,
+    minimum,
+    maximum,
     limit,
     offset,
   );

@@ -1,8 +1,7 @@
 /** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards. */
 import { router, cached, J } from "#api/read/respond";
-import { rawSqlExpr, ADDRESS_FACTORS } from "#api/reputation/score";
 import { boundedInteger } from "#api/http/numbers";
-import { maxBlock, leaderboards, type MetricName } from "#api/queries/stats";
+import { leaderboards, type MetricName } from "#api/queries/stats";
 import {
   coreHomeOverview,
   coreMetricSeriesSet,
@@ -79,10 +78,7 @@ stats.get("/v2/leaderboards", async (c) => {
   // HIDDEN by default — they distort the BTC/dispense boards (?include_hidden=1 to show them).
   const incl = c.req.query("include_hidden") === "1";
   return cached(c, `leaderboards:ratings:v1:${incl ? 1 : 0}`, { ttl: 3600, edge: 300, swr: 86400 }, async () => {
-    // reputation/quality boards use the composed score (same config as the read scorer). tip ages the terms.
-    const tip = await maxBlock(c.env.CORE_DB);
-    const addrExpr = rawSqlExpr(ADDRESS_FACTORS, tip);
-    const boards = await leaderboards(c.env.CORE_DB, { includeHidden: incl, addrExpr });
+    const boards = await leaderboards(c.env.CORE_DB, { includeHidden: incl });
     return { result: { ...boards, include_hidden: incl } };
   });
 });

@@ -21,6 +21,7 @@
     "test:migrations:recovery": "node ops/rehearse-recovery-migrations.mjs",
     "test:contract": "tsc -p tsconfig.test.json && node tests/contract-runner.mjs",
     "evaluate:reputation": "node ops/evaluate-reputation-baselines.mjs",
+    "audit:address-reputation": "node ops/audit-address-reputation.mjs",
     "review:asset-outlook": "node ops/review-asset-activity-outlook.mjs",
     "evaluate:asset-outlook-collections": "node ops/evaluate-asset-outlook-collections.mjs",
     "audit:asset-outlook": "node ops/audit-asset-activity-outlook.mjs",

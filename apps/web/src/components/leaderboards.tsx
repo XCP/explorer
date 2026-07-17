@@ -202,7 +202,7 @@ export function Leaderboards() {
       <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mt-4">Reputation</h2>
       <div className="grid lg:grid-cols-3 gap-6">
         <Board
-          title="Highest reputation (OG)"
+          title="Highest Address Reputation"
           rows={d.top_reputation ?? []}
           render={(r) => (
             <>
