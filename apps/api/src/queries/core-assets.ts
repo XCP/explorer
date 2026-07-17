@@ -353,19 +353,54 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
             signal.distinct_dispense_buyers,signal.max_dispense_btc_clean,signal.emblem_trades,
             signal.graph_trust,signal.graph_distrust,signal.holder_cohesion,
             signal.cohesion_edges,signal.cohesion_strong,signal.active_trade_months,
-            signal.last_trade_time,outlook.score activity_outlook_score,
+            signal.last_trade_time,signal.clean_realized_usd,signal.distinct_paid_buyers,
+            signal.clean_active_trade_months,signal.market_venue_count,
+            rating.rating rating_value,rating.rank_position rating_rank,rating.population rating_population,
+            rating.active_months_score rating_active_months_score,
+            rating.buyer_breadth_score rating_buyer_breadth_score,
+            rating.realized_value_score rating_realized_value_score,
+            rating.calculated_at rating_calculated_at,rating.model_version rating_model_version,
+            outlook.score activity_outlook_score,
             outlook.rank_position activity_outlook_rank,outlook.population activity_outlook_population,
             outlook.calculated_at activity_outlook_calculated_at
        FROM asset_signals signal
        JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
        LEFT JOIN assets ON assets.asset_id=signal.asset_id
        LEFT JOIN address_dictionary issuer ON issuer.address_id=signal.issuer_id
+       LEFT JOIN asset_ratings rating ON rating.asset_id=signal.asset_id
        LEFT JOIN asset_activity_outlook outlook ON outlook.asset_id=signal.asset_id
        CROSS JOIN (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip
        CROSS JOIN holding
       WHERE dictionary.asset=?1`,
     asset,
   );
+}
+
+export async function coreRatingsOverview(db: D1Database) {
+  const [meta, distribution, examples] = await Promise.all([
+    one<{ model_version: number; calculated_at: number; population: number }>(
+      db,
+      `SELECT MAX(model_version) model_version,MAX(calculated_at) calculated_at,COUNT(*) population
+       FROM asset_ratings`,
+    ),
+    q<{ rating: number; count: number }>(
+      db,
+      `SELECT ROUND(rating) rating,COUNT(*) count FROM asset_ratings GROUP BY ROUND(rating) ORDER BY rating`,
+    ),
+    q<{ asset: string; asset_longname: string | null; rating: number; rank: number }>(
+      db,
+      `SELECT dictionary.asset,asset.asset_longname,ROUND(rating.rating,1) rating,rating.rank_position rank
+       FROM asset_ratings rating
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=rating.asset_id
+       LEFT JOIN assets asset ON asset.asset_id=rating.asset_id
+       WHERE rating.rank_position IN (
+         1,ROUND(rating.population*0.1),ROUND(rating.population*0.2),ROUND(rating.population*0.3),
+         ROUND(rating.population*0.4),ROUND(rating.population*0.5),ROUND(rating.population*0.6),
+         ROUND(rating.population*0.7),ROUND(rating.population*0.8),ROUND(rating.population*0.9),rating.population
+       ) ORDER BY rating.rank_position`,
+    ),
+  ]);
+  return { meta, distribution, examples };
 }
 
 export function coreAssetQualitySignals(

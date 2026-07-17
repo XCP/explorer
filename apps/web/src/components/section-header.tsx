@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 
 /**
  * The section band under the global chrome — v19 design system (design-lab/v19-banner.html): each
@@ -68,7 +70,13 @@ export function SectionIdentity({
 }
 
 /** One entry in the stat strip. `hideOnMobile` caps the strip on small screens (v19 .mobile-hide). */
-export type SectionStat = { label: string; value: ReactNode; detail?: ReactNode; hideOnMobile?: boolean };
+export type SectionStat = {
+  label: string;
+  value: ReactNode;
+  detail?: ReactNode;
+  hideOnMobile?: boolean;
+  href?: string;
+};
 
 export function SectionStats({ stats }: { stats: SectionStat[] }) {
   return (
@@ -77,7 +85,7 @@ export function SectionStats({ stats }: { stats: SectionStat[] }) {
         <div key={i} className={`sh-stat${s.hideOnMobile ? " mobile-hide" : ""}`}>
           <div className="l">{s.label}</div>
           <div className="v">
-            {s.value}
+            {s.href ? <Link href={s.href as Route}>{s.value}</Link> : s.value}
             {s.detail != null && (
               <>
                 {" "}

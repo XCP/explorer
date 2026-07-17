@@ -1,6 +1,4 @@
-/** Tag scores — the derivative "tag scores" layer: per-tag aggregate asset/address scores (collection
- *  scoreboards + cohort stats). Asset tags carry composed-quality aggregates; address tags carry counts
- *  only (score stats null). Mirror: apps/api/src/read/tags.ts + queries/tags.ts. */
+/** Tag profiles: categorical membership plus descriptive aggregate Rating and holder evidence. */
 
 /** GET /v2/tags — one row per distinct tag (population aggregate). Score stats (mean/median/tier/USD/
  *  holders) are computed over the tag's ASSET members via the same raw expr the validation endpoint uses;
@@ -12,10 +10,8 @@ export interface TagStatsRow {
   n: number; // total members
   n_assets: number;
   n_addresses: number;
-  mean_raw: number | null; // mean composed-quality raw over asset members
-  median_raw: number | null; // median composed-quality raw over asset members
-  median_score: number | null; // 0-100 percentile of median_raw (enriched server-side)
-  median_tier: string | null; // assetTier(median_raw) — the collection's headline tier (enriched server-side)
+  mean_rating: number | null;
+  median_rating: number | null;
   pct_low_quality: number | null; // % of asset members flagged low_quality
   total_realized_usd: number; // Σ max_realized_usd over asset members
   total_holders: number; // Σ holders over asset members
@@ -27,17 +23,14 @@ export interface TagStatsRow {
   meta: string | null; // collection meta JSON ({collection, site}) when the tag carries one (tokenscan)
 }
 
-/** One asset member of a tag (GET /v2/tags/:tag members[]). Tier + score are computed server-side from
- *  the same composed raw the asset detail endpoint uses (assetTier incl. the low_quality cap). */
+/** One asset member of a tag (GET /v2/tags/:tag members[]). */
 export interface TagMemberRow {
   asset: string;
   asset_longname: string | null;
   holders: number;
   buyers: number; // distinct realized-value counterparties (distinct_traders + distinct_dispense_buyers)
   max_realized_usd: number;
-  raw: number; // composed-quality raw (validation expr)
-  score: number | null; // 0-100 percentile among market assets (null if the asset has no market)
-  tier: string; // assetTier() incl. the low_quality cap
+  rating: number | null;
   low_quality: 0 | 1;
 }
 

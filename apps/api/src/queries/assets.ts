@@ -8,15 +8,7 @@
  * The per-asset orders tab reuses the records-owned ORDER_SELECT projection (a query→query import); the
  * active-balance predicate is written inline where it's needed.
  */
-import type {
-  AssetIndexRow,
-  FeaturedAsset,
-  BalanceRow,
-  HolderTierRow,
-  HolderArchetypes,
-  AssetReviewDistribution,
-  AssetReviewTopRow,
-} from "@xcp/shared/assets";
+import type { AssetIndexRow, FeaturedAsset, BalanceRow, HolderTierRow, HolderArchetypes } from "@xcp/shared/assets";
 import type {
   SendRow,
   IssuanceRow,
@@ -96,24 +88,24 @@ export function listAssets(db: D1Database, f: AssetListFilter): Promise<AssetInd
   );
 }
 
-/** Featured grid — highest-quality market assets with art. `expr` is the config-driven raw-score SQL. */
-export function featuredAssets(db: D1Database, expr: string, limit: number): Promise<FeaturedAsset[]> {
+/** Featured grid — highest-rated assets with art. */
+export function featuredAssets(db: D1Database, limit: number): Promise<FeaturedAsset[]> {
   return q<FeaturedAsset>(
     db,
     `WITH ranked AS (
-       SELECT signal.asset_id,dictionary.asset,(${expr}) score
-       FROM asset_signals signal
-       JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
-       WHERE (signal.trades>0 OR signal.dispenses>0) AND COALESCE(signal.low_quality,0)=0
+       SELECT rating.asset_id,dictionary.asset,rating.rating
+       FROM asset_ratings rating
+       JOIN asset_dictionary dictionary ON dictionary.asset_id=rating.asset_id
+       WHERE 1
          AND EXISTS (
            SELECT 1 FROM entity_dictionary entity JOIN tags tag ON tag.entity_id=entity.entity_id
             WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tag.tag='has_media'
          )
-       ORDER BY score DESC,dictionary.asset ASC LIMIT ?
+       ORDER BY rating.rating DESC,dictionary.asset ASC LIMIT ?
      )
-     SELECT ranked.asset,state.asset_longname,ROUND(ranked.score,1) score
+     SELECT ranked.asset,state.asset_longname,ROUND(ranked.rating,1) rating
      FROM ranked LEFT JOIN assets state ON state.asset_id=ranked.asset_id
-     ORDER BY ranked.score DESC,ranked.asset ASC`,
+     ORDER BY ranked.rating DESC,ranked.asset ASC`,
     limit,
   );
 }
@@ -189,80 +181,6 @@ export function assetTop1Pct(db: D1Database, asset: string): Promise<{ t: number
     `SELECT ROUND(signal.top1_pct,1) t FROM asset_signals signal
      JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id WHERE dictionary.asset=?`,
     asset,
-  );
-}
-
-/* ---------- asset-quality calibration (parallel to /v2/reputation/review) ---------- */
-
-/** Population quality distribution over asset_signals (`expr` = config-driven raw-score SQL). */
-export function assetReviewDistribution(
-  db: D1Database,
-  expr: string,
-  bluechipCut: number,
-  premiumCut: number,
-  notableCut: number,
-): Promise<AssetReviewDistribution | null> {
-  return one<AssetReviewDistribution>(
-    db,
-    `WITH r AS (
-       SELECT COALESCE((${expr}),0) raw FROM asset_signals WHERE trades>0 OR dispenses>0
-     )
-     SELECT COUNT(*) n, ROUND(AVG(raw),2) mean, ROUND(MAX(raw),2) max, ROUND(MIN(raw),2) min,
-       SUM(CASE WHEN raw>=${bluechipCut} THEN 1 ELSE 0 END) bluechip,
-       SUM(CASE WHEN raw>=${premiumCut} AND raw<${bluechipCut} THEN 1 ELSE 0 END) premium,
-       SUM(CASE WHEN raw>=${notableCut} AND raw<${premiumCut} THEN 1 ELSE 0 END) notable,
-       SUM(CASE WHEN raw<${notableCut} THEN 1 ELSE 0 END) speculative
-     FROM r`,
-  );
-}
-
-/** Top-20 assets by raw quality — face-validity check after a weight change. */
-export function assetReviewTop(db: D1Database, expr: string): Promise<AssetReviewTopRow[]> {
-  return q<AssetReviewTopRow>(
-    db,
-    `WITH ranked AS (
-       SELECT signal.asset_id,signal.holders,signal.trades,(${expr}) raw
-       FROM asset_signals signal ORDER BY raw DESC LIMIT 20
-     )
-     SELECT dictionary.asset,state.asset_longname,ranked.holders,ranked.trades,ROUND(ranked.raw,2) raw
-     FROM ranked JOIN asset_dictionary dictionary ON dictionary.asset_id=ranked.asset_id
-     LEFT JOIN assets state ON state.asset_id=ranked.asset_id
-     ORDER BY ranked.raw DESC,dictionary.asset ASC`,
-  );
-}
-
-/** One convergent-validity group (v=1 vaulted-tagged, v=0 not) — count/mean/median of the raw quality expr. */
-export interface AssetValidationGroup {
-  v: 0 | 1;
-  n: number;
-  mean: number;
-  median: number;
-}
-
-/**
- * Live convergent-validity check: over MARKET assets (ever traded or dispensed), compare the raw quality-score
- * distribution of Emblem-vaulted-tagged assets vs the rest (H4: people only wrap good assets, so vaulted should
- * score markedly higher). Median via a window rank (SQLite integer arithmetic picks the middle 1 or 2 rows).
- */
-export function assetValidation(db: D1Database, expr: string): Promise<AssetValidationGroup[]> {
-  return q<AssetValidationGroup>(
-    db,
-    `WITH m AS (
-       SELECT (${expr}) raw,
-         CASE WHEN EXISTS (
-           SELECT 1 FROM asset_dictionary dictionary
-           JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=dictionary.asset
-           JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='vaulted'
-           WHERE dictionary.asset_id=signal.asset_id
-         ) THEN 1 ELSE 0 END v
-       FROM asset_signals signal WHERE signal.trades>0 OR signal.dispenses>0
-     ),
-     r AS (
-       SELECT v, raw, ROW_NUMBER() OVER (PARTITION BY v ORDER BY raw) rn, COUNT(*) OVER (PARTITION BY v) cnt FROM m
-     )
-     SELECT v, MAX(cnt) n, ROUND(AVG(raw),3) mean,
-       ROUND(AVG(CASE WHEN rn IN ((cnt+1)/2, (cnt/2)+1) THEN raw END),3) median
-     FROM r GROUP BY v`,
   );
 }
 

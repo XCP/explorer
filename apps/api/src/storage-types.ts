@@ -67,6 +67,18 @@ export interface AssetSignalsRow {
   cohesion_strong: number | null; // migration 0040 (edges with w≥1.6 ⇔ ~4+ repeated interactions)
   active_trade_months: number; // migration 0060 (distinct UTC months in the unified trade ledger)
   last_trade_time: number | null; // migration 0060 (exact unix time of latest unified-ledger trade)
+  clean_realized_usd: number; // migration 0063
+  distinct_paid_buyers: number; // migration 0063
+  clean_active_trade_months: number; // migration 0063
+  market_venue_count: number; // migration 0063
+  rating_value: number | null;
+  rating_rank: number | null;
+  rating_population: number | null;
+  rating_active_months_score: number | null;
+  rating_buyer_breadth_score: number | null;
+  rating_realized_value_score: number | null;
+  rating_calculated_at: number | null;
+  rating_model_version: number | null;
   activity_outlook_score: number | null;
   activity_outlook_rank: number | null;
   activity_outlook_population: number | null;

@@ -35,8 +35,6 @@ import {
   entityPassStatements,
   entityFinalizeStatements,
 } from "#api/indexer/graph-core";
-import { rawSqlExpr } from "#api/reputation/score";
-import { ASSET_FACTORS, ASSET_TIERS } from "#api/reputation/config";
 
 const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per admin call
 
@@ -126,9 +124,6 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
       (r) => r.key,
     ),
   );
-  const tip =
-    Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-
   // ---- TRUST ASSETS: grails + curated collections + Established+ by our QUALITY score ----
   const grails = (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind='grail'`)).map(
     (r) => r.key,
@@ -142,21 +137,16 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
       ...COLLECTION_TAGS,
     )
   ).map((r) => r.a);
-  const premiumCut = ASSET_TIERS.find((t) => t.tier === "Premium")?.minRaw;
-  if (premiumCut === undefined) throw new Error("Premium asset tier is required for graph trust seeding");
-  const qualExpr = rawSqlExpr(ASSET_FACTORS, tip); // the asset quality raw, in SQL (same expr as /reputation/review)
-  // low_quality=0: the −6 penalty doesn't fully demote a curated-junk asset on the Phase-B scale (a wash/bridge
-  // token can ride real flow to Established), so a flagged asset must NEVER become a trust seed via quality.
-  const quality = (
+  const rated = (
     await q<{ a: string }>(
       env.CORE_DB,
-      `SELECT asset.asset a FROM asset_signals signal
-       JOIN asset_dictionary asset ON asset.asset_id=signal.asset_id
-       WHERE signal.low_quality=0 AND (signal.trades>0 OR signal.dispenses>0) AND (${qualExpr}) >= ${premiumCut}`,
+      `SELECT asset.asset a FROM asset_ratings rating
+       JOIN asset_dictionary asset ON asset.asset_id=rating.asset_id
+       WHERE rating.rating>=7`,
     )
   ).map((r) => r.a);
   const trust = new Set<string>();
-  for (const a of [...grails, ...collAssets, ...quality]) trust.add(`asset:${a}`);
+  for (const a of [...grails, ...collAssets, ...rated]) trust.add(`asset:${a}`);
 
   // ---- TRUST ADDRESSES: proven-ecosystem archetype tags, never infra/scam (+ grail issuers as axioms) ----
   const trustAddrs = (

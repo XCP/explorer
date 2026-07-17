@@ -91,7 +91,7 @@ export interface Leaderboards {
   top_src20_deployers: Array<Record<string, unknown>>;
   most_held_stamps: Array<Record<string, unknown>>;
   top_reputation: Array<Record<string, unknown>>;
-  top_quality: Array<Record<string, unknown>>;
+  top_rated: Array<Record<string, unknown>>;
   include_hidden: boolean;
 }
 

@@ -2,31 +2,19 @@
  *  market data (xcpdex), and the research reads (collector cohort, holder quality). Handlers stay thin:
  *  parse → query (queries/assets.ts owns the SQL) → respond. The BigInt supply derivation and the
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
-import type { AssetDetail, AssetActivityMonth } from "@xcp/shared/assets";
+import type { AssetDetail, AssetActivityMonth, RatingsOverview } from "@xcp/shared/assets";
 import { fetchExternalMetadata } from "#api/integrations/external-metadata";
 import { router, J, lim, off, round, cached } from "#api/read/respond";
-import {
-  scoreAsset,
-  assetScore,
-  assetTier,
-  scoreConviction,
-  convictionScore,
-  type MarketState,
-  rawSqlExpr,
-  ASSET_FACTORS,
-  ADDRESS_FACTORS,
-} from "#api/reputation/score";
-import { ASSET_PENALTY, ASSET_TIERS, ADDRESS_TIERS } from "#api/reputation/config";
+import { scoreConviction, convictionScore, rawSqlExpr, ADDRESS_FACTORS } from "#api/reputation/score";
+import { ADDRESS_TIERS } from "#api/reputation/config";
 import { assetActivityOutlook } from "#api/reputation/activity-outlook";
+import { assetRating } from "#api/reputation/rating";
 import {
   featuredAssets,
   chainTip,
   holderTiers,
   holderArchetypes,
   assetTop1Pct,
-  assetReviewDistribution,
-  assetReviewTop,
-  assetValidation,
   latestUsdRate,
 } from "#api/queries/assets";
 import {
@@ -34,6 +22,7 @@ import {
   getCoreAsset,
   coreAssetAccounting,
   coreAssetSignals,
+  coreRatingsOverview,
   coreAssetTags,
   coreAssetSales,
   coreAssetFeedCounts,
@@ -62,6 +51,20 @@ import { listAssetOrders } from "#api/queries/core-orders";
 
 export const assets = router();
 
+assets.get("/v2/ratings", (c) =>
+  cached(c, "ratings:overview:v1", { ttl: 86_400, edge: 3600, swr: 86_400 }, async () => {
+    const { meta, distribution, examples } = await coreRatingsOverview(c.env.CORE_DB);
+    const result: RatingsOverview = {
+      model_version: meta?.model_version ?? 1,
+      calculated_at: meta?.calculated_at ?? 0,
+      population: meta?.population ?? 0,
+      distribution,
+      examples,
+    };
+    return { result };
+  }),
+);
+
 assets.get("/v2/assets", async (c) => {
   const filter = {
     query: c.req.query("query"),
@@ -74,14 +77,13 @@ assets.get("/v2/assets", async (c) => {
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
-// Featured grid — highest-quality MARKET assets that actually have art (the has_media tag). Powers a
+// Featured grid — highest-rated assets that actually have art (the has_media tag). Powers a
 // "feature only assets with media" curation grid. Default 12 (the leaderboard card design); up to 144 (12x12).
 assets.get("/v2/featured", async (c) => {
   const n = lim(c, 12, 144);
-  return cached(c, `featured:quality:${n}`, { ttl: 600, edge: 120 }, async () => {
-    const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    return { result: await featuredAssets(c.env.CORE_DB, expr, n) };
-  });
+  return cached(c, `featured:rating:v1:${n}`, { ttl: 600, edge: 120 }, async () => ({
+    result: await featuredAssets(c.env.CORE_DB, n),
+  }));
 });
 
 assets.get("/v2/assets/:asset", async (c) => {
@@ -146,17 +148,7 @@ assets.get("/v2/assets/:asset", async (c) => {
       s = (neg ? -x : x).toString().padStart(9, "0");
     return (neg ? "-" : "") + s.slice(0, -8) + "." + s.slice(-8);
   };
-  // composed asset quality score (config-driven, src/reputation) from the precomputed asset_signals row
   const sig = sigRes;
-  const scored = sig ? scoreAsset(sig) : null;
-  // market state: ranked into a tier only if it ever traded/dispensed; else Untraded (held) / Dormant (no holders).
-  const state: MarketState =
-    sig && ((sig.trades ?? 0) > 0 || (sig.dispenses ?? 0) > 0)
-      ? "market"
-      : sig && (sig.holders ?? 0) > 0
-        ? "held"
-        : "none";
-  const score = scored && state === "market" ? assetScore(scored.raw) : null; // score = percentile among market assets only
   // tags are the categorical layer — stamp/src20/src721 classification + behavioral labels live here.
   const tags = tagsRes;
   // Conviction describes holder participation and scarcity without using market prices.
@@ -173,16 +165,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     escrow_normalized: norm(escrowRaw),
     circulating: circRaw.toString(),
     circulating_normalized: norm(circRaw),
-    quality:
-      scored && sig
-        ? {
-            tier: assetTier(scored.raw, state, sig.low_quality === 1),
-            score,
-            raw: round(scored.raw, 2),
-            breakdown: scored.breakdown,
-            low_quality: sig.low_quality === 1,
-          }
-        : { tier: "Dormant", score: null },
+    rating: assetRating(sig),
     activity: sig
       ? {
           active_months: sig.active_trade_months ?? 0,
@@ -245,48 +228,6 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
     },
     300,
   );
-});
-
-// Asset-quality calibration view (parallel to /v2/reputation/review for addresses): the population quality
-// distribution + top/bottom for face-validity after a weight change.
-assets.get("/v2/reputation/asset-review", (c) =>
-  cached(c, "asset-review:market-tier-partition-complete", { ttl: 600, edge: 60 }, async () => {
-    const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    const cut = (tier: string) => {
-      const value = ASSET_TIERS.find((entry) => entry.tier === tier)?.minRaw;
-      if (value === undefined) throw new Error(`${tier} asset tier is required for reputation calibration`);
-      return value;
-    };
-    const [distribution, top] = await Promise.all([
-      assetReviewDistribution(c.env.CORE_DB, expr, cut("Bluechip"), cut("Premium"), cut("Notable")),
-      assetReviewTop(c.env.CORE_DB, expr),
-    ]);
-    return { result: { distribution, top } };
-  }),
-);
-
-// Live convergent-validity guard for the asset-quality weights: vaulted-tagged assets should keep scoring far
-// above non-vaulted market assets (H4). `lift` = vaulted mean ÷ non-vaulted mean; watch it stays >2.5 and
-// stable across weight changes — a collapse means a re-dial broke the "quality" signal. Same raw expr as
-// /v2/reputation/asset-review (rawSqlExpr − the flat low_quality penalty).
-assets.get("/v2/reputation/asset-validation", async (c) => {
-  return cached(c, "asset-validation:quality", { ttl: 600 }, async () => {
-    const expr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    const rows = await assetValidation(c.env.CORE_DB, expr);
-    const grp = (v: 0 | 1) => rows.find((r) => r.v === v) ?? { v, n: 0, mean: 0, median: 0 };
-    const vaulted = grp(1),
-      non_vaulted = grp(0);
-    const lift = non_vaulted.mean ? round(vaulted.mean / non_vaulted.mean, 2) : null;
-    return {
-      result: {
-        vaulted: { n: vaulted.n, mean: vaulted.mean, median: vaulted.median },
-        non_vaulted: { n: non_vaulted.n, mean: non_vaulted.mean, median: non_vaulted.median },
-        lift,
-        median_gap: round(vaulted.median - non_vaulted.median, 2),
-        note: "market assets only (trades>0 OR dispenses>0). median_gap (vaulted − non-vaulted median raw) is the PRIMARY gauge under the realized-value-dominant model — the mean RATIO compresses as the shared USD term lifts every asset, so read `lift` only alongside the gap. Watch for degradation from the post-Phase-B baseline across weight changes (H4).",
-      },
-    };
-  });
 });
 
 assets.get("/v2/assets/:asset/balances", async (c) => {

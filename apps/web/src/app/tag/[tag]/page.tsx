@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import type { TagDetail } from "@xcp/shared/tags";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { Stat } from "@/components/ui/card";
-import { ScoreBadge } from "@/components/ui/score-badge";
 import { TagMembers } from "@/components/tag-members";
 import { commas, compact } from "@/lib/format";
 
@@ -27,7 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ tag: stri
   const d = await loadTag(tag);
   if (!d) return { title: "Not found" };
   const members = d.entity_type === "asset" ? `${commas(d.n_assets)} assets` : `${commas(d.n_addresses)} addresses`;
-  const description = `Counterparty "${d.tag}" tag — ${members}${d.median_tier ? `, median rating ${d.median_tier}` : ""}.`;
+  const description = `Counterparty "${d.tag}" tag — ${members}${d.median_rating != null ? `, median Rating ${d.median_rating.toFixed(1)} / 10` : ""}.`;
   return { title: `${tag} tag`, description, openGraph: { title: `${tag} | XCP.io`, description } };
 }
 
@@ -47,10 +46,7 @@ export default async function TagPage({ params }: { params: Promise<{ tag: strin
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Stat label="Members" value={commas(isAsset ? d.n_assets : d.n_addresses)} />
-        <Stat
-          label="Median tier"
-          value={d.median_tier ? <ScoreBadge tier={d.median_tier} score={d.median_score} /> : "—"}
-        />
+        <Stat label="Median Rating" value={d.median_rating == null ? "—" : `${d.median_rating.toFixed(1)} / 10`} />
         <Stat label="Low-quality" value={d.pct_low_quality != null ? `${d.pct_low_quality}%` : "—"} />
         <Stat label="Realized USD" value={usd(d.total_realized_usd)} />
         <Stat label="Holders" value={commas(d.total_holders)} />

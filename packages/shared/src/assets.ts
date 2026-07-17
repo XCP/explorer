@@ -1,20 +1,22 @@
 /** Asset surfaces — detail, quality, holders (GET /v2/assets/:asset and its sub-reads). */
 
-export type AssetQualityTier =
-  | "Bluechip"
-  | "Premium"
-  | "Notable"
-  | "Speculative" // ranked (has a market) — the asset RATING ladder
-  | "Untraded"
-  | "Dormant"; // non-ranked states
+export interface AssetRating {
+  status: "rated" | "not_rated" | "integrity_flag";
+  rating: number | null; // literal 0.0–10.0 Rating; null means no ordinary numeric Rating
+  rank?: number;
+  population?: number;
+  calculated_at?: number;
+  model_version?: number;
+  evidence?: { active_months: number; independent_buyers: number; realized_usd: number };
+  components?: { active_months: number; buyer_breadth: number; realized_value: number };
+}
 
-/** Composed quality object on AssetDetail. Non-ranked assets get just { tier, score: null }. */
-export interface AssetQuality {
-  tier: AssetQualityTier | string;
-  score: number | null; // 0-100 percentile among market assets only
-  raw?: number;
-  breakdown?: Record<string, number>; // per-factor contribution (label → points)
-  low_quality?: boolean;
+export interface RatingsOverview {
+  model_version: number;
+  calculated_at: number;
+  population: number;
+  distribution: Array<{ rating: number; count: number }>;
+  examples: Array<{ asset: string; asset_longname: string | null; rating: number; rank: number }>;
 }
 
 /** Per-asset money stats from the unified trades ledger (AssetDetail.sales). */
@@ -72,7 +74,7 @@ export interface AssetDetail {
   circulating?: string;
   circulating_normalized?: string;
   holder_count: number;
-  quality?: AssetQuality;
+  rating?: AssetRating;
   activity?: AssetMarketActivity | null;
   activity_outlook?: AssetActivityOutlook | null;
   tags?: string[];
@@ -140,7 +142,7 @@ export interface AssetIndexRow {
 export interface FeaturedAsset {
   asset: string;
   asset_longname: string | null;
-  score: number;
+  rating: number;
 }
 
 /** GET /v2/assets/:asset/activity — one row per month of the asset's on-chain life, from our own mirror.
@@ -248,27 +250,6 @@ export type HolderTierRow = { tier: string; holders: number; pct_supply: number 
 
 /** Archetype counts among an asset's holders (holder-makeup source; `holders` is the total). */
 export type HolderArchetypes = { creators: number; whales: number; collectors: number; holders: number };
-
-/** GET /v2/reputation/asset-review — population quality distribution over asset_signals. */
-export interface AssetReviewDistribution {
-  n: number;
-  mean: number;
-  max: number;
-  min: number;
-  bluechip: number;
-  premium: number;
-  notable: number;
-  speculative: number;
-}
-
-/** GET /v2/reputation/asset-review — a top-20-by-raw-quality row (face-validity check). */
-export interface AssetReviewTopRow {
-  asset: string;
-  asset_longname: string | null;
-  holders: number;
-  trades: number;
-  raw: number;
-}
 
 /** GET /v2/assets/:asset/market — cross-app market chip from xcpdex (null when it doesn't trade). */
 export interface AssetMarket {

@@ -50,7 +50,6 @@ type Board = Array<Record<string, unknown>>;
 export interface LeaderboardParams {
   includeHidden: boolean; // show low-quality assets + the bridge/exchange BTC flow that distorts boards
   addrExpr: string; // raw address score over address_signals (tip-aged)
-  assetExpr: string; // raw asset score over asset_signals (with the low-quality penalty)
 }
 
 /** Every leaderboard board keyed by its wire field. Rows are generic (each board picks its own columns). */
@@ -73,7 +72,7 @@ export interface Leaderboards {
   top_src20_deployers: Board;
   most_held_stamps: Board;
   top_reputation: Board;
-  top_quality: Board;
+  top_rated: Board;
 }
 
 /**
@@ -85,7 +84,7 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
   const dispCol = p.includeHidden ? "dispense_btc" : "clean_dispense_btc";
   const spendCol = p.includeHidden ? "btc_spent" : "clean_btc_spent";
   const lowqF = p.includeHidden ? "" : " AND low_quality=0";
-  const { addrExpr, assetExpr } = p;
+  const { addrExpr } = p;
   const b = (sql: string) => board(db, sql);
   const [
     topCreators,
@@ -217,11 +216,10 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
        JOIN address_dictionary dictionary ON dictionary.address_id=ranked.address_id ORDER BY ranked.score DESC`,
     ),
     b(
-      `WITH ranked AS (SELECT signal.asset_id,(${assetExpr}) score FROM asset_signals signal
-       WHERE (signal.trades>0 OR signal.dispenses>0)${lowqF} ORDER BY score DESC LIMIT 12)
-       SELECT dictionary.asset,state.asset_longname,ROUND(ranked.score,1) score FROM ranked
-       JOIN asset_dictionary dictionary ON dictionary.asset_id=ranked.asset_id
-       LEFT JOIN assets state ON state.asset_id=ranked.asset_id ORDER BY ranked.score DESC`,
+      `SELECT dictionary.asset,state.asset_longname,rating.rating
+       FROM asset_ratings rating JOIN asset_dictionary dictionary ON dictionary.asset_id=rating.asset_id
+       LEFT JOIN assets state ON state.asset_id=rating.asset_id
+       ORDER BY rating.rating DESC,rating.asset_id LIMIT 12`,
     ),
   ]);
   return {
@@ -243,6 +241,6 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
     top_src20_deployers: src20Deployers,
     most_held_stamps: mostHeldStamps,
     top_reputation: topReputation,
-    top_quality: topQuality,
+    top_rated: topQuality,
   };
 }

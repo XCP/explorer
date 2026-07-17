@@ -1,7 +1,6 @@
 /** Network-wide read surfaces: home summary, daily chart series, lifetime stats, leaderboards. */
 import { router, cached, J } from "#api/read/respond";
-import { rawSqlExpr, ADDRESS_FACTORS, ASSET_FACTORS } from "#api/reputation/score";
-import { ASSET_PENALTY } from "#api/reputation/config";
+import { rawSqlExpr, ADDRESS_FACTORS } from "#api/reputation/score";
 import { boundedInteger } from "#api/http/numbers";
 import { networkStatsCacheKey } from "#api/http/cache-keys";
 import { maxBlock, leaderboards, type MetricName } from "#api/queries/stats";
@@ -87,8 +86,7 @@ stats.get("/v2/leaderboards", async (c) => {
     // reputation/quality boards use the composed score (same config as the read scorer). tip ages the terms.
     const tip = await maxBlock(c.env.CORE_DB);
     const addrExpr = rawSqlExpr(ADDRESS_FACTORS, tip);
-    const assetExpr = `(${rawSqlExpr(ASSET_FACTORS, 0)}) - (CASE WHEN low_quality=1 THEN ${-ASSET_PENALTY.lowQuality} ELSE 0 END)`;
-    const boards = await leaderboards(c.env.CORE_DB, { includeHidden: incl, addrExpr, assetExpr });
+    const boards = await leaderboards(c.env.CORE_DB, { includeHidden: incl, addrExpr });
     return { result: { ...boards, include_hidden: incl } };
   });
 });

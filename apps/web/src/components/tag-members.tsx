@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/card";
 import { SecondaryButton } from "@/components/ui/buttons";
 import { AsyncContent } from "@/components/ui/async-content";
 import { RecordTable } from "@/features/records/components/record-table";
-import { ScoreBadge } from "@/components/ui/score-badge";
 import { type Col, assetCell } from "@/features/records/cells";
 import { commas, compact } from "@/lib/format";
 
@@ -24,10 +23,10 @@ const COLS: Col<TagMemberRow>[] = [
     cell: (r) => assetCell(r.asset, r.asset_longname),
   },
   {
-    label: "Score",
+    label: "Rating",
     priority: 1,
     w: "130px",
-    cell: (r) => <ScoreBadge tier={r.tier} score={r.score} flagged={r.low_quality === 1} />,
+    cell: (r) => (r.low_quality === 1 ? "Withheld" : r.rating == null ? "Not rated" : `${r.rating.toFixed(1)} / 10`),
   },
   { label: "Holders", numeric: true, priority: 2, cell: (r) => commas(r.holders) },
   { label: "Buyers", numeric: true, priority: 3, cell: (r) => commas(r.buyers) },

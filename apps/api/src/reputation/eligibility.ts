@@ -1,8 +1,8 @@
 /**
  * Shared integrity boundary for products that rank or recommend assets.
  *
- * Rating intentionally does not use this predicate: it keeps the historical evidence visible and applies a
- * low-quality tier cap. Tags and stats may also include low-quality rows when their contract is descriptive.
+ * Rating uses this predicate to withhold a numeric value for reviewed integrity cases. Tags and descriptive
+ * statistics may still include those rows while clearly reporting their integrity status.
  */
 export const assetRankingEligibleSql = (alias: string): string => `COALESCE(${alias}.low_quality,0)=0`;
 

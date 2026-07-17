@@ -36,22 +36,19 @@ For every eligible asset, compute three within-era percentile components from at
 - **Buyer breadth:** distinct known buyers, with buyer and seller required to be different identities.
 - **Realized value:** `log1p` of total USD consideration, valued at the trade time where price data exists.
 
-Rating is the equal-weight mean of those three components, converted to a 0–100 population rank. Equal weighting is
+Rating is the equal-weight mean of those three components, converted to a literal **0.0–10.0 Rating**. Equal weighting is
 the accepted transparent baseline: the leakage-safe historical evaluation beat the buyer-gated peak-sale production
 proxy at every cutoff on future return, persistence, buyer breadth, future realized value, average precision, and
 NDCG. More complex correlated factor families have not earned incremental weight.
 
-The number is accompanied by coarse relative tiers:
+The Rating is the product. There is no independently computed qualitative tier beside it. Any prose such as “strong
+market record” is a deterministic explanation of a documented numeric range, never a second verdict that can conflict
+with the number. `10.0` is the highest Rating.
 
-- **Bluechip:** exceptional demonstrated market record.
-- **Premium:** strong, broad, durable market record.
-- **Notable:** meaningful market evidence.
-- **Speculative:** thin or limited market evidence, or an integrity-capped asset.
-- **Untraded / Dormant:** honest unranked states, not zero-quality verdicts.
-
-Tier cutoffs are distributional and versioned with the materialized Rating population. They are not handcrafted per
-asset. A `low_quality` asset retains its factual market history but is capped at Speculative and excluded from ranked
-recommendation products.
+Assets without sufficient direct market evidence are **Not rated** rather than assigned a misleading zero. A reviewed
+`low_quality` asset retains its factual trade history but displays **Not rated — integrity flag** and is excluded from
+ranked recommendation products. Withholding the ordinary numeric Rating is clearer than displaying a high market
+record beside a contradictory negative verdict.
 
 ### Eligible sale evidence
 
@@ -72,10 +69,16 @@ Excluded trades remain in historical trade data under an explicit classification
 
 ### Frontend
 
-The asset header shows tier and Rating. The nearby explanation says **“Relative historical market evidence”**, never
-“investment quality” or “chance of return.” The expanded evidence shows active months, independent buyers, realized
-USD, venue presence, observation span, and any integrity cap. Price history stays in market charts and Dislocation
-Radar rather than becoming a second hidden Rating formula.
+The asset header shows one Rating and links it to `/ratings`. The nearby explanation says **“Historical market
+record”**, never “investment quality” or “chance of return.” The expanded evidence shows active months, independent
+buyers, realized USD, venue presence, observation span, and any integrity state. Price history stays in market charts
+and Dislocation Radar rather than becoming a second hidden Rating formula.
+
+`/ratings` is the canonical public methodology and audit page. It shows the scale, exact inputs, current Rating
+distribution, population and eligibility, named examples, refresh time, model version, historical validation, and an
+explanation of why Ratings can change as an asset accumulates evidence and the comparison population evolves. Rating
+history may be added from versioned materialized snapshots; methodology prose must never imply that old grades were
+stored when they were only recomputed later.
 
 ## Activity Outlook
 
@@ -194,4 +197,3 @@ A production change must include:
 6. score/tier population movement and query/refresh cost;
 7. a forward-tracked frozen cohort and rollback threshold;
 8. matching API, frontend copy, methodology, and operator freshness checks.
-

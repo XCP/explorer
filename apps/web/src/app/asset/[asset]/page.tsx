@@ -98,12 +98,18 @@ function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[
   if (item.sales?.realized_usd != null) {
     stats.push({ label: "Volume", value: usdCompact(item.sales.realized_usd), detail: "lifetime", hideOnMobile: true });
   }
-  if (item.quality)
+  if (item.rating)
     stats.push({
       label: "Rating",
-      value: item.quality.score ?? "—",
-      detail: item.quality.tier,
+      value: item.rating.rating == null ? "Not rated" : item.rating.rating.toFixed(1),
+      detail:
+        item.rating.status === "integrity_flag"
+          ? "integrity flag"
+          : item.rating.rating == null
+            ? "insufficient evidence"
+            : "/ 10",
       hideOnMobile: true,
+      href: "/ratings",
     });
   return stats;
 }

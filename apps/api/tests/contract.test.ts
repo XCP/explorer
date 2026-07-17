@@ -110,12 +110,9 @@ const ASSET_DETAIL: Spec = {
   supply_normalized: "string|null",
   holder_count: "number",
 };
-const ASSET_QUALITY: Spec = {
-  tier: "string",
-  score: "number|null",
-  raw: "number?",
-  breakdown: "object?",
-  low_quality: "boolean?",
+const ASSET_RATING: Spec = {
+  status: "string",
+  rating: "number|null",
 };
 const ASSET_ACTIVITY: Spec = {
   active_months: "number",
@@ -512,10 +509,10 @@ test("contract: GET /v2/assets?limit=2 — AssetIndexRow list", async (t) => {
   assertListEnvelope(await getJson("/v2/assets?limit=2"), ASSET_INDEX_ROW, 2, "assets");
 });
 
-test("contract: GET /v2/featured - compact quality ranking with media", async (t) => {
+test("contract: GET /v2/featured - compact Rating ranking with media", async (t) => {
   if (skipUnlessLive(t)) return;
   const result = (await getJson("/v2/featured?limit=12")).result;
-  assertRows(result, { asset: "string", asset_longname: "string|null", score: "number" }, "featured.result");
+  assertRows(result, { asset: "string", asset_longname: "string|null", rating: "number" }, "featured.result");
   assert.equal(result.length, 12, "featured should fill the requested page");
   assert.equal(
     new Set(result.map((row: { asset: string }) => row.asset)).size,
@@ -523,14 +520,14 @@ test("contract: GET /v2/featured - compact quality ranking with media", async (t
     "featured assets must be unique",
   );
   for (let index = 1; index < result.length; index += 1)
-    assert.ok(result[index - 1].score >= result[index].score, "featured assets must remain score-sorted");
+    assert.ok(result[index - 1].rating >= result[index].rating, "featured assets must remain Rating-sorted");
 });
 
-test("contract: GET /v2/assets/RAREPEPE — AssetDetail + AssetQuality", async (t) => {
+test("contract: GET /v2/assets/RAREPEPE — AssetDetail + Rating", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/assets/RAREPEPE");
   assertShape(j.result, ASSET_DETAIL, "RAREPEPE.");
-  if (j.result.quality) assertShape(j.result.quality, ASSET_QUALITY, "RAREPEPE.quality.");
+  if (j.result.rating) assertShape(j.result.rating, ASSET_RATING, "RAREPEPE.rating.");
   if (j.result.activity) assertShape(j.result.activity, ASSET_ACTIVITY, "RAREPEPE.activity.");
   if (j.result.activity_outlook)
     assertShape(j.result.activity_outlook, ASSET_ACTIVITY_OUTLOOK, "RAREPEPE.activity_outlook.");
@@ -766,48 +763,23 @@ test("contract: GET /v2/radar/emergence - evidence-backed Fresh and Emerging ass
   assertRows(result.emerging, { ...evidence, market_formation: "number" }, "radar.emergence.emerging");
 });
 
-test("contract: GET /v2/reputation/asset-review - compact population distribution", async (t) => {
+test("contract: GET /v2/ratings - canonical Rating distribution", async (t) => {
   if (skipUnlessLive(t)) return;
-  const result = (await getJson("/v2/reputation/asset-review")).result;
-  assertShape(
-    result.distribution,
-    {
-      n: "number",
-      mean: "number",
-      max: "number",
-      min: "number",
-      bluechip: "number",
-      premium: "number",
-      notable: "number",
-      speculative: "number",
-    },
-    "asset-review.distribution.",
-  );
+  const result = (await getJson("/v2/ratings")).result;
+  assertShape(result, {
+    model_version: "number",
+    calculated_at: "number",
+    population: "number",
+    distribution: "array",
+    examples: "array",
+  });
+  assert.ok(result.population > 20_000, "Rating population is incomplete");
+  assertRows(result.distribution, { rating: "number", count: "number" }, "ratings.distribution");
   assertRows(
-    result.top,
-    { asset: "string", asset_longname: "string|null", holders: "number", trades: "number", raw: "number" },
-    "asset-review.top",
+    result.examples,
+    { asset: "string", asset_longname: "string|null", rating: "number", rank: "number" },
+    "ratings.examples",
   );
-  assert.ok(result.distribution.n > 20_000, "market-asset review population is incomplete");
-  assert.equal(
-    result.distribution.bluechip +
-      result.distribution.premium +
-      result.distribution.notable +
-      result.distribution.speculative,
-    result.distribution.n,
-    "asset review tier buckets must partition the market population",
-  );
-  assert.equal(result.top[0].asset, "XCP", "top raw-quality asset changed");
-});
-
-test("contract: GET /v2/reputation/asset-validation - compact vaulted lift", async (t) => {
-  if (skipUnlessLive(t)) return;
-  const result = (await getJson("/v2/reputation/asset-validation")).result;
-  const group = { n: "number", mean: "number", median: "number" };
-  assertShape(result.vaulted, group, "asset-validation.vaulted.");
-  assertShape(result.non_vaulted, group, "asset-validation.non_vaulted.");
-  assert.ok(result.vaulted.n > 4_000 && result.non_vaulted.n > 18_000, "validation cohorts are incomplete");
-  assert.ok(result.lift > 2 && result.median_gap > 20, "vaulted quality separation degraded");
 });
 
 test("contract: GET /v2/leaderboards - all compact signal boards populated", async (t) => {
@@ -832,12 +804,12 @@ test("contract: GET /v2/leaderboards - all compact signal boards populated", asy
     "top_src20_deployers",
     "most_held_stamps",
     "top_reputation",
-    "top_quality",
+    "top_rated",
   ];
   for (const board of boards)
     assert.equal(result[board]?.length, 12, `${board} must contain a full compact leaderboard`);
   assert.equal(result.most_held[0].asset, "XCP", "most-held leader changed");
-  assert.equal(result.top_quality[0].asset, "XCP", "quality leader changed");
+  assert.ok(result.top_rated[0].rating <= 10 && result.top_rated[0].rating >= 0, "Rating leader is invalid");
   assert.equal(result.include_hidden, false, "default leaderboards must hide low-quality assets");
 });
 

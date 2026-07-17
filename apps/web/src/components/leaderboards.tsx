@@ -212,12 +212,12 @@ export function Leaderboards() {
           )}
         />
         <Board
-          title="Highest rated (Bluechip)"
-          rows={d.top_quality ?? []}
+          title="Highest rated assets"
+          rows={d.top_rated ?? []}
           render={(r) => (
             <>
               {Asset(r.asset, r.asset_longname)}
-              {val(`score ${r.score}`)}
+              {val(`Rating ${Number(r.rating).toFixed(1)} / 10`)}
             </>
           )}
         />
