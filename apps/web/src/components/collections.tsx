@@ -39,11 +39,11 @@ const COLS: Col<CollectionProfile>[] = [
     ),
   },
   {
-    label: "Market coverage",
+    label: "Rated",
     priority: 1,
     w: "130px",
-    sortKey: "coverage",
-    cell: (row) => `${row.market_pct}%`,
+    sortKey: "rated",
+    cell: (row) => `${commas(row.rated_members)} · ${row.rated_pct}%`,
   },
   {
     label: "Members",
@@ -54,12 +54,12 @@ const COLS: Col<CollectionProfile>[] = [
     cell: (row) => commas(row.members),
   },
   {
-    label: "Median events",
+    label: "Median Rating",
     numeric: true,
     priority: 2,
     w: "120px",
-    sortKey: "events",
-    cell: (row) => compact(row.median_events),
+    sortKey: "rating",
+    cell: (row) => (row.median_rating == null ? "—" : `${row.median_rating.toFixed(1)} / 10`),
   },
   {
     label: "Issuers",
@@ -70,12 +70,12 @@ const COLS: Col<CollectionProfile>[] = [
     cell: (row) => commas(row.issuers),
   },
   {
-    label: "Evidence",
+    label: "Holder overlap",
     numeric: true,
     priority: 3,
-    w: "90px",
-    sortKey: "evidence",
-    cell: (row) => `${row.sources} ${row.sources === 1 ? "source" : "sources"}`,
+    w: "120px",
+    sortKey: "overlap",
+    cell: (row) => (row.holder_overlap_pct != null ? `${row.holder_overlap_pct}%` : "—"),
   },
   {
     label: "Realized USD",
@@ -90,34 +90,34 @@ const COLS: Col<CollectionProfile>[] = [
     priority: 4,
     w: "120px",
     sortKey: "concentration",
-    cell: (row) => (row.top_asset_value_pct > 0 ? `${row.top_asset_value_pct}%` : "—"),
+    cell: (row) => (row.top_asset_value_pct != null ? `${row.top_asset_value_pct}%` : "—"),
   },
   {
-    label: "Holders",
+    label: "Integrity",
     numeric: true,
-    priority: 4,
-    sortKey: "holders",
-    cell: (row) => commas(row.total_holders),
+    priority: 2,
+    sortKey: "integrity",
+    cell: (row) => (row.integrity_assets > 0 ? `${row.integrity_assets} flagged` : "Clear"),
   },
 ];
 
 const VALUE: Record<string, (row: CollectionProfile) => number> = {
-  coverage: (row) => row.market_pct,
+  rated: (row) => row.rated_pct,
   members: (row) => row.members,
-  events: (row) => row.median_events,
+  rating: (row) => row.median_rating ?? -1,
   issuers: (row) => row.issuers,
-  evidence: (row) => row.sources,
+  overlap: (row) => row.holder_overlap_pct ?? -1,
   realized: (row) => row.total_realized_usd,
-  concentration: (row) => row.top_asset_value_pct,
-  holders: (row) => row.total_holders,
+  concentration: (row) => row.top_asset_value_pct ?? -1,
+  integrity: (row) => row.integrity_assets,
 };
 
 export function Collections() {
   const { data, error, isLoading } = useSWR<Envelope<CollectionProfile[]>>(apiUrl("/v2/collections"));
   const [sort, setSort] = useState<SortState | undefined>();
   const sorted = [...(data?.result ?? [])].sort((a, b) => {
-    if (!sort) return b.market_pct - a.market_pct || b.median_events - a.median_events || b.members - a.members;
-    const value = VALUE[sort.key] ?? VALUE.coverage;
+    if (!sort) return b.rated_pct - a.rated_pct || (b.median_rating ?? -1) - (a.median_rating ?? -1) || b.members - a.members;
+    const value = VALUE[sort.key] ?? VALUE.rated;
     const difference = value(a) - value(b);
     return sort.dir === "asc" ? difference : -difference;
   });
@@ -135,8 +135,9 @@ export function Collections() {
       <div className="pagehead">
         <h1>Collections</h1>
         <p>
-          Counterparty art &amp; collectible projects described by breadth, typical activity, issuers, holders, and
-          realized value. No single collection grade: each axis stays visible and auditable. Ranked by market coverage;
+          Counterparty projects described by Rating coverage, typical Rating, holder overlap, concentration, market
+          activity, realized value, and integrity evidence. No collection score: every observed axis stays visible.
+          Ranked by rated-member coverage;
           click a column to re-sort.{" "}
           <Link href="/collections/candidates" className="underline underline-offset-2">
             Discover untagged candidates →

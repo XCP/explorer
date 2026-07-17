@@ -8,7 +8,7 @@ import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { router, J, lim, off, cached } from "#api/read/respond";
 import { rawSqlExpr, CONVICTION_FACTORS, convictionScore } from "#api/reputation/score";
 import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "#api/queries/tags";
-import { listCollectionProfiles } from "#api/queries/collections";
+import { getCollectionProfile, listCollectionProfiles } from "#api/queries/collections";
 
 export const tags = router();
 
@@ -17,10 +17,18 @@ export const tags = router();
 const CONV_RAW = rawSqlExpr(CONVICTION_FACTORS, 0);
 
 tags.get("/v2/collections", async (c) =>
-  cached(c, "collections:profiles", { ttl: 86400, edge: 300, swr: 86400 }, async () => ({
+  cached(c, "collections:profiles:v3", { ttl: 86400, edge: 300, swr: 86400 }, async () => ({
     result: await listCollectionProfiles(c.env.CORE_DB),
   })),
 );
+
+tags.get("/v2/collection-profiles/:tag", async (c) => {
+  const tag = c.req.param("tag");
+  return cached(c, `collection-profile:${tag}`, { ttl: 86400, edge: 300, swr: 86400 }, async () => {
+    const result = await getCollectionProfile(c.env.CORE_DB, tag);
+    return result ? { result } : { error: "Collection not found" };
+  });
+});
 
 function enrich(r: TagStatsBase): TagStatsRow {
   return {

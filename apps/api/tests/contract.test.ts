@@ -432,14 +432,37 @@ test("contract: GET /v2/collections — descriptive collection profiles", async 
       tag: "string",
       name: "string",
       members: "number",
+      rated_members: "number",
+      rated_pct: "number",
+      median_rating: "number|null",
+      rating_exceptional: "number",
+      rating_strong: "number",
+      rating_developing: "number",
+      rating_limited: "number",
       market_pct: "number",
-      median_events: "number",
+      total_active_months: "number",
+      total_paid_buyers: "number",
       issuers: "number",
       total_realized_usd: "number",
+      holder_relationships: "number",
+      unique_holders: "number",
+      holder_overlap_pct: "number|null",
+      top_asset_value_pct: "number|null",
+      integrity_assets: "number",
+      integrity_pct: "number",
     },
     "collections.result",
   );
   assert.ok(result.length > 0, "collection profiles must not be empty");
+  for (const row of result) {
+    assert.equal(
+      row.rating_exceptional + row.rating_strong + row.rating_developing + row.rating_limited,
+      row.rated_members,
+      `${row.tag} Rating distribution must reconcile`,
+    );
+    assert.ok(row.rated_members <= row.members, `${row.tag} cannot rate more members than it contains`);
+    assert.ok(row.unique_holders <= row.holder_relationships, `${row.tag} holder overlap must reconcile`);
+  }
 });
 
 test("contract: GET /v2/assets/RAREPEPE/related — compact holder overlap", async (t) => {
