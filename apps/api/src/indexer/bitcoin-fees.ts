@@ -15,8 +15,12 @@ export interface BitcoinFeeRow {
 
 const TX_HASH = /^[0-9a-f]{64}$/;
 const FEE_PAGE_SIZE = 100;
-const FEE_FETCH_CONCURRENCY = 10;
-const FEES_PER_RUN = 400;
+// Cloudflare permits six simultaneous outgoing connections per invocation. Matching that limit explicitly avoids
+// relying on the runtime's connection queue. A 2026-07-16 production-provider sample completed 60/60 requests at
+// ~69 requests/second with this concurrency, so 1,000 candidates is a conservative fraction of the paid Worker's
+// 10,000-subrequest and 15-minute scheduled-invocation limits while materially shortening the finite backfill.
+export const FEE_FETCH_CONCURRENCY = 6;
+export const FEES_PER_RUN = 1_000;
 
 export async function listMissingBitcoinFees(
   db: D1Database,
