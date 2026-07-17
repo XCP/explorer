@@ -784,7 +784,7 @@ test("contract: GET /v2/ratings - canonical Rating distribution", async (t) => {
 
 test("contract: GET /v2/leaderboards - all compact signal boards populated", async (t) => {
   if (skipUnlessLive(t)) return;
-  const result = (await getJson("/v2/leaderboards")).result;
+  const result = (await getJson(`/v2/leaderboards?contract=${Date.now()}`)).result;
   const boards = [
     "top_creators",
     "top_collectors",
