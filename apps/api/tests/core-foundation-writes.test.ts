@@ -135,18 +135,23 @@ test("compact foundational writes preserve identities and converge on replay", a
   await execute(database, dictionaryStatements(ctx.identities));
   await execute(database, ctx.stmts);
   await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  assert.equal(
+    (database.prepare(`SELECT fee FROM transactions WHERE tx_index=7`).get() as { fee: string | null }).fee,
+    null,
+  );
+  database.prepare(`UPDATE transactions SET fee='123' WHERE tx_index=7`).run();
   await execute(database, ctx.stmts);
   await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
 
   const transaction = database
     .prepare(
-      `SELECT lower(hex(t.tx_hash)) tx_hash,s.address source,d.address destination
+      `SELECT lower(hex(t.tx_hash)) tx_hash,s.address source,d.address destination,t.fee
        FROM transactions t
        LEFT JOIN address_dictionary s ON s.address_id=t.source_id
        LEFT JOIN address_dictionary d ON d.address_id=t.destination_id`,
     )
-    .get() as { tx_hash: string; source: string; destination: string };
-  assert.deepEqual({ ...transaction }, { tx_hash: hash, source: "alice", destination: "bob" });
+    .get() as { tx_hash: string; source: string; destination: string; fee: string };
+  assert.deepEqual({ ...transaction }, { tx_hash: hash, source: "alice", destination: "bob", fee: "123" });
   const output = database
     .prepare(
       `SELECT output.tx_index,output.out_index,address.address destination,output.btc_amount

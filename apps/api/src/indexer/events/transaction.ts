@@ -9,14 +9,14 @@ const newTransaction: Handler = ({ p, b, bt }, ctx) => {
     db
       .prepare(
         `INSERT INTO transactions
-           (tx_index,tx_hash,block_index,block_time,source_id,destination_id,btc_amount,fee,supported,utxos_info)
+           (tx_index,tx_hash,block_index,block_time,source_id,destination_id,btc_amount,supported,utxos_info)
          VALUES (?,?,?,?,
            (SELECT address_id FROM address_dictionary WHERE address=?),
-           (SELECT address_id FROM address_dictionary WHERE address=?),?,?,?,?)
+           (SELECT address_id FROM address_dictionary WHERE address=?),?,?,?)
          ON CONFLICT(tx_index) DO UPDATE SET
            tx_hash=excluded.tx_hash,block_index=excluded.block_index,block_time=excluded.block_time,
            source_id=excluded.source_id,destination_id=excluded.destination_id,btc_amount=excluded.btc_amount,
-           fee=excluded.fee,supported=excluded.supported,utxos_info=excluded.utxos_info`,
+           supported=excluded.supported,utxos_info=excluded.utxos_info`,
       )
       .bind(
         p.tx_index,
@@ -26,7 +26,6 @@ const newTransaction: Handler = ({ p, b, bt }, ctx) => {
         p.source ?? null,
         p.destination ?? null,
         p.btc_amount != null ? String(p.btc_amount) : null,
-        p.fee != null ? String(p.fee) : null,
         p.supported === false ? 0 : 1,
         p.utxos_info ?? null,
       ),
