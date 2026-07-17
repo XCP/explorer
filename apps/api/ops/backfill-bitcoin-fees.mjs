@@ -7,9 +7,9 @@ function arg(name, fallback) {
 }
 
 const API = arg("api", "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
-// Keep one-time bulk history off Counterparty's operational Electrs service. Both sources expose the same
-// Bitcoin-indexed integer fee; production maintenance continues to use the configured Counterparty endpoint.
-const ELECTRS = arg("electrs", "https://mempool.space/api").replace(/\/$/, "");
+// Use the same Bitcoin-authoritative provider as production unless an operator explicitly supplies another
+// endpoint they control. Public community APIs enforce usage policies and must never become an implicit bulk source.
+const ELECTRS = arg("electrs", "https://api.counterparty.io:3000").replace(/\/$/, "");
 // Resolve local credentials relative to this script so unattended runners do not depend on their working directory.
 const devToken = process.env.ADMIN_TOKEN
   ? undefined
@@ -20,8 +20,8 @@ const devToken = process.env.ADMIN_TOKEN
       .replace(/^"|"$/g, "");
 const TOKEN = process.env.ADMIN_TOKEN ?? devToken ?? readFileSync(arg("token-file", "admin.tok"), "utf8").trim();
 const PAGE_SIZE = Number(arg("page-size", "500"));
-const CONCURRENCY = Number(arg("concurrency", "2"));
-const REQUEST_DELAY_MS = Number(arg("request-delay-ms", "100"));
+const CONCURRENCY = Number(arg("concurrency", "1"));
+const REQUEST_DELAY_MS = Number(arg("request-delay-ms", "250"));
 const MAX_PAGES = Number(arg("max-pages", "0"));
 
 if (!Number.isSafeInteger(PAGE_SIZE) || PAGE_SIZE < 1 || PAGE_SIZE > 5_000) throw new Error("invalid page-size");
