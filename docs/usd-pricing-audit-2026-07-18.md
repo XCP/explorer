@@ -450,3 +450,8 @@ This sequence maximizes truthful coverage without turning sparse prices into fab
 - Marilena Vecco, Simeng Chang, and Roberto Zanola, *The More You Know, the Better: A Heckman Repeat-Sales Price
   Index*, Quarterly Review of Economics and Finance 85 (2022),
   [publisher record](https://www.sciencedirect.com/science/article/pii/S1062976921000053).
+- Poloniex, [Spot market-data API](https://api-docs.poloniex.com/spot/api/public/market-data).
+- Dex-Trade, [public Trade History API](https://docs.dex-trade.com/#api-Public_API-Trade_History).
+- Coin Metrics, [market-candle coverage and methodology](https://docs.coinmetrics.io/market-data-timeseries/market-candles).
+- Kaiko, [exchange instrument reference data](https://docs.kaiko.com/rest-api/data-feeds/reference-data/basic-tier/exchange-trading-pair-codes-instruments).
+- Counterparty Forum archive, [2014 XCP exchange inventory](https://forums.counterparty.io/t/complete-list-of-xcp-exchanges/311).
