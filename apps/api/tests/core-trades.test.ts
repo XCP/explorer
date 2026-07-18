@@ -43,6 +43,7 @@ test("compact trades restore public identities, filters, and venue totals", asyn
     CREATE TABLE trade_legs(
       venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
       PRIMARY KEY(venue,trade_ref,leg_index));
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,observed_day TEXT,PRIMARY KEY(day,currency));
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'RAREPEPE');
     INSERT INTO address_dictionary VALUES(1,'buyer'),(2,'seller');
     INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,buyer_id,seller_id,tx_hash)
@@ -78,6 +79,27 @@ test("compact trades restore public identities, filters, and venue totals", asyn
     ],
   );
 
+});
+
+test("recent trades use a fresh current quote without backdating the historical calendar", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+    CREATE TABLE trades(
+      venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,
+      currency TEXT,total REAL,price REAL GENERATED ALWAYS AS (total/quantity) VIRTUAL,usd_value REAL,
+      buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,sale_class TEXT,PRIMARY KEY(venue,ref));
+    CREATE TABLE trade_legs(venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
+      PRIMARY KEY(venue,trade_ref,leg_index));
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,observed_day TEXT,PRIMARY KEY(day,currency));
+    INSERT INTO asset_dictionary VALUES(1,'CARD');
+    INSERT INTO prices VALUES(date('now'),'XCP',1.5,date('now'));
+    INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total)
+      VALUES('dex','recent',1,unixepoch('now','-1 day'),1,1,'XCP',125);
+  `);
+  const [row] = await listTrades(d1(db), { asset: "CARD", limit: 1, offset: 0 });
+  assert.equal(row.usd_value, 187.5);
 });
 
 test("compact venue builders preserve canonical identities and bundled Emblem sales", () => {

@@ -441,11 +441,16 @@ export function coreAssetSales(db: D1Database, asset: string): Promise<AssetSale
   return one<AssetSales>(
     db,
     `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
-          last AS (SELECT usd_value,quantity,block_time FROM trades
-                    WHERE asset_id=(SELECT asset_id FROM identity) AND usd_value IS NOT NULL
-                    ORDER BY block_time DESC LIMIT 1)
+          candidates AS (
+            SELECT quantity,block_time,
+              COALESCE(usd_value,CASE WHEN block_time>=unixepoch('now','-2 days') THEN total*(
+                SELECT quote.usd FROM prices quote WHERE quote.currency=trades.currency
+                  AND quote.observed_day>=date('now','-2 days') ORDER BY quote.day DESC LIMIT 1) END) effective_usd
+            FROM trades WHERE asset_id=(SELECT asset_id FROM identity)),
+          last AS (SELECT effective_usd,quantity,block_time FROM candidates
+                    WHERE effective_usd IS NOT NULL ORDER BY block_time DESC LIMIT 1)
      SELECT (SELECT SUM(usd_value) FROM trades WHERE asset_id=(SELECT asset_id FROM identity)) realized_usd,
-            (SELECT CASE WHEN quantity>0 THEN usd_value/quantity END FROM last) last_price_usd,
+            (SELECT CASE WHEN quantity>0 THEN effective_usd/quantity END FROM last) last_price_usd,
             (SELECT block_time FROM last) last_sale_time`,
     asset,
   );
