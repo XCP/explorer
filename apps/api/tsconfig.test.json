@@ -10,5 +10,10 @@
     "outDir": ".test-dist",
     "rootDir": "."
   },
-  "include": ["tests/node-test.d.ts", "tests/**/*.test.ts", "ops/lib/zaif-market-data.mjs"]
+  "include": [
+    "tests/node-test.d.ts",
+    "tests/**/*.test.ts",
+    "ops/lib/zaif-market-data.mjs",
+    "ops/lib/ecb-fx-data.mjs"
+  ]
 }

@@ -31,6 +31,7 @@
     "audit:usd-pricing": "node ops/audit-usd-pricing.mjs",
     "evaluate:zaif-xcp": "node ops/evaluate-zaif-xcp-history.mjs",
     "import:zaif-xcp": "node ops/import-zaif-xcp-history.mjs",
+    "import:ecb-fx": "node ops/import-ecb-fx-history.mjs",
     "review:asset-outlook": "node ops/review-asset-activity-outlook.mjs",
     "evaluate:asset-outlook-collections": "node ops/evaluate-asset-outlook-collections.mjs",
     "audit:asset-outlook": "node ops/audit-asset-activity-outlook.mjs",
