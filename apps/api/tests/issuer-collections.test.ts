@@ -41,6 +41,7 @@ test("issuer collection rebuild writes and reconciles compact entity tags", asyn
     CREATE TABLE tags(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,PRIMARY KEY(entity_id,tag));
     CREATE TABLE collection_membership_evidence(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,
       observed_at INTEGER DEFAULT(unixepoch()),PRIMARY KEY(entity_id,tag,source));
+    CREATE TABLE cache(key TEXT PRIMARY KEY);
     INSERT INTO address_dictionary VALUES(1,'bc1qv9zuv6ycly3gvnt2qrrw7ve9f3vlyjapmefrym');
     INSERT INTO asset_dictionary VALUES(10,'CORRUPTJSUN');
     INSERT INTO assets VALUES(10,1);

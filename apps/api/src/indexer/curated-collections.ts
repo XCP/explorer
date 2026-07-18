@@ -5,6 +5,7 @@
  */
 import type { Env } from "#api/env";
 import { COLLECTION_EVIDENCE_UPSERT_SQL, projectCollectionMembership } from "#api/indexer/collection-membership";
+import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 import { ARTIST_TAG_UPSERT_SQL } from "#api/indexer/collections";
 import { GREYPEPE_PROJECT_MEMBERS } from "#api/indexer/greypepe-project";
 import { THE_COUNTERPART_ASSETS } from "#api/indexer/the-counterpart";
@@ -153,6 +154,6 @@ export async function buildCuratedCollections(env: Env): Promise<Record<string, 
       .run();
     await projectCollectionMembership(env, collection.tag);
   }
-  await env.CORE_DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
+  await invalidateCollectionReads(env.CORE_DB);
   return { collections: CURATED_COLLECTIONS.length, tagged };
 }

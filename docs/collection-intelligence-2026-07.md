@@ -47,5 +47,8 @@ collection score because no collection score exists.
 
 The API contract checks that Rating buckets reconcile, rated members never exceed membership, and unique holders never
 exceed member–holder relationships. The SQLite query test fixes the definitions for clean realized value, median
-Rating, distribution, overlap, concentration, and integrity. The all-collection projection is cached daily; individual
-profiles use the same query and cache independently.
+Rating, distribution, overlap, concentration, and integrity. The all-collection projection is cached daily.
+
+Every collection ingestion path invalidates the global tag, collection-profile, and candidate caches only after its
+projection work completes. Individual profiles are edge-cached but do not create persistent per-collection D1 cache
+rows; the 73-collection population profile is the single durable aggregate.

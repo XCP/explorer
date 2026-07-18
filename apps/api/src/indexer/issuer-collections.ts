@@ -8,6 +8,7 @@
  */
 import type { Env } from "#api/env";
 import { projectCollectionMembership } from "#api/indexer/collection-membership";
+import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 
 interface IssuerCollection {
   issuer: string;
@@ -89,5 +90,6 @@ export async function buildIssuerCollections(env: Env): Promise<Record<string, u
       .run();
     await projectCollectionMembership(env, c.tag);
   }
+  await invalidateCollectionReads(env.CORE_DB);
   return { collections: ISSUER_COLLECTIONS.length, tagged };
 }

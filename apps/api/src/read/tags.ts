@@ -24,10 +24,8 @@ tags.get("/v2/collections", async (c) =>
 
 tags.get("/v2/collection-profiles/:tag", async (c) => {
   const tag = c.req.param("tag");
-  return cached(c, `collection-profile:${tag}`, { ttl: 86400, edge: 300, swr: 86400 }, async () => {
-    const result = await getCollectionProfile(c.env.CORE_DB, tag);
-    return result ? { result } : { error: "Collection not found" };
-  });
+  const result = await getCollectionProfile(c.env.CORE_DB, tag);
+  return result ? J(c, { result }, 300) : c.json({ error: "Collection not found" }, 404);
 });
 
 function enrich(r: TagStatsBase): TagStatsRow {

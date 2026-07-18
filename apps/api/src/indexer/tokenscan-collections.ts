@@ -15,6 +15,7 @@ import {
   COLLECTION_EVIDENCE_UPSERT_SQL,
   projectCollectionMembershipTags,
 } from "#api/indexer/collection-membership";
+import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 
 const slugify = (s: string) =>
   s
@@ -88,5 +89,6 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
     ...(prior.results ?? []).map((row) => row.tag),
     ...data.map((collection) => canonicalCollection(slugify(collection.name || ""))).filter(Boolean),
   ]);
+  await invalidateCollectionReads(env.CORE_DB);
   return { collections, tagged, removed: stale.length };
 }

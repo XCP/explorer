@@ -39,6 +39,7 @@ import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { listMissingBitcoinFees, storeBitcoinFees, validBitcoinFeeRows } from "#api/indexer/bitcoin-fees";
 import { projectCollectionMembership } from "#api/indexer/collection-membership";
+import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -210,7 +211,7 @@ admin.post("/admin/promote-collection", async (c) => {
     );
   }
   await projectCollectionMembership(c.env, slug);
-  await c.env.CORE_DB.prepare(`DELETE FROM cache WHERE key IN ('tags:all','collection-candidates')`).run();
+  await invalidateCollectionReads(c.env.CORE_DB);
   return c.json({ issuer, slug, name: name || slug, tagged: rows.results.length });
 });
 

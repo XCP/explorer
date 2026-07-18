@@ -17,6 +17,7 @@ import {
   COLLECTION_EVIDENCE_UPSERT_SQL,
   projectCollectionMembership,
 } from "#api/indexer/collection-membership";
+import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 
 // pepe.wtf collection slug -> our tag slug. `stamps` (26k) is intentionally excluded — we already carry a
 // protocol-derived `stamp` tag; folding all Bitcoin Stamps in here would swamp the collection layer.
@@ -168,5 +169,6 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
   }>();
   out.total_collection_tags = nc?.c ?? 0;
   out.artists = na?.c ?? 0;
+  await invalidateCollectionReads(env.CORE_DB);
   return out;
 }
