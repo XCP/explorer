@@ -4,11 +4,13 @@ import { test } from "node:test";
 import {
   APPLY_TRADE_USD_SQL,
   BUILD_BURN_PRICE_OBSERVATIONS_SQL,
+  BUILD_BURN_XCP_USD_SQL,
   BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   BUILD_OBSERVED_USD_SQL,
   BUILD_XCP_USD_SQL,
   PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   PRUNE_BURN_PRICE_OBSERVATIONS_SQL,
+  PRUNE_BURN_XCP_USD_SQL,
   PRUNE_OBSERVED_USD_SQL,
   PRUNE_XCP_USD_SQL,
   tradeUsdWindow,
@@ -68,6 +70,25 @@ test("genesis burns materialize as protocol conversions rather than trades", () 
   db.exec(`UPDATE burns SET status='invalid'`);
   db.exec(PRUNE_BURN_PRICE_OBSERVATIONS_SQL);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM market_price_observations`).get()?.n, 0);
+  db.close();
+});
+
+test("genesis XCP/USD is reproducibly derived from the burn conversion and same-day BTC/USD", () => {
+  const db = fixture();
+  db.exec(`
+    INSERT INTO prices VALUES('2014-01-02','BTC',800,'coinmarketcap_aggregate','2014-01-02',2);
+    INSERT INTO prices VALUES('2014-01-02','XCP',9,'coinmarketcap_archive','2014-01-02',0);
+    INSERT INTO market_price_observations VALUES(
+      '2014-01-02','XCP','BTC','counterparty','burn',0.001,1000,2,NULL,NULL,'protocol_conversion_vwm');
+  `);
+  db.exec(BUILD_BURN_XCP_USD_SQL);
+  assert.deepEqual(
+    { ...db.prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2014-01-02' AND currency='XCP'`).get() },
+    { usd: 0.8, source: "burn_vwm", observed_day: "2014-01-02", fidelity: 1 },
+  );
+  db.exec(`DELETE FROM market_price_observations WHERE venue='burn'`);
+  db.exec(PRUNE_BURN_XCP_USD_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE source='burn_vwm'`).get()?.n, 0);
   db.close();
 });
 

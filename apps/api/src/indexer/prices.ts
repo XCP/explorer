@@ -204,6 +204,24 @@ export const PRUNE_OBSERVED_USD_SQL = `DELETE FROM prices
       AND observation.quote_currency='USD'
       AND observation.source='coinmarketcap' AND observation.venue='aggregate' AND observation.price>0)`;
 
+/** During the genesis burn, on-chain BTC/XCP conversion × same-day BTC/USD is reproducible XCP/USD evidence. */
+export const BUILD_BURN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+  SELECT btc.day,'XCP',edge.price*btc.usd,'burn_vwm',edge.day,1
+  FROM prices btc JOIN market_price_observations edge ON edge.day=btc.day
+  WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+    AND edge.source='counterparty' AND edge.venue='burn'
+  ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity
+  WHERE prices.fidelity<=excluded.fidelity AND (
+    prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
+    OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity)`;
+
+export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
+  WHERE currency='XCP' AND source='burn_vwm' AND NOT EXISTS (
+    SELECT 1 FROM prices btc JOIN market_price_observations edge ON edge.day=btc.day
+    WHERE btc.currency='BTC' AND btc.day=prices.day AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+      AND edge.source='counterparty' AND edge.venue='burn')`;
+
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
   SELECT btc.day,'XCP',edge.price*btc.usd,'dex_vwm',edge.day,1
   FROM prices btc
@@ -306,6 +324,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
 
   const observedUsdUpsert = await env.CORE_DB.prepare(BUILD_OBSERVED_USD_SQL).run();
   const observedUsdPrune = await env.CORE_DB.prepare(PRUNE_OBSERVED_USD_SQL).run();
+  const burnXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_BURN_XCP_USD_SQL).run();
+  const burnXcpUsdPrune = await env.CORE_DB.prepare(PRUNE_BURN_XCP_USD_SQL).run();
   const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
   const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
   out.derived = {
@@ -315,6 +335,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     burn_xcp_btc_pruned: burnPrune.meta.rows_written ?? 0,
     observed_usd_upserted: observedUsdUpsert.meta.rows_written ?? 0,
     observed_usd_pruned: observedUsdPrune.meta.rows_written ?? 0,
+    burn_xcp_usd_upserted: burnXcpUsdUpsert.meta.rows_written ?? 0,
+    burn_xcp_usd_pruned: burnXcpUsdPrune.meta.rows_written ?? 0,
     xcp_usd_upserted: xcpUsdUpsert.meta.rows_written ?? 0,
     xcp_usd_pruned: xcpUsdPrune.meta.rows_written ?? 0,
   };
