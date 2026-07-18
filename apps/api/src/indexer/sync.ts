@@ -109,7 +109,13 @@ export async function syncCoreEvents(
     let lastBlock = Number.parseInt(blockValue ?? "0", 10);
     if (!Number.isSafeInteger(lastIndex) || lastIndex < -1) throw new Error("replay cursor is invalid");
 
-    const tip = await tipEventIndex(env.COUNTERPARTY_API_BASE);
+    const [tip, sourceTipBlock] = await Promise.all([
+      tipEventIndex(env.COUNTERPARTY_API_BASE),
+      currentBlock(env.COUNTERPARTY_API_BASE),
+    ]);
+    // Persist the independently observed source height before replay. Even when a later event handler fails,
+    // readiness must report the lag instead of comparing the local mirror to itself and claiming "synced".
+    await setCoreStateStmt(env.CORE_DB, "source_tip_block", String(sourceTipBlock)).run();
     const followingWindow = tip - lastIndex < 5 * CHUNK;
     if (followingWindow && lastBlock > 0) {
       const [storedHash, actualHash] = await Promise.all([
@@ -164,6 +170,7 @@ export async function syncCoreEvents(
       applied,
       last_event_index: lastIndex,
       last_block: lastBlock,
+      source_tip_block: sourceTipBlock,
       tip,
       caught_up: caughtUp,
     };

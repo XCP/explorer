@@ -28,6 +28,8 @@ export function StatusStrip() {
   const pending = useMempoolCount();
   const { btc, btcChange, xcp, xcpChange } = usePrices();
   const tip = stats?.tip ?? (stats?.indexed_block ? Number(stats.indexed_block) : null);
+  const indexed = stats?.indexed_block ? Number(stats.indexed_block) : tip;
+  const synced = stats?.synced ?? true;
 
   return (
     <div className="border-b border-zinc-900 bg-[#0c0c0e] font-mono text-[11px] tabular-nums">
@@ -35,15 +37,18 @@ export function StatusStrip() {
         <span className="flex items-center">
           <Cell>
             <span
-              className="mr-1.5 inline-block size-1.5 rounded-full bg-(--color-up) align-[1px] motion-safe:animate-pulse"
+              className={`mr-1.5 inline-block size-1.5 rounded-full align-[1px] motion-safe:animate-pulse ${synced ? "bg-(--color-up)" : "bg-amber-400"}`}
               aria-hidden="true"
             />
-            <span className="font-medium text-zinc-300">{tip != null ? "synced" : "connecting…"}</span>
+            <span className={`font-medium ${synced ? "text-zinc-300" : "text-amber-400"}`}>
+              {tip == null ? "connecting…" : synced ? "synced" : "syncing"}
+            </span>
           </Cell>
           {tip != null && (
             <Cell>
               <span className="text-zinc-500">block</span>{" "}
-              <span className="font-medium text-zinc-300">{commas(tip)}</span>
+              <span className="font-medium text-zinc-300">{commas(indexed)}</span>
+              {!synced && <span className="text-amber-400"> / {commas(tip)}</span>}
             </Cell>
           )}
           <Cell last>

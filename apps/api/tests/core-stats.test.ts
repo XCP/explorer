@@ -44,6 +44,7 @@ test("compact overview reads one snapshot and reports the canonical block positi
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
+    CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY);
     CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY);
     CREATE TABLE burns(x INTEGER); CREATE TABLE fairminters(x INTEGER); CREATE TABLE bets(x INTEGER);
@@ -70,7 +71,15 @@ test("compact overview reads one snapshot and reports the canonical block positi
       indexed_block: "101",
     },
   );
-  assert.deepEqual({ ...(await coreSyncOverview(dbBinding)) }, { tip: 101, indexed_block: "101" });
+  assert.deepEqual(
+    { ...(await coreSyncOverview(dbBinding)) },
+    { tip: 101, indexed_block: "101", lag_blocks: 0, synced: true },
+  );
+  db.exec(`INSERT INTO core_state VALUES('source_tip_block','105')`);
+  assert.deepEqual(
+    { ...(await coreSyncOverview(dbBinding)) },
+    { tip: 105, indexed_block: "101", lag_blocks: 4, synced: false },
+  );
   assert.deepEqual(
     { ...(await coreNetworkCounts(dbBinding)) },
     {

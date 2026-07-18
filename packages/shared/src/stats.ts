@@ -13,6 +13,8 @@ export interface StatsOverview {
 export interface SyncOverview {
   tip: number | null;
   indexed_block: string | null;
+  lag_blocks: number;
+  synced: boolean;
 }
 
 /** GET /v2/stats — lifetime network counts + totals (cached). */

@@ -1208,6 +1208,9 @@ test("replay advances its durable cursor", async () => {
     if (url.endsWith("/events?limit=1")) {
       return new Response(JSON.stringify({ result_count: 2 }), { status: 200 });
     }
+    if (url.endsWith("/blocks/last")) {
+      return new Response(JSON.stringify({ result: { block_index: 101 } }), { status: 200 });
+    }
     if (url.includes("/events?cursor=")) {
       return new Response(
         JSON.stringify({
@@ -1235,6 +1238,7 @@ test("replay advances its durable cursor", async () => {
       applied: 1,
       last_event_index: 1,
       last_block: 101,
+      source_tip_block: 101,
       tip: 1,
       caught_up: true,
     });
@@ -1278,6 +1282,7 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result_count: 10 }));
+    if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
     if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "replacement-101" } }));
     if (url.includes("/events?cursor=10"))
       return new Response(

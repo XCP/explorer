@@ -8,12 +8,19 @@ export function SyncStatus() {
   const { item: stats } = useStats();
   const pending = useMempoolCount();
   const tip = stats?.tip ?? (stats?.indexed_block ? Number(stats.indexed_block) : null);
+  const indexed = stats?.indexed_block ? Number(stats.indexed_block) : tip;
+  const synced = stats?.synced ?? true;
   return (
     <div className="flex items-center gap-2 text-xs text-zinc-400">
-      <span className="size-1.5 rounded-full bg-(--color-up) animate-pulse" aria-hidden="true" />
+      <span
+        className={`size-1.5 rounded-full animate-pulse ${synced ? "bg-(--color-up)" : "bg-amber-400"}`}
+        aria-hidden="true"
+      />
       {tip != null ? (
         <span>
-          Synced to block <span className="font-mono tabular-nums text-zinc-300">{commas(tip)}</span>
+          {synced ? "Synced" : "Indexing"} to block{" "}
+          <span className="font-mono tabular-nums text-zinc-300">{commas(indexed)}</span>
+          {!synced && <> · {commas(stats?.lag_blocks ?? 0)} blocks behind</>}
           {" · "}
           <span className="font-mono tabular-nums text-zinc-300">{commas(pending)}</span> pending
         </span>

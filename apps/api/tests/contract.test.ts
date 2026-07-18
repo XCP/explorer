@@ -269,7 +269,11 @@ test("contract: GET /v2/ — StatsOverview envelope", async (t) => {
 test("contract: GET /v2/status - cheap SyncOverview heartbeat", async (t) => {
   if (skipUnlessLive(t)) return;
   const j = await getJson("/v2/status");
-  assertShape(j.result, { tip: "number|null", indexed_block: "string|null" }, "status.result.");
+  assertShape(
+    j.result,
+    { tip: "number|null", indexed_block: "string|null", lag_blocks: "number", synced: "boolean" },
+    "status.result.",
+  );
   assert.ok(!("assets" in j.result), "status must not grow global COUNT(*) fields");
   assert.ok(!("transactions" in j.result), "status must not grow global COUNT(*) fields");
   assert.ok(!("balances" in j.result), "status must not grow global COUNT(*) fields");

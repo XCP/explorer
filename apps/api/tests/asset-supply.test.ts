@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import type { Env } from "#api/env";
-import { crawlAssetSupply, enqueueCoreSupply } from "#api/indexer/asset-supply";
+import { crawlAssetSupply, enqueueCoreSupply, SUPPLY_ID_LOOKUP_BATCH } from "#api/indexer/asset-supply";
 
 class Statement {
   private values: unknown[] = [];
@@ -36,7 +36,26 @@ function d1(db: DatabaseSync): D1Database {
   } as unknown as D1Database;
 }
 
+test("supply queue chunks identity lookups below D1's SQL-variable ceiling", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE NOT NULL)`);
+  const insert = sqlite.prepare(`INSERT INTO asset_dictionary VALUES(?,?)`);
+  const names = Array.from({ length: SUPPLY_ID_LOOKUP_BATCH * 3 + 1 }, (_, index) => `ASSET${index}`);
+  names.forEach((name, index) => insert.run(index + 1, name));
+
+  await enqueueCoreSupply(d1(sqlite), names);
+
+  const queue = JSON.parse(String(sqlite.prepare(`SELECT value FROM core_state WHERE key='asset_supply_queue'`).get()?.value));
+  assert.equal(queue.length, names.length);
+  assert.deepEqual(
+    [...queue].sort((a: number, b: number) => a - b),
+    names.map((_, index) => index + 1),
+  );
+});
+
 test("compact supply maintenance is exact, queued by identity, and updates derived protocol totals", async () => {
+  assert.ok(SUPPLY_ID_LOOKUP_BATCH < 100, "D1 identity lookups must stay below its SQL-variable ceiling");
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);

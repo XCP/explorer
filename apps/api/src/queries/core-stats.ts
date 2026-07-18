@@ -13,8 +13,17 @@ export function coreHomeOverview(db: D1Database): Promise<StatsOverview | null> 
   );
 }
 
-export function coreSyncOverview(db: D1Database): Promise<SyncOverview | null> {
-  return one<SyncOverview>(db, `SELECT ${CHAIN_POSITION} tip,CAST(${CHAIN_POSITION} AS TEXT) indexed_block`);
+export async function coreSyncOverview(db: D1Database): Promise<SyncOverview | null> {
+  const row = await one<Omit<SyncOverview, "synced"> & { synced: number }>(
+    db,
+    `WITH position AS (
+       SELECT ${CHAIN_POSITION} indexed_height,
+         COALESCE((SELECT CAST(value AS INTEGER) FROM core_state WHERE key='source_tip_block'),${CHAIN_POSITION}) tip
+     )
+     SELECT tip,CAST(indexed_height AS TEXT) indexed_block,MAX(0,tip-indexed_height) lag_blocks,
+       tip<=indexed_height synced FROM position`,
+  );
+  return row ? { ...row, synced: Boolean(row.synced) } : null;
 }
 
 export function coreNetworkCounts(db: D1Database): Promise<NetworkCounts | null> {

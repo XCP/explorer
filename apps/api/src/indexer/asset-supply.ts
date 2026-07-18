@@ -5,6 +5,7 @@ import { getCoreState, setCoreState } from "#api/indexer/core-state";
 
 const BACKFILL_BATCH = 2000;
 const DIRTY_PER_RUN = 400;
+export const SUPPLY_ID_LOOKUP_BATCH = 90;
 
 async function numberQueue(db: D1Database): Promise<number[]> {
   const value = await getCoreState(db, "asset_supply_queue");
@@ -20,13 +21,18 @@ async function numberQueue(db: D1Database): Promise<number[]> {
 export async function enqueueCoreSupply(db: D1Database, assets: Iterable<string>): Promise<void> {
   const names = [...new Set(assets)].filter(Boolean);
   if (names.length === 0) return;
-  const placeholders = names.map(() => "?").join(",");
-  const ids = await db
-    .prepare(`SELECT asset_id FROM asset_dictionary WHERE asset IN (${placeholders})`)
-    .bind(...names)
-    .all<{ asset_id: number }>();
+  const ids: number[] = [];
+  for (let offset = 0; offset < names.length; offset += SUPPLY_ID_LOOKUP_BATCH) {
+    const chunk = names.slice(offset, offset + SUPPLY_ID_LOOKUP_BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = await db
+      .prepare(`SELECT asset_id FROM asset_dictionary WHERE asset IN (${placeholders})`)
+      .bind(...chunk)
+      .all<{ asset_id: number }>();
+    ids.push(...rows.results.map((row) => row.asset_id));
+  }
   const queue = await numberQueue(db);
-  const merged = [...new Set([...queue, ...ids.results.map((row) => row.asset_id)])];
+  const merged = [...new Set([...queue, ...ids])];
   await setCoreState(db, "asset_supply_queue", JSON.stringify(merged));
 }
 
