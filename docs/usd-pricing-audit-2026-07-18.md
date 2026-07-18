@@ -6,6 +6,19 @@ continues.
 
 ## Decision
 
+### Primary Zaif history discovered after the initial audit
+
+Zaif granted permission for XCP.io to use its first-party monthly XCP/BTC and XCP/JPY execution CSVs. The files begin
+on 2016-08-02 and expose timestamp, executed price, XCP quantity, and side. Provenance must record `source=zaif` and
+`venue=cex` as separate facts. A read-only UTC-normalized audit found 16,063 XCP/BTC executions across 1,177 UTC days
+and 330,884 XCP/JPY executions across 3,325 UTC days. Their combined calendar reaches 57,174 currently unpriced XCP
+trade rows. CSV timestamps are JST (UTC+9), verified against Zaif's Unix-timestamp public API.
+
+Zaif XCP/BTC must not blindly overwrite the Counterparty DEX series: only 111 days currently overlap, the median
+absolute log difference is 0.310, and thin-market tail disagreements are large. Store both observations and select
+with explicit venue, volume, trade-count, FX, and disagreement evidence. XCP/JPY is the much deeper Zaif market and
+must be evaluated through an official daily JPY/USD cross before production selection.
+
 Build one auditable execution-time USD ledger, but do not pretend that every real payment is an admissible unit-price
 observation. Preserve these as separate facts:
 

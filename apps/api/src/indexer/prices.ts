@@ -68,14 +68,16 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
 
 const DERIVED_FRESH_DAYS = 7;
 
-export const BUILD_XCP_BTC_DAILY_SQL = `INSERT INTO xcp_btc_daily(day,xcpbtc,volume_xcp,trades)
+export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+  day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
     SELECT date(match.block_time,'unixepoch') day,
       CASE WHEN forward_asset.asset='XCP'
         THEN CAST(match.backward_quantity AS REAL)/CAST(match.forward_quantity AS REAL)
         ELSE CAST(match.forward_quantity AS REAL)/CAST(match.backward_quantity AS REAL) END price,
       CASE WHEN forward_asset.asset='XCP' THEN CAST(match.forward_quantity AS INTEGER)
-        ELSE CAST(match.backward_quantity AS INTEGER) END volume_xcp
+        ELSE CAST(match.backward_quantity AS INTEGER) END volume_xcp,
+      match.block_time observation_time
     FROM order_matches match
     JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
     JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
@@ -84,22 +86,30 @@ export const BUILD_XCP_BTC_DAILY_SQL = `INSERT INTO xcp_btc_daily(day,xcpbtc,vol
       AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
   ), ranked AS (
-    SELECT day,price,volume_xcp,
+    SELECT day,price,volume_xcp,observation_time,
       SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
       SUM(volume_xcp) OVER(PARTITION BY day) total_volume,
-      COUNT(*) OVER(PARTITION BY day) trades
+      COUNT(*) OVER(PARTITION BY day) trades,
+      MIN(observation_time) OVER(PARTITION BY day) first_time,
+      MAX(observation_time) OVER(PARTITION BY day) last_time
     FROM observations
   )
-  SELECT day,MIN(price),CAST(MAX(total_volume) AS TEXT),MAX(trades)
+  SELECT day,'XCP','BTC','counterparty','dex',MIN(price),MAX(total_volume)/1e8,MAX(trades),
+    MIN(first_time),MAX(last_time),'volume_weighted_median'
   FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day
-  ON CONFLICT(day) DO UPDATE SET xcpbtc=excluded.xcpbtc,
-    volume_xcp=excluded.volume_xcp,trades=excluded.trades
-  WHERE xcp_btc_daily.xcpbtc IS NOT excluded.xcpbtc
-    OR xcp_btc_daily.volume_xcp IS NOT excluded.volume_xcp
-    OR xcp_btc_daily.trades IS NOT excluded.trades`;
+  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
+    volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
+    last_time=excluded.last_time,method=excluded.method
+  WHERE market_price_observations.price IS NOT excluded.price
+    OR market_price_observations.volume_base IS NOT excluded.volume_base
+    OR market_price_observations.trades IS NOT excluded.trades
+    OR market_price_observations.first_time IS NOT excluded.first_time
+    OR market_price_observations.last_time IS NOT excluded.last_time
+    OR market_price_observations.method IS NOT excluded.method`;
 
-export const PRUNE_XCP_BTC_DAILY_SQL = `DELETE FROM xcp_btc_daily
-  WHERE day NOT IN (
+export const PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
+  WHERE source='counterparty' AND venue='dex' AND base_currency='XCP' AND quote_currency='BTC'
+    AND day NOT IN (
     SELECT DISTINCT date(match.block_time,'unixepoch')
     FROM order_matches match
     JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
@@ -111,13 +121,16 @@ export const PRUNE_XCP_BTC_DAILY_SQL = `DELETE FROM xcp_btc_daily
   )`;
 
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
-  SELECT btc.day,'XCP',edge.xcpbtc*btc.usd,'dex_vwm',edge.day,1
+  SELECT btc.day,'XCP',edge.price*btc.usd,'dex_vwm',edge.day,1
   FROM prices btc
-  JOIN xcp_btc_daily edge ON edge.day=(
-    SELECT recent.day FROM xcp_btc_daily recent
+  JOIN market_price_observations edge ON edge.day=(
+    SELECT recent.day FROM market_price_observations recent
     WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
+      AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
+      AND recent.source='counterparty' AND recent.venue='dex'
     ORDER BY recent.day DESC LIMIT 1)
-  WHERE btc.currency='BTC'
+  WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+    AND edge.source='counterparty' AND edge.venue='dex'
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity
   WHERE prices.fidelity<=excluded.fidelity AND (
@@ -128,11 +141,15 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
 export const PRUNE_XCP_USD_SQL = `DELETE FROM prices
   WHERE currency='XCP' AND source='dex_vwm' AND NOT EXISTS (
     SELECT 1 FROM prices btc
-    JOIN xcp_btc_daily edge ON edge.day=(
-      SELECT recent.day FROM xcp_btc_daily recent
+    JOIN market_price_observations edge ON edge.day=(
+      SELECT recent.day FROM market_price_observations recent
       WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
+        AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
+        AND recent.source='counterparty' AND recent.venue='dex'
       ORDER BY recent.day DESC LIMIT 1)
     WHERE btc.currency='BTC' AND btc.day=prices.day
+      AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+      AND edge.source='counterparty' AND edge.venue='dex'
   )`;
 
 async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
@@ -198,8 +215,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
 
   // Fold order matches once into a tiny indexed daily series. The former non-materialized CTE was searched
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
-  const xcpBtcUpsert = await env.CORE_DB.prepare(BUILD_XCP_BTC_DAILY_SQL).run();
-  const xcpBtcPrune = await env.CORE_DB.prepare(PRUNE_XCP_BTC_DAILY_SQL).run();
+  const xcpBtcUpsert = await env.CORE_DB.prepare(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL).run();
+  const xcpBtcPrune = await env.CORE_DB.prepare(PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL).run();
 
   const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
   const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();

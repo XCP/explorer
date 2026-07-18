@@ -3,9 +3,9 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
   APPLY_TRADE_USD_SQL,
-  BUILD_XCP_BTC_DAILY_SQL,
+  BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   BUILD_XCP_USD_SQL,
-  PRUNE_XCP_BTC_DAILY_SQL,
+  PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   PRUNE_XCP_USD_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
@@ -24,8 +24,10 @@ function fixture(): DatabaseSync {
     CREATE TABLE order_matches(
       forward_asset_id INTEGER,forward_quantity TEXT,backward_asset_id INTEGER,backward_quantity TEXT,
       block_time INTEGER,status TEXT);
-    CREATE TABLE xcp_btc_daily(
-      day TEXT PRIMARY KEY,xcpbtc REAL,volume_xcp TEXT,trades INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE market_price_observations(
+      day TEXT,base_currency TEXT,quote_currency TEXT,source TEXT,venue TEXT,price REAL,
+      volume_base REAL,trades INTEGER,first_time INTEGER,last_time INTEGER,method TEXT,
+      PRIMARY KEY(day,base_currency,quote_currency,source,venue));
     CREATE TABLE prices(
       day TEXT,currency TEXT,usd REAL,source TEXT,observed_day TEXT,fidelity INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY(day,currency));
@@ -45,38 +47,41 @@ function fixture(): DatabaseSync {
 
 test("XCP pricing uses completed-trade volume-weighted medians", () => {
   const db = fixture();
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
-  const row = db.prepare(`SELECT * FROM xcp_btc_daily`).get() as Record<string, unknown>;
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  const row = db.prepare(`SELECT * FROM market_price_observations`).get() as Record<string, unknown>;
   assert.equal(row.day, "2026-01-01");
-  assert.equal(row.xcpbtc, 0.002);
-  assert.equal(row.volume_xcp, "20100000000");
+  assert.equal(row.source, "counterparty");
+  assert.equal(row.venue, "dex");
+  assert.equal(row.price, 0.002);
+  assert.equal(row.volume_base, 201);
   assert.equal(row.trades, 3);
   db.close();
 });
 
 test("XCP/BTC materialization is idempotent and prunes only obsolete source days", () => {
   const db = fixture();
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   const beforeReplay = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - beforeReplay, 0);
 
-  db.exec(`INSERT INTO xcp_btc_daily VALUES('2025-12-31',9,'1',1)`);
-  db.exec(PRUNE_XCP_BTC_DAILY_SQL);
+  db.exec(`INSERT INTO market_price_observations VALUES(
+    '2025-12-31','XCP','BTC','counterparty','dex',9,1,1,NULL,NULL,'volume_weighted_median')`);
+  db.exec(PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   assert.deepEqual(
-    db.prepare(`SELECT day FROM xcp_btc_daily ORDER BY day`).all().map((row) => row.day),
+    db.prepare(`SELECT day FROM market_price_observations ORDER BY day`).all().map((row) => row.day),
     ["2026-01-01"],
   );
 
   db.exec(`UPDATE order_matches SET backward_quantity='30000000' WHERE rowid=2`);
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
-  assert.equal(db.prepare(`SELECT xcpbtc FROM xcp_btc_daily WHERE day='2026-01-01'`).get()?.xcpbtc, 0.003);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  assert.equal(db.prepare(`SELECT price FROM market_price_observations WHERE day='2026-01-01'`).get()?.price, 0.003);
   db.close();
 });
 
 test("derived XCP/USD expires after seven days and records provenance", () => {
   const db = fixture();
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
   assert.deepEqual(
     db
@@ -93,7 +98,7 @@ test("derived XCP/USD expires after seven days and records provenance", () => {
 
 test("a higher-fidelity observed price wins over a derived price", () => {
   const db = fixture();
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   db.exec(`INSERT INTO prices VALUES('2026-01-01','XCP',250,'market','2026-01-01',3)`);
   db.exec(BUILD_XCP_USD_SQL);
   assert.deepEqual(
@@ -105,7 +110,7 @@ test("a higher-fidelity observed price wins over a derived price", () => {
 
 test("derived XCP/USD replay is idempotent and stale pruning preserves observed prices", () => {
   const db = fixture();
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
   const beforeReplay = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
   db.exec(BUILD_XCP_USD_SQL);
@@ -129,7 +134,7 @@ test("derived XCP/USD replay is idempotent and stale pruning preserves observed 
 
 test("trade USD reconciliation clears expired derivations without touching direct USD sales", () => {
   const db = fixture();
-  db.exec(BUILD_XCP_BTC_DAILY_SQL);
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
   db.exec(`
     CREATE TABLE trades(block_time INTEGER,currency TEXT,total REAL,usd_value REAL);
