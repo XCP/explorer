@@ -23,6 +23,7 @@
     "evaluate:reputation": "node ops/evaluate-reputation-baselines.mjs",
     "audit:address-reputation": "node ops/audit-address-reputation.mjs",
     "audit:asset-ratings": "node ops/audit-asset-ratings.mjs",
+    "audit:usd-pricing": "node ops/audit-usd-pricing.mjs",
     "review:asset-outlook": "node ops/review-asset-activity-outlook.mjs",
     "evaluate:asset-outlook-collections": "node ops/evaluate-asset-outlook-collections.mjs",
     "audit:asset-outlook": "node ops/audit-asset-activity-outlook.mjs",
