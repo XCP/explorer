@@ -816,9 +816,15 @@ test("contract: GET /v2/addresses/:a/reputation — AddressReputation + evidence
   assert.ok(Array.isArray(j.result.tags), "reputation.tags must be an array");
 });
 
-test("contract: address graph reports network standing rather than a trust verdict", async (t) => {
+test("contract: asset graph reports bounded holder-network evidence", async (t) => {
   if (skipUnlessLive(t)) return;
-  const result = (await getJson(`/v2/addresses/${ADDR}/graph`)).result;
-  assertShape(result, { trust: "number", distrust: "number", tier: "string" }, "graph.");
-  assert.ok(["connected", "flagged", "unscored"].includes(result.tier), "graph tier vocabulary drifted");
+  const result = (await getJson("/v2/graph/asset/RAREPEPE?limit=10")).result;
+  assertShape(result, { center: "string", scope: "string", nodes: "array", edges: "array", stats: "object" }, "graph.");
+  assert.equal(result.scope, "asset-holders");
+  assert.ok(result.nodes.length <= 11, "asset graph exceeded its requested holder budget");
+  assertShape(
+    result.stats,
+    { total: "number", edges_among: "number", cohesion: "number", strong_edges: "number" },
+    "graph.stats.",
+  );
 });

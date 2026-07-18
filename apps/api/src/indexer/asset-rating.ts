@@ -44,6 +44,7 @@ SELECT asset_id,rating,rank_position,population,active_months_score,buyer_breadt
 ON CONFLICT(asset_id) DO UPDATE SET rating=excluded.rating,rank_position=excluded.rank_position,
   population=excluded.population,active_months_score=excluded.active_months_score,
   buyer_breadth_score=excluded.buyer_breadth_score,realized_value_score=excluded.realized_value_score,
+  previous_rating=asset_ratings.rating,previous_calculated_at=asset_ratings.calculated_at,
   calculated_at=excluded.calculated_at,model_version=excluded.model_version`;
 
 export const ASSET_RATING_RECONCILE_SQL = `DELETE FROM asset_ratings AS rating

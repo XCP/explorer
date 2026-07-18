@@ -18,6 +18,8 @@ test("Rating refresh is daily and uses one three-component 0–10 population ran
     assert.match(ASSET_RATING_UPSERT_SQL, new RegExp(`PERCENT_RANK\\(\\).*${column}`));
   assert.match(ASSET_RATING_UPSERT_SQL, /10\.0\*PERCENT_RANK\(\).*evidence_rank/);
   assert.match(ASSET_RATING_UPSERT_SQL, /ON CONFLICT\(asset_id\) DO UPDATE/);
+  assert.match(ASSET_RATING_UPSERT_SQL, /previous_rating=asset_ratings\.rating/);
+  assert.match(ASSET_RATING_UPSERT_SQL, /previous_calculated_at=asset_ratings\.calculated_at/);
   assert.match(ASSET_RATING_UPSERT_SQL, /COALESCE\(signal\.low_quality,0\)=0/);
   assert.equal(/REPLACE/i.test(ASSET_RATING_UPSERT_SQL), false);
   assert.match(ASSET_RATING_RECONCILE_SQL, /NOT EXISTS/);

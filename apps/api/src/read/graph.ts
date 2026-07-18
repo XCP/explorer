@@ -9,16 +9,11 @@
  *   GET /v2/assets/:asset/graph         -> { result: { trust, distrust, tier } }  (60s)
  * Public tiers are connected / flagged / unscored: seeded network standing, not a reputation verdict.
  */
-import type { GraphSubgraph, GraphTier } from "@xcp/shared/graph";
-import { router, cached, J } from "#api/read/respond";
-import { graphOverview, graphScore, graphCuts } from "#api/queries/graph";
+import type { GraphSubgraph } from "@xcp/shared/graph";
+import { router, J } from "#api/read/respond";
 import { addressEgo, assetHolders } from "#api/queries/graph-extract";
-import { graphTier } from "#api/indexer/graph-core";
 
 export const graph = router();
-
-const publicTier = (tier: ReturnType<typeof graphTier>): GraphTier =>
-  tier === "trusted" ? "connected" : tier === "distrusted" ? "flagged" : "unscored";
 
 // Bounded, renderable sub-graphs for the viz experiment. limit clamps the node budget so a hub can't return
 // its whole neighbourhood. GET /v2/graph/address/:a (ego-network) · /v2/graph/asset/:a (holder star).
@@ -35,28 +30,4 @@ graph.get("/v2/graph/asset/:asset", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
   const { nodes, edges, stats } = await assetHolders(c.env.CORE_DB, asset, clampLimit(c.req.query("limit"), 80, 300));
   return J(c, { result: { center: asset, scope: "asset-holders", nodes, edges, stats } as GraphSubgraph }, 120);
-});
-
-graph.get("/v2/reputation/graph", (c) =>
-  cached(c, "reputation_graph", { ttl: 600, edge: 120 }, async () => ({ result: await graphOverview(c.env.CORE_DB) })),
-);
-
-graph.get("/v2/addresses/:address/graph", async (c) => {
-  const [s, cuts] = await Promise.all([
-    graphScore(c.env.CORE_DB, "address", c.req.param("address")),
-    graphCuts(c.env.CORE_DB),
-  ]);
-  const trust = s?.trust ?? 0,
-    distrust = s?.distrust ?? 0;
-  return J(c, { result: { trust, distrust, tier: publicTier(graphTier(trust, distrust, cuts.address)) } }, 60);
-});
-
-graph.get("/v2/assets/:asset/graph", async (c) => {
-  const [s, cuts] = await Promise.all([
-    graphScore(c.env.CORE_DB, "asset", c.req.param("asset")),
-    graphCuts(c.env.CORE_DB),
-  ]);
-  const trust = s?.trust ?? 0,
-    distrust = s?.distrust ?? 0;
-  return J(c, { result: { trust, distrust, tier: publicTier(graphTier(trust, distrust, cuts.asset)) } }, 60);
 });

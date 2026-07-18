@@ -136,22 +136,29 @@ budget. Neither result justifies calling future behavior “reputation.”
 Show persona, Reputation tier, Track Record score, historical evidence, exact last activity, and factual
 classifications. The disclaimer states that it is not identity verification, an endorsement, or a guarantee.
 
-## Network Standing
+## Holder network evidence
 
 ### User question
 
-What selected relationship regions is this entity connected to?
+Who are an asset's established holders, which assets share a meaningful holder cohort, and is ownership/activity
+distributed or tightly coordinated?
 
 ### Production model
 
-Seeded graph proximity and related-entity exploration remain separate. The graph must not change Rating, Reputation,
-Conviction, or Radar eligibility/ranking. “Connected,” “flagged,” and “unscored” are relationship states—not trusted,
-untrusted, good, or bad identities.
+The product uses inspectable graph facts rather than a graph-derived judgment:
+
+- holder rows carry the holder's directly observed Reputation and factual classification;
+- related assets report shared-holder count and overlap percentage;
+- holder makeup and cohesion report concentration, clusters, and repeated relationships.
+
+Seeded PageRank remains an internal research and anomaly-discovery projection. It must not change Rating, Reputation,
+Conviction, or Radar eligibility/ranking and is not exposed as a public entity badge.
 
 ### Frontend
 
-Use a secondary chip or dedicated relationship view with the method and seed provenance available. Never use a shield
-or endorsement treatment that implies verification.
+Surface the evidence in the normal Holders and Related asset views, close to the entities it describes. Do not add a
+standalone graph score: a star diagram is less legible than the corresponding ranked table, and seed proximity is not
+verification, quality, or trustworthiness.
 
 ## Tags and collections
 

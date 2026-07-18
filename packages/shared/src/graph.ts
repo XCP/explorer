@@ -1,15 +1,3 @@
-/** Seeded money-flow graph trait (Min-k-PPR / reverse PPR — see apps/api/docs/graph-reputation.md).
- * The tier reports network standing relative to curated seed sets; it is not a general reputation verdict. */
-
-export type GraphTier = "connected" | "flagged" | "unscored";
-
-/** GET /v2/addresses/:address/graph · /v2/assets/:asset/graph */
-export interface GraphEntityScore {
-  trust: number;
-  distrust: number;
-  tier: GraphTier;
-}
-
 /** Renderable sub-graph (bounded) — GET /v2/graph/address/:a · /v2/graph/asset/:a. Nodes/edges only; the
  *  client lays them out. `weight` is a size hint (in-trust for addresses, holder count / balance otherwise). */
 export interface GraphNode {

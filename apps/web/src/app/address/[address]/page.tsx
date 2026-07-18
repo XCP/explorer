@@ -10,7 +10,6 @@ import {
   type SectionStat,
 } from "@/components/section-header";
 import { CopyButton } from "@/components/copy-button";
-import { NetworkStandingChip } from "@/components/network-standing-chip";
 import { AddressTabs } from "@/features/addresses/components/address-tabs";
 import { Holdings } from "@/features/addresses/components/holdings";
 import { AddressConnections, AddressLineage } from "@/features/addresses/components/relationships";
@@ -83,7 +82,6 @@ function AddressHeader({ address, s }: { address: string; s: AddressSummary | nu
         name={address}
         chips={
           <>
-            <NetworkStandingChip kind="addresses" id={address} />
             {address === BURN_ADDRESS && <Chip>Burn address</Chip>}
             {(s?.issued ?? 0) > 0 && <Chip>Issuer · {commas(s?.issued)} assets</Chip>}
             {(s?.dispensers ?? 0) > 0 && (
