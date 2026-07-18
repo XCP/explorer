@@ -10,6 +10,7 @@ import {
   emblemTradesSql,
 } from "#api/indexer/trades";
 import { listTrades, tradeVenueStats } from "#api/queries/trades";
+import { coreAssetSales } from "#api/queries/core-assets";
 
 class Statement {
   private values: unknown[] = [];
@@ -23,6 +24,9 @@ class Statement {
   }
   async all<T>() {
     return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
   }
 }
 
@@ -104,6 +108,26 @@ test("recent trades keep current estimates separate from execution-time USD", as
   assert.equal(row.usd_value, null);
   assert.equal(row.usd_estimate, 187.5);
   assert.equal(row.usd_estimate_basis, "current_quote");
+});
+
+test("asset sales keep observed last price separate from a current estimate", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
+    CREATE TABLE trades(asset_id INTEGER,block_time INTEGER,quantity REAL,currency TEXT,total REAL,usd_value REAL);
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,observed_day TEXT,PRIMARY KEY(day,currency));
+    INSERT INTO asset_dictionary VALUES(1,'CARD');
+    INSERT INTO prices VALUES(date('now'),'XCP',1.5,date('now'));
+    INSERT INTO trades VALUES(1,100,1,'BTC',0.1,1000);
+    INSERT INTO trades VALUES(1,unixepoch('now','-1 day'),1,'XCP',125,NULL);
+  `);
+  assert.deepEqual({ ...(await coreAssetSales(d1(db), "CARD")) }, {
+    realized_usd: 1000,
+    last_price_usd: 1000,
+    last_sale_time: 100,
+    current_price_estimate_usd: 187.5,
+    current_price_estimate_time: db.prepare(`SELECT unixepoch('now','-1 day') value`).get()!.value,
+  });
 });
 
 test("compact venue builders preserve canonical identities and bundled Emblem sales", () => {

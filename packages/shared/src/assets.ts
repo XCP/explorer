@@ -24,6 +24,8 @@ export interface AssetSales {
   realized_usd: number | null; // lifetime SUM(usd_value) across every venue
   last_price_usd: number | null; // per-unit USD price of the most recent USD-known sale (usd_value ÷ quantity)
   last_sale_time: number | null; // unix seconds of that sale
+  current_price_estimate_usd: number | null; // recent sale converted with a current quote, not historical evidence
+  current_price_estimate_time: number | null;
 }
 
 /** Per-feed record counts on AssetDetail (feed_counts) — one count per detail-page feed tab, each

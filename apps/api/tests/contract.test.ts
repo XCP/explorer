@@ -570,7 +570,13 @@ test("contract: GET /v2/assets/XCP — AssetDetail native reduced path", async (
   assert.equal(j.result.rating.status, "rated", "XCP must use the canonical Rating projection");
   assertShape(
     j.result.sales,
-    { realized_usd: "number|null", last_price_usd: "number|null", last_sale_time: "number|null" },
+    {
+      realized_usd: "number|null",
+      last_price_usd: "number|null",
+      last_sale_time: "number|null",
+      current_price_estimate_usd: "number|null",
+      current_price_estimate_time: "number|null",
+    },
     "XCP.sales.",
   );
   assert.ok(j.result.sales.realized_usd > 0, "XCP must expose its historical market volume");

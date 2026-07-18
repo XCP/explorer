@@ -118,7 +118,13 @@ assets.get("/v2/assets/:asset", async (c) => {
           ? { active_months: signals.active_trade_months ?? 0, last_trade_time: signals.last_trade_time ?? null }
           : null,
         tags,
-        sales: sales ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
+        sales: sales ?? {
+          realized_usd: null,
+          last_price_usd: null,
+          last_sale_time: null,
+          current_price_estimate_usd: null,
+          current_price_estimate_time: null,
+        },
       };
       return J(c, { result: body }, 300); // native token — near-static
     }
@@ -181,7 +187,13 @@ assets.get("/v2/assets/:asset", async (c) => {
       : null,
     activity_outlook: assetActivityOutlook(sig),
     tags,
-    sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
+    sales: salesRes ?? {
+      realized_usd: null,
+      last_price_usd: null,
+      last_sale_time: null,
+      current_price_estimate_usd: null,
+      current_price_estimate_time: null,
+    },
     collection: collectionRes?.tag ?? null,
     collection_site: collectionRes?.site ?? null,
     collection_series: collectionRes?.series ?? null,
