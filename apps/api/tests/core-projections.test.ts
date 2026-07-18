@@ -48,7 +48,6 @@ function databases() {
       PRIMARY KEY(contract,token_id)
     );
     CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,source TEXT,PRIMARY KEY(day,currency));
-    CREATE TABLE xcp_btc_daily(day TEXT PRIMARY KEY,xcpbtc REAL);
     CREATE TABLE scarce_city_sales(asset TEXT,sold_at INTEGER,price_btc REAL,PRIMARY KEY(asset,sold_at));
     CREATE TABLE emblem_sales(
       tx_hash TEXT,log_index INTEGER,contract TEXT,token_id TEXT,price_raw TEXT,token_addr TEXT,
@@ -66,7 +65,6 @@ function databases() {
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT NOT NULL UNIQUE);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT NOT NULL UNIQUE);
     CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,source TEXT,PRIMARY KEY(day,currency));
-    CREATE TABLE xcp_btc_daily(day TEXT PRIMARY KEY,xcpbtc REAL);
     CREATE TABLE scarce_city_sales(asset_id INTEGER,sold_at INTEGER,price_btc REAL,PRIMARY KEY(asset_id,sold_at));
     CREATE TABLE emblem_sales(
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,token_address_id INTEGER,

@@ -19,6 +19,40 @@ absolute log difference is 0.310, and thin-market tail disagreements are large. 
 with explicit venue, volume, trade-count, FX, and disagreement evidence. XCP/JPY is the much deeper Zaif market and
 must be evaluated through an official daily JPY/USD cross before production selection.
 
+### Aggregated-provider survey
+
+The expanded source survey distinguishes execution venues from sites that repackage another provider's aggregate:
+
+- CoinMarketCap retains 4,534 daily XCP observations from 2014-02-15 through 2026-07-17 when its historical endpoint
+  is requested in bounded yearly windows. It reports nonzero aggregate volume on 4,274 days. Its documented price is
+  a volume-weighted average across admitted market pairs, and its volume is the sum of admitted exchange-reported spot
+  volume. Historical constituent identity is not included in the daily response.
+- On all 3,341 days covered by the authorized Zaif series, CoinMarketCap and the highest-volume Zaif daily observation
+  have median absolute log-price error 0.0274, p90 0.1473, and p99 0.5923. Aggregate CMC volume is $604.74m versus
+  $62.04m reconstructed Zaif volume on those days. The resulting $542.77m positive arithmetic residual is evidence
+  of historical non-Zaif reporting, but not automatically trustworthy volume or a recoverable other-venue price.
+  Several high-residual periods have extreme price disagreement, and CMC itself documents exchange volume inflation.
+- CoinGecko currently derives XCP entirely from Zaif XCP/JPY. It is a useful independent aggregation check over
+  historical periods only if historical ticker membership can be established; its current series adds no venue.
+- Coinbase explicitly says its non-tradable XCP data comes from CoinMarketCap and other third parties. It is not an
+  independent XCP observation.
+- Kraken does not list XCP and warns that the representative page may contain third-party data. Its XCP page is not
+  Kraken execution evidence. Kraken remains a strong primary source only for its downloadable BTC/USD executions.
+- Yahoo exposes 3,174 XCP/USD daily rows from 2017-11-09 and labels the market `CCC`; this is consistent with a
+  CryptoCompare-family aggregate rather than Yahoo executions. Treat it as an overlap validator until provider and
+  redistribution rights are confirmed.
+- Crypto.com, DigitalCoinPrice, and Business Insider expose display series but no attributable XCP venue history in
+  the reviewed pages. They should not be counted as independent markets merely because their charts differ.
+- CoinMarketCap retains the inactive Counterparty Pepe Cash identity (`id=1405`), but its historical endpoint now
+  returns only one zero-volume 2023 observation. CoinGecko's active `pepecash-2` is a separate Ethereum token and must
+  never be joined to Counterparty PEPECASH.
+
+The old “other venues” subtraction is safe only as a descriptive residual:
+`aggregate reported USD volume - independently reconstructed named-venue USD volume`. Preserve negative results and
+methodology changes as diagnostics rather than clamping them. Do not algebraically recover an “other” price unless the
+provider supplies the exact constituent set, weights, exclusions, and synchronized venue observations for that day.
+An aggregate VWAP and aggregate volume are insufficient when the provider filters outliers or changes constituents.
+
 Build one auditable execution-time USD ledger, but do not pretend that every real payment is an admissible unit-price
 observation. Preserve these as separate facts:
 
