@@ -24,7 +24,7 @@ import { buildScamAttribution } from "#api/indexer/emblem-scam";
 import { graphEval } from "#api/indexer/graph-eval";
 import { buildTrades, reconcileDirtyEmblemTrades } from "#api/indexer/trades";
 import { buildGraphTrust } from "#api/indexer/graph";
-import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
+import { crawlPrices, crawlSpotPrices, applyTradeUsd } from "#api/indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated";
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
@@ -311,6 +311,10 @@ admin.post("/admin/refresh-address-reputations", async (c) => {
 // Backfill the daily USD price calendar (Coinbase BTC/ETH + DEX-derived XCP). Loop a couple times to backfill.
 admin.post("/admin/crawl-prices", async (c) => {
   return c.json(await crawlPrices(c.env));
+});
+
+admin.post("/admin/crawl-spot-prices", async (c) => {
+  return c.json(await crawlSpotPrices(c.env));
 });
 
 // Map trades onto the price calendar (fills usd_value). Loop until {done:true}.

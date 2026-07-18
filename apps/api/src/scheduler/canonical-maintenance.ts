@@ -16,7 +16,7 @@ import { backfillEthereumBlockTimes } from "#api/indexer/ethereum-block-times";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
-import { crawlPrices, applyTradeUsd } from "#api/indexer/prices";
+import { crawlPrices, crawlSpotPrices, applyTradeUsd } from "#api/indexer/prices";
 import { maybeRefreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { maybeRefreshAssetRatings } from "#api/indexer/asset-rating";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
@@ -74,6 +74,9 @@ const maybeRebuildTags = (env: Env) =>
 
 const maybeCrawlPrices = (env: Env) => runCoreBlockGated(env.CORE_DB, "prices_synced_blk", 144, () => crawlPrices(env));
 
+const maybeCrawlSpotPrices = (env: Env) =>
+  blockGatedProviderJob(env, "spot_prices_synced_blk", 1, () => crawlSpotPrices(env));
+
 const maybeRefreshAssetEmergence = (env: Env) =>
   runCoreBlockGated(env.CORE_DB, "asset_emergence_refreshed_blk", 6, () => refreshAssetEmergence(env.CORE_DB));
 
@@ -88,6 +91,9 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       // Preserve projection dependency order: trades enqueue affected assets,
       // signals consume those assets, and Rating consumes the repaired signals.
       await runScheduledJob("buildTrades", () => buildTrades(env));
+      // Fresh sales need today's quote promptly. Historical calendar reconciliation remains the bounded daily job below.
+      await runScheduledJob("crawlSpotPrices", () => maybeCrawlSpotPrices(env));
+      await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
       await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetRatings", () => maybeRefreshAssetRatings(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetActivityOutlook", () => maybeRefreshAssetActivityOutlook(env.CORE_DB));
@@ -109,7 +115,6 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
       await runScheduledJob("refreshAssetEmergence", () => maybeRefreshAssetEmergence(env));
       await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
-      await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
     },
     15 * 60,
   );

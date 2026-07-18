@@ -9,6 +9,7 @@
  */
 import type { Env } from "#api/env";
 import { fetchCoinbaseCandles } from "#api/integrations/coinbase";
+import { fetchSpotUsdPrices } from "#api/integrations/coingecko";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 // Coinbase product + first-listed day (unix sec) per currency.
@@ -30,6 +31,31 @@ type PriceWrite = {
   observedDay: string;
   fidelity: number;
 };
+
+/** Persist the same current market observation the explorer header uses, with explicit lower fidelity than
+ * Coinbase's BTC close but higher fidelity than a carried on-chain XCP/BTC edge. This prices today's new sales;
+ * it never rewrites a historical day with today's quote. */
+export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>> {
+  const now = Math.floor(Date.now() / 1_000);
+  try {
+    const spot = await fetchSpotUsdPrices();
+    const day = isoDay(now);
+    await upsertPrices(
+      env.CORE_DB,
+      Object.entries(spot).map(([currency, usd]) => ({
+        day,
+        currency,
+        usd,
+        source: "coingecko_spot",
+        observedDay: day,
+        fidelity: 2,
+      })),
+    );
+    return { day, BTC: spot.BTC, XCP: spot.XCP };
+  } catch (error) {
+    return { err: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 const DERIVED_FRESH_DAYS = 7;
 
