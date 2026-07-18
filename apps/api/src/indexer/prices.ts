@@ -200,8 +200,8 @@ export const BUILD_OBSERVED_USD_SQL = `INSERT INTO prices(day,currency,usd,sourc
 export const PRUNE_OBSERVED_USD_SQL = `DELETE FROM prices
   WHERE currency IN ('BTC','XCP') AND source='coinmarketcap_aggregate' AND NOT EXISTS (
     SELECT 1 FROM market_price_observations observation
-    WHERE observation.day=prices.day AND observation.base_currency='XCP' AND observation.quote_currency='USD'
-      AND observation.base_currency=prices.currency
+    WHERE observation.day=prices.day AND observation.base_currency=prices.currency
+      AND observation.quote_currency='USD'
       AND observation.source='coinmarketcap' AND observation.venue='aggregate' AND observation.price>0)`;
 
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)

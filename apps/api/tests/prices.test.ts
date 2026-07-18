@@ -153,6 +153,29 @@ test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles 
   db.close();
 });
 
+test("observed aggregate BTC/USD fills only days without the higher-fidelity primary calendar", () => {
+  const db = fixture();
+  db.exec(`INSERT INTO market_price_observations VALUES
+    ('2014-01-01','BTC','USD','coinmarketcap','aggregate',800,0,0,NULL,NULL,'aggregate_daily_close'),
+    ('2026-01-01','BTC','USD','coinmarketcap','aggregate',90000,0,0,NULL,NULL,'aggregate_daily_close')`);
+  db.exec(BUILD_OBSERVED_USD_SQL);
+  assert.deepEqual(
+    db.prepare(`SELECT day,usd,source,fidelity FROM prices WHERE currency='BTC' ORDER BY day`).all().map((row) => ({ ...row })),
+    [
+      { day: "2014-01-01", usd: 800, source: "coinmarketcap_aggregate", fidelity: 2 },
+      { day: "2026-01-01", usd: 100000, source: "coinbase", fidelity: 3 },
+      { day: "2026-01-08", usd: 110000, source: "coinbase", fidelity: 3 },
+      { day: "2026-01-09", usd: 120000, source: "coinbase", fidelity: 3 },
+    ],
+  );
+  db.exec(PRUNE_OBSERVED_USD_SQL);
+  assert.equal(db.prepare(`SELECT usd FROM prices WHERE day='2014-01-01' AND currency='BTC'`).get()?.usd, 800);
+  db.exec(`DELETE FROM market_price_observations WHERE base_currency='BTC' AND quote_currency='USD'`);
+  db.exec(PRUNE_OBSERVED_USD_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE source='coinmarketcap_aggregate'`).get()?.n, 0);
+  db.close();
+});
+
 test("derived XCP/USD replay is idempotent and stale pruning preserves observed prices", () => {
   const db = fixture();
   db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
