@@ -8,7 +8,10 @@ const [btc, jpy] = await Promise.all([fetchZaifHistory("xcp_btc"), fetchZaifHist
 const production = executeRemoteD1(`SELECT date(block_time,'unixepoch') day,COUNT(*) trades,
   SUM(usd_value IS NULL) missing FROM trades WHERE currency='XCP' GROUP BY 1`).rows;
 const onchain = new Map(
-  executeRemoteD1(`SELECT day,xcpbtc,volume_xcp,trades FROM xcp_btc_daily`).rows.map((row) => [row.day, row]),
+  executeRemoteD1(`SELECT day,price xcpbtc,volume_base volume_xcp,trades
+    FROM market_price_observations
+    WHERE source='counterparty' AND venue='dex' AND base_currency='XCP' AND quote_currency='BTC'`)
+    .rows.map((row) => [row.day, row]),
 );
 
 function summary(history) {
@@ -37,7 +40,7 @@ const overlaps = btc.daily
       counterparty: Number(core.xcpbtc),
       absolute_log_error: Math.abs(Math.log(row.price / Number(core.xcpbtc))),
       zaif_volume: row.volumeXcp,
-      counterparty_volume: Number(core.volume_xcp) / 1e8,
+      counterparty_volume: Number(core.volume_xcp),
     };
   })
   .sort((a, b) => a.absolute_log_error - b.absolute_log_error);
