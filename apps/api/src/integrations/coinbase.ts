@@ -6,6 +6,24 @@ export interface CoinbaseCandle {
   close: number;
 }
 
+export function parseCoinbaseTicker(value: unknown): number {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Coinbase ticker response must be an object");
+  }
+  const price = Number((value as Record<string, unknown>).price);
+  if (!Number.isFinite(price) || price <= 0) throw new Error("Coinbase ticker has an invalid price");
+  return price;
+}
+
+export async function fetchCoinbaseSpot(product: string, fetcher: typeof fetch = fetch): Promise<number> {
+  const response = await fetcher(`${COINBASE_PRODUCTS_URL}/${encodeURIComponent(product)}/ticker`, {
+    headers: { "user-agent": "xcp.io-indexer", accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Coinbase ${product} ticker failed: ${response.status}`);
+  return parseCoinbaseTicker(await response.json());
+}
+
 export function parseCoinbaseCandles(value: unknown): CoinbaseCandle[] {
   if (!Array.isArray(value)) throw new Error("Coinbase candles response must be an array");
 

@@ -8,8 +8,8 @@
  * `prices(day, currency, usd)` is the calendar; `applyTradeUsd` maps each trade's day+currency onto it.
  */
 import type { Env } from "#api/env";
-import { fetchCoinbaseCandles } from "#api/integrations/coinbase";
-import { fetchSpotUsdPrices } from "#api/integrations/coingecko";
+import { fetchCoinbaseCandles, fetchCoinbaseSpot } from "#api/integrations/coinbase";
+import { fetchDexTradeXcpBtc } from "#api/integrations/dex-trade";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 // Coinbase product + first-listed day (unix sec) per currency.
@@ -32,13 +32,14 @@ type PriceWrite = {
   fidelity: number;
 };
 
-/** Persist the same current market observation the explorer header uses, with explicit lower fidelity than
- * Coinbase's BTC close but higher fidelity than a carried on-chain XCP/BTC edge. This prices today's new sales;
- * it never rewrites a historical day with today's quote. */
+/** Persist a directly observed BTC/USD ticker and a recent XCP/BTC exchange ticker, with explicit lower
+ * fidelity than the completed daily calendar but higher fidelity than a carried on-chain edge. This prices
+ * today's new sales immediately; it never rewrites a historical day with today's quote. */
 export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>> {
   const now = Math.floor(Date.now() / 1_000);
   try {
-    const spot = await fetchSpotUsdPrices();
+    const [btcUsd, xcpBtc] = await Promise.all([fetchCoinbaseSpot("BTC-USD"), fetchDexTradeXcpBtc()]);
+    const spot = { BTC: btcUsd, XCP: xcpBtc * btcUsd };
     const day = isoDay(now);
     await upsertPrices(
       env.CORE_DB,
@@ -46,12 +47,20 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
         day,
         currency,
         usd,
-        source: "coingecko_spot",
+        source: currency === "BTC" ? "coinbase_spot" : "dextrade_xcpbtc_spot",
         observedDay: day,
         fidelity: 2,
       })),
     );
-    return { day, BTC: spot.BTC, XCP: spot.XCP };
+    const applied = await env.CORE_DB.prepare(
+      `UPDATE trades SET usd_value=total*(
+         SELECT price.usd FROM prices price
+         WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))
+       WHERE currency IN ('BTC','XCP') AND date(block_time,'unixepoch')=?
+         AND usd_value IS NOT total*(SELECT price.usd FROM prices price
+           WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`,
+    ).bind(day).run();
+    return { day, BTC: spot.BTC, XCP: spot.XCP, priced_rows: applied.meta.rows_written ?? 0 };
   } catch (error) {
     return { err: error instanceof Error ? error.message : String(error) };
   }
