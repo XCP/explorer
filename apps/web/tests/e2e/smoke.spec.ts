@@ -43,3 +43,19 @@ test("asset Rating and Activity Outlook remain separate and mobile-safe", async 
   );
   expect(overflows).toBe(false);
 });
+
+test("collection intelligence reconciles and remains mobile-safe", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/tag/rare-pepe", { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: /rare.pepe/i })).toBeVisible();
+  await expect(page.getByText("Rated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Median Rating", { exact: true })).toBeVisible();
+  await expect(page.getByText("Rating distribution", { exact: true })).toBeVisible();
+  await expect(page.getByText("Holder overlap", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(
+    false,
+  );
+
+  await page.goto("/tag/dank-directory", { waitUntil: "networkidle" });
+  await expect(page.getByText("Integrity warning", { exact: false })).toBeVisible();
+});
