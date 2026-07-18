@@ -187,9 +187,9 @@ export const PRUNE_BURN_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_obser
         AND CAST(burned AS INTEGER)>0 AND CAST(earned AS INTEGER)>0)`;
 
 /** Direct aggregate USD observations outrank a cross-rate, while retaining explicit source provenance. */
-export const BUILD_OBSERVED_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
-  SELECT day,'XCP',price,'coinmarketcap_aggregate',day,2 FROM market_price_observations
-  WHERE base_currency='XCP' AND quote_currency='USD'
+export const BUILD_OBSERVED_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+  SELECT day,base_currency,price,'coinmarketcap_aggregate',day,2 FROM market_price_observations
+  WHERE base_currency IN ('BTC','XCP') AND quote_currency='USD'
     AND source='coinmarketcap' AND venue='aggregate' AND price>0
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity
@@ -197,10 +197,11 @@ export const BUILD_OBSERVED_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,s
     prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity)`;
 
-export const PRUNE_OBSERVED_XCP_USD_SQL = `DELETE FROM prices
-  WHERE currency='XCP' AND source='coinmarketcap_aggregate' AND NOT EXISTS (
+export const PRUNE_OBSERVED_USD_SQL = `DELETE FROM prices
+  WHERE currency IN ('BTC','XCP') AND source='coinmarketcap_aggregate' AND NOT EXISTS (
     SELECT 1 FROM market_price_observations observation
     WHERE observation.day=prices.day AND observation.base_currency='XCP' AND observation.quote_currency='USD'
+      AND observation.base_currency=prices.currency
       AND observation.source='coinmarketcap' AND observation.venue='aggregate' AND observation.price>0)`;
 
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
@@ -303,8 +304,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const burnUpsert = await env.CORE_DB.prepare(BUILD_BURN_PRICE_OBSERVATIONS_SQL).run();
   const burnPrune = await env.CORE_DB.prepare(PRUNE_BURN_PRICE_OBSERVATIONS_SQL).run();
 
-  const observedXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_OBSERVED_XCP_USD_SQL).run();
-  const observedXcpUsdPrune = await env.CORE_DB.prepare(PRUNE_OBSERVED_XCP_USD_SQL).run();
+  const observedUsdUpsert = await env.CORE_DB.prepare(BUILD_OBSERVED_USD_SQL).run();
+  const observedUsdPrune = await env.CORE_DB.prepare(PRUNE_OBSERVED_USD_SQL).run();
   const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
   const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
   out.derived = {
@@ -312,8 +313,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     xcp_btc_pruned: xcpBtcPrune.meta.rows_written ?? 0,
     burn_xcp_btc_upserted: burnUpsert.meta.rows_written ?? 0,
     burn_xcp_btc_pruned: burnPrune.meta.rows_written ?? 0,
-    observed_xcp_usd_upserted: observedXcpUsdUpsert.meta.rows_written ?? 0,
-    observed_xcp_usd_pruned: observedXcpUsdPrune.meta.rows_written ?? 0,
+    observed_usd_upserted: observedUsdUpsert.meta.rows_written ?? 0,
+    observed_usd_pruned: observedUsdPrune.meta.rows_written ?? 0,
     xcp_usd_upserted: xcpUsdUpsert.meta.rows_written ?? 0,
     xcp_usd_pruned: xcpUsdPrune.meta.rows_written ?? 0,
   };

@@ -5,11 +5,11 @@ import {
   APPLY_TRADE_USD_SQL,
   BUILD_BURN_PRICE_OBSERVATIONS_SQL,
   BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
-  BUILD_OBSERVED_XCP_USD_SQL,
+  BUILD_OBSERVED_USD_SQL,
   BUILD_XCP_USD_SQL,
   PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   PRUNE_BURN_PRICE_OBSERVATIONS_SQL,
-  PRUNE_OBSERVED_XCP_USD_SQL,
+  PRUNE_OBSERVED_USD_SQL,
   PRUNE_XCP_USD_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
@@ -140,7 +140,7 @@ test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles 
   db.exec(BUILD_XCP_USD_SQL);
   db.exec(`INSERT INTO market_price_observations VALUES(
     '2026-01-01','XCP','USD','coinmarketcap','aggregate',250,0,0,NULL,NULL,'aggregate_daily_close')`);
-  db.exec(BUILD_OBSERVED_XCP_USD_SQL);
+  db.exec(BUILD_OBSERVED_USD_SQL);
   assert.deepEqual(
     { ...db.prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get() },
     { usd: 250, source: "coinmarketcap_aggregate", observed_day: "2026-01-01", fidelity: 2 },
@@ -148,7 +148,7 @@ test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles 
   db.exec(BUILD_XCP_USD_SQL);
   assert.equal(db.prepare(`SELECT usd FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get()?.usd, 250);
   db.exec(`DELETE FROM market_price_observations WHERE source='coinmarketcap'`);
-  db.exec(PRUNE_OBSERVED_XCP_USD_SQL);
+  db.exec(PRUNE_OBSERVED_USD_SQL);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE source='coinmarketcap_aggregate'`).get()?.n, 0);
   db.close();
 });

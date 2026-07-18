@@ -35,6 +35,7 @@
     "import:ecb-fx": "node ops/import-ecb-fx-history.mjs",
     "import:cmc-xcp": "node ops/import-cmc-xcp-history.mjs",
     "import:cmc-xcp-csv": "node ops/import-cmc-xcp-csv.mjs",
+    "import:cmc-btc-csv": "node ops/import-cmc-btc-csv.mjs",
     "review:asset-outlook": "node ops/review-asset-activity-outlook.mjs",
     "evaluate:asset-outlook-collections": "node ops/evaluate-asset-outlook-collections.mjs",
     "audit:asset-outlook": "node ops/audit-asset-activity-outlook.mjs",

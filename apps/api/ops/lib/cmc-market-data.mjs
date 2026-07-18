@@ -57,7 +57,7 @@ function parseCmcDate(value) {
 }
 
 /** Parse CoinMarketCap's official historical-data CSV download without treating aggregate volume as venue volume. */
-export function parseCmcXcpCsv(raw) {
+export function parseCmcHistoricalCsv(raw) {
   const lines = raw.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
   if (!lines.length || JSON.stringify(parseCsvLine(lines[0])) !== JSON.stringify(CMC_CSV_HEADER)) {
     throw new Error("CMC XCP CSV header changed");
