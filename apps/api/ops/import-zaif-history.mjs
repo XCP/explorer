@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 
-/** Authorized, convergent import of Zaif daily XCP market observations and source-file checksums. */
+/** Authorized, convergent import of Zaif daily market observations and source-file checksums. */
 import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 import { fetchZaifHistory } from "./lib/zaif-market-data.mjs";
 
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const chunks = (rows, size) => Array.from({ length: Math.ceil(rows.length / size) }, (_, i) => rows.slice(i * size, (i + 1) * size));
 
-const histories = await Promise.all([fetchZaifHistory("xcp_btc"), fetchZaifHistory("xcp_jpy")]);
+const PAIRS = ["xcp_btc", "xcp_jpy", "pepecash_btc", "pepecash_jpy"];
+const histories = await Promise.all(PAIRS.map((pair) => fetchZaifHistory(pair)));
 let observationsWritten = 0;
 let manifestsWritten = 0;
 
 for (const history of histories) {
-  const quoteCurrency = history.pair.endsWith("_btc") ? "BTC" : "JPY";
+  const [baseCurrency, quoteCurrency] = history.pair.toUpperCase().split("_");
   for (const batch of chunks(history.daily, 50)) {
     const values = batch.map((row) => `(${[
-      quote(row.day), quote("XCP"), quote(quoteCurrency), quote("zaif"), quote("cex"), row.price,
+      quote(row.day), quote(baseCurrency), quote(quoteCurrency), quote("zaif"), quote("cex"), row.price,
       row.volumeXcp, row.trades, row.firstTime, row.lastTime, quote("volume_weighted_median"),
     ].join(",")})`).join(",");
     const result = executeRemoteD1(`INSERT INTO market_price_observations(

@@ -19,6 +19,42 @@ absolute log difference is 0.310, and thin-market tail disagreements are large. 
 with explicit venue, volume, trade-count, FX, and disagreement evidence. XCP/JPY is the much deeper Zaif market and
 must be evaluated through an official daily JPY/USD cross before production selection.
 
+Zaif also retains first-party monthly execution archives for PEPECASH/JPY and PEPECASH/BTC. They contain 852,648
+PEPECASH/JPY executions across 1,201 UTC days and 41,187 PEPECASH/BTC executions across 971 UTC days, both spanning
+2017-01-13 through 2020-04-28. This is the missing attributable PEPECASH anchor: use the JPY market through ECB FX and
+the BTC market through the selected BTC/USD calendar, preserving both venue observations when they overlap.
+
+### Historically material venues
+
+The explorer's independent on-chain exchange graph proves that Zaif was not the only material Counterparty venue.
+Known Bittrex custody received Counterparty assets from 14,073 distinct addresses; the largest known Poloniex wallets
+received them from 3,833 and 3,631 addresses, versus 1,118 for the largest known Zaif wallet. PEPECASH alone has 978
+distinct exchange depositors. These facts establish use and help bound venue-active periods, but deposits are not
+executions and contain no market price.
+
+Poloniex's current official candle endpoint recognizes `XCP_BTC` but returns no retained candles; alternate pair
+orientations and PEPECASH symbols are rejected. Bittrex no longer exposes a functioning first-party archive. Recover
+their execution history only from a licensed archive that identifies the underlying exchange, pair, timestamp,
+price, and volume. Store the execution venue separately from the archive provider. Until then, CMC/Yahoo aggregate
+history is corroborating evidence for non-Zaif activity, not a source from which to manufacture per-venue prices.
+
+Coin Metrics' public market catalog confirms `poloniex-xcp-btc-spot` daily coverage from 2014-02-14 through
+2019-06-15 and `bittrex-xcp-btc-spot` from 2019-05-16 through 2019-06-29. The catalog is free, but historical candles
+require professional access. The Poloniex series is therefore the highest-value next acquisition. The short Bittrex
+interval cannot stand in for Bittrex's full history; Kaiko is the more credible acquisition candidate because it has
+collected exchange executions since 2014, and published market-microstructure research specifically used Kaiko when
+Bittrex's own API retained only a short window.
+
+Bter publicly launched XCP/BTC by 2014-03-09. This establishes another historically relevant venue, but no surviving
+reproducible execution archive has yet been identified. Record Bter in the venue timeline and continue archive
+research; do not backfill prices from launch announcements or chart images.
+
+Dex-Trade's official public endpoint supplies recent executions but has no cursor or time-range parameters. On
+2026-07-18 it returned 16 XCP/BTC trades spanning 2026-07-05 through 2026-07-14 and one PEPECASH/BTC trade on
+2026-07-09. The production spot crawler already rejects XCP/BTC unless a returned execution is at most seven days old.
+Add PEPECASH/BTC to forward observation maintenance, but do not describe this sliding recent window as a historical
+archive or infer that omitted trades did not occur.
+
 ### Aggregated-provider survey
 
 The expanded source survey distinguishes execution venues from sites that repackage another provider's aggregate:
@@ -372,7 +408,8 @@ paper or one anecdote supplied a convenient threshold.
 ### Phase 8 — exotic quote graph, starting with PEPECASH
 
 1. First inventory completed non-XCP/BTC matches and choose the asset/quote orientation without assigning USD.
-2. Import a direct PEPECASH/USD anchor with the same snapshot and provenance requirements.
+2. Convert the imported first-party Zaif PEPECASH/JPY and PEPECASH/BTC observations into independently derived USD
+   candidates, retaining the underlying market and FX path.
 3. Implement time-respecting paths with direct anchors at depth 0, a production cap of depth 2, cycle rejection,
    staleness/liquidity floors, and stored path provenance.
 4. Backtest derived prices against days/assets that also have direct USD evidence. Measure error and coverage by depth.

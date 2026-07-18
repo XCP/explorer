@@ -9,7 +9,7 @@
  */
 import type { Env } from "#api/env";
 import { fetchCoinbaseCandles, fetchCoinbaseSpot } from "#api/integrations/coinbase";
-import { fetchDexTradeXcpBtc } from "#api/integrations/dex-trade";
+import { fetchDexTradeMarket, type DexTradeObservation } from "#api/integrations/dex-trade";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 // Coinbase product + first-listed day (unix sec) per currency.
@@ -38,9 +38,17 @@ type PriceWrite = {
 export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>> {
   const now = Math.floor(Date.now() / 1_000);
   try {
-    const [btcUsd, xcpBtc] = await Promise.all([fetchCoinbaseSpot("BTC-USD"), fetchDexTradeXcpBtc()]);
-    const spot = { BTC: btcUsd, XCP: xcpBtc * btcUsd };
+    const [btcUsd, xcp] = await Promise.all([fetchCoinbaseSpot("BTC-USD"), fetchDexTradeMarket("XCPBTC")]);
+    const spot = { BTC: btcUsd, XCP: xcp.price * btcUsd };
     const day = isoDay(now);
+    await upsertDexTradeObservation(env.CORE_DB, xcp);
+    let pepecash: DexTradeObservation | null = null;
+    try {
+      pepecash = await fetchDexTradeMarket("PEPECASHBTC");
+      await upsertDexTradeObservation(env.CORE_DB, pepecash);
+    } catch {
+      // PEPECASH is thin; lack of a fresh execution must not block BTC/XCP maintenance.
+    }
     await upsertPrices(
       env.CORE_DB,
       Object.entries(spot).map(([currency, usd]) => ({
@@ -60,10 +68,31 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
          AND usd_value IS NOT total*(SELECT price.usd FROM prices price
            WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`,
     ).bind(day).run();
-    return { day, BTC: spot.BTC, XCP: spot.XCP, priced_rows: applied.meta.rows_written ?? 0 };
+    return {
+      day,
+      BTC: spot.BTC,
+      XCP: spot.XCP,
+      dextrade_observations: pepecash ? [xcp.pair, pepecash.pair] : [xcp.pair],
+      priced_rows: applied.meta.rows_written ?? 0,
+    };
   } catch (error) {
     return { err: error instanceof Error ? error.message : String(error) };
   }
+}
+
+async function upsertDexTradeObservation(db: D1Database, observation: DexTradeObservation): Promise<void> {
+  const baseCurrency = observation.pair.slice(0, -3);
+  await db.prepare(`INSERT INTO market_price_observations(
+    day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method
+  ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
+    price=excluded.price,volume_base=excluded.volume_base,trades=excluded.trades,
+    first_time=excluded.first_time,last_time=excluded.last_time,method=excluded.method
+  WHERE excluded.last_time>COALESCE(market_price_observations.last_time,0)`)
+    .bind(
+      isoDay(observation.latestTime), baseCurrency, "BTC", "dex-trade", "cex", observation.latestPrice,
+      observation.latestVolume, 1, observation.latestTime, observation.latestTime, "latest_observed_execution",
+    ).run();
 }
 
 const DERIVED_FRESH_DAYS = 7;
