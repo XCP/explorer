@@ -31,9 +31,10 @@ Raw `trades` currently contains 557,603 rows:
 | **All** | **557,603** | **422,978** | **134,625** | **75.86%** |
 
 That raw baseline is contaminated by a deterministic identity duplication. There are 112,798 DEX matches stored
-twice: once under the old concatenated 128-character order-match reference and once under the canonical
-underscore-separated reference. These duplicates include 45,490 priced rows and $26.21m of counted USD. The observed
-GUARDIANCARD 77 XCP duplicate is one exact example.
+twice: once under the underscore-separated public order-match identity imported from the pre-compaction `trades`
+projection and once under the 128-character concatenated identity emitted later by the compact-native builder. Because
+`(venue,ref)` is the primary key, the changed spelling prevented the intended upsert conflict. These duplicates include
+45,490 priced rows and $26.21m of counted USD. The observed GUARDIANCARD 77 XCP duplicate is one exact example.
 
 After excluding only those provably paired legacy identities, the truthful baseline is:
 
@@ -81,8 +82,9 @@ attributed asset volume, clean Rating evidence, and price-index observations the
 
 ### What needs correction
 
-1. **DEX duplicate identities:** the builder converges on the new identity but never removes the old identity. This
-   inflates row counts, USD volume, asset lifetime volume, and Rating's realized-value component.
+1. **DEX duplicate identities:** the compact builder converges on its concatenated identity but never removes the
+   imported underscore identity. This inflates row counts, USD volume, asset lifetime volume, and Rating's
+   realized-value component.
 2. **Trade provenance is lossy:** `trades.usd_value` does not record the selected price row/method. Auditing a trade
    requires reconstructing it from date and currency, and later calendar correction silently changes the meaning.
 3. **A scalar `fidelity` is underspecified:** source priority, staleness, liquidity, derivation depth, and observation
@@ -148,9 +150,11 @@ belong in offline evaluation before they affect production.
 
 ### 1. Repair canonical identity first
 
-Delete only an old-format DEX row for which the exact underscore-format counterpart exists. Add a convergence test and
-a production invariant requiring zero such pairs. Rebuild affected asset signals, Ratings, collection summaries, and
-cached reads. Re-run this audit after repair; do not use the raw 557,603-row baseline for product claims.
+Standardize on the underscore-separated order-match identity already used by the public API. Change the compact builder
+to that identity, insert/upsert all 112,812 qualifying canonical matches, and only then delete a concatenated row whose
+exact underscore counterpart exists. Add a convergence test and a production invariant requiring one trade per
+qualifying source match and zero alternate-format pairs. Rebuild affected asset signals, Ratings, collection summaries,
+and cached reads. Re-run this audit after repair; do not use the raw 557,603-row baseline for product claims.
 
 ### 2. Make provenance relational, not ordinal
 
@@ -218,16 +222,127 @@ Report named assets, rank/tier changes, false-positive review, duplicate sensiti
 historical-cutoff regression. The literature supports robustness; it does not choose our threshold. Production weights
 must come from our distribution and declared outcomes.
 
-## Implementation order
+## Detailed execution plan
 
-1. Canonical DEX duplicate cleanup, invariant, and derived-projection rebuild.
-2. A read-only USD coverage/audit job with canonical counts by currency, venue, year, source, staleness, and derivation.
-3. Price observation/selection provenance schema and backfill of existing calendar rows.
-4. Reproducible historical BTC and XCP source import with manifests and overlap diagnostics.
-5. Payment-versus-price-evidence flags and named outlier review, including current `is_dump` cases.
-6. Offline robust-price/Rating challenger evaluation.
-7. Only after those gates: exotic-pair graph, beginning with PEPECASH.
-8. Surface methodology, coverage, sample size, source age, and uncertainty on a public pricing page.
+### Phase 1 — canonical DEX identity repair
+
+1. Add a fixture proving that replaying one completed order match produces exactly one trade whose `ref` equals the
+   public underscore-separated order-match ID.
+2. Change `coreDexTradesSql()` to emit that ID. Keep the existing upsert semantics and preserve `usd_value` during a
+   structural replay.
+3. Add one normal core migration that:
+   - upserts every qualifying completed XCP/BTC order match into the underscore identity;
+   - verifies through SQL shape that every concatenated candidate now has the counterpart;
+   - deletes only paired concatenated rows, allowing the existing delete trigger to enqueue affected assets.
+4. Gate Rating refresh while `asset_signal_dirty` is non-empty. The repair affects 4,949 distinct assets; at the current
+   400-asset maintenance batch it should drain in about 13 serialized cycles rather than publish a partially rebuilt
+   population ranking.
+5. Drain the queue, force one Rating refresh, invalidate affected read caches, and verify:
+   - 112,812 qualifying source matches;
+   - 112,812 DEX trade identities;
+   - zero duplicate source identities;
+   - zero paired alternate-format rows;
+   - GUARDIANCARD has one 77 XCP row;
+   - canonical totals equal the independently derived baseline, adjusted only for post-audit new blocks.
+6. Re-run the USD coverage and Rating-distribution audits and retain the before/after report.
+
+Rollback is the pre-migration D1 bookmark. No delete is permitted before the canonical underscore upsert succeeds.
+
+### Phase 2 — permanent pricing observability
+
+1. Add a read-only operator audit that reports canonical trade counts and USD coverage by venue, currency, year,
+   selected source, staleness, and derivation method.
+2. Add invariants for orphan selected prices, expired XCP carries, direct-USDC parity, and trades whose calendar price
+   exists but `usd_value` is absent or divergent.
+3. Put compact results in the existing backfill/status surface: price-calendar frontier, pending trade reconciliation,
+   missing rows by currency, and newest successful current quote.
+4. Run the report in CI on fixtures and on a schedule in production; it must not scan the ledger on user requests.
+
+Completion gate: the report reproduces direct SQL totals, costs a bounded scheduled query, and alerts on any new
+identity or coverage regression.
+
+### Phase 3 — clarify the public USD contract
+
+1. Keep stored `usd_value` strictly execution-time historical USD.
+2. Stop returning a current conversion in that same field for a recent trade with no historical calendar observation.
+   Add a separate nullable current estimate plus an explicit basis such as `execution` or `current_quote`; render the
+   latter with an approximation marker.
+3. Keep “Last price” literal, with venue and time. Do not call it fair value or market cap.
+4. Document transaction flow, attributed volume, admitted market evidence, and reference price as different measures.
+
+Completion gate: an API consumer can determine whether every displayed USD number is observed-at-execution, directly
+USD-denominated, derived from a historical path, or converted using a current quote.
+
+### Phase 4 — normalize price selection without premature machinery
+
+1. Extend the selected daily `prices` row with a policy version and the factual diagnostics actually used in selection:
+   observation count, venue count, age, and derivation depth. Retain existing `source` and `observed_day`.
+2. Do **not** add a general `price_observations` table until a second historical/current provider is actually ingested.
+   When it is needed, store provider observations there and keep `prices` as the selected materialization.
+3. Add overlap tests proving that higher-priority observations win without lower-priority replay overwriting them.
+4. Record selection changes in a small audit log instead of duplicating source strings across every trade row.
+
+Completion gate: a `(day,currency)` selection is reproducible from stored observations and a named policy version.
+
+### Phase 5 — direct historical gap fill
+
+1. Acquire a licensed, reproducible BTC/USD daily series covering 2014-02-03 through 2015-07-19.
+2. Acquire historical XCP/USD or XCP/BTC observations with timestamps and preferably volume. Do not use chart scraping.
+3. Save the raw snapshot outside D1, checksum it, record provider/license/fetch time, and build a deterministic importer.
+4. Compare external XCP prices with on-chain XCP/BTC × BTC/USD on overlapping active days: median absolute log error,
+   tail disagreement, missingness, and results by liquidity bucket.
+5. Insert observations, run the versioned selection policy, reconcile affected trades, and publish before/after coverage.
+
+Completion gate: essentially all 1,052 early BTC gaps close; XCP coverage improves by a measured amount without filling
+days unsupported by an admitted observation.
+
+### Phase 6 — payment versus unit-price evidence
+
+1. Define independent reason flags for transaction structure, counterparty integrity, price staleness, quantity shape,
+   and statistical outlier status. Do not overload `sale_class` or `is_dump` with every meaning.
+2. Produce distribution reports for payment USD, normalized quantity, unit USD, implied capitalization, ownership links,
+   repeat buyers, venue, and asset history. Review named legitimate fractional assets and known abuses.
+3. Preserve every real payment in transaction flow. Exclude bundles from per-asset unit price. Treat a price outlier as
+   a flag, not proof of fraud.
+4. Add a robust reference-price research implementation using prior admitted log prices, median/MAD, sample size,
+   dispersion, and age. With insufficient history, return no reference price.
+
+Completion gate: the same transaction can truthfully count as payment flow while being excluded from asset valuation,
+and every exclusion exposes a factual reason.
+
+### Phase 7 — evaluate Rating impact
+
+1. Freeze the repaired ledger and predeclare comparison outcomes and named review cohorts.
+2. Compare structural-only, median/MAD, winsorized realized-value, and `log1p` diminishing-return challengers against the
+   incumbent across historical cutoffs.
+3. Report rank/tier changes, worst-cutoff regression, collection concentration, venue concentration, and false-positive
+   review. Include free/paid Fairmints and current `is_dump` cases in the cohort.
+4. Ship no Rating change unless a checked-in report justifies it. Increment the model version if one wins.
+
+Completion gate: the chosen policy is supported by Counterparty data and declared outcomes, not selected because a
+paper or one anecdote supplied a convenient threshold.
+
+### Phase 8 — exotic quote graph, starting with PEPECASH
+
+1. First inventory completed non-XCP/BTC matches and choose the asset/quote orientation without assigning USD.
+2. Import a direct PEPECASH/USD anchor with the same snapshot and provenance requirements.
+3. Implement time-respecting paths with direct anchors at depth 0, a production cap of depth 2, cycle rejection,
+   staleness/liquidity floors, and stored path provenance.
+4. Backtest derived prices against days/assets that also have direct USD evidence. Measure error and coverage by depth.
+5. Admit only the path classes that pass the predeclared error and manipulation review; leave all others null.
+
+Completion gate: exotic routing adds trustworthy coverage and never turns an arbitrary asset-to-asset match into a
+synthetic USD fact merely because a graph path exists.
+
+### Phase 9 — methodology and product surface
+
+1. Publish a pricing methodology page with sources, coverage, selection policy, staleness rules, derivation depth,
+   outlier treatment, and the distinction between payment and valuation.
+2. Surface source/basis, age, sample size, and dispersion where a reference price appears.
+3. Add a small coverage panel sourced from the scheduled audit—not a live full-ledger aggregation.
+4. Re-review Rating, Radar, collection totals, and asset headers so each consumes the intended aggregate.
+
+Completion gate: users and contributors can trace a displayed USD number to its source and understand what it claims.
 
 This sequence maximizes truthful coverage without turning sparse prices into fabricated precision.
 
