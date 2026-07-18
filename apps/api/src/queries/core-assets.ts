@@ -441,24 +441,13 @@ export function coreAssetSales(db: D1Database, asset: string): Promise<AssetSale
   return one<AssetSales>(
     db,
     `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
-          last_observed AS (
+          last AS (
             SELECT usd_value,quantity,block_time FROM trades
             WHERE asset_id=(SELECT asset_id FROM identity) AND usd_value IS NOT NULL AND quantity>0
-            ORDER BY block_time DESC LIMIT 1),
-          estimates AS (
-            SELECT quantity,block_time,total*(
-              SELECT quote.usd FROM prices quote WHERE quote.currency=trades.currency
-                AND quote.observed_day>=date('now','-2 days') ORDER BY quote.day DESC LIMIT 1) estimated_usd
-            FROM trades WHERE asset_id=(SELECT asset_id FROM identity) AND usd_value IS NULL
-              AND quantity>0 AND block_time>=unixepoch('now','-2 days')),
-          last_estimate AS (
-            SELECT estimated_usd,quantity,block_time FROM estimates
-            WHERE estimated_usd IS NOT NULL ORDER BY block_time DESC LIMIT 1)
+            ORDER BY block_time DESC LIMIT 1)
      SELECT (SELECT SUM(usd_value) FROM trades WHERE asset_id=(SELECT asset_id FROM identity)) realized_usd,
-            (SELECT usd_value/quantity FROM last_observed) last_price_usd,
-            (SELECT block_time FROM last_observed) last_sale_time,
-            (SELECT estimated_usd/quantity FROM last_estimate) current_price_estimate_usd,
-            (SELECT block_time FROM last_estimate) current_price_estimate_time`,
+            (SELECT usd_value/quantity FROM last) last_price_usd,
+            (SELECT block_time FROM last) last_sale_time`,
     asset,
   );
 }

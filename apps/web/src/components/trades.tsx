@@ -65,11 +65,7 @@ export const TRADE_COLS: Col<TradeRow>[] = [
     cell: (r) => (
       <>
         {money(r.total, r.currency)}
-        {r.usd_value != null ? (
-          <small>${commas(r.usd_value.toFixed(2))}</small>
-        ) : r.usd_estimate != null ? (
-          <small>{"\u2248"}${commas(r.usd_estimate.toFixed(2))}</small>
-        ) : null}
+        {r.usd_value != null && <small>${commas(r.usd_value.toFixed(2))}</small>}
       </>
     ),
   },

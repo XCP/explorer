@@ -8,12 +8,6 @@ import { q } from "#api/db";
 const SELECT = `SELECT trade.venue,asset.asset,trade.block_time,trade.block_index,trade.quantity,
   trade.currency,trade.total,trade.price,
   trade.usd_value,
-  CASE WHEN trade.usd_value IS NULL AND trade.block_time>=unixepoch('now','-2 days') THEN trade.total*(
-    SELECT quote.usd FROM prices quote WHERE quote.currency=trade.currency
-      AND quote.observed_day>=date('now','-2 days') ORDER BY quote.day DESC LIMIT 1) END usd_estimate,
-  CASE WHEN trade.usd_value IS NULL AND trade.block_time>=unixepoch('now','-2 days') AND EXISTS(
-    SELECT 1 FROM prices quote WHERE quote.currency=trade.currency
-      AND quote.observed_day>=date('now','-2 days')) THEN 'current_quote' END usd_estimate_basis,
   buyer.address buyer,seller.address seller,
   CASE WHEN trade.tx_hash IS NOT NULL THEN lower(hex(trade.tx_hash)) ELSE trade.external_tx_hash END tx_hash,
   trade.sale_class,

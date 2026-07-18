@@ -95,14 +95,6 @@ function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[
       hideOnMobile: true,
     });
   }
-  if (item.sales?.current_price_estimate_usd != null) {
-    stats.push({
-      label: "Current estimate",
-      value: `\u2248${usdCompact(item.sales.current_price_estimate_usd)}`,
-      detail: timeAgo(item.sales.current_price_estimate_time),
-      hideOnMobile: true,
-    });
-  }
   if (item.sales?.realized_usd != null) {
     stats.push({ label: "Volume", value: usdCompact(item.sales.realized_usd), detail: "lifetime", hideOnMobile: true });
   }
@@ -329,15 +321,6 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                     <span className="amt mono">
                       {usdCompact(item.sales.last_price_usd)}{" "}
                       <span className="time">{timeAgo(item.sales.last_sale_time)}</span>
-                    </span>
-                  </div>
-                )}
-                {item.sales?.current_price_estimate_usd != null && (
-                  <div className="row">
-                    <span className="k">Current estimate</span>
-                    <span className="amt mono">
-                      {"\u2248"}{usdCompact(item.sales.current_price_estimate_usd)}{" "}
-                      <span className="time">{timeAgo(item.sales.current_price_estimate_time)}</span>
                     </span>
                   </div>
                 )}

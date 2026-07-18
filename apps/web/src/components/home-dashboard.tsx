@@ -64,7 +64,6 @@ function AssetName({ asset, longname }: { asset: string; longname?: string | nul
 
 function saleValue(row: TradeRow) {
   if (row.usd_value != null) return usdCompact(row.usd_value);
-  if (row.usd_estimate != null) return `\u2248${usdCompact(row.usd_estimate)}`;
   if (row.total != null)
     return `${row.total >= 1 ? commas(row.total.toFixed(2)) : row.total.toPrecision(3)} ${row.currency ?? ""}`.trim();
   return "—";
