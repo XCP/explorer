@@ -78,8 +78,11 @@ ticker; old SWARM is id 607; and COVAL's active aggregate now refers to the migr
 silently joined to a Counterparty asset merely because the ticker matches.
 
 The authenticated Builder quote endpoint yielded 1,096 XCP/USD daily aggregate observations from 2023-07-19 through
-2026-07-18. They are stored as `source=coinmarketcap`, `venue=aggregate`, with zero claimed execution volume because
-Builder does not include the historical OHLCV endpoint and a point-in-time `volume_24h` field is not a daily volume.
+2026-07-18. CoinMarketCap's official historical-data CSV download supplied another 3,439 earlier daily closes from
+2014-02-15 through 2023-07-18. They are stored as `source=coinmarketcap`, `venue=aggregate`, with zero claimed
+execution volume: the canonical observation schema measures base-asset execution volume, while the download exposes
+aggregate USD volume with no historical constituent venues. The CSV importer is intentionally bounded before the API
+window so its displayed two-decimal closes cannot overwrite the API's higher-precision recent quotes.
 The AI Agent Hub, MCP, CLI, and skills wrap the same account entitlements; direct REST is retained for deterministic,
 checksummed production imports.
 
@@ -93,8 +96,8 @@ archive or infer that omitted trades did not occur.
 
 The expanded source survey distinguishes execution venues from sites that repackage another provider's aggregate:
 
-- CoinMarketCap retains 4,534 daily XCP observations from 2014-02-15 through 2026-07-17 when its historical endpoint
-  is requested in bounded yearly windows. It reports nonzero aggregate volume on 4,274 days. Its documented price is
+- CoinMarketCap retains 4,534 daily XCP observations from 2014-02-15 through 2026-07-17 in its official historical-data
+  download (only 2014-02-21 and 2014-02-22 are absent). It reports nonzero aggregate volume on 4,274 days. Its documented price is
   a volume-weighted average across admitted market pairs, and its volume is the sum of admitted exchange-reported spot
   volume. Historical constituent identity is not included in the daily response.
 - On all 3,341 days covered by the authorized Zaif series, CoinMarketCap and the highest-volume Zaif daily observation

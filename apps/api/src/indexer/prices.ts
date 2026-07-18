@@ -3,7 +3,7 @@
  * in dollars across venues (XCP/BTC/ETH), on top of the USDC rows already priced at ingest.
  *
  *   BTC/USD, ETH/USD  ← Coinbase Exchange daily candles (no key; resumable backfill to 2015/2016)
- *   XCP/USD           ← daily volume-weighted-median XCP/BTC, carried at most seven days × BTC/USD
+ *   XCP/USD           ← observed CMC aggregate when available; otherwise XCP/BTC × BTC/USD
  *
  * `prices(day, currency, usd)` is the calendar; `applyTradeUsd` maps each trade's day+currency onto it.
  */
@@ -149,6 +149,60 @@ export const PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_pri
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
   )`;
 
+/** Genesis burns are protocol conversions, not trades. They form the authoritative pre-DEX XCP/BTC edge. */
+export const BUILD_BURN_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+  day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+  WITH observations AS (
+    SELECT date(block_time,'unixepoch') day,
+      CAST(burned AS REAL)/CAST(earned AS REAL) price,
+      CAST(earned AS INTEGER) volume_xcp,block_time observation_time
+    FROM burns WHERE status='valid' AND block_time IS NOT NULL
+      AND CAST(burned AS INTEGER)>0 AND CAST(earned AS INTEGER)>0
+  ), ranked AS (
+    SELECT day,price,volume_xcp,observation_time,
+      SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
+      SUM(volume_xcp) OVER(PARTITION BY day) total_volume,
+      COUNT(*) OVER(PARTITION BY day) conversions,
+      MIN(observation_time) OVER(PARTITION BY day) first_time,
+      MAX(observation_time) OVER(PARTITION BY day) last_time
+    FROM observations
+  )
+  SELECT day,'XCP','BTC','counterparty','burn',MIN(price),MAX(total_volume)/1e8,MAX(conversions),
+    MIN(first_time),MAX(last_time),'protocol_conversion_vwm'
+  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day
+  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
+    volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
+    last_time=excluded.last_time,method=excluded.method
+  WHERE market_price_observations.price IS NOT excluded.price
+    OR market_price_observations.volume_base IS NOT excluded.volume_base
+    OR market_price_observations.trades IS NOT excluded.trades
+    OR market_price_observations.first_time IS NOT excluded.first_time
+    OR market_price_observations.last_time IS NOT excluded.last_time
+    OR market_price_observations.method IS NOT excluded.method`;
+
+export const PRUNE_BURN_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
+  WHERE source='counterparty' AND venue='burn' AND base_currency='XCP' AND quote_currency='BTC'
+    AND day NOT IN (SELECT DISTINCT date(block_time,'unixepoch') FROM burns
+      WHERE status='valid' AND block_time IS NOT NULL
+        AND CAST(burned AS INTEGER)>0 AND CAST(earned AS INTEGER)>0)`;
+
+/** Direct aggregate USD observations outrank a cross-rate, while retaining explicit source provenance. */
+export const BUILD_OBSERVED_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+  SELECT day,'XCP',price,'coinmarketcap_aggregate',day,2 FROM market_price_observations
+  WHERE base_currency='XCP' AND quote_currency='USD'
+    AND source='coinmarketcap' AND venue='aggregate' AND price>0
+  ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity
+  WHERE prices.fidelity<=excluded.fidelity AND (
+    prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
+    OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity)`;
+
+export const PRUNE_OBSERVED_XCP_USD_SQL = `DELETE FROM prices
+  WHERE currency='XCP' AND source='coinmarketcap_aggregate' AND NOT EXISTS (
+    SELECT 1 FROM market_price_observations observation
+    WHERE observation.day=prices.day AND observation.base_currency='XCP' AND observation.quote_currency='USD'
+      AND observation.source='coinmarketcap' AND observation.venue='aggregate' AND observation.price>0)`;
+
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
   SELECT btc.day,'XCP',edge.price*btc.usd,'dex_vwm',edge.day,1
   FROM prices btc
@@ -246,12 +300,20 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
   const xcpBtcUpsert = await env.CORE_DB.prepare(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL).run();
   const xcpBtcPrune = await env.CORE_DB.prepare(PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL).run();
+  const burnUpsert = await env.CORE_DB.prepare(BUILD_BURN_PRICE_OBSERVATIONS_SQL).run();
+  const burnPrune = await env.CORE_DB.prepare(PRUNE_BURN_PRICE_OBSERVATIONS_SQL).run();
 
+  const observedXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_OBSERVED_XCP_USD_SQL).run();
+  const observedXcpUsdPrune = await env.CORE_DB.prepare(PRUNE_OBSERVED_XCP_USD_SQL).run();
   const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
   const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
   out.derived = {
     xcp_btc_upserted: xcpBtcUpsert.meta.rows_written ?? 0,
     xcp_btc_pruned: xcpBtcPrune.meta.rows_written ?? 0,
+    burn_xcp_btc_upserted: burnUpsert.meta.rows_written ?? 0,
+    burn_xcp_btc_pruned: burnPrune.meta.rows_written ?? 0,
+    observed_xcp_usd_upserted: observedXcpUsdUpsert.meta.rows_written ?? 0,
+    observed_xcp_usd_pruned: observedXcpUsdPrune.meta.rows_written ?? 0,
     xcp_usd_upserted: xcpUsdUpsert.meta.rows_written ?? 0,
     xcp_usd_pruned: xcpUsdPrune.meta.rows_written ?? 0,
   };

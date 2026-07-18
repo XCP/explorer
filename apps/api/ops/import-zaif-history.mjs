@@ -11,7 +11,7 @@ const MARKETS = [
   ["xcp_btc", "XCP", "BTC"], ["xcp_jpy", "XCP", "JPY"],
   ["pepecash_btc", "PEPECASH", "BTC"], ["pepecash_jpy", "PEPECASH", "JPY"],
   ["sjcx_btc", "SJCX", "BTC"], ["sjcx_jpy", "SJCX", "JPY"],
-  ["bitcrystals_btc", "BCY", "BTC"], ["bitcrystals_jpy", "BCY", "JPY"],
+  ["bitcrystals_btc", "BITCRYSTALS", "BTC"], ["bitcrystals_jpy", "BITCRYSTALS", "JPY"],
   ["zaif_btc", "ZAIF", "BTC"], ["zaif_jpy", "ZAIF", "JPY"],
   ["cicc_btc", "CICC", "BTC"], ["cicc_jpy", "CICC", "JPY"],
 ];

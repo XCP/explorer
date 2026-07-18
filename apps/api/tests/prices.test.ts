@@ -3,9 +3,13 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
   APPLY_TRADE_USD_SQL,
+  BUILD_BURN_PRICE_OBSERVATIONS_SQL,
   BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
+  BUILD_OBSERVED_XCP_USD_SQL,
   BUILD_XCP_USD_SQL,
   PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
+  PRUNE_BURN_PRICE_OBSERVATIONS_SQL,
+  PRUNE_OBSERVED_XCP_USD_SQL,
   PRUNE_XCP_USD_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
@@ -24,6 +28,7 @@ function fixture(): DatabaseSync {
     CREATE TABLE order_matches(
       forward_asset_id INTEGER,forward_quantity TEXT,backward_asset_id INTEGER,backward_quantity TEXT,
       block_time INTEGER,status TEXT);
+    CREATE TABLE burns(block_time INTEGER,burned TEXT,earned TEXT,status TEXT);
     CREATE TABLE market_price_observations(
       day TEXT,base_currency TEXT,quote_currency TEXT,source TEXT,venue TEXT,price REAL,
       volume_base REAL,trades INTEGER,first_time INTEGER,last_time INTEGER,method TEXT,
@@ -44,6 +49,27 @@ function fixture(): DatabaseSync {
   `);
   return db;
 }
+
+test("genesis burns materialize as protocol conversions rather than trades", () => {
+  const db = fixture();
+  db.exec(`INSERT INTO burns VALUES
+    (strftime('%s','2014-01-02'),'100000000','100000000000','valid'),
+    (strftime('%s','2014-01-02'),'200000000','100000000000','valid'),
+    (strftime('%s','2014-01-02'),'900000000','100000000','invalid')`);
+  db.exec(BUILD_BURN_PRICE_OBSERVATIONS_SQL);
+  assert.deepEqual(
+    { ...db.prepare(`SELECT day,source,venue,price,volume_base,trades,method FROM market_price_observations`).get() },
+    { day: "2014-01-02", source: "counterparty", venue: "burn", price: 0.001,
+      volume_base: 2000, trades: 2, method: "protocol_conversion_vwm" },
+  );
+  const changes = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
+  db.exec(BUILD_BURN_PRICE_OBSERVATIONS_SQL);
+  assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n), changes);
+  db.exec(`UPDATE burns SET status='invalid'`);
+  db.exec(PRUNE_BURN_PRICE_OBSERVATIONS_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM market_price_observations`).get()?.n, 0);
+  db.close();
+});
 
 test("XCP pricing uses completed-trade volume-weighted medians", () => {
   const db = fixture();
@@ -105,6 +131,25 @@ test("a higher-fidelity observed price wins over a derived price", () => {
     { ...db.prepare(`SELECT usd,source,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get() },
     { usd: 250, source: "market", fidelity: 3 },
   );
+  db.close();
+});
+
+test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles by provenance", () => {
+  const db = fixture();
+  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  db.exec(`INSERT INTO market_price_observations VALUES(
+    '2026-01-01','XCP','USD','coinmarketcap','aggregate',250,0,0,NULL,NULL,'aggregate_daily_close')`);
+  db.exec(BUILD_OBSERVED_XCP_USD_SQL);
+  assert.deepEqual(
+    { ...db.prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get() },
+    { usd: 250, source: "coinmarketcap_aggregate", observed_day: "2026-01-01", fidelity: 2 },
+  );
+  db.exec(BUILD_XCP_USD_SQL);
+  assert.equal(db.prepare(`SELECT usd FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get()?.usd, 250);
+  db.exec(`DELETE FROM market_price_observations WHERE source='coinmarketcap'`);
+  db.exec(PRUNE_OBSERVED_XCP_USD_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE source='coinmarketcap_aggregate'`).get()?.n, 0);
   db.close();
 });
 
