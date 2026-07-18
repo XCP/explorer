@@ -6,6 +6,7 @@ import {
   ASSET_RATING_RECONCILE_SQL,
   ASSET_RATING_UPSERT_SQL,
   assetRatingRefreshDue,
+  assetRatingRefreshReady,
 } from "#api/indexer/asset-rating";
 import { assetRating } from "#api/reputation/rating";
 import type { AssetSignalsRow } from "#api/storage-types";
@@ -14,6 +15,8 @@ test("Rating refresh is daily and uses one three-component 0–10 population ran
   assert.equal(assetRatingRefreshDue(100, 0), true);
   assert.equal(assetRatingRefreshDue(100 + ASSET_RATING_REFRESH_SECONDS - 1, 100), false);
   assert.equal(assetRatingRefreshDue(100 + ASSET_RATING_REFRESH_SECONDS, 100), true);
+  assert.equal(assetRatingRefreshReady(100 + ASSET_RATING_REFRESH_SECONDS, 100, 1), false);
+  assert.equal(assetRatingRefreshReady(100 + ASSET_RATING_REFRESH_SECONDS, 100, 0), true);
   for (const column of ["clean_active_trade_months", "distinct_paid_buyers", "clean_realized_usd"])
     assert.match(ASSET_RATING_UPSERT_SQL, new RegExp(`PERCENT_RANK\\(\\).*${column}`));
   assert.match(ASSET_RATING_UPSERT_SQL, /10\.0\*PERCENT_RANK\(\).*evidence_rank/);

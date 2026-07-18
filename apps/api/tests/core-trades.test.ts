@@ -184,7 +184,7 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
     [
       {
         venue: "dex",
-        ref: `${"11".repeat(32)}${"22".repeat(32)}`,
+        ref: `${"11".repeat(32)}_${"22".repeat(32)}`,
         asset_id: 3,
         quantity: 2,
         currency: "XCP",

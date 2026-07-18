@@ -22,7 +22,7 @@ export function coreDexTradesSql(): string {
   return `INSERT INTO trades(
       venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash
     )
-    SELECT 'dex',lower(hex(match.tx0_hash)) || lower(hex(match.tx1_hash)),
+    SELECT 'dex',lower(hex(match.tx0_hash)) || '_' || lower(hex(match.tx1_hash)),
       CASE WHEN ${forwardMoney} THEN match.backward_asset_id ELSE match.forward_asset_id END,
       match.block_time,match.block_index,
       CAST(CASE WHEN ${forwardMoney} THEN match.backward_quantity ELSE match.forward_quantity END AS REAL)
