@@ -7,17 +7,32 @@ import { fetchZaifHistory } from "./lib/zaif-market-data.mjs";
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const chunks = (rows, size) => Array.from({ length: Math.ceil(rows.length / size) }, (_, i) => rows.slice(i * size, (i + 1) * size));
 
-const PAIRS = ["xcp_btc", "xcp_jpy", "pepecash_btc", "pepecash_jpy"];
-const histories = await Promise.all(PAIRS.map((pair) => fetchZaifHistory(pair)));
+const MARKETS = [
+  ["xcp_btc", "XCP", "BTC"], ["xcp_jpy", "XCP", "JPY"],
+  ["pepecash_btc", "PEPECASH", "BTC"], ["pepecash_jpy", "PEPECASH", "JPY"],
+  ["sjcx_btc", "SJCX", "BTC"], ["sjcx_jpy", "SJCX", "JPY"],
+  ["bitcrystals_btc", "BCY", "BTC"], ["bitcrystals_jpy", "BCY", "JPY"],
+  ["zaif_btc", "ZAIF", "BTC"], ["zaif_jpy", "ZAIF", "JPY"],
+  ["cicc_btc", "CICC", "BTC"], ["cicc_jpy", "CICC", "JPY"],
+];
+const requested = new Set((process.env.ZAIF_MARKETS ?? "").split(",").map((pair) => pair.trim()).filter(Boolean));
+const selectedMarkets = requested.size ? MARKETS.filter(([pair]) => requested.has(pair)) : MARKETS;
+if (!selectedMarkets.length || selectedMarkets.length !== (requested.size || selectedMarkets.length)) {
+  throw new Error("ZAIF_MARKETS contains an unknown or duplicate market");
+}
+const histories = [];
+for (const [pair, baseCurrency, quoteCurrency] of selectedMarkets) {
+  histories.push({ ...(await fetchZaifHistory(pair)), baseCurrency, quoteCurrency });
+}
 let observationsWritten = 0;
 let manifestsWritten = 0;
 
 for (const history of histories) {
-  const [baseCurrency, quoteCurrency] = history.pair.toUpperCase().split("_");
+  const { baseCurrency, quoteCurrency } = history;
   for (const batch of chunks(history.daily, 50)) {
     const values = batch.map((row) => `(${[
       quote(row.day), quote(baseCurrency), quote(quoteCurrency), quote("zaif"), quote("cex"), row.price,
-      row.volumeXcp, row.trades, row.firstTime, row.lastTime, quote("volume_weighted_median"),
+      row.volumeBase, row.trades, row.firstTime, row.lastTime, quote("volume_weighted_median"),
     ].join(",")})`).join(",");
     const result = executeRemoteD1(`INSERT INTO market_price_observations(
       day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method

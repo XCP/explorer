@@ -39,7 +39,7 @@ const overlaps = btc.daily
       zaif: row.price,
       counterparty: Number(core.xcpbtc),
       absolute_log_error: Math.abs(Math.log(row.price / Number(core.xcpbtc))),
-      zaif_volume: row.volumeXcp,
+      zaif_volume: row.volumeBase,
       counterparty_volume: Number(core.volume_xcp),
     };
   })

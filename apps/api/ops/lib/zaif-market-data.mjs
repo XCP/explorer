@@ -1,5 +1,17 @@
 const INDEX_ROOT = "https://zaif.jp/more_data";
 const JST_OFFSET_MS = 9 * 60 * 60 * 1_000;
+const RETRYABLE = new Set([403, 408, 429, 500, 502, 503, 504]);
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchWithRetry(fetcher, url) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const response = await fetcher(url, { headers: { accept: "text/csv,text/html", "user-agent": "xcp.io-market-import" } });
+    if (response.ok || !RETRYABLE.has(response.status) || attempt === 4) return response;
+    await delay(1_000 * 2 ** attempt);
+  }
+  throw new Error("unreachable");
+}
 
 /** Discover Zaif's first-party monthly execution CSVs for one market. */
 export function parseZaifCsvIndex(html, pair) {
@@ -63,7 +75,7 @@ export function aggregateZaifDaily(trades) {
     return {
       day,
       price: median.price,
-      volumeXcp: volume,
+      volumeBase: volume,
       trades: rows.length,
       firstTime: Math.min(...rows.map((row) => row.time)),
       lastTime: Math.max(...rows.map((row) => row.time)),
@@ -78,17 +90,17 @@ async function sha256(value) {
 
 export async function fetchZaifHistory(pair, fetcher = fetch) {
   const indexUrl = `${INDEX_ROOT}/${pair}/csv.html`;
-  const index = await fetcher(indexUrl);
+  const index = await fetchWithRetry(fetcher, indexUrl);
   if (!index.ok) throw new Error(`Zaif ${pair} index failed: ${index.status}`);
   const urls = parseZaifCsvIndex(await index.text(), pair);
   if (!urls.length) throw new Error(`Zaif ${pair} index contained no CSV files`);
   const trades = [];
   const manifests = [];
   const fetchedAt = Math.floor(Date.now() / 1_000);
-  for (let offset = 0; offset < urls.length; offset += 12) {
+  for (let offset = 0; offset < urls.length; offset += 6) {
     const batch = await Promise.all(
-      urls.slice(offset, offset + 12).map(async (url) => {
-        const response = await fetcher(url);
+      urls.slice(offset, offset + 6).map(async (url) => {
+        const response = await fetchWithRetry(fetcher, url);
         if (!response.ok) throw new Error(`Zaif CSV failed (${response.status}): ${url}`);
         const csv = await response.text();
         const rows = parseZaifTrades(csv, pair);

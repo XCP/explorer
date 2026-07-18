@@ -24,6 +24,22 @@ PEPECASH/JPY executions across 1,201 UTC days and 41,187 PEPECASH/BTC executions
 2017-01-13 through 2020-04-28. This is the missing attributable PEPECASH anchor: use the JPY market through ECB FX and
 the BTC market through the selected BTC/USD calendar, preserving both venue observations when they overlap.
 
+The same first-party archive contains eight additional Counterparty markets:
+
+| Asset | Market | Executions | UTC days | Coverage |
+|---|---:|---:|---:|---|
+| SJCX | BTC | 1,576 | 387 | 2016-08-05–2020-04-28 |
+| SJCX | JPY | 27,835 | 1,092 | 2016-08-03–2020-04-28 |
+| BITCRYSTALS | BTC | 2,169 | 416 | 2016-08-03–2020-04-27 |
+| BITCRYSTALS | JPY | 57,569 | 1,226 | 2016-08-03–2020-04-28 |
+| ZAIF | BTC | 227,369 | 2,110 | 2016-07-31–2026-07-15 |
+| ZAIF | JPY | 5,238,980 | 3,630 | 2016-07-31–2026-07-18 |
+| CICC | BTC | 12,055 | 1,246 | 2017-02-28–2026-07-16 |
+| CICC | JPY | 466,295 | 3,375 | 2017-02-27–2026-07-17 |
+
+Zaif calls BITCRYSTALS `bitcrystals` while Kaiko normalizes it to `BCY`; both resolve to the canonical Counterparty
+asset `BITCRYSTALS`. Preserve all three names explicitly instead of joining by ticker alone.
+
 ### Historically material venues
 
 The explorer's independent on-chain exchange graph proves that Zaif was not the only material Counterparty venue.
@@ -48,6 +64,24 @@ Bittrex's own API retained only a short window.
 Bter publicly launched XCP/BTC by 2014-03-09. This establishes another historically relevant venue, but no surviving
 reproducible execution archive has yet been identified. Record Bter in the venue timeline and continue archive
 research; do not backfill prices from launch announcements or chart images.
+
+Kaiko's free instrument catalog provides a stronger acquisition manifest than an exchange-name list. It confirms
+1,194,122 Poloniex XCP/BTC trades, 1,404,060 FLDC/BTC, 954,243 SJCX/BTC, 753,774 BCY/BTC, and 75,909 LTBC/BTC.
+It also confirms Bittrex histories for TRIG (1,606,975), BCY (299,649), SJCX (78,205), SCOT (8,822), and GEMZ
+(4,403). The checked-in `audit:market-coverage` job reproduces exact identities, dates, and counts from Kaiko's live
+catalog before any purchase or import.
+
+CoinMarketCap Builder is an aggregate corroboration source, not an exchange archive. Historical availability varies
+by endpoint and interval; the plan's daily cryptocurrency-level window is three years. Its identity map is still
+useful for preventing collisions: Counterparty PEPECASH is CMC id 1405, while newer Ethereum/BNB assets reuse the
+ticker; old SWARM is id 607; and COVAL's active aggregate now refers to the migrated Ethereum token. None may be
+silently joined to a Counterparty asset merely because the ticker matches.
+
+The authenticated Builder quote endpoint yielded 1,096 XCP/USD daily aggregate observations from 2023-07-19 through
+2026-07-18. They are stored as `source=coinmarketcap`, `venue=aggregate`, with zero claimed execution volume because
+Builder does not include the historical OHLCV endpoint and a point-in-time `volume_24h` field is not a daily volume.
+The AI Agent Hub, MCP, CLI, and skills wrap the same account entitlements; direct REST is retained for deterministic,
+checksummed production imports.
 
 Dex-Trade's official public endpoint supplies recent executions but has no cursor or time-range parameters. On
 2026-07-18 it returned 16 XCP/BTC trades spanning 2026-07-05 through 2026-07-14 and one PEPECASH/BTC trade on

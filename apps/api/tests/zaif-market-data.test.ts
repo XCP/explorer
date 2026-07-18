@@ -47,7 +47,7 @@ test("Zaif daily aggregation uses the volume-weighted median and UTC day", () =>
     "xcp_btc",
   );
   assert.deepEqual(aggregateZaifDaily(rows), [
-    { day: "2026-01-01", price: 1, volumeXcp: 4, trades: 1, firstTime: 1767310200, lastTime: 1767310200 },
-    { day: "2026-01-02", price: 2, volumeXcp: 6, trades: 2, firstTime: 1767313800, lastTime: 1767317400 },
+    { day: "2026-01-01", price: 1, volumeBase: 4, trades: 1, firstTime: 1767310200, lastTime: 1767310200 },
+    { day: "2026-01-02", price: 2, volumeBase: 6, trades: 2, firstTime: 1767313800, lastTime: 1767317400 },
   ]);
 });
