@@ -52,3 +52,7 @@ Rating, distribution, overlap, concentration, and integrity. The all-collection 
 Every collection ingestion path invalidates the global tag, collection-profile, and candidate caches only after its
 projection work completes. Individual profiles are edge-cached but do not create persistent per-collection D1 cache
 rows; the 73-collection population profile is the single durable aggregate.
+
+Production D1 Insights measured a scoped collection profile at 1,750 average rows read and 3.76 ms average SQL time
+across 52 executions. A separate materialized collection-profile table is therefore rejected: it would introduce
+refresh ordering and synchronization machinery without solving a measured query problem.
