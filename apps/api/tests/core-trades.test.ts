@@ -38,8 +38,11 @@ test("compact trades restore public identities, filters, and venue totals", asyn
     CREATE TABLE trades(
       venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,
       currency TEXT,total REAL,price REAL GENERATED ALWAYS AS (total/quantity) VIRTUAL,usd_value REAL,
-      buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,PRIMARY KEY(venue,ref)
+      buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,sale_class TEXT,PRIMARY KEY(venue,ref)
     );
+    CREATE TABLE trade_legs(
+      venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
+      PRIMARY KEY(venue,trade_ref,leg_index));
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'RAREPEPE');
     INSERT INTO address_dictionary VALUES(1,'buyer'),(2,'seller');
     INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,buyer_id,seller_id,tx_hash)
@@ -63,6 +66,8 @@ test("compact trades restore public identities, filters, and venue totals", asyn
       buyer: "buyer",
       seller: "seller",
       tx_hash: "a".repeat(64),
+      sale_class: null,
+      leg_count: 1,
     },
   ]);
   assert.deepEqual(

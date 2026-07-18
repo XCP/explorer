@@ -14,6 +14,8 @@ export interface TradeRow {
   buyer: string | null;
   seller: string | null;
   tx_hash: string | null;
+  sale_class: "single" | "bundle" | string | null;
+  leg_count: number;
 }
 
 /** One venue's totals (GET /v2/trades/stats returns Envelope<TradeVenueStats[]>). */

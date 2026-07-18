@@ -46,7 +46,14 @@ export const TRADE_COLS: Col<TradeRow>[] = [
     priority: 1,
     w: "minmax(0,1.2fr)",
     omitOn: "asset",
-    cell: (r) => assetCell(r.asset ?? undefined),
+    cell: (r) =>
+      r.asset ? (
+        assetCell(r.asset)
+      ) : r.sale_class === "bundle" && r.leg_count > 0 ? (
+        <span className="font-mono text-xs text-zinc-300">{commas(r.leg_count)}-asset bundle</span>
+      ) : (
+        "—"
+      ),
   },
   { label: "Price", numeric: true, priority: 3, cell: (r) => money(r.price, r.currency) },
   { label: "Qty", numeric: true, priority: 2, w: "90px", cell: (r) => (r.quantity != null ? commas(r.quantity) : "—") },

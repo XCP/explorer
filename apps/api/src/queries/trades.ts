@@ -7,7 +7,11 @@ import { q } from "#api/db";
 
 const SELECT = `SELECT trade.venue,asset.asset,trade.block_time,trade.block_index,trade.quantity,
   trade.currency,trade.total,trade.price,trade.usd_value,buyer.address buyer,seller.address seller,
-  CASE WHEN trade.tx_hash IS NOT NULL THEN lower(hex(trade.tx_hash)) ELSE trade.external_tx_hash END tx_hash
+  CASE WHEN trade.tx_hash IS NOT NULL THEN lower(hex(trade.tx_hash)) ELSE trade.external_tx_hash END tx_hash,
+  trade.sale_class,
+  CASE WHEN trade.sale_class='bundle' THEN
+    (SELECT COUNT(*) FROM trade_legs leg WHERE leg.venue=trade.venue AND leg.trade_ref=trade.ref)
+    ELSE CASE WHEN trade.asset_id IS NULL THEN 0 ELSE 1 END END leg_count
   FROM trades trade
   LEFT JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
   LEFT JOIN address_dictionary buyer ON buyer.address_id=trade.buyer_id
