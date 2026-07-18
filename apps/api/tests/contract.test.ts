@@ -175,6 +175,8 @@ const TRADE_ROW: Spec = {
   total: "number|null",
   price: "number|null",
   usd_value: "number|null",
+  usd_estimate: "number|null",
+  usd_estimate_basis: "string|null",
   buyer: "string|null",
   seller: "string|null",
   tx_hash: "string|null",

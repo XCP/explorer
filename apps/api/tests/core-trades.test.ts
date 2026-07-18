@@ -64,6 +64,8 @@ test("compact trades restore public identities, filters, and venue totals", asyn
       total: 0.5,
       price: 0.25,
       usd_value: 30000,
+      usd_estimate: null,
+      usd_estimate_basis: null,
       buyer: "buyer",
       seller: "seller",
       tx_hash: "a".repeat(64),
@@ -81,7 +83,7 @@ test("compact trades restore public identities, filters, and venue totals", asyn
 
 });
 
-test("recent trades use a fresh current quote without backdating the historical calendar", async () => {
+test("recent trades keep current estimates separate from execution-time USD", async () => {
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
@@ -99,7 +101,9 @@ test("recent trades use a fresh current quote without backdating the historical 
       VALUES('dex','recent',1,unixepoch('now','-1 day'),1,1,'XCP',125);
   `);
   const [row] = await listTrades(d1(db), { asset: "CARD", limit: 1, offset: 0 });
-  assert.equal(row.usd_value, 187.5);
+  assert.equal(row.usd_value, null);
+  assert.equal(row.usd_estimate, 187.5);
+  assert.equal(row.usd_estimate_basis, "current_quote");
 });
 
 test("compact venue builders preserve canonical identities and bundled Emblem sales", () => {

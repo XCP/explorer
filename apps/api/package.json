@@ -13,6 +13,11 @@
       "types": "./ops/*.mjs",
       "node": "./.test-dist/ops/*.mjs",
       "default": "./ops/*.mjs"
+    },
+    "#ops/lib/*": {
+      "types": "./ops/lib/*.mjs",
+      "node": "./.test-dist/ops/lib/*.mjs",
+      "default": "./ops/lib/*.mjs"
     }
   },
   "scripts": {

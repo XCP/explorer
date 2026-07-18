@@ -10,7 +10,9 @@ export interface TradeRow {
   currency: "XCP" | "BTC" | "ETH" | "USDC" | string | null;
   total: number | null; // in `currency` units
   price: number | null; // generated: total/quantity
-  usd_value: number | null; // filled where known (USDC at ingest; backfill via prices)
+  usd_value: number | null; // execution-time USD; null when no admitted historical price exists
+  usd_estimate: number | null; // optional present-day conversion, never substituted into usd_value
+  usd_estimate_basis: "current_quote" | null;
   buyer: string | null;
   seller: string | null;
   tx_hash: string | null;

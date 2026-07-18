@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertUsdPricingAudit } from "../ops/lib/usd-pricing-audit.mjs";
+import { assertUsdPricingAudit } from "#ops/lib/usd-pricing-audit";
 
 const identity = { source_matches: 2, dex_trades: 2, canonical_refs: 2, alternate_refs: 0 };
 const reconciliation = {
