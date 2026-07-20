@@ -176,6 +176,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
             asset={item.asset}
             stamp={item.tags?.includes("stamp")}
             video={item.tags?.includes("video")}
+            html={item.tags?.includes("html")}
             priority
             natural
             original

@@ -12,3 +12,9 @@ export function artUrl(asset: string, width: ArtWidth, kind: "full" | "icon" = "
 export function rawArtUrl(asset: string, kind: "full" | "icon" = "full"): string {
   return `https://cdn.xcp.io/img/${kind}/${encodeURIComponent(asset)}?v=${MEDIA_CACHE_REVISION}`;
 }
+
+/** The recursive-stamps endpoint: an asset's on-chain stamp payload (HTML pieces render from here,
+ *  and their stamped dependencies resolve against the same origin). `source` = view-source variant. */
+export function stampUrl(asset: string, source = false): string {
+  return `https://cdn.xcp.io/s/${encodeURIComponent(asset)}${source ? "?src=1" : ""}`;
+}
