@@ -166,13 +166,19 @@ export function yearMonthly(db: D1Database, start: number, end: number): Promise
   );
 }
 
-/** What DEX fills settled IN — the "money" chapter. Raw tape by design (settlement is a tape fact). */
+/** What DEX fills settled IN — the "money" chapter. Fill counts are the raw tape, but a
+ *  wash-flagged settling currency is excluded outright: a pump's pair must not headline as
+ *  "the most-used money of the year" (2020's tape was led by exactly such a pair). */
 export function yearSettlement(db: D1Database, start: number, end: number): Promise<YearSettlement[]> {
   return q<YearSettlement>(
     db,
-    `SELECT currency, COUNT(*) fills, ROUND(SUM(usd_value)) usd
-     FROM trades WHERE venue='dex' AND block_time>=?1 AND block_time<?2 AND currency IS NOT NULL
-     GROUP BY currency ORDER BY fills DESC LIMIT 8`,
+    `SELECT trade.currency, COUNT(*) fills, ROUND(SUM(trade.usd_value)) usd
+     FROM trades trade
+     LEFT JOIN asset_dictionary dictionary ON dictionary.asset=trade.currency
+     LEFT JOIN asset_signals signal ON signal.asset_id=dictionary.asset_id
+     WHERE trade.venue='dex' AND trade.block_time>=?1 AND trade.block_time<?2
+       AND trade.currency IS NOT NULL AND COALESCE(signal.low_quality, 0)=0
+     GROUP BY trade.currency ORDER BY fills DESC LIMIT 8`,
     start,
     end,
   );

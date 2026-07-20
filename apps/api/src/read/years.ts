@@ -35,7 +35,7 @@ import {
   yearZaif,
 } from "#api/queries/years";
 
-const YEARS_CACHE_VERSION = "v1";
+const YEARS_CACHE_VERSION = "v2"; // v2: settlement currencies exclude wash-flagged assets
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;

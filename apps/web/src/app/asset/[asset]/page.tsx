@@ -391,7 +391,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                 </SectionChip>
               )}
               {issuedYear != null && (
-                <SectionChip variant="neutral">
+                <SectionChip variant="neutral" href={`/year/${issuedYear}` as Route}>
                   <CalendarDays className="size-3" aria-hidden /> {issuedYear}
                 </SectionChip>
               )}
