@@ -16,6 +16,7 @@
     "./emblem": "./src/emblem.ts",
     "./graph": "./src/graph.ts",
     "./radar": "./src/radar.ts",
-    "./collections": "./src/collections.ts"
+    "./collections": "./src/collections.ts",
+    "./years": "./src/years.ts"
   }
 }
