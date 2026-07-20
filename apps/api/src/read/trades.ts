@@ -52,7 +52,7 @@ trades.get("/v2/assets/:asset/trades", async (c) => {
 trades.get("/v2/trades/ring-candidates", (c) =>
   cached(
     c,
-    "trades:ring-candidates:1",
+    "trades:ring-candidates:2", // bump when a board find gets flagged so it leaves the board promptly
     { ttl: 86_400, edge: 3_600, swr: 604_800 },
     async (): Promise<Envelope<RingCandidate[]>> => ({ result: await ringCandidates(c.env.CORE_DB) }),
   ),
