@@ -44,6 +44,27 @@ stampchain-io/stampchain.io, stampchain-io/src721r-example) + the local btc_stam
 - **Mirror metadata**: surface the stamps-aware mime (`text/html`) on the asset detail so the
   art component can branch (the issuance's own mime says `text/plain`).
 
+## Shipped 2026-07-20 (second pass)
+
+- Posters are AUTOMATED: `renderPoster` rasterizes `/s/{asset}` in the Browser Rendering binding
+  (600px PNG → `full/`, icons derive) — runs at ingest after `saveHtml`, retro passes via
+  token-gated `/admin/render-posters`, no-ops gracefully without the binding. Verified end-to-end
+  in production (worker-rendered 600×600 poster served).
+- `/s/` accepts stamp NUMBERS (resolved once via stampchain, KV-cached forever).
+
+## Remaining gaps, sized (D1 counts, 2026-07-20)
+
+| Gap | Population | Effort | Verdict |
+|---|---|---|---|
+| SRC-721 layer composition | **29,226 assets** | ~half day | **Worth it — biggest media-coverage win available.** Mint JSON indexes into the deploy asset's layer arrays; render = an SVG stacking `<image href="/s/{layer}">` in order, stored as `full/{asset}.svg` (icons derive; no browser needed). Verify layer-array/trait semantics against btc_stamps' src721.py first. |
+| SRC-20 ticker cards | 44,325 | small (SVG template) | Taste call — stampchain renders deterministic ticker cards for these; ours are deliberately media-less today. Cheap if wanted, but it is generated decoration, not on-chain art. |
+| Audio stamps | **1 asset** | trivial | Skip. One asset does not need a pipeline. |
+| Stamp-number references | — | — | Done. |
+
+Recommended order: SRC-721 composition next (turns ~29k placeholders into art and completes
+"stamps support" in any meaningful sense), SRC-20 cards only if the owner wants tables to look
+alive at the cost of showing generated rather than on-chain imagery.
+
 ## Caveats
 
 - Recursive stamps fetching ordinals endpoints or exotic hosts render partially — the
