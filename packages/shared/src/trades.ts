@@ -25,6 +25,23 @@ export interface TradeRow {
   source_url: string | null;
 }
 
+/** One ring-trade review candidate (GET /v2/trades/ring-candidates returns Envelope<RingCandidate[]>).
+ *  Surfaces assets whose priced volume concentrates in RECIPROCAL address pairs (A sells B, B sells A)
+ *  — the wash pattern that literal self-fill exclusion cannot see. Review evidence, never an auto-flag. */
+export interface RingCandidate {
+  asset: string;
+  usd: number; // total priced two-party USD across venues
+  fills: number;
+  recip_usd: number; // matched two-way USD: 2*MIN(A->B, B->A) summed over pairs
+  recip_fills: number;
+  recip_pct: number; // recip_usd / usd, 0-100
+  participants: number; // distinct addresses on either side of any priced trade
+  top_pair_usd: number; // the busiest reciprocal pair's combined USD
+  top_pair_fills: number;
+  top_pair_a: string; // its two addresses
+  top_pair_b: string;
+}
+
 /** One venue's totals (GET /v2/trades/stats returns Envelope<TradeVenueStats[]>). */
 export interface TradeVenueStats {
   venue: string;

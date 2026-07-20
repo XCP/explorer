@@ -2,7 +2,7 @@
  * Trades queries — the only place that knows the `trades` table's SQL. Handlers call these and wrap
  * the result in the envelope; the row shape is the wire contract (@xcp/shared/trades).
  */
-import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
+import type { RingCandidate, TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import { q } from "#api/db";
 
 const QUALITY = `(COALESCE(asset_signal.low_quality,0)=1
@@ -82,6 +82,80 @@ export function listTrades(db: D1Database, f: TradeFilter): Promise<TradeRow[]> 
     ...binds,
     f.limit,
     f.offset,
+  );
+}
+
+/**
+ * Ring-trade review candidates: unflagged assets whose priced volume concentrates in RECIPROCAL
+ * address pairs — the RRAM pattern (a closed set of addresses passing an asset back and forth),
+ * which neither the literal self-fill exclusion nor the >=50% self-trade heuristic can see.
+ * Validated against ground truth: DIAMONDBOND scores 97% reciprocal, RRAM 81%, SCUDOCOIN 67%,
+ * while organic markets separate hard (PEPECASH 6%, XCP 0%, each with thousands of participants).
+ * This is EVIDENCE FOR HUMAN REVIEW, never an auto-flag input — an automatic threshold would let
+ * a stranger wash-trade someone else's asset into a low-quality rating. The busiest reciprocal
+ * pair ships with each row so the reviewer sees who did the round-tripping.
+ */
+export function ringCandidates(
+  db: D1Database,
+  minUsd = 1_000,
+  minFills = 6,
+  minPct = 20,
+  limit = 50,
+): Promise<RingCandidate[]> {
+  return q<RingCandidate>(
+    db,
+    `WITH pair AS MATERIALIZED (
+       SELECT asset_id, buyer_id, seller_id, SUM(usd_value) usd, COUNT(*) fills
+       FROM trades
+       WHERE buyer_id IS NOT NULL AND seller_id IS NOT NULL AND buyer_id<>seller_id
+         AND usd_value>0 AND asset_id IS NOT NULL
+       GROUP BY asset_id, buyer_id, seller_id
+     ), duo AS (
+       /* Unordered pair: 1 row per direction, so a group holds 1 or 2 rows. Reciprocal flow is the
+          MATCHED amount, 2*MIN(direction usd) — an artist's one $25 buy-back against $5k of sales
+          contributes $50, not the whole sale direction. A balanced ring still scores its full USD. */
+       SELECT asset_id, MIN(buyer_id, seller_id) low_id, MAX(buyer_id, seller_id) high_id,
+         SUM(usd) usd, SUM(fills) fills,
+         CASE WHEN COUNT(*)=2 THEN 2*MIN(usd) ELSE 0 END matched_usd,
+         CASE WHEN COUNT(*)=2 THEN 2*MIN(fills) ELSE 0 END matched_fills
+       FROM pair GROUP BY asset_id, MIN(buyer_id, seller_id), MAX(buyer_id, seller_id)
+     ), recip AS (
+       SELECT asset_id, SUM(matched_usd) recip_usd, SUM(matched_fills) recip_fills
+       FROM duo GROUP BY asset_id
+     ), top_duo AS (
+       SELECT asset_id, low_id, high_id, usd, fills,
+         ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY matched_usd DESC) rank_in_asset
+       FROM duo WHERE matched_usd>0
+     ), total AS (
+       SELECT asset_id, SUM(usd) usd, SUM(fills) fills FROM pair GROUP BY asset_id
+     ), participant AS (
+       SELECT asset_id, COUNT(DISTINCT party) participants FROM (
+         SELECT asset_id, buyer_id party FROM pair UNION SELECT asset_id, seller_id FROM pair
+       ) GROUP BY asset_id
+     )
+     SELECT dictionary.asset,
+       ROUND(total.usd) usd, total.fills,
+       ROUND(recip.recip_usd) recip_usd, recip.recip_fills,
+       ROUND(100.0*recip.recip_usd/total.usd, 1) recip_pct,
+       participant.participants,
+       ROUND(top_duo.usd) top_pair_usd, top_duo.fills top_pair_fills,
+       party_a.address top_pair_a, party_b.address top_pair_b
+     FROM recip
+     JOIN total ON total.asset_id=recip.asset_id
+     JOIN participant ON participant.asset_id=recip.asset_id
+     JOIN top_duo ON top_duo.asset_id=recip.asset_id AND top_duo.rank_in_asset=1
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=recip.asset_id
+     JOIN address_dictionary party_a ON party_a.address_id=top_duo.low_id
+     JOIN address_dictionary party_b ON party_b.address_id=top_duo.high_id
+     LEFT JOIN asset_signals signal ON signal.asset_id=recip.asset_id
+     WHERE COALESCE(signal.low_quality, 0)=0
+       AND recip.recip_usd>=?1 AND recip.recip_fills>=?2
+       AND 100.0*recip.recip_usd/total.usd>=?3
+     ORDER BY recip.recip_usd DESC LIMIT ?4`,
+    minUsd,
+    minFills,
+    minPct,
+    limit,
   );
 }
 

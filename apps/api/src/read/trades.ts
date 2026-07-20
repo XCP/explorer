@@ -3,12 +3,13 @@
  *   GET /v2/trades                 recent trades across all venues (?venue=, ?asset=, ?currency=)
  *   GET /v2/assets/:asset/trades   one card's full sales history
  *   GET /v2/trades/stats           per-venue counts + totals (for headers/tiles)
+ *   GET /v2/trades/ring-candidates reciprocal-pair wash evidence for curation review
  * Standard envelope ({ result, next_offset }); SQL lives in queries/trades.ts.
  */
 import type { Envelope } from "@xcp/shared/envelope";
-import type { TradeRow, TradeVenueStats } from "@xcp/shared/trades";
+import type { RingCandidate, TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import { router, J, cached, lim, off } from "#api/read/respond";
-import { listTrades, tradeVenueStats } from "#api/queries/trades";
+import { listTrades, ringCandidates, tradeVenueStats } from "#api/queries/trades";
 
 export const trades = router();
 
@@ -45,6 +46,17 @@ trades.get("/v2/assets/:asset/trades", async (c) => {
   };
   return J(c, body);
 });
+
+// Curation review board: assets whose volume concentrates in reciprocal address pairs (wash rings
+// the self-fill exclusion cannot see). Read-only evidence for the owner — never feeds any rating.
+trades.get("/v2/trades/ring-candidates", (c) =>
+  cached(
+    c,
+    "trades:ring-candidates:1",
+    { ttl: 86_400, edge: 3_600, swr: 604_800 },
+    async (): Promise<Envelope<RingCandidate[]>> => ({ result: await ringCandidates(c.env.CORE_DB) }),
+  ),
+);
 
 // Global aggregation → D1-cached (low-cardinality key, per the cached() contract in respond.ts).
 trades.get("/v2/trades/stats", (c) => {
