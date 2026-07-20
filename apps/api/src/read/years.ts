@@ -37,10 +37,10 @@ import {
   yearZaif,
 } from "#api/queries/years";
 
-const YEARS_CACHE_VERSION = "v5"; // v5: SONN/MINDOL/MAIDSAFE/DUNNECAP + VACUS family lowq reflag
+const YEARS_CACHE_VERSION = "v6"; // v6: 1LSqksKgmUh1 wash-factory lowq reflag (5 assets)
 // The prior version's rows serve during recompute so a bump never cold-starts readers. Move BOTH
-// constants forward together on the next bump (v6/v5, then v7/v6, …).
-const YEARS_CACHE_STALE_VERSION = "v4";
+// constants forward together on the next bump (v7/v6, then v8/v7, …).
+const YEARS_CACHE_STALE_VERSION = "v5";
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;
