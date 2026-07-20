@@ -69,9 +69,7 @@ while (Number(state().cursor) < frontier) {
 }
 
 const final = state();
-const stored = Number(
-  db.prepare(`SELECT COUNT(*) rows FROM fairmint_history WHERE event_index<=?`).get(frontier).rows,
-);
+const stored = Number(db.prepare(`SELECT COUNT(*) rows FROM fairmint_history WHERE event_index<=?`).get(frontier).rows);
 const report = {
   schema: "xcp-radar-fairmint-history/1",
   measured_at: new Date().toISOString(),

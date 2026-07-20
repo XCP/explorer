@@ -5,7 +5,10 @@ import { coreContextRecordsByTx, listIssuances, listTransactions } from "#api/qu
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...values: unknown[]) {
     this.values = values;
     return this;
@@ -45,10 +48,19 @@ test("compact transaction and issuance feeds restore public identities", async (
   `);
 
   const transactions = (await listTransactions(d1(db), 10, 0)).map((row) => ({ ...row }));
-  assert.deepEqual(transactions, [{
-    tx_hash: "a".repeat(64),tx_index: 8,block_index: 100,block_time: 1000,source: "source",
-    destination: "destination",btc_amount: "25",fee: "5",supported: 1,
-  }]);
+  assert.deepEqual(transactions, [
+    {
+      tx_hash: "a".repeat(64),
+      tx_index: 8,
+      block_index: 100,
+      block_time: 1000,
+      source: "source",
+      destination: "destination",
+      btc_amount: "25",
+      fee: "5",
+      supported: 1,
+    },
+  ]);
 
   const issuances = (await listIssuances(d1(db), 10, 0)).map((row) => ({ ...row }));
   assert.equal(issuances[0].tx_hash, "b".repeat(64));

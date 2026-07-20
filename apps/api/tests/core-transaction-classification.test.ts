@@ -5,15 +5,39 @@ import { classifyCoreTx } from "#api/queries/records";
 
 class Statement {
   private value: number | null = null;
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(value: number) { this.value = value; return this; }
-  all<T>() { return { results: this.db.prepare(this.sql).all(this.value) as T[] }; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(value: number) {
+    this.value = value;
+    return this;
+  }
+  all<T>() {
+    return { results: this.db.prepare(this.sql).all(this.value) as T[] };
+  }
 }
 
 const tables = [
-  "dispenses","sends","dispensers","dispenser_refills","cancels","btcpays","fairminters","fairmints",
-  "pool_liquidity","pool_matches","orders","issuances","sweeps","broadcasts","dividends","burns",
-  "destructions","bets","rps",
+  "dispenses",
+  "sends",
+  "dispensers",
+  "dispenser_refills",
+  "cancels",
+  "btcpays",
+  "fairminters",
+  "fairmints",
+  "pool_liquidity",
+  "pool_matches",
+  "orders",
+  "issuances",
+  "sweeps",
+  "broadcasts",
+  "dividends",
+  "burns",
+  "destructions",
+  "bets",
+  "rps",
 ];
 
 test("compact transaction classification uses priority over shared tx_index", async () => {

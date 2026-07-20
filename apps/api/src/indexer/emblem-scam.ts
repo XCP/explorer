@@ -35,10 +35,10 @@ export const REFRESH_VAULT_SCAM_SIGNALS_SQL = `${VAULT_SCAM_CTE}
   WHERE signal.vault_scams IS NOT COALESCE(
     (SELECT scams FROM attribution WHERE cracker_id=signal.address_id),0)`;
 
-export const REFRESH_LIKELY_SERVICE_SQL = `UPDATE address_signals SET likely_service=CASE
-  WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END
-  WHERE likely_service IS NOT CASE
-    WHEN is_exchange=0 AND is_burn=0 AND is_emblem_vault=0 AND assets_issued=0 AND in_peers>=500 THEN 1 ELSE 0 END`;
+// Legacy compatibility only. A large inbound-peer count is an activity shape, not an
+// address identity: it can describe an exchange, collector, trader, distributor, or sink.
+// Keep the column until a schema rebuild can remove it, but do not infer a "service" class.
+export const REFRESH_LIKELY_SERVICE_SQL = `UPDATE address_signals SET likely_service=0 WHERE likely_service<>0`;
 
 export const CLASSIFY_SCAM_SHELLS_SQL = `UPDATE emblem_vaults AS vault SET is_scam_shell=CASE WHEN
   vault.vault_kind='foreign' AND vault.claimed_asset_id IS NOT NULL AND COALESCE(vault.has_contents,0)=0

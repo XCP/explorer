@@ -2,16 +2,31 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
-  vaultSummary,vaultSalesByClass,vaultTopSoldAssets,vaultTopAssets,
-  vaultTopFunders,vaultTopCrackers,vaultSalesActivity,
+  vaultSummary,
+  vaultSalesByClass,
+  vaultTopSoldAssets,
+  vaultTopAssets,
+  vaultTopFunders,
+  vaultTopCrackers,
+  vaultSalesActivity,
 } from "#api/queries/vaults";
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
-  async first<T>() { return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -45,18 +60,37 @@ test("compact vault dashboard derives custody, participants, and market activity
   `);
   const dbBinding = d1(db);
 
-  assert.deepEqual({ ...(await vaultSummary(dbBinding)) }, {
-    total_vaults: 2,counterparty_vaults: 1,foreign_vaults: 1,funded_vaults: 1,
-    scam_shells: 1,sales: 3,realized_usd: 120,
-  });
+  assert.deepEqual(
+    { ...(await vaultSummary(dbBinding)) },
+    {
+      total_vaults: 2,
+      counterparty_vaults: 1,
+      foreign_vaults: 1,
+      funded_vaults: 1,
+      scam_shells: 1,
+      sales: 3,
+      realized_usd: 120,
+    },
+  );
   assert.equal((await vaultSalesByClass(dbBinding))[0].sale_class, "real");
-  assert.deepEqual({ ...(await vaultTopSoldAssets(dbBinding))[0] }, {
-    asset: "CARD",asset_longname: "PARENT.CARD",usd: 100,sales: 1,
-  });
-  assert.deepEqual({ ...(await vaultTopAssets(dbBinding))[0] }, {
-    asset: "CARD",asset_longname: "PARENT.CARD",vaults: 1,
-  });
-  assert.deepEqual({ ...(await vaultTopFunders(dbBinding))[0] }, { address: "funder",vaults: 1 });
-  assert.deepEqual({ ...(await vaultTopCrackers(dbBinding))[0] }, { address: "cracker",vaults: 1 });
-  assert.deepEqual(await vaultSalesActivity(dbBinding), [{ t: 1609459200,v: 120 }]);
+  assert.deepEqual(
+    { ...(await vaultTopSoldAssets(dbBinding))[0] },
+    {
+      asset: "CARD",
+      asset_longname: "PARENT.CARD",
+      usd: 100,
+      sales: 1,
+    },
+  );
+  assert.deepEqual(
+    { ...(await vaultTopAssets(dbBinding))[0] },
+    {
+      asset: "CARD",
+      asset_longname: "PARENT.CARD",
+      vaults: 1,
+    },
+  );
+  assert.deepEqual({ ...(await vaultTopFunders(dbBinding))[0] }, { address: "funder", vaults: 1 });
+  assert.deepEqual({ ...(await vaultTopCrackers(dbBinding))[0] }, { address: "cracker", vaults: 1 });
+  assert.deepEqual(await vaultSalesActivity(dbBinding), [{ t: 1609459200, v: 120 }]);
 });

@@ -71,7 +71,8 @@ recoveryRead.get("/v2/recovery/stats", async (c) => {
       `SELECT * FROM recovery_address_stats WHERE unprotected_sats>0 ORDER BY unprotected_sats DESC,address LIMIT 25`,
     ).all(),
   ]);
-  if (!summary) return c.json({ error: "recovery statistics are being prepared" }, 503, { "Access-Control-Allow-Origin": "*" });
+  if (!summary)
+    return c.json({ error: "recovery statistics are being prepared" }, 503, { "Access-Control-Allow-Origin": "*" });
   return c.json(
     {
       result: {

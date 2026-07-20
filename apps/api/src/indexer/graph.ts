@@ -106,7 +106,7 @@ const TRUST_ARCHETYPES = ["collector", "creator", "prolific_creator", "dividend_
 // A scammer never seeds trust even if they also collect/create — bad wins here. (Infra already can't carry
 // these tags, but we guard anyway.)
 const NOT_INFRA_OR_SCAM = `sig.is_exchange=0 AND sig.is_burn=0 AND sig.is_deposit=0 AND sig.is_emblem_vault=0
-  AND sig.likely_service=0 AND COALESCE(sig.shell_scams,0)=0 AND COALESCE(sig.vault_scams,0)=0`;
+  AND COALESCE(sig.shell_scams,0)=0 AND COALESCE(sig.vault_scams,0)=0`;
 
 /**
  * Trust the ART by our QUALITY score, trust PEOPLE by our reputation ARCHETYPES — the trust signals we

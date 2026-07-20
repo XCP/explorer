@@ -5,10 +5,20 @@ import { getCoreAsset, listCoreSubassets } from "#api/queries/core-assets";
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
-  async first<T>() { return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -29,6 +39,9 @@ test("compact asset metadata and subassets restore dictionary identities", async
   const binding = d1(db);
   assert.equal((await getCoreAsset(binding, "PARENT"))?.description, '{"image":"x"}');
   const rows = await listCoreSubassets(binding, "PARENT", 10, 0);
-  assert.deepEqual(rows.map((row) => row.asset), ["CHILD2", "CHILD1"]);
+  assert.deepEqual(
+    rows.map((row) => row.asset),
+    ["CHILD2", "CHILD1"],
+  );
   assert.equal(rows[0].issuer, "issuer");
 });

@@ -5,9 +5,17 @@ import { listPoolMatches, listPools, listRps, listRpsMatches } from "#api/querie
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -31,10 +39,21 @@ test("compact RPS and pool feeds restore identities after pagination", async () 
   const binding = d1(db);
   assert.equal((await listRps(binding, 1, 0))[0].source, "alice");
   assert.equal((await listRpsMatches(binding, 1, 0))[0].id, `${"1".repeat(64)}_${"2".repeat(64)}`);
-  assert.deepEqual({ ...(await listPools(binding, 1, 0))[0] }, {
-    lp_asset: "XCP-TOKEN",pair: "XCP/TOKEN",asset_a: "XCP",asset_b: "TOKEN",reserve_a: "10",
-    reserve_b: "20",lp_supply: "5",price: 2,status: "open",block_index: 12,
-  });
+  assert.deepEqual(
+    { ...(await listPools(binding, 1, 0))[0] },
+    {
+      lp_asset: "XCP-TOKEN",
+      pair: "XCP/TOKEN",
+      asset_a: "XCP",
+      asset_b: "TOKEN",
+      reserve_a: "10",
+      reserve_b: "20",
+      lp_supply: "5",
+      price: 2,
+      status: "open",
+      block_index: 12,
+    },
+  );
   const match = (await listPoolMatches(binding, 1, 0))[0];
   assert.equal(match.forward_asset, "XCP");
   assert.equal(match.backward_asset, "TOKEN");

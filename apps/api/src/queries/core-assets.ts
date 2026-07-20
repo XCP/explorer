@@ -535,7 +535,7 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
             balance.holder_type,balance.quantity,balance.quantity_normalized,
             CASE WHEN signal.is_burn=1 THEN 'burn' WHEN signal.is_exchange=1 THEN 'exchange'
                  WHEN signal.is_emblem_vault=1 THEN 'vault' WHEN signal.is_deposit=1 THEN 'deposit'
-                 WHEN signal.likely_service=1 THEN 'service' WHEN signal.survived_assets>=20 THEN 'creator'
+                 WHEN signal.survived_assets>=20 THEN 'creator'
                  WHEN signal.assets_held>=500 THEN 'whale' WHEN signal.assets_held>=100 THEN 'collector' END role
        FROM balances balance
        LEFT JOIN address_dictionary address ON address.address_id=balance.address_id

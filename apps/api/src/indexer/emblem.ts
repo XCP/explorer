@@ -278,7 +278,7 @@ export async function maybeRefreshEmblemStats(env: Env): Promise<Record<string, 
        FROM vault_addresses vault JOIN sends send ON send.destination_id=vault.btc_address_id`,
     `SELECT COUNT(*) value FROM address_signals WHERE assets_held>0`,
     `SELECT COUNT(*) value FROM address_signals WHERE assets_held>0 AND is_emblem_vault=0
-       AND is_exchange=0 AND is_burn=0 AND is_deposit=0 AND likely_service=0`,
+       AND is_exchange=0 AND is_burn=0 AND is_deposit=0`,
   ];
   const results = await env.CORE_DB.batch<{ value: number }>(
     statements.map((statement) => env.CORE_DB.prepare(statement)),

@@ -28,7 +28,8 @@ test("held-out evaluator recovers connected labels without receiving their telep
   // Ensure training labels are not accidentally assigned to the held-out fold.
   for (const seed of seeds.slice(0, 4)) {
     let suffix = 0;
-    while (validationFold(`${seed.entity_type}:${seed.key}:${seed.slot}`) === 0) seed.key = `train${seed.slot}-${++suffix}`;
+    while (validationFold(`${seed.entity_type}:${seed.key}:${seed.slot}`) === 0)
+      seed.key = `train${seed.slot}-${++suffix}`;
   }
   const edges = [
     { source: 1, destination: 5, weight: 1, edge_block: 100 },

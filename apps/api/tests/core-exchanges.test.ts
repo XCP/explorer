@@ -4,10 +4,19 @@ import { test } from "node:test";
 import { exchangeSummary, exchangeTopAssets, exchangeWallets } from "#api/queries/exchanges";
 
 class Statement {
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind() { return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all() as T[] }; }
-  async first<T>() { return (this.db.prepare(this.sql).get() as T | undefined) ?? null; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind() {
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all() as T[] };
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get() as T | undefined) ?? null;
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -28,8 +37,13 @@ test("compact exchange reads use the newest complete generation and restore iden
   `);
   const binding = d1(db);
   assert.equal((await exchangeWallets(binding))[0].address, "exchange");
-  assert.deepEqual({ ...(await exchangeTopAssets(binding))[0] }, {
-    asset: "CARD",asset_longname: "PARENT.CARD",depositors: 7,
-  });
-  assert.deepEqual({ ...(await exchangeSummary(binding))! }, { exchanges: 1,deposit_addresses: 1 });
+  assert.deepEqual(
+    { ...(await exchangeTopAssets(binding))[0] },
+    {
+      asset: "CARD",
+      asset_longname: "PARENT.CARD",
+      depositors: 7,
+    },
+  );
+  assert.deepEqual({ ...(await exchangeSummary(binding))! }, { exchanges: 1, deposit_addresses: 1 });
 });

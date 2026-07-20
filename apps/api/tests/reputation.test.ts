@@ -50,7 +50,7 @@ test("infrastructure and integrity are classified instead of ranked", () => {
   assert.equal(addressReputationState({ reputation: 100, is_deposit: 1 }), "deposit");
   assert.equal(addressReputationState({ reputation: 100, is_emblem_vault: 1 }), "vault");
   assert.equal(addressReputationState({ reputation: 100, is_burn: 1 }), "burn");
-  assert.equal(addressReputationState({ reputation: 100, likely_service: 1 }), "service");
+  assert.equal(addressReputationState({ reputation: 100, likely_service: 1 }), "ranked");
   assert.equal(addressReputationState({ reputation: 100, dump_scams: 1 }), "integrity");
   assert.equal(addressReputationState({ reputation: null }), "unrated");
   assert.equal(addressReputationState({ reputation: 0 }), "ranked");

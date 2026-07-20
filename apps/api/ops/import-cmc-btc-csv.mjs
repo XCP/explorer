@@ -16,9 +16,12 @@ if (!rows.length) throw new Error("CMC BTC CSV has no observations before the Co
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 let written = 0;
 for (let offset = 0; offset < rows.length; offset += 75) {
-  const values = rows.slice(offset, offset + 75).map((row) =>
-    `(${quote(row.day)},'BTC','USD','coinmarketcap','aggregate',${row.close},0,0,'aggregate_daily_close')`,
-  ).join(",");
+  const values = rows
+    .slice(offset, offset + 75)
+    .map(
+      (row) => `(${quote(row.day)},'BTC','USD','coinmarketcap','aggregate',${row.close},0,0,'aggregate_daily_close')`,
+    )
+    .join(",");
   const result = executeRemoteD1(`INSERT INTO market_price_observations(
     day,base_currency,quote_currency,source,venue,price,volume_base,trades,method
   ) VALUES ${values}
@@ -39,5 +42,15 @@ executeRemoteD1(`INSERT INTO market_price_imports(source,venue,dataset,source_ur
     OR market_price_imports.sha256 IS NOT excluded.sha256
     OR market_price_imports.rows IS NOT excluded.rows`);
 
-console.log(JSON.stringify({ source: "coinmarketcap", written, csv_rows: allRows.length, imported_rows: rows.length,
-  first: rows[0].day, last: rows.at(-1).day, primary_window_start: primaryWindowStart, sha256 }));
+console.log(
+  JSON.stringify({
+    source: "coinmarketcap",
+    written,
+    csv_rows: allRows.length,
+    imported_rows: rows.length,
+    first: rows[0].day,
+    last: rows.at(-1).day,
+    primary_window_start: primaryWindowStart,
+    sha256,
+  }),
+);

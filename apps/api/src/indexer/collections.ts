@@ -13,10 +13,7 @@
  */
 import type { Env } from "#api/env";
 import { fetchPepeWtfAssets } from "#api/integrations/pepe-wtf";
-import {
-  COLLECTION_EVIDENCE_UPSERT_SQL,
-  projectCollectionMembership,
-} from "#api/indexer/collection-membership";
+import { COLLECTION_EVIDENCE_UPSERT_SQL, projectCollectionMembership } from "#api/indexer/collection-membership";
 import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 
 // pepe.wtf collection slug -> our tag slug. `stamps` (26k) is intentionally excluded — we already carry a

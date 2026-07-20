@@ -4,16 +4,28 @@
 const KAIKO_ROOT = "https://reference-data-api.kaiko.io/v1/instruments";
 
 const IDENTITIES = new Map([
-  ["polo:BTC_XCP", "XCP"], ["polo:BTC_FLDC", "FLDC"], ["polo:BTC_SJCX", "SJCX"],
-  ["polo:BTC_BCY", "BITCRYSTALS"], ["polo:BTC_LTBC", "LTBCOIN"],
-  ["btrx:BTC-SJCX", "SJCX"], ["btrx:BTC-BCY", "BITCRYSTALS"], ["btrx:BTC-GEMZ", "GEMZ"],
-  ["btrx:BTC-TRIG", "TRIGGERS"], ["btrx:BTC-SCOT", "SCOTCOIN"],
-  ["zaif:xcp_btc", "XCP"], ["zaif:xcp_jpy", "XCP"],
-  ["zaif:sjcx_btc", "SJCX"], ["zaif:sjcx_jpy", "SJCX"],
-  ["zaif:bitcrystals_btc", "BITCRYSTALS"], ["zaif:bitcrystals_jpy", "BITCRYSTALS"],
-  ["zaif:pepecash_btc", "PEPECASH"], ["zaif:pepecash_jpy", "PEPECASH"],
-  ["zaif:zaif_btc", "ZAIF"], ["zaif:zaif_jpy", "ZAIF"],
-  ["zaif:cicc_btc", "CICC"], ["zaif:cicc_jpy", "CICC"],
+  ["polo:BTC_XCP", "XCP"],
+  ["polo:BTC_FLDC", "FLDC"],
+  ["polo:BTC_SJCX", "SJCX"],
+  ["polo:BTC_BCY", "BITCRYSTALS"],
+  ["polo:BTC_LTBC", "LTBCOIN"],
+  ["btrx:BTC-SJCX", "SJCX"],
+  ["btrx:BTC-BCY", "BITCRYSTALS"],
+  ["btrx:BTC-GEMZ", "GEMZ"],
+  ["btrx:BTC-TRIG", "TRIGGERS"],
+  ["btrx:BTC-SCOT", "SCOTCOIN"],
+  ["zaif:xcp_btc", "XCP"],
+  ["zaif:xcp_jpy", "XCP"],
+  ["zaif:sjcx_btc", "SJCX"],
+  ["zaif:sjcx_jpy", "SJCX"],
+  ["zaif:bitcrystals_btc", "BITCRYSTALS"],
+  ["zaif:bitcrystals_jpy", "BITCRYSTALS"],
+  ["zaif:pepecash_btc", "PEPECASH"],
+  ["zaif:pepecash_jpy", "PEPECASH"],
+  ["zaif:zaif_btc", "ZAIF"],
+  ["zaif:zaif_jpy", "ZAIF"],
+  ["zaif:cicc_btc", "CICC"],
+  ["zaif:cicc_jpy", "CICC"],
 ]);
 
 async function exchangeInstruments(exchange) {

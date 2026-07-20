@@ -5,7 +5,10 @@ import { projectCollectionMembership } from "#api/indexer/collection-membership"
 
 class Statement {
   private args: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...args: unknown[]) {
     this.args = args;
     return this;
@@ -35,11 +38,14 @@ test("canonical collection membership follows priority and falls back safely", a
   const env = envFor(db);
 
   await projectCollectionMembership(env, "rare-pepe");
-  assert.deepEqual({ ...db.prepare(`SELECT source,value,meta FROM tags WHERE entity_id=1`).get() }, {
-    source: "manual",
-    value: 7,
-    meta: "reviewed",
-  });
+  assert.deepEqual(
+    { ...db.prepare(`SELECT source,value,meta FROM tags WHERE entity_id=1`).get() },
+    {
+      source: "manual",
+      value: 7,
+      meta: "reviewed",
+    },
+  );
 
   db.exec(`DELETE FROM collection_membership_evidence WHERE source='manual'`);
   await projectCollectionMembership(env, "rare-pepe");

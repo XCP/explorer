@@ -9,7 +9,7 @@ export function sha256(value) {
 export function percentileRanks(rows, field) {
   const sorted = [...rows].sort((a, b) => Number(a[field]) - Number(b[field]) || Number(a.id) - Number(b.id));
   const ranks = new Map();
-  for (let start = 0; start < sorted.length; ) {
+  for (let start = 0; start < sorted.length;) {
     let end = start + 1;
     while (end < sorted.length && Number(sorted[end][field]) === Number(sorted[start][field])) end++;
     const percentile = sorted.length <= 1 ? 0 : start / (sorted.length - 1);
@@ -27,8 +27,7 @@ export function evaluateAddressSnapshot(rows) {
     recency: (row) => Number(row.last_transaction_time),
     active_months: (row) => Number(row.past_active_months),
     transactions: (row) => Number(row.past_transactions),
-    balanced_participation: (row) =>
-      (recency.get(row.id) + activeMonths.get(row.id) + transactions.get(row.id)) / 3,
+    balanced_participation: (row) => (recency.get(row.id) + activeMonths.get(row.id) + transactions.get(row.id)) / 3,
   };
   return Object.entries(predictors).map(([predictor, score]) => evaluateBinaryRanking(rows, predictor, score));
 }
@@ -69,13 +68,11 @@ export function evaluateBinaryRanking(rows, predictor, score) {
     top_decile_return_rate: seenIn(ranked, topDecileSize, (row) => Number(row.future_transactions) > 0),
     return_lift:
       positives > 0
-        ? seenIn(ranked, topDecileSize, (row) => Number(row.future_transactions) > 0) /
-          (positives / ranked.length)
+        ? seenIn(ranked, topDecileSize, (row) => Number(row.future_transactions) > 0) / (positives / ranked.length)
         : 0,
     population_persistent_rate: persistent / ranked.length,
     top_decile_persistent_rate: topDecilePersistent / topDecileSize,
-    persistence_lift:
-      persistent > 0 ? (topDecilePersistent / topDecileSize) / (persistent / ranked.length) : 0,
+    persistence_lift: persistent > 0 ? topDecilePersistent / topDecileSize / (persistent / ranked.length) : 0,
     at_100: metric(100),
     at_500: metric(500),
     at_1pct: metric(budgets[2]),

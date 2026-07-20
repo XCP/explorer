@@ -15,9 +15,17 @@ import {
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -48,17 +56,38 @@ test("compact simple record feeds restore address and asset identities", async (
   `);
   const dbBinding = d1(db);
 
-  assert.deepEqual({ ...(await listSweeps(dbBinding, 1, 0))[0] }, {
-    tx_hash: "0".repeat(64),block_index: 10,block_time: 100,source: "source",destination: "destination",
-    flags: 3,memo: "memo",fee_paid: "5",status: "valid",
-  });
+  assert.deepEqual(
+    { ...(await listSweeps(dbBinding, 1, 0))[0] },
+    {
+      tx_hash: "0".repeat(64),
+      block_index: 10,
+      block_time: 100,
+      source: "source",
+      destination: "destination",
+      flags: 3,
+      memo: "memo",
+      fee_paid: "5",
+      status: "valid",
+    },
+  );
   assert.equal((await listDestructions(dbBinding, 1, 0))[0].asset, "CARD");
   assert.equal((await listBurns(dbBinding, 1, 0))[0].earned_normalized, "1000.0");
   assert.equal((await listDividends(dbBinding, 1, 0))[0].dividend_asset, "XCP");
-  assert.deepEqual({ ...(await listBroadcasts(dbBinding, 1, 0))[0] }, {
-    tx_hash: "0".repeat(64),block_index: 14,block_time: 104,source: "source",timestamp: 99,
-    value: "1.25",text: "hello",locked: 1,mime_type: "text/plain",status: "valid",
-  });
+  assert.deepEqual(
+    { ...(await listBroadcasts(dbBinding, 1, 0))[0] },
+    {
+      tx_hash: "0".repeat(64),
+      block_index: 14,
+      block_time: 104,
+      source: "source",
+      timestamp: 99,
+      value: "1.25",
+      text: "hello",
+      locked: 1,
+      mime_type: "text/plain",
+      status: "valid",
+    },
+  );
   assert.equal((await coreStatelessRecordsByTx(dbBinding, "sweeps", 1))[0].destination, "destination");
   assert.equal((await coreStatelessRecordsByTx(dbBinding, "burns", 3))[0].burned_normalized, "1.0");
   assert.equal((await coreStatelessRecordsByTx(dbBinding, "dividends", 4))[0].asset, "CARD");
@@ -66,9 +95,19 @@ test("compact simple record feeds restore address and asset identities", async (
   assert.equal((await listFairminters(dbBinding, 1, 0))[0].asset_longname, "PARENT.CARD");
   assert.equal((await coreContextRecordsByTx(dbBinding, "fairminters", 6))[0].asset, "CARD");
   assert.equal((await coreContextRecordsByTx(dbBinding, "fairmints", 17))[0].fairminter_tx_hash, "0".repeat(64));
-  assert.deepEqual({ ...(await listFairmints(dbBinding, 1, 0))[0] }, {
-    tx_hash: "0".repeat(64),block_index: 16,block_time: 106,source: "destination",
-    fairminter_tx_hash: "0".repeat(64),asset: "CARD",earn_quantity: "2",paid_quantity: "10",
-    divisible: 1,status: "valid",
-  });
+  assert.deepEqual(
+    { ...(await listFairmints(dbBinding, 1, 0))[0] },
+    {
+      tx_hash: "0".repeat(64),
+      block_index: 16,
+      block_time: 106,
+      source: "destination",
+      fairminter_tx_hash: "0".repeat(64),
+      asset: "CARD",
+      earn_quantity: "2",
+      paid_quantity: "10",
+      divisible: 1,
+      status: "valid",
+    },
+  );
 });

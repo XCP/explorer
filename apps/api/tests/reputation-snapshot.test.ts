@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  evaluateAddressSnapshot,
-  percentileRanks,
-  sha256,
-  snapshotManifest,
-} from "#ops/lib/reputation-snapshot";
+import { evaluateAddressSnapshot, percentileRanks, sha256, snapshotManifest } from "#ops/lib/reputation-snapshot";
 
 test("snapshot percentile ranks match SQL PERCENT_RANK tie semantics", () => {
   const rows = [
@@ -13,11 +8,14 @@ test("snapshot percentile ranks match SQL PERCENT_RANK tie semantics", () => {
     { id: 2, value: 10 },
     { id: 3, value: 20 },
   ];
-  assert.deepEqual([...percentileRanks(rows, "value").entries()], [
-    [1, 0],
-    [2, 0],
-    [3, 1],
-  ]);
+  assert.deepEqual(
+    [...percentileRanks(rows, "value").entries()],
+    [
+      [1, 0],
+      [2, 0],
+      [3, 1],
+    ],
+  );
 });
 
 test("offline address evaluation ranks deterministically and computes whole-ranking metrics", () => {

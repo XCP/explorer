@@ -4,7 +4,32 @@ Date: 2026-07-18. This review reconciles production D1, current code, the former
 research notes, and market-microstructure research. Counts are a point-in-time audit and will move as indexing
 continues.
 
+Implementation progress and decision gates are maintained in the working
+[`USD pricing roadmap`](./usd-pricing-roadmap.md).
+
 ## Decision
+
+### Completion update
+
+The canonical production ledger now contains 444,806 trades with 100% execution-day USD coverage: 182,331 BTC,
+111,209 XCP, 150,136 ETH, and 78 USDC rows. The reconciliation cursor is caught up, all 112,812 qualifying DEX
+matches have exactly one public underscore-form identity, and the pricing audit reports no orphan, expired, missing,
+or divergent valuations. Early BTC is filled by the official CoinMarketCap download before Coinbase begins; genesis
+XCP is derived from protocol burns; and the remaining XCP calendar uses CoinMarketCap's official aggregate close.
+
+The first-party Zaif history remains independent corroboration rather than blindly replacing that aggregate. All
+3,326 XCP/JPY execution days convert through an official ECB JPY/USD cross with at most a four-calendar-day weekend
+carry. Against CoinMarketCap, natural-log absolute error has a 0.0319 median and 0.0652 mean; 80.88% of days are
+within 10% and 95.07% are within 25%. The thinner XCP/BTC path is less consistent, with a 0.0779 median and 0.1273
+mean across 1,177 days. This supports both the aggregate calendar as a broadly representative daily USD value and
+XCP/JPY as the preferred first-party Zaif corroboration path, while retaining Zaif's
+market, volume, execution count, timestamps, and raw quote path for audit and future policy evaluation. Large tail
+disagreements remain evidence to inspect, not permission for one source to silently overwrite the other.
+
+`npm run evaluate:zaif-xcp -w xcp-api` reproduces these comparisons from the authorized Zaif execution files and
+production observations. It reports candidate coverage, natural-log error percentiles, fixed percentage bands, the
+ten worst dates, and JPY-path versus BTC-path disagreement. This avoids the SQLite ambiguity where `log()` means
+base-10 rather than the natural logarithm used by the evaluation.
 
 ### Primary Zaif history discovered after the initial audit
 
@@ -126,15 +151,15 @@ methodology changes as diagnostics rather than clamping them. Do not algebraical
 provider supplies the exact constituent set, weights, exclusions, and synchronized venue observations for that day.
 An aggregate VWAP and aggregate volume are insufficient when the provider filters outliers or changes constituents.
 
-Build one auditable execution-time USD ledger, but do not pretend that every real payment is an admissible unit-price
+Build one auditable execution-day USD ledger, but do not pretend that every real payment is an admissible unit-price
 observation. Preserve these as separate facts:
 
-1. **Payment value:** the USD value of the consideration actually transferred at execution time.
+1. **Payment value:** the consideration transferred, converted through an admitted price path for its execution day.
 2. **Unit-price evidence:** payment value divided by correctly normalized asset quantity.
 3. **Valuation admissibility:** whether that unit price may inform last price, a reference price, Rating, or any future
    market-cap display.
 
-Missing execution-time USD stays `NULL`. A current quote may provide a clearly bounded current conversion in a live
+Missing execution-day USD stays `NULL`. A current quote may provide a clearly bounded current conversion in a live
 view, but must never be backdated into the historical calendar. No model-corrected or indefinitely carried price is
 published as an observed historical price.
 
@@ -344,6 +369,21 @@ must come from our distribution and declared outcomes.
 
 ## Detailed execution plan
 
+Current status after the completion work:
+
+- Phase 1 is complete in production: canonical identity repair, queue drain, Rating refresh, and invariants pass.
+- Phase 2's operator audit, pricing invariants, and compact status-surface publication are complete. The reconciliation
+  job materializes coverage, divergence, latest source, and price frontier once daily, so status reads never scan the
+  trade ledger. External scheduled alert delivery remains separate operational work.
+- Phase 3's stored execution-day contract is enforced. Unified trade API rows now distinguish `execution_day` from
+  `direct_usd` and expose selected source, price day, and observed day; the main trade surfaces mark daily conversions
+  as approximate. Specialized record tables still warrant the same labeling during their normal product review.
+- Phase 4 has retained relational observations and overlap tests, but selected rows do not yet carry a policy version
+  or selection-change log. Do that only when a second source is eligible to win selection.
+- Phase 5 is complete for the scoped BTC and XCP gaps. Production coverage is 100% without unbounded carry.
+- Phases 6-9 concern valuation evidence, exotic quote routing, Rating evaluation, and product methodology. They must
+  not be described as missing historical payment coverage.
+
 ### Phase 1 — canonical DEX identity repair
 
 1. Add a fixture proving that replaying one completed order match produces exactly one trade whose `ref` equals the
@@ -383,7 +423,7 @@ identity or coverage regression.
 
 ### Phase 3 — clarify the public USD contract
 
-1. Keep stored `usd_value` strictly execution-time historical USD.
+1. Keep stored `usd_value` strictly execution-day historical USD.
 2. Stop returning a current conversion in that same field for a recent trade with no historical calendar observation.
    Add a separate nullable current estimate plus an explicit basis such as `execution` or `current_quote`; render the
    latter with an approximation marker.

@@ -11,7 +11,10 @@ const migrations = readdirSync("migrations-core")
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...values: unknown[]) {
     this.values = values;
     return this;

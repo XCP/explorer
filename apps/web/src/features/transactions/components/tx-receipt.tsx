@@ -116,14 +116,14 @@ export function DispenseReceipt({ action }: { action: Extract<TxAction, { kind: 
             <td className="r">{commas(d.dispense_quantity_normalized)}</td>
             <td className="r">{rate != null ? rate.toFixed(8).replace(/0+$/, "") : "—"}</td>
             <td className="r">{fromSats(d.btc_amount, 1)?.toFixed(8) ?? "—"}</td>
-            <td className="r dim">{d.usd_value != null ? `$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
+            <td className="r dim">{d.usd_value != null ? `≈$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
           </tr>
         ),
         foot: (
           <>
             <td />
             <td className="r">{btcAmt(d.btc_amount)}</td>
-            <td className="r">{d.usd_value != null ? `$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
+            <td className="r">{d.usd_value != null ? `≈$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
           </>
         ),
       }}

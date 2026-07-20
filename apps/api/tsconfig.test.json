@@ -15,6 +15,7 @@
     "tests/**/*.test.ts",
     "ops/lib/cmc-market-data.mjs",
     "ops/lib/zaif-market-data.mjs",
-    "ops/lib/ecb-fx-data.mjs"
+    "ops/lib/ecb-fx-data.mjs",
+    "ops/lib/bitcoin-address.mjs"
   ]
 }

@@ -11,7 +11,10 @@ import {
 
 class Statement {
   private args: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...args: unknown[]) {
     this.args = args;
     return this;

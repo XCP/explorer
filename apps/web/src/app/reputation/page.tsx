@@ -60,9 +60,9 @@ export default async function ReputationPage() {
       <section>
         <h2 className="text-xl font-semibold text-zinc-100">What Reputation claims</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-          It answers: <em>How substantial and sustained is this address&apos;s observed Counterparty track record?</em> It
-          does not predict future activity, verify identity, measure honesty, or endorse an address. Exact last activity
-          is shown separately and never changes the accumulated Reputation through an arbitrary recency cutoff.
+          It answers: <em>How substantial and sustained is this address&apos;s observed Counterparty track record?</em>{" "}
+          It does not predict future activity, verify identity, measure honesty, or endorse an address. Exact last
+          activity is shown separately and never changes the accumulated Reputation through an arbitrary recency cutoff.
         </p>
         <div className="mt-6 divide-y divide-[var(--border2)] border-y border-[var(--border2)]">
           {SCALE.map(([range, label, meaning]) => (
@@ -119,11 +119,11 @@ export default async function ReputationPage() {
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">Who is classified instead</h2>
           <p className="mt-2">
-            Exchanges, exchange deposits, Emblem Vault custody addresses, burn addresses, service hubs, and addresses
-            with directly evidenced integrity incidents do not receive a numeric Reputation. They receive the factual
-            classification instead. Current counts include {commas(data.funnel.by_kind.exchanges)} exchanges, {" "}
-            {commas(data.funnel.by_kind.deposits)} deposits, {commas(data.funnel.by_kind.vaults)} vaults, {" "}
-            {commas(data.funnel.by_kind.burns)} burns, and {commas(data.funnel.by_kind.services)} services.
+            Exchanges, exchange deposits, Emblem Vault custody addresses, burn addresses, and addresses with directly
+            evidenced integrity incidents do not receive a numeric Reputation. They receive the factual classification
+            instead. Current counts include {commas(data.funnel.by_kind.exchanges)} exchanges,{" "}
+            {commas(data.funnel.by_kind.deposits)} deposits, {commas(data.funnel.by_kind.vaults)} vaults, and{" "}
+            {commas(data.funnel.by_kind.burns)} burns.
           </p>
         </div>
         <div>

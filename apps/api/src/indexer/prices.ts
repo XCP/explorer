@@ -30,7 +30,37 @@ type PriceWrite = {
   source: string;
   observedDay: string;
   fidelity: number;
+  priceKind: "direct" | "derived";
+  derivationDepth: number;
+  selectionReason: string;
 };
+
+/**
+ * usd-payment-v1 preserves the established fidelity tiers and makes ties deterministic. A daily Coinbase close
+ * outranks its intraday spot fallback; a broad observed aggregate outranks a single latest-execution ticker; direct
+ * observations outrank derived cross-rates. Diagnostic disagreement never selects a winner in this policy.
+ */
+export const PRICE_SELECTION_POLICY = "usd-payment-v1";
+
+const sourceRank = (source: string) => `CASE ${source}
+  WHEN 'coinbase' THEN 50
+  WHEN 'coinbase_spot' THEN 40
+  WHEN 'coinmarketcap_aggregate' THEN 30
+  WHEN 'dextrade_xcpbtc_spot' THEN 20
+  WHEN 'burn_vwm' THEN 10
+  WHEN 'dex_vwm' THEN 5
+  ELSE 0 END`;
+
+const selectionPredicate = (current = "prices", candidate = "excluded") => `(
+  ${candidate}.fidelity>${current}.fidelity OR (
+    ${candidate}.fidelity=${current}.fidelity AND (
+      ${sourceRank(`${candidate}.source`)}>${sourceRank(`${current}.source`)} OR
+      (${candidate}.source=${current}.source)
+    )
+  )
+)`;
+
+export const PRICE_SELECTION_PREDICATE = selectionPredicate();
 
 /** Persist a directly observed BTC/USD ticker and a recent XCP/BTC exchange ticker, with explicit lower
  * fidelity than the completed daily calendar but higher fidelity than a carried on-chain edge. This prices
@@ -58,6 +88,9 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
         source: currency === "BTC" ? "coinbase_spot" : "dextrade_xcpbtc_spot",
         observedDay: day,
         fidelity: 2,
+        priceKind: currency === "BTC" ? "direct" : "derived",
+        derivationDepth: currency === "BTC" ? 0 : 1,
+        selectionReason: "same_day_spot_fallback",
       })),
     );
     const applied = await env.CORE_DB.prepare(
@@ -67,7 +100,9 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
        WHERE currency IN ('BTC','XCP') AND date(block_time,'unixepoch')=?
          AND usd_value IS NOT total*(SELECT price.usd FROM prices price
            WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`,
-    ).bind(day).run();
+    )
+      .bind(day)
+      .run();
     return {
       day,
       BTC: spot.BTC,
@@ -82,17 +117,30 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
 
 async function upsertDexTradeObservation(db: D1Database, observation: DexTradeObservation): Promise<void> {
   const baseCurrency = observation.pair.slice(0, -3);
-  await db.prepare(`INSERT INTO market_price_observations(
+  await db
+    .prepare(
+      `INSERT INTO market_price_observations(
     day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method
   ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
   ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
     price=excluded.price,volume_base=excluded.volume_base,trades=excluded.trades,
     first_time=excluded.first_time,last_time=excluded.last_time,method=excluded.method
-  WHERE excluded.last_time>COALESCE(market_price_observations.last_time,0)`)
+  WHERE excluded.last_time>COALESCE(market_price_observations.last_time,0)`,
+    )
     .bind(
-      isoDay(observation.latestTime), baseCurrency, "BTC", "dex-trade", "cex", observation.latestPrice,
-      observation.latestVolume, 1, observation.latestTime, observation.latestTime, "latest_observed_execution",
-    ).run();
+      isoDay(observation.latestTime),
+      baseCurrency,
+      "BTC",
+      "dex-trade",
+      "cex",
+      observation.latestPrice,
+      observation.latestVolume,
+      1,
+      observation.latestTime,
+      observation.latestTime,
+      "latest_observed_execution",
+    )
+    .run();
 }
 
 const DERIVED_FRESH_DAYS = 7;
@@ -187,13 +235,19 @@ export const PRUNE_BURN_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_obser
         AND CAST(burned AS INTEGER)>0 AND CAST(earned AS INTEGER)>0)`;
 
 /** Direct aggregate USD observations outrank a cross-rate, while retaining explicit source provenance. */
-export const BUILD_OBSERVED_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
-  SELECT day,base_currency,price,'coinmarketcap_aggregate',day,2 FROM market_price_observations
+export const BUILD_OBSERVED_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+    policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
+    disagreement_class,selection_reason)
+  SELECT day,base_currency,price,'coinmarketcap_aggregate',day,2,'${PRICE_SELECTION_POLICY}','direct',0,0,
+    NULLIF(trades,0),1,NULLIF(volume_base,0),'not_evaluated','direct_aggregate_usd' FROM market_price_observations
   WHERE base_currency IN ('BTC','XCP') AND quote_currency='USD'
     AND source='coinmarketcap' AND venue='aggregate' AND price>0
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
-    observed_day=excluded.observed_day,fidelity=excluded.fidelity
-  WHERE prices.fidelity<=excluded.fidelity AND (
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
+    price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
+    observation_count=excluded.observation_count,venue_count=excluded.venue_count,volume_base=excluded.volume_base,
+    disagreement_class=excluded.disagreement_class,selection_reason=excluded.selection_reason
+  WHERE ${PRICE_SELECTION_PREDICATE} AND (
     prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity)`;
 
@@ -205,14 +259,20 @@ export const PRUNE_OBSERVED_USD_SQL = `DELETE FROM prices
       AND observation.source='coinmarketcap' AND observation.venue='aggregate' AND observation.price>0)`;
 
 /** During the genesis burn, on-chain BTC/XCP conversion × same-day BTC/USD is reproducible XCP/USD evidence. */
-export const BUILD_BURN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
-  SELECT btc.day,'XCP',edge.price*btc.usd,'burn_vwm',edge.day,1
+export const BUILD_BURN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+    policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
+    disagreement_class,selection_reason)
+  SELECT btc.day,'XCP',edge.price*btc.usd,'burn_vwm',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',0,1,
+    edge.trades,1,edge.volume_base,'not_evaluated','same_day_burn_cross_rate'
   FROM prices btc JOIN market_price_observations edge ON edge.day=btc.day
   WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
     AND edge.source='counterparty' AND edge.venue='burn'
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
-    observed_day=excluded.observed_day,fidelity=excluded.fidelity
-  WHERE prices.fidelity<=excluded.fidelity AND (
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
+    price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
+    observation_count=excluded.observation_count,venue_count=excluded.venue_count,volume_base=excluded.volume_base,
+    disagreement_class=excluded.disagreement_class,selection_reason=excluded.selection_reason
+  WHERE ${PRICE_SELECTION_PREDICATE} AND (
     prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity)`;
 
@@ -222,8 +282,12 @@ export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
     WHERE btc.currency='BTC' AND btc.day=prices.day AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
       AND edge.source='counterparty' AND edge.venue='burn')`;
 
-export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
-  SELECT btc.day,'XCP',edge.price*btc.usd,'dex_vwm',edge.day,1
+export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+    policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
+    disagreement_class,selection_reason)
+  SELECT btc.day,'XCP',edge.price*btc.usd,'dex_vwm',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',
+    CAST(julianday(btc.day)-julianday(edge.day) AS INTEGER),1,edge.trades,1,edge.volume_base,
+    'not_evaluated','fresh_dex_cross_rate'
   FROM prices btc
   JOIN market_price_observations edge ON edge.day=(
     SELECT recent.day FROM market_price_observations recent
@@ -234,8 +298,11 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
   WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
     AND edge.source='counterparty' AND edge.venue='dex'
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
-    observed_day=excluded.observed_day,fidelity=excluded.fidelity
-  WHERE prices.fidelity<=excluded.fidelity AND (
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
+    price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
+    observation_count=excluded.observation_count,venue_count=excluded.venue_count,volume_base=excluded.volume_base,
+    disagreement_class=excluded.disagreement_class,selection_reason=excluded.selection_reason
+  WHERE ${PRICE_SELECTION_PREDICATE} AND (
     prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
   )`;
@@ -260,15 +327,31 @@ async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
       rows.slice(i, i + 100).map((row) =>
         db
           .prepare(
-            `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity) VALUES(?,?,?,?,?,?)
+            `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,policy_version,price_kind,age_days,
+               derivation_depth,observation_count,venue_count,volume_base,disagreement_class,selection_reason)
+             VALUES(?,?,?,?,?,?,'${PRICE_SELECTION_POLICY}',?,0,?,1,1,NULL,'not_evaluated',?)
              ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
-               observed_day=excluded.observed_day,fidelity=excluded.fidelity
-             WHERE prices.fidelity<=excluded.fidelity AND (
+               observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
+               price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
+               observation_count=excluded.observation_count,venue_count=excluded.venue_count,
+               volume_base=excluded.volume_base,disagreement_class=excluded.disagreement_class,
+               selection_reason=excluded.selection_reason
+             WHERE ${PRICE_SELECTION_PREDICATE} AND (
                prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
                OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
              )`,
           )
-          .bind(row.day, row.currency, row.usd, row.source, row.observedDay, row.fidelity),
+          .bind(
+            row.day,
+            row.currency,
+            row.usd,
+            row.source,
+            row.observedDay,
+            row.fidelity,
+            row.priceKind,
+            row.derivationDepth,
+            row.selectionReason,
+          ),
       ),
     );
   }
@@ -304,6 +387,9 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
           source: "coinbase",
           observedDay: isoDay(r.time),
           fidelity: 3,
+          priceKind: "direct" as const,
+          derivationDepth: 0,
+          selectionReason: "primary_daily_close",
         }));
         await upsertPrices(env.CORE_DB, prices);
         filled += rows.length;
@@ -347,11 +433,51 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   // Calendar changes can correct any historical day, so schedule exactly one bounded full reconciliation.
   // Between daily refreshes the monotonic cursor prices only newly appended trades and then stays caught up.
   await setCoreState(env.CORE_DB, "usd_cur", 0);
+  // Force a new health snapshot only after that reconciliation reaches the tip; the prior snapshot describes
+  // the calendar version that was just superseded.
+  await setCoreState(env.CORE_DB, "pricing_health_day", 0);
   out.calendar = c.results ?? [];
   return out;
 }
 
 const USD_WINDOW = 200_000; // rows per apply call (rowid-windowed — contiguous across venues)
+
+export const REFRESH_PRICING_HEALTH_SQL = `INSERT INTO pricing_health(
+    currency,trades,missing,divergent,latest_price_day,latest_price_source,latest_observed_day,generated_at)
+  WITH currencies(currency) AS (VALUES('BTC'),('ETH'),('XCP'),('USDC')),
+  trade_health AS (
+    SELECT trade.currency,COUNT(*) trades,SUM(trade.usd_value IS NULL) missing,
+      SUM(CASE
+        WHEN trade.currency='USDC' THEN trade.usd_value IS NOT trade.total
+        WHEN price.usd IS NULL THEN trade.usd_value IS NOT NULL
+        ELSE trade.usd_value IS NOT trade.total*price.usd
+      END) divergent
+    FROM trades trade LEFT JOIN prices price
+      ON price.currency=trade.currency AND price.day=date(trade.block_time,'unixepoch')
+    WHERE trade.currency IN ('BTC','ETH','XCP','USDC') GROUP BY trade.currency
+  ), latest AS (
+    SELECT price.currency,price.day,price.source,price.observed_day,
+      ROW_NUMBER() OVER(PARTITION BY price.currency ORDER BY price.day DESC) rank
+    FROM prices price
+  )
+  SELECT currencies.currency,COALESCE(trade_health.trades,0),COALESCE(trade_health.missing,0),
+    COALESCE(trade_health.divergent,0),latest.day,latest.source,latest.observed_day,?
+  FROM currencies LEFT JOIN trade_health USING(currency)
+  LEFT JOIN latest ON latest.currency=currencies.currency AND latest.rank=1
+  ON CONFLICT(currency) DO UPDATE SET trades=excluded.trades,missing=excluded.missing,
+    divergent=excluded.divergent,latest_price_day=excluded.latest_price_day,
+    latest_price_source=excluded.latest_price_source,latest_observed_day=excluded.latest_observed_day,
+    generated_at=excluded.generated_at`;
+
+async function maybeRefreshPricingHealth(db: D1Database, now: number) {
+  const day = isoDay(now);
+  const refreshedDay = await getCoreStateInt(db, "pricing_health_day");
+  const dayNumber = Math.floor(now / DAY);
+  if (refreshedDay === dayNumber) return false;
+  await db.prepare(REFRESH_PRICING_HEALTH_SQL).bind(now).run();
+  await setCoreState(db, "pricing_health_day", dayNumber);
+  return day;
+}
 
 export function tradeUsdWindow(cursor: number, tip: number): { from: number; to: number } | null {
   return cursor >= tip ? null : { from: cursor, to: Math.min(cursor + USD_WINDOW, tip) };
@@ -360,20 +486,23 @@ export function tradeUsdWindow(cursor: number, tip: number): { from: number; to:
 export const APPLY_TRADE_USD_SQL = `UPDATE trades SET usd_value=total*(
     SELECT price.usd FROM prices price
     WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))
-  WHERE currency IN ('BTC','ETH','XCP') AND rowid>? AND rowid<=?
+  WHERE currency NOT IN ('USD','USDC') AND rowid>? AND rowid<=?
     AND usd_value IS NOT total*(SELECT price.usd FROM prices price
       WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`;
 
 /** Reconcile the daily-reset history or newly appended rows, then remain idle when caught up. */
 export async function applyTradeUsd(env: Env): Promise<Record<string, unknown>> {
+  const now = Math.floor(Date.now() / 1000);
   const tip = Number((await env.CORE_DB.prepare(`SELECT MAX(rowid) m FROM trades`).first<{ m: number }>())?.m) || 0;
   const cur = await getCoreStateInt(env.CORE_DB, "usd_cur");
   const window = tradeUsdWindow(cur, tip);
-  if (!window) return { from: cur, to: cur, tip, priced_rows: 0, done: true };
+  if (!window) {
+    const pricing_health_day = await maybeRefreshPricingHealth(env.CORE_DB, now);
+    return { from: cur, to: cur, tip, priced_rows: 0, done: true, pricing_health_day };
+  }
   const hi = window.to;
-  const result = await env.CORE_DB.prepare(APPLY_TRADE_USD_SQL)
-    .bind(cur, hi)
-    .run();
+  const result = await env.CORE_DB.prepare(APPLY_TRADE_USD_SQL).bind(cur, hi).run();
   await setCoreState(env.CORE_DB, "usd_cur", hi);
-  return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip };
+  const pricing_health_day = hi >= tip ? await maybeRefreshPricingHealth(env.CORE_DB, now) : false;
+  return { from: cur, to: hi, tip, priced_rows: result.meta.rows_written ?? 0, done: hi >= tip, pricing_health_day };
 }

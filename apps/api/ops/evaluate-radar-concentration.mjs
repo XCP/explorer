@@ -15,7 +15,8 @@ const db = new DatabaseSync(resolve(root, "ownership.sqlite"), { readOnly: true 
 
 function cohort(cutoff) {
   return db
-    .prepare(`WITH past AS (
+    .prepare(
+      `WITH past AS (
       SELECT asset_id,COUNT(*) past_sales,COUNT(DISTINCT buyer_id) past_buyers,
         COUNT(DISTINCT seller_id) past_sellers,
         COUNT(DISTINCT strftime('%Y-%m',block_time,'unixepoch')) past_active_months,
@@ -41,7 +42,8 @@ function cohort(cutoff) {
     FROM historical_concentration concentration JOIN past USING(asset_id)
     LEFT JOIN future USING(asset_id)
     WHERE concentration.cutoff_label=? AND past.past_sales>=3 AND past.past_buyers>=2
-      AND past.past_active_months>=2 AND concentration.total_quantity>0`)
+      AND past.past_active_months>=2 AND concentration.total_quantity>0`,
+    )
     .all(cutoff.timestamp, cutoff.timestamp, cutoff.timestamp + horizonSeconds, cutoff.label)
     .map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value)])));
 }
@@ -69,9 +71,7 @@ function evaluate(rows, name, score) {
     return_lift: populationReturn ? rate(ranked.slice(0, topDecile), outcome) / populationReturn : 0,
     population_persistent_rate: populationPersistent,
     top_decile_persistent_rate: rate(ranked.slice(0, topDecile), persistent),
-    persistence_lift: populationPersistent
-      ? rate(ranked.slice(0, topDecile), persistent) / populationPersistent
-      : 0,
+    persistence_lift: populationPersistent ? rate(ranked.slice(0, topDecile), persistent) / populationPersistent : 0,
     precision_at_100: rate(ranked.slice(0, 100), outcome),
     average_precision: positives ? averagePrecision / positives : 0,
   };
@@ -85,8 +85,7 @@ function band(rows, name, predicate) {
     share: selected.length / rows.length,
     return_rate: selected.reduce((sum, row) => sum + (row.future_sales > 0 ? 1 : 0), 0) / Math.max(1, selected.length),
     persistent_rate:
-      selected.reduce((sum, row) => sum + (row.future_active_months >= 2 ? 1 : 0), 0) /
-      Math.max(1, selected.length),
+      selected.reduce((sum, row) => sum + (row.future_active_months >= 2 ? 1 : 0), 0) / Math.max(1, selected.length),
   };
 }
 
@@ -118,16 +117,11 @@ for (const cutoff of snapshot.cutoffs) {
     market_plus_top1: (row) =>
       ((p("last_sale_time", row) + p("past_active_months", row)) / 2 + (1 - p("top1_share", row))) / 2,
     market_plus_top1_10pct: (row) =>
-      ((p("last_sale_time", row) + p("past_active_months", row)) / 2) * 0.9 +
-      (1 - p("top1_share", row)) * 0.1,
+      ((p("last_sale_time", row) + p("past_active_months", row)) / 2) * 0.9 + (1 - p("top1_share", row)) * 0.1,
     market_plus_non_creator: (row) =>
-      ((p("last_sale_time", row) + p("past_active_months", row)) / 2 +
-        (1 - p("non_creator_top_share", row))) /
-      2,
+      ((p("last_sale_time", row) + p("past_active_months", row)) / 2 + (1 - p("non_creator_top_share", row))) / 2,
     market_plus_distribution: (row) =>
-      ((p("last_sale_time", row) + p("past_active_months", row)) / 2 +
-        p("holders", row) +
-        (1 - p("top1_share", row))) /
+      ((p("last_sale_time", row) + p("past_active_months", row)) / 2 + p("holders", row) + (1 - p("top1_share", row))) /
       3,
     market_plus_distribution_20pct: (row) =>
       ((p("last_sale_time", row) + p("past_active_months", row)) / 2) * 0.8 +

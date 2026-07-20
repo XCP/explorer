@@ -25,11 +25,7 @@ export async function setCoreState(db: D1Database, key: string, value: string | 
   await setCoreStateStatement(db, key, value).run();
 }
 
-export function setCoreStateStatement(
-  db: D1Database,
-  key: string,
-  value: string | number,
-): D1PreparedStatement {
+export function setCoreStateStatement(db: D1Database, key: string, value: string | number): D1PreparedStatement {
   return db
     .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
     .bind(key, String(value));

@@ -16,7 +16,8 @@ if (!Number.isInteger(ageDays) || ageDays < 1 || ageDays > 365)
   throw new Error("age-days must be an integer from 1 through 365");
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
 const blockReceipt = JSON.parse(readFileSync(resolve(root, "block-times.json"), "utf8"));
-if (!manifest.complete || !blockReceipt.complete) throw new Error("Ownership and block-time snapshots must be complete");
+if (!manifest.complete || !blockReceipt.complete)
+  throw new Error("Ownership and block-time snapshots must be complete");
 
 const db = new DatabaseSync(resolve(root, "ownership.sqlite"));
 const blockRows = db.prepare(`SELECT block_index,block_time FROM block_times ORDER BY block_index`).all();
@@ -24,11 +25,13 @@ const blockTime = new Map(blockRows.map((row) => [Number(row.block_index), Numbe
 const frontierTime = blockTime.get(Number(manifest.frontier_block_index));
 if (frontierTime == null) throw new Error(`Missing ownership-frontier block time ${manifest.frontier_block_index}`);
 const firstIssuances = db
-  .prepare(`WITH ranked AS (
+  .prepare(
+    `WITH ranked AS (
     SELECT asset_id,event_index,block_index,issuer_id,divisible,
       ROW_NUMBER() OVER(PARTITION BY asset_id ORDER BY event_index) rank
     FROM issuance_history)
-  SELECT asset_id,event_index,block_index,issuer_id,divisible FROM ranked WHERE rank=1`)
+  SELECT asset_id,event_index,block_index,issuer_id,divisible FROM ranked WHERE rank=1`,
+  )
   .all();
 const issuances = new Map();
 const cutoffs = [];
@@ -106,7 +109,14 @@ function finalizeBefore(timestamp, inclusive = false) {
     const top5 = positive.slice(0, 5).reduce((sum, row) => sum + row[1], 0n);
     const issuer = positive.find((row) => row[0] === issuance.issuerId)?.[1] ?? 0n;
     for (const [holderId, quantity, isUtxo] of positive)
-      upsertHolder.run(ageDays, issuance.assetId, holderId, quantity, isUtxo ? 1 : 0, holderId === issuance.issuerId ? 1 : 0);
+      upsertHolder.run(
+        ageDays,
+        issuance.assetId,
+        holderId,
+        quantity,
+        isUtxo ? 1 : 0,
+        holderId === issuance.issuerId ? 1 : 0,
+      );
     upsert.run(
       ageDays,
       issuance.assetId,
@@ -170,11 +180,15 @@ try {
   throw error;
 }
 
-const stored = db.prepare(`SELECT COUNT(*) rows,MIN(feature.issued_at) min_issued_at,
+const stored = db
+  .prepare(
+    `SELECT COUNT(*) rows,MIN(feature.issued_at) min_issued_at,
   MAX(feature.issued_at) max_issued_at,SUM(feature.holders>0) assets_with_holders
   FROM radar_new_cohort_members member JOIN radar_new_features feature
     ON feature.age_days=member.age_days AND feature.asset_id=member.asset_id
-  WHERE member.age_days=? AND member.frontier_event_index=?`).get(ageDays, Number(manifest.frontier_event_index));
+  WHERE member.age_days=? AND member.frontier_event_index=?`,
+  )
+  .get(ageDays, Number(manifest.frontier_event_index));
 const report = {
   schema: "xcp-radar-new-features/1",
   measured_at: new Date().toISOString(),

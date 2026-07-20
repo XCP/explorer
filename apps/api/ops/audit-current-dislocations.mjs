@@ -14,7 +14,8 @@ const asOf = Math.floor(Date.now() / 1000);
 const referenceStart = asOf - 730 * 86400;
 const referenceEnd = asOf - 90 * 86400;
 const references = db
-  .prepare(`WITH ranked AS (
+  .prepare(
+    `WITH ranked AS (
     SELECT asset_id,strftime('%Y-%m',block_time,'unixepoch') month,usd_value/quantity unit_usd,
       ROW_NUMBER() OVER(PARTITION BY asset_id,strftime('%Y-%m',block_time,'unixepoch')
         ORDER BY usd_value/quantity) rank,
@@ -33,7 +34,8 @@ const references = db
   SELECT asset_id,AVG(month_median) reference_usd,MAX(active_months) reference_months,
     SUM(month_sales) reference_sales
   FROM reference_ranked WHERE rank IN ((active_months+1)/2,(active_months+2)/2)
-  GROUP BY asset_id HAVING reference_months>=2 AND reference_sales>=3`)
+  GROUP BY asset_id HAVING reference_months>=2 AND reference_sales>=3`,
+  )
   .all(referenceStart, referenceEnd)
   .map((row) => ({
     asset_id: Number(row.asset_id),
@@ -130,10 +132,16 @@ const report = {
   candidates,
 };
 writeFileSync(resolve(root, "current-dislocations.json"), `${JSON.stringify(report, null, 2)}\n`);
-process.stdout.write(`${JSON.stringify({
-  measured_at: report.measured_at,
-  reference_assets: report.reference_assets,
-  assets_with_executable_offer: report.assets_with_executable_offer,
-  discounted_candidates: report.discounted_candidates,
-  candidates: candidates.slice(0, 25),
-}, null, 2)}\n`);
+process.stdout.write(
+  `${JSON.stringify(
+    {
+      measured_at: report.measured_at,
+      reference_assets: report.reference_assets,
+      assets_with_executable_offer: report.assets_with_executable_offer,
+      discounted_candidates: report.discounted_candidates,
+      candidates: candidates.slice(0, 25),
+    },
+    null,
+    2,
+  )}\n`,
+);

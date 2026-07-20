@@ -5,10 +5,20 @@ import { getCollectionProfile, listCollectionProfiles } from "#api/queries/colle
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
-  async first<T>() { return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -42,15 +52,33 @@ test("collection profiles reconcile Rating, clean market, overlap, concentration
   assert.equal((await listCollectionProfiles(d1(db))).length, 1);
   assert.deepEqual(
     {
-      members: profile.members,rated: profile.rated_members,median: profile.median_rating,
-      distribution: [profile.rating_exceptional,profile.rating_strong,profile.rating_developing,profile.rating_limited],
-      realized: profile.total_realized_usd,topShare: profile.top_asset_value_pct,
-      relationships: profile.holder_relationships,holders: profile.unique_holders,overlap: profile.holder_overlap_pct,
+      members: profile.members,
+      rated: profile.rated_members,
+      median: profile.median_rating,
+      distribution: [
+        profile.rating_exceptional,
+        profile.rating_strong,
+        profile.rating_developing,
+        profile.rating_limited,
+      ],
+      realized: profile.total_realized_usd,
+      topShare: profile.top_asset_value_pct,
+      relationships: profile.holder_relationships,
+      holders: profile.unique_holders,
+      overlap: profile.holder_overlap_pct,
       integrity: profile.integrity_assets,
     },
     {
-      members: 3,rated: 2,median: 7.3,distribution: [1,0,1,0],realized: 1000,topShare: 90,
-      relationships: 4,holders: 3,overlap: 25,integrity: 1,
+      members: 3,
+      rated: 2,
+      median: 7.3,
+      distribution: [1, 0, 1, 0],
+      realized: 1000,
+      topShare: 90,
+      relationships: 4,
+      holders: 3,
+      overlap: 25,
+      integrity: 1,
     },
   );
   assert.equal("score" in profile, false, "a descriptive collection profile must not grow a composite score");

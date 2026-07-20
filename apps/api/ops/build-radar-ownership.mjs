@@ -123,12 +123,12 @@ while (state().cursor < receipt.frontier_event_index && (!stopAfterChunks || com
 
 const finalState = state();
 const invariants = db
-  .prepare(`SELECT COUNT(*) balance_rows,SUM(quantity<0) negative_rows,SUM(quantity=0) zero_rows,
-    COUNT(DISTINCT asset_id) assets,COUNT(DISTINCT holder_id) holders FROM balances`)
+  .prepare(
+    `SELECT COUNT(*) balance_rows,SUM(quantity<0) negative_rows,SUM(quantity=0) zero_rows,
+    COUNT(DISTINCT asset_id) assets,COUNT(DISTINCT holder_id) holders FROM balances`,
+  )
   .get();
-const chunkFiles = db
-  .prepare(`SELECT cursor,event_count,chunk_count FROM replay_state WHERE singleton=1`)
-  .get();
+const chunkFiles = db.prepare(`SELECT cursor,event_count,chunk_count FROM replay_state WHERE singleton=1`).get();
 const manifest = {
   ...receipt,
   schema: "xcp-radar-ownership-snapshot/1",

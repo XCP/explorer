@@ -17,7 +17,9 @@ const timeline = [
   { kind: "observe", label: "2026-01-01", block: 930340 },
   { kind: "outcome", label: "2026-01-01", block: 955991 },
 ];
-const chunks = readdirSync(root).filter((name) => /^\d{10}-\d{10}\.ndjson$/.test(name)).sort();
+const chunks = readdirSync(root)
+  .filter((name) => /^\d{10}-\d{10}\.ndjson$/.test(name))
+  .sort();
 
 const db = new DatabaseSync(resolve(root, "ownership.sqlite"));
 db.exec(`CREATE TABLE IF NOT EXISTS holder_outcome_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),
@@ -133,4 +135,3 @@ const report = {
 writeFileSync(resolve(root, "holder-outcomes.json"), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 db.close();
-

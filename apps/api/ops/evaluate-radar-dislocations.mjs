@@ -18,7 +18,8 @@ function cohort(cutoff) {
   const currentStart = cutoff.timestamp - 90 * day;
   const futureEnd = cutoff.timestamp + 180 * day;
   return db
-    .prepare(`WITH priced AS MATERIALIZED (
+    .prepare(
+      `WITH priced AS MATERIALIZED (
       SELECT asset_id,block_time,buyer_id,usd_value/quantity unit_usd,
         strftime('%Y-%m',block_time,'unixepoch') month
       FROM market_trades WHERE venue IN ('dispense','dex')
@@ -64,7 +65,8 @@ function cohort(cutoff) {
     FROM reference JOIN current_price USING(asset_id) LEFT JOIN future_price USING(asset_id)
     JOIN historical_concentration concentration ON concentration.asset_id=reference.asset_id
       AND concentration.cutoff_label=?
-    WHERE reference.reference_months>=2 AND reference.reference_sales>=3`)
+    WHERE reference.reference_months>=2 AND reference.reference_sales>=3`,
+    )
     .all(
       referenceStart,
       futureEnd,
@@ -80,7 +82,10 @@ function cohort(cutoff) {
 
 function summarize(rows, name) {
   const rate = (predicate) => rows.filter(predicate).length / Math.max(1, rows.length);
-  const futureMultiples = rows.filter((row) => row.future_sales > 0).map((row) => row.future_return_multiple).sort((a, b) => a - b);
+  const futureMultiples = rows
+    .filter((row) => row.future_sales > 0)
+    .map((row) => row.future_return_multiple)
+    .sort((a, b) => a - b);
   return {
     band: name,
     assets: rows.length,
@@ -123,25 +128,55 @@ const evaluations = concentration.cutoffs.map((cutoff) => {
     cutoff: cutoff.label,
     cohort: rows.length,
     bands: [
-      summarize(rows.filter((row) => row.dislocation_ratio <= 0.25), "current<=25% reference"),
-      summarize(rows.filter((row) => row.dislocation_ratio > 0.25 && row.dislocation_ratio <= 0.5), "25-50%"),
-      summarize(rows.filter((row) => row.dislocation_ratio > 0.5 && row.dislocation_ratio <= 0.75), "50-75%"),
-      summarize(rows.filter((row) => row.dislocation_ratio > 0.75 && row.dislocation_ratio <= 1), "75-100%"),
-      summarize(rows.filter((row) => row.dislocation_ratio > 1), "above reference"),
+      summarize(
+        rows.filter((row) => row.dislocation_ratio <= 0.25),
+        "current<=25% reference",
+      ),
+      summarize(
+        rows.filter((row) => row.dislocation_ratio > 0.25 && row.dislocation_ratio <= 0.5),
+        "25-50%",
+      ),
+      summarize(
+        rows.filter((row) => row.dislocation_ratio > 0.5 && row.dislocation_ratio <= 0.75),
+        "50-75%",
+      ),
+      summarize(
+        rows.filter((row) => row.dislocation_ratio > 0.75 && row.dislocation_ratio <= 1),
+        "75-100%",
+      ),
+      summarize(
+        rows.filter((row) => row.dislocation_ratio > 1),
+        "above reference",
+      ),
     ],
     predictors: [
       rank(rows, "dislocation", (row) => -row.dislocation_ratio),
       rank(rows, "reference_depth", (row) => depth.get(row.id)),
       rank(rows, "holder_breadth", (row) => holders.get(row.id)),
-      rank(rows, "dislocation_plus_depth", (row) =>
-        (1 - Math.min(1, row.dislocation_ratio)) * 0.8 + depth.get(row.id) * 0.2),
-      rank(rows, "dislocation_plus_safety", (row) =>
-        (1 - Math.min(1, row.dislocation_ratio)) * 0.8 + (1 - top1.get(row.id)) * 0.2),
+      rank(
+        rows,
+        "dislocation_plus_depth",
+        (row) => (1 - Math.min(1, row.dislocation_ratio)) * 0.8 + depth.get(row.id) * 0.2,
+      ),
+      rank(
+        rows,
+        "dislocation_plus_safety",
+        (row) => (1 - Math.min(1, row.dislocation_ratio)) * 0.8 + (1 - top1.get(row.id)) * 0.2,
+      ),
     ],
     confidence: [
-      summarize(rows.filter((row) => row.current_sales === 1), "one current sale"),
-      summarize(rows.filter((row) => row.current_sales >= 2), "2+ current sales"),
-      summarize(rows.filter((row) => row.reference_months >= 4), "4+ reference months"),
+      summarize(
+        rows.filter((row) => row.current_sales === 1),
+        "one current sale",
+      ),
+      summarize(
+        rows.filter((row) => row.current_sales >= 2),
+        "2+ current sales",
+      ),
+      summarize(
+        rows.filter((row) => row.reference_months >= 4),
+        "4+ reference months",
+      ),
     ],
   };
 });

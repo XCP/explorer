@@ -64,10 +64,7 @@ LEFT JOIN rating_median USING(tag) LEFT JOIN holder USING(tag)`;
 
 /** Independent observed collection axes. No composite grade or collection rank. */
 export function listCollectionProfiles(db: D1Database): Promise<CollectionProfile[]> {
-  return q<CollectionProfile>(
-    db,
-    `${profileSql(false)} ORDER BY rated_pct DESC,median_rating DESC,members DESC,tag`,
-  );
+  return q<CollectionProfile>(db, `${profileSql(false)} ORDER BY rated_pct DESC,median_rating DESC,members DESC,tag`);
 }
 
 export function getCollectionProfile(db: D1Database, tag: string): Promise<CollectionProfile | null> {

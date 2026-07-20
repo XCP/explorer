@@ -247,9 +247,7 @@ export function addressLineage(db: D1Database, address: string): Promise<Address
 
 /* ---------- reputation methodology (/v2/reputation/review) ---------- */
 /** Population counts across the materialized Reputation bands. */
-export function reputationDistribution(
-  db: D1Database,
-): Promise<ReputationDistribution | null> {
+export function reputationDistribution(db: D1Database): Promise<ReputationDistribution | null> {
   return one<ReputationDistribution>(
     db,
     `SELECT COUNT(*) n,ROUND(AVG(reputation),2) mean,ROUND(MAX(reputation),2) max,
@@ -285,17 +283,15 @@ export function reputationFunnel(db: D1Database): Promise<{
   deposits: number;
   vaults: number;
   burns: number;
-  services: number;
 } | null> {
-  return one<{ infra: number; exchanges: number; deposits: number; vaults: number; burns: number; services: number }>(
+  return one<{ infra: number; exchanges: number; deposits: number; vaults: number; burns: number }>(
     db,
     `SELECT
-       SUM(CASE WHEN is_exchange=1 OR is_deposit=1 OR is_burn=1 OR COALESCE(is_emblem_vault,0)=1 OR COALESCE(likely_service,0)=1 THEN 1 ELSE 0 END) infra,
+       SUM(CASE WHEN is_exchange=1 OR is_deposit=1 OR is_burn=1 OR COALESCE(is_emblem_vault,0)=1 THEN 1 ELSE 0 END) infra,
        SUM(CASE WHEN is_exchange=1 THEN 1 ELSE 0 END) exchanges,
        SUM(CASE WHEN is_deposit=1 THEN 1 ELSE 0 END) deposits,
        SUM(CASE WHEN COALESCE(is_emblem_vault,0)=1 THEN 1 ELSE 0 END) vaults,
-       SUM(CASE WHEN is_burn=1 THEN 1 ELSE 0 END) burns,
-       SUM(CASE WHEN COALESCE(likely_service,0)=1 THEN 1 ELSE 0 END) services
+       SUM(CASE WHEN is_burn=1 THEN 1 ELSE 0 END) burns
      FROM address_signals`,
   );
 }
@@ -303,9 +299,7 @@ export function reputationFunnel(db: D1Database): Promise<{
 /** Score histogram over the scored population — integer-binned raw scores (0..cap, the tail lumped at cap)
  *  for the distribution curve on /reputation. `expr`/`notInfra` are the same config-driven fragments the
  *  distribution + tier reads use; `cap` is an interpolated literal (not user input). */
-export function reputationHistogram(
-  db: D1Database,
-): Promise<{ bin: number; count: number }[]> {
+export function reputationHistogram(db: D1Database): Promise<{ bin: number; count: number }[]> {
   return q<{ bin: number; count: number }>(
     db,
     `SELECT MIN(100,CAST(reputation AS INTEGER)) bin,COUNT(*) count

@@ -17,7 +17,8 @@ if (!cutoffEntry) throw new Error(`Unknown cutoff: ${cutoffLabel}`);
 const cutoff = Number(cutoffEntry[1]);
 const outcomeEnd = cutoff + HORIZON_DAYS * 86400;
 const chunkSize = Number(arg("chunk-size", "10000"));
-if (!Number.isInteger(chunkSize) || chunkSize < 100 || chunkSize > 10000) throw new Error("chunk-size must be 100..10000");
+if (!Number.isInteger(chunkSize) || chunkSize < 100 || chunkSize > 10000)
+  throw new Error("chunk-size must be 100..10000");
 const root = resolve(arg("output", join(".analytics", "reputation", "addresses", cutoffLabel)));
 mkdirSync(root, { recursive: true });
 

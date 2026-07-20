@@ -6,10 +6,23 @@ export function parseCmcXcpQuotes(payload) {
   const rows = payload.data.quotes.map((row) => {
     const day = String(row?.timestamp ?? "").slice(0, 10);
     const price = Number(row?.quote?.USD?.price);
+    const volume = row?.quote?.USD?.volume_24h;
+    const marketCap = row?.quote?.USD?.market_cap;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(price) || price <= 0) {
       throw new Error("CMC XCP history contains an invalid observation");
     }
-    return { day, price };
+    if (
+      (volume != null && (!Number.isFinite(Number(volume)) || Number(volume) < 0)) ||
+      (marketCap != null && (!Number.isFinite(Number(marketCap)) || Number(marketCap) < 0))
+    ) {
+      throw new Error("CMC XCP history contains invalid reported USD aggregates");
+    }
+    return {
+      day,
+      price,
+      volumeUsd: volume == null ? null : Number(volume),
+      marketCapUsd: marketCap == null ? null : Number(marketCap),
+    };
   });
   if (!rows.length || new Set(rows.map((row) => row.day)).size !== rows.length) {
     throw new Error("CMC XCP history is empty or contains duplicate days");
@@ -26,8 +39,10 @@ function parseCsvLine(line) {
   for (let index = 0; index < line.length; index += 1) {
     const character = line[index];
     if (character === '"') {
-      if (quoted && line[index + 1] === '"') { field += '"'; index += 1; }
-      else quoted = !quoted;
+      if (quoted && line[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else quoted = !quoted;
     } else if (character === "," && !quoted) {
       fields.push(field);
       field = "";
@@ -52,13 +67,17 @@ function parseCmcDate(value) {
   const month = months.indexOf(match[2]) + 1;
   const year = 2000 + Number(match[3]);
   const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  if (new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) !== iso) throw new Error("CMC CSV contains an invalid date");
+  if (new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) !== iso)
+    throw new Error("CMC CSV contains an invalid date");
   return iso;
 }
 
 /** Parse CoinMarketCap's official historical-data CSV download without treating aggregate volume as venue volume. */
 export function parseCmcHistoricalCsv(raw) {
-  const lines = raw.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+  const lines = raw
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim());
   if (!lines.length || JSON.stringify(parseCsvLine(lines[0])) !== JSON.stringify(CMC_CSV_HEADER)) {
     throw new Error("CMC XCP CSV header changed");
   }

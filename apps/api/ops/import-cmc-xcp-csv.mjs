@@ -18,15 +18,24 @@ if (!rows.length) throw new Error("CMC CSV has no observations before the API wi
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 let written = 0;
 for (let offset = 0; offset < rows.length; offset += 75) {
-  const values = rows.slice(offset, offset + 75).map((row) =>
-    `(${quote(row.day)},'XCP','USD','coinmarketcap','aggregate',${row.close},0,0,'aggregate_daily_close')`,
-  ).join(",");
+  const values = rows
+    .slice(offset, offset + 75)
+    .map(
+      (row) =>
+        `(${quote(row.day)},'XCP','USD','coinmarketcap','aggregate',${row.close},0,0,'aggregate_daily_close',${row.volumeUsd},${row.marketCapUsd})`,
+    )
+    .join(",");
   const result = executeRemoteD1(`INSERT INTO market_price_observations(
-    day,base_currency,quote_currency,source,venue,price,volume_base,trades,method
+    day,base_currency,quote_currency,source,venue,price,volume_base,trades,method,
+    reported_volume_quote,reported_market_cap_quote
   ) VALUES ${values}
-  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,method=excluded.method
+  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,method=excluded.method,
+    reported_volume_quote=excluded.reported_volume_quote,
+    reported_market_cap_quote=excluded.reported_market_cap_quote
   WHERE market_price_observations.price IS NOT excluded.price
-    OR market_price_observations.method IS NOT excluded.method`);
+    OR market_price_observations.method IS NOT excluded.method
+    OR market_price_observations.reported_volume_quote IS NOT excluded.reported_volume_quote
+    OR market_price_observations.reported_market_cap_quote IS NOT excluded.reported_market_cap_quote`);
   written += Number(result.meta.changes ?? result.meta.rows_written ?? 0);
 }
 
@@ -41,5 +50,15 @@ executeRemoteD1(`INSERT INTO market_price_imports(source,venue,dataset,source_ur
     OR market_price_imports.sha256 IS NOT excluded.sha256
     OR market_price_imports.rows IS NOT excluded.rows`);
 
-console.log(JSON.stringify({ source: "coinmarketcap", written, csv_rows: allRows.length, imported_rows: rows.length,
-  first: rows[0].day, last: rows.at(-1).day, api_window_start: apiWindowStart, sha256 }));
+console.log(
+  JSON.stringify({
+    source: "coinmarketcap",
+    written,
+    csv_rows: allRows.length,
+    imported_rows: rows.length,
+    first: rows[0].day,
+    last: rows.at(-1).day,
+    api_window_start: apiWindowStart,
+    sha256,
+  }),
+);

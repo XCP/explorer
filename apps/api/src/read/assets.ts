@@ -8,13 +8,7 @@ import { router, J, lim, off, round, cached } from "#api/read/respond";
 import { scoreConviction, convictionScore } from "#api/reputation/score";
 import { assetActivityOutlook } from "#api/reputation/activity-outlook";
 import { assetRating } from "#api/reputation/rating";
-import {
-  featuredAssets,
-  holderTiers,
-  holderArchetypes,
-  assetTop1Pct,
-  latestUsdRate,
-} from "#api/queries/assets";
+import { featuredAssets, holderTiers, holderArchetypes, assetTop1Pct, latestUsdRate } from "#api/queries/assets";
 import {
   listCoreAssets,
   getCoreAsset,
@@ -211,7 +205,7 @@ assets.get("/v2/assets/:asset", async (c) => {
 
 // Holder makeup — "who holds this asset?" by reputation tier + archetype + concentration. Surfaces the
 // quality of the holder base. Non-ranked holders get their factual classification
-// (Exchange/Deposit/Vault/Burn/Service), never a generic bucket. Rows sort by supply share, high→low.
+// (Exchange/Deposit/Vault/Burn), never a generic bucket. Rows sort by supply share, high→low.
 assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const a = c.req.param("asset").toUpperCase();
   const rows = await holderTiers(c.env.CORE_DB, a);

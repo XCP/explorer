@@ -50,7 +50,13 @@ const report = {
   folds,
 };
 writeFileSync(resolve(root, `new-named-audit-${observationDays}d.json`), `${JSON.stringify(report, null, 2)}\n`);
-process.stdout.write(`${JSON.stringify({
-  measured_at: report.measured_at,
-  folds: folds.map((fold) => ({ fold: fold.fold, candidates: fold.candidates.slice(0, 20) })),
-}, null, 2)}\n`);
+process.stdout.write(
+  `${JSON.stringify(
+    {
+      measured_at: report.measured_at,
+      folds: folds.map((fold) => ({ fold: fold.fold, candidates: fold.candidates.slice(0, 20) })),
+    },
+    null,
+    2,
+  )}\n`,
+);

@@ -62,7 +62,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS issuance_history_state(singleton INTEGER PRI
     divisible INTEGER NOT NULL DEFAULT 0,reset INTEGER NOT NULL DEFAULT 0);
   CREATE INDEX IF NOT EXISTS idx_issuance_history_asset_event
     ON issuance_history(asset_id,event_index);`);
-const issuanceColumns = new Set(db.prepare(`PRAGMA table_info(issuance_history)`).all().map((column) => column.name));
+const issuanceColumns = new Set(
+  db
+    .prepare(`PRAGMA table_info(issuance_history)`)
+    .all()
+    .map((column) => column.name),
+);
 if (!issuanceColumns.has("divisible")) {
   db.exec(`ALTER TABLE issuance_history ADD COLUMN divisible INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE issuance_history ADD COLUMN reset INTEGER NOT NULL DEFAULT 0;

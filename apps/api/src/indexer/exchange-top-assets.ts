@@ -9,10 +9,10 @@ export const BUILD_EXCHANGE_TOP_ASSETS_SQL = `
   INSERT INTO exchange_top_assets (generation, asset_id, depositors)
   SELECT ?, ranked.asset_id, ranked.depositors
   FROM (
-    SELECT s.asset_id, COUNT(DISTINCT s.source_address_id) AS depositors
+    SELECT s.asset_id, COUNT(DISTINCT s.source_id) AS depositors
     FROM sends s
-    JOIN address_signals e ON e.address_id=s.destination_address_id AND e.is_exchange=1
-    WHERE s.asset_id IS NOT NULL AND s.source_address_id IS NOT NULL
+    JOIN address_signals e ON e.address_id=s.destination_id AND e.is_exchange=1
+    WHERE s.asset_id IS NOT NULL AND s.source_id IS NOT NULL
     GROUP BY s.asset_id
     ORDER BY depositors DESC, s.asset_id ASC
     LIMIT 15

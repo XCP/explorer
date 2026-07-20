@@ -1,0 +1,1240 @@
+{
+  "schema": "xcp-usd-pricing-baseline/1",
+  "frozen_at": "2026-07-18T21:36:08.868Z",
+  "purpose": "Immutable before/after frontier for historical payment-value policy evaluation",
+  "contract": "usd_value is execution-day payment value; NULL means no admitted historical price",
+  "frontier": {
+    "last_block_hash": "00000000000000000000ea6e6f14254ba03fd21ea8557d72da3ae2b61d757da9",
+    "last_block_index": "958613",
+    "last_event_index": "20258891",
+    "prices_cur_BTC": "1784229486",
+    "prices_cur_ETH": "1784229486",
+    "usd_cur": "1046439"
+  },
+  "audit": {
+    "generated_at": "2026-07-18T21:36:36.135Z",
+    "contract": "usd_value is execution-day payment value; NULL means no admitted historical price",
+    "identity": {
+      "source_matches": 112812,
+      "dex_trades": 112812,
+      "canonical_refs": 112812,
+      "alternate_refs": 0
+    },
+    "reconciliation": {
+      "cursor": 1046439,
+      "tip": 1046439,
+      "calendar_available_unpriced": 0,
+      "priced_without_calendar": 0,
+      "divergent_trade_values": 0,
+      "usdc_mismatches": 0,
+      "expired_xcp_carries": 0,
+      "remaining": 0
+    },
+    "coverage": [
+      {
+        "venue": "dex",
+        "currency": "BTC",
+        "trades": 1603,
+        "priced": 1603,
+        "missing": 0,
+        "coverage_pct": 100,
+        "payment_usd": 964994.68
+      },
+      {
+        "venue": "dex",
+        "currency": "XCP",
+        "trades": 111209,
+        "priced": 111209,
+        "missing": 0,
+        "coverage_pct": 100,
+        "payment_usd": 50500635.67
+      },
+      {
+        "venue": "dispense",
+        "currency": "BTC",
+        "trades": 179522,
+        "priced": 179522,
+        "missing": 0,
+        "coverage_pct": 100,
+        "payment_usd": 720779875.07
+      },
+      {
+        "venue": "emblem",
+        "currency": "ETH",
+        "trades": 150136,
+        "priced": 150136,
+        "missing": 0,
+        "coverage_pct": 100,
+        "payment_usd": 147657441.74
+      },
+      {
+        "venue": "emblem",
+        "currency": "USDC",
+        "trades": 78,
+        "priced": 78,
+        "missing": 0,
+        "coverage_pct": 100,
+        "payment_usd": 895132.45
+      },
+      {
+        "venue": "scarce.city",
+        "currency": "BTC",
+        "trades": 2258,
+        "priced": 2258,
+        "missing": 0,
+        "coverage_pct": 100,
+        "payment_usd": 4271601.81
+      }
+    ],
+    "yearly": [
+      {
+        "year": "2014",
+        "currency": "BTC",
+        "trades": 1041,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2014",
+        "currency": "XCP",
+        "trades": 2505,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2015",
+        "currency": "BTC",
+        "trades": 11,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2015",
+        "currency": "XCP",
+        "trades": 3380,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2016",
+        "currency": "BTC",
+        "trades": 110,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2016",
+        "currency": "XCP",
+        "trades": 16522,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2017",
+        "currency": "BTC",
+        "trades": 4,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2017",
+        "currency": "XCP",
+        "trades": 21687,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2018",
+        "currency": "BTC",
+        "trades": 16,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2018",
+        "currency": "XCP",
+        "trades": 20705,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2019",
+        "currency": "BTC",
+        "trades": 55,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2019",
+        "currency": "XCP",
+        "trades": 1833,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2020",
+        "currency": "BTC",
+        "trades": 198,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2020",
+        "currency": "ETH",
+        "trades": 1,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2020",
+        "currency": "XCP",
+        "trades": 432,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2021",
+        "currency": "BTC",
+        "trades": 22022,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2021",
+        "currency": "ETH",
+        "trades": 15163,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2021",
+        "currency": "USDC",
+        "trades": 7,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2021",
+        "currency": "XCP",
+        "trades": 16922,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2022",
+        "currency": "BTC",
+        "trades": 51835,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2022",
+        "currency": "ETH",
+        "trades": 9173,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2022",
+        "currency": "USDC",
+        "trades": 14,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2022",
+        "currency": "XCP",
+        "trades": 14863,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2023",
+        "currency": "BTC",
+        "trades": 86515,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2023",
+        "currency": "ETH",
+        "trades": 19664,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2023",
+        "currency": "USDC",
+        "trades": 4,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2023",
+        "currency": "XCP",
+        "trades": 6642,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2024",
+        "currency": "BTC",
+        "trades": 15712,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2024",
+        "currency": "ETH",
+        "trades": 8099,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2024",
+        "currency": "USDC",
+        "trades": 50,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2024",
+        "currency": "XCP",
+        "trades": 1583,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2025",
+        "currency": "BTC",
+        "trades": 3516,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2025",
+        "currency": "ETH",
+        "trades": 71620,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2025",
+        "currency": "USDC",
+        "trades": 2,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2025",
+        "currency": "XCP",
+        "trades": 2270,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2026",
+        "currency": "BTC",
+        "trades": 2348,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2026",
+        "currency": "ETH",
+        "trades": 26416,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2026",
+        "currency": "USDC",
+        "trades": 1,
+        "missing": 0,
+        "coverage_pct": 100
+      },
+      {
+        "year": "2026",
+        "currency": "XCP",
+        "trades": 1865,
+        "missing": 0,
+        "coverage_pct": 100
+      }
+    ],
+    "calendar": [
+      {
+        "currency": "BTC",
+        "source": "coinbase",
+        "fidelity": 3,
+        "days": 4017,
+        "first_day": "2015-07-20",
+        "last_day": "2026-07-18",
+        "max_age_days": 0
+      },
+      {
+        "currency": "BTC",
+        "source": "coinmarketcap_aggregate",
+        "fidelity": 2,
+        "days": 541,
+        "first_day": "2013-11-08",
+        "last_day": "2015-05-02",
+        "max_age_days": 0
+      },
+      {
+        "currency": "ETH",
+        "source": "coinbase",
+        "fidelity": 3,
+        "days": 3712,
+        "first_day": "2016-05-18",
+        "last_day": "2026-07-18",
+        "max_age_days": 0
+      },
+      {
+        "currency": "XCP",
+        "source": "coinmarketcap_aggregate",
+        "fidelity": 2,
+        "days": 4534,
+        "first_day": "2014-02-15",
+        "last_day": "2026-07-17",
+        "max_age_days": 0
+      },
+      {
+        "currency": "XCP",
+        "source": "dextrade_xcpbtc_spot",
+        "fidelity": 2,
+        "days": 1,
+        "first_day": "2026-07-18",
+        "last_day": "2026-07-18",
+        "max_age_days": 0
+      },
+      {
+        "currency": "XCP",
+        "source": "burn_vwm",
+        "fidelity": 1,
+        "days": 32,
+        "first_day": "2014-01-02",
+        "last_day": "2014-02-02",
+        "max_age_days": 0
+      },
+      {
+        "currency": "XCP",
+        "source": "dex_vwm",
+        "fidelity": 1,
+        "days": 14,
+        "first_day": "2014-02-03",
+        "last_day": "2014-02-22",
+        "max_age_days": 0
+      }
+    ],
+    "observations": [
+      {
+        "source": "coinmarketcap",
+        "venue": "aggregate",
+        "base_currency": "BTC",
+        "quote_currency": "USD",
+        "days": 541,
+        "executions": 0,
+        "first_day": "2013-11-08",
+        "last_day": "2015-05-02"
+      },
+      {
+        "source": "coinmarketcap",
+        "venue": "aggregate",
+        "base_currency": "XCP",
+        "quote_currency": "USD",
+        "days": 4535,
+        "executions": 0,
+        "first_day": "2014-02-15",
+        "last_day": "2026-07-18"
+      },
+      {
+        "source": "counterparty",
+        "venue": "burn",
+        "base_currency": "XCP",
+        "quote_currency": "BTC",
+        "days": 32,
+        "executions": 2574,
+        "first_day": "2014-01-02",
+        "last_day": "2014-02-02"
+      },
+      {
+        "source": "counterparty",
+        "venue": "dex",
+        "base_currency": "XCP",
+        "quote_currency": "BTC",
+        "days": 618,
+        "executions": 1844,
+        "first_day": "2014-02-03",
+        "last_day": "2026-06-28"
+      },
+      {
+        "source": "dex-trade",
+        "venue": "cex",
+        "base_currency": "XCP",
+        "quote_currency": "BTC",
+        "days": 1,
+        "executions": 1,
+        "first_day": "2026-07-14",
+        "last_day": "2026-07-14"
+      },
+      {
+        "source": "ecb",
+        "venue": "reference",
+        "base_currency": "EUR",
+        "quote_currency": "JPY",
+        "days": 3209,
+        "executions": 0,
+        "first_day": "2014-01-02",
+        "last_day": "2026-07-17"
+      },
+      {
+        "source": "ecb",
+        "venue": "reference",
+        "base_currency": "EUR",
+        "quote_currency": "USD",
+        "days": 3209,
+        "executions": 0,
+        "first_day": "2014-01-02",
+        "last_day": "2026-07-17"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "BITCRYSTALS",
+        "quote_currency": "BTC",
+        "days": 416,
+        "executions": 2169,
+        "first_day": "2016-08-03",
+        "last_day": "2020-04-27"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "BITCRYSTALS",
+        "quote_currency": "JPY",
+        "days": 1226,
+        "executions": 57569,
+        "first_day": "2016-08-03",
+        "last_day": "2020-04-28"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "CICC",
+        "quote_currency": "BTC",
+        "days": 1246,
+        "executions": 12055,
+        "first_day": "2017-02-28",
+        "last_day": "2026-07-16"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "CICC",
+        "quote_currency": "JPY",
+        "days": 3375,
+        "executions": 466295,
+        "first_day": "2017-02-27",
+        "last_day": "2026-07-17"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "PEPECASH",
+        "quote_currency": "BTC",
+        "days": 971,
+        "executions": 41187,
+        "first_day": "2017-01-13",
+        "last_day": "2020-04-28"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "PEPECASH",
+        "quote_currency": "JPY",
+        "days": 1201,
+        "executions": 852648,
+        "first_day": "2017-01-13",
+        "last_day": "2020-04-28"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "SJCX",
+        "quote_currency": "BTC",
+        "days": 387,
+        "executions": 1576,
+        "first_day": "2016-08-05",
+        "last_day": "2020-04-28"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "SJCX",
+        "quote_currency": "JPY",
+        "days": 1092,
+        "executions": 27835,
+        "first_day": "2016-08-03",
+        "last_day": "2020-04-28"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "XCP",
+        "quote_currency": "BTC",
+        "days": 1177,
+        "executions": 16063,
+        "first_day": "2016-08-02",
+        "last_day": "2026-03-24"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "XCP",
+        "quote_currency": "JPY",
+        "days": 3326,
+        "executions": 330897,
+        "first_day": "2016-08-02",
+        "last_day": "2026-07-18"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "ZAIF",
+        "quote_currency": "BTC",
+        "days": 2110,
+        "executions": 227369,
+        "first_day": "2016-07-31",
+        "last_day": "2026-07-15"
+      },
+      {
+        "source": "zaif",
+        "venue": "cex",
+        "base_currency": "ZAIF",
+        "quote_currency": "JPY",
+        "days": 3630,
+        "executions": 5238980,
+        "first_day": "2016-07-31",
+        "last_day": "2026-07-18"
+      }
+    ],
+    "selected_sources": [
+      {
+        "currency": "BTC",
+        "source": "coinbase",
+        "trades": 182331,
+        "payment_usd": 725938720.59
+      },
+      {
+        "currency": "BTC",
+        "source": "coinmarketcap_aggregate",
+        "trades": 1052,
+        "payment_usd": 77750.96
+      },
+      {
+        "currency": "ETH",
+        "source": "coinbase",
+        "trades": 150136,
+        "payment_usd": 147657441.74
+      },
+      {
+        "currency": "XCP",
+        "source": "coinmarketcap_aggregate",
+        "trades": 111133,
+        "payment_usd": 50464948.8
+      },
+      {
+        "currency": "XCP",
+        "source": "dex_vwm",
+        "trades": 37,
+        "payment_usd": 7969.7
+      },
+      {
+        "currency": "XCP",
+        "source": "burn_vwm",
+        "trades": 34,
+        "payment_usd": 27616.02
+      },
+      {
+        "currency": "XCP",
+        "source": "dextrade_xcpbtc_spot",
+        "trades": 5,
+        "payment_usd": 101.15
+      }
+    ],
+    "latest": [
+      {
+        "currency": "BTC",
+        "day": "2026-07-18",
+        "usd": 64553.58,
+        "source": "coinbase",
+        "observed_day": "2026-07-18",
+        "fidelity": 3
+      },
+      {
+        "currency": "ETH",
+        "day": "2026-07-18",
+        "usd": 1859.29,
+        "source": "coinbase",
+        "observed_day": "2026-07-18",
+        "fidelity": 3
+      },
+      {
+        "currency": "XCP",
+        "day": "2026-07-18",
+        "usd": 1.48750775,
+        "source": "dextrade_xcpbtc_spot",
+        "observed_day": "2026-07-18",
+        "fidelity": 2
+      }
+    ]
+  },
+  "corroboration": {
+    "provenance": {
+      "source": "zaif",
+      "venue": "cex",
+      "production_use": "permission_granted"
+    },
+    "xcp_btc": {
+      "files": 120,
+      "executions": 16063,
+      "active_days": 1177,
+      "first_utc_day": "2016-08-02",
+      "last_utc_day": "2026-03-24",
+      "counterparty_trade_days": 1069,
+      "counterparty_trades": 55673,
+      "currently_missing_rows": 0,
+      "missing_days_reached": 0
+    },
+    "xcp_jpy": {
+      "files": 120,
+      "executions": 330897,
+      "active_days": 3326,
+      "first_utc_day": "2016-08-02",
+      "last_utc_day": "2026-07-18",
+      "counterparty_trade_days": 2904,
+      "counterparty_trades": 96202,
+      "currently_missing_rows": 0,
+      "missing_days_reached": 0
+    },
+    "combined": {
+      "active_days": 3342,
+      "counterparty_trade_days": 2918,
+      "currently_missing_rows": 0,
+      "missing_days_reached": 0
+    },
+    "xcp_btc_overlap": {
+      "days": 111,
+      "median_absolute_log_error": 0.31015492851182,
+      "p90_absolute_log_error": 0.7775645223725285,
+      "p99_absolute_log_error": 1.702468925269524,
+      "worst": [
+        {
+          "day": "2017-12-11",
+          "zaif": 0.00141,
+          "counterparty": 0.00007,
+          "absolute_log_error": 3.002849741322855,
+          "zaif_volume": 333,
+          "counterparty_volume": 107.22139085
+        },
+        {
+          "day": "2019-12-17",
+          "zaif": 0.00023,
+          "counterparty": 0.000035000044982982586,
+          "absolute_log_error": 1.8827299622065337,
+          "zaif_volume": 8,
+          "counterparty_volume": 30.53710361
+        },
+        {
+          "day": "2021-08-28",
+          "zaif": 0.0003045,
+          "counterparty": 0.00005548996324025204,
+          "absolute_log_error": 1.702468925269524,
+          "zaif_volume": 113,
+          "counterparty_volume": 126.94498619
+        },
+        {
+          "day": "2018-01-18",
+          "zaif": 0.0049,
+          "counterparty": 0.0010000203979583899,
+          "absolute_log_error": 1.5892148073662264,
+          "zaif_volume": 526,
+          "counterparty_volume": 5.05344692
+        },
+        {
+          "day": "2019-06-10",
+          "zaif": 0.00054,
+          "counterparty": 0.00014954006734006734,
+          "absolute_log_error": 1.2840047736719045,
+          "zaif_volume": 100,
+          "counterparty_volume": 14.85
+        },
+        {
+          "day": "2019-11-12",
+          "zaif": 0.00017,
+          "counterparty": 0.000050000001951305426,
+          "absolute_log_error": 1.223775392596008,
+          "zaif_volume": 7,
+          "counterparty_volume": 462.57778585
+        },
+        {
+          "day": "2018-01-12",
+          "zaif": 0.006,
+          "counterparty": 0.0020000001491318063,
+          "absolute_log_error": 1.0986122141022094,
+          "zaif_volume": 581,
+          "counterparty_volume": 41.86059402
+        },
+        {
+          "day": "2020-01-29",
+          "zaif": 0.00013,
+          "counterparty": 0.00004999998815000281,
+          "absolute_log_error": 0.9555116820274081,
+          "zaif_volume": 20,
+          "counterparty_volume": 100.0000237
+        },
+        {
+          "day": "2020-02-01",
+          "zaif": 0.00012001,
+          "counterparty": 0.000049999988146615416,
+          "absolute_log_error": 0.8755523042829236,
+          "zaif_volume": 2,
+          "counterparty_volume": 230.10305455
+        },
+        {
+          "day": "2017-12-10",
+          "zaif": 0.00141002,
+          "counterparty": 0.0005999900002118269,
+          "absolute_log_error": 0.8544461789051394,
+          "zaif_volume": 368,
+          "counterparty_volume": 18.45139085
+        }
+      ]
+    },
+    "usd": {
+      "policy": "Zaif daily volume-weighted median; selected daily BTC/USD or official ECB JPY/USD with <=4-day weekend carry",
+      "xcp_jpy_vs_cmc": {
+        "days": 3326,
+        "mean_absolute_log_error": 0.06524394318961448,
+        "median_absolute_log_error": 0.03185611478148577,
+        "p90_absolute_log_error": 0.1477462970339262,
+        "p99_absolute_log_error": 0.5826462432033201,
+        "within_10_percent": 80.87793144918821,
+        "within_25_percent": 95.06915213469634,
+        "worst": [
+          {
+            "day": "2019-05-23",
+            "candidate": 2.145858913022193,
+            "reference": 0.5,
+            "candidate_volume_base": 415.29999999999995,
+            "candidate_executions": 16,
+            "absoluteLogError": 1.4566870784423416
+          },
+          {
+            "day": "2019-05-29",
+            "candidate": 2.125780329751456,
+            "reference": 0.54,
+            "candidate_volume_base": 152.7,
+            "candidate_executions": 23,
+            "absoluteLogError": 1.3703250883943225
+          },
+          {
+            "day": "2019-05-18",
+            "candidate": 2.292122,
+            "reference": 0.6,
+            "candidate_volume_base": 1040,
+            "candidate_executions": 46,
+            "absoluteLogError": 1.3403036498231826
+          },
+          {
+            "day": "2021-08-07",
+            "candidate": 2.6958284480098738,
+            "reference": 9.77,
+            "candidate_volume_base": 3661.8999999999996,
+            "candidate_executions": 307,
+            "absoluteLogError": 1.2876109070730504
+          },
+          {
+            "day": "2019-05-31",
+            "candidate": 2.1571727658118247,
+            "reference": 0.64,
+            "candidate_volume_base": 1139.2000000000003,
+            "candidate_executions": 76,
+            "absoluteLogError": 1.2150855622437464
+          },
+          {
+            "day": "2019-05-24",
+            "candidate": 2.189776098850013,
+            "reference": 0.66,
+            "candidate_volume_base": 646.1,
+            "candidate_executions": 22,
+            "absoluteLogError": 1.1993147445953873
+          },
+          {
+            "day": "2019-05-21",
+            "candidate": 2.1286581164111302,
+            "reference": 0.67,
+            "candidate_volume_base": 223.49999999999997,
+            "candidate_executions": 9,
+            "absoluteLogError": 1.1559693554946835
+          },
+          {
+            "day": "2019-05-28",
+            "candidate": 2.1570534912209065,
+            "reference": 0.69,
+            "candidate_volume_base": 953.4000000000001,
+            "candidate_executions": 21,
+            "absoluteLogError": 1.1398068473874
+          },
+          {
+            "day": "2019-05-22",
+            "candidate": 2.2293054943619697,
+            "reference": 0.72,
+            "candidate_volume_base": 1130.8,
+            "candidate_executions": 38,
+            "absoluteLogError": 1.130194166431489
+          },
+          {
+            "day": "2019-05-19",
+            "candidate": 2.2555860716037275,
+            "reference": 0.73,
+            "candidate_volume_base": 815.9999999999998,
+            "candidate_executions": 40,
+            "absoluteLogError": 1.1281205827421434
+          }
+        ],
+        "candidate_days": 3326,
+        "maximum_fx_age_days": 4
+      },
+      "xcp_btc_vs_cmc": {
+        "days": 1177,
+        "mean_absolute_log_error": 0.12732351562229727,
+        "median_absolute_log_error": 0.07794209897633651,
+        "p90_absolute_log_error": 0.2965790591895122,
+        "p99_absolute_log_error": 0.7379850937441219,
+        "within_10_percent": 56.92438402718776,
+        "within_25_percent": 83.34749362786746,
+        "worst": [
+          {
+            "day": "2020-11-18",
+            "candidate": 0.26674365,
+            "reference": 1.18,
+            "candidate_volume_base": 1,
+            "candidate_executions": 1,
+            "absoluteLogError": 1.486981632622111
+          },
+          {
+            "day": "2021-08-07",
+            "candidate": 3.0009683682,
+            "reference": 9.77,
+            "candidate_volume_base": 1,
+            "candidate_executions": 1,
+            "absoluteLogError": 1.180381440071872
+          },
+          {
+            "day": "2019-05-24",
+            "candidate": 1.9604164999999998,
+            "reference": 0.66,
+            "candidate_volume_base": 1,
+            "candidate_executions": 1,
+            "absoluteLogError": 1.0886723946291645
+          },
+          {
+            "day": "2019-05-19",
+            "candidate": 2.009,
+            "reference": 0.73,
+            "candidate_volume_base": 20,
+            "candidate_executions": 3,
+            "absoluteLogError": 1.0123478306724976
+          },
+          {
+            "day": "2022-03-21",
+            "candidate": 4.5574777581,
+            "reference": 11.49,
+            "candidate_volume_base": 205,
+            "candidate_executions": 12,
+            "absoluteLogError": 0.9247077445871359
+          },
+          {
+            "day": "2021-05-16",
+            "candidate": 3.34445688,
+            "reference": 7.47,
+            "candidate_volume_base": 1,
+            "candidate_executions": 1,
+            "absoluteLogError": 0.8035906864606028
+          },
+          {
+            "day": "2021-10-31",
+            "candidate": 9.202165436800001,
+            "reference": 20.42,
+            "candidate_volume_base": 62,
+            "candidate_executions": 4,
+            "absoluteLogError": 0.7970759828123192
+          },
+          {
+            "day": "2021-05-09",
+            "candidate": 6.4120501972,
+            "reference": 2.91,
+            "candidate_volume_base": 915,
+            "candidate_executions": 12,
+            "absoluteLogError": 0.7900259821670733
+          },
+          {
+            "day": "2021-01-06",
+            "candidate": 0.5532574926,
+            "reference": 1.21,
+            "candidate_volume_base": 25,
+            "candidate_executions": 1,
+            "absoluteLogError": 0.7825521168683673
+          },
+          {
+            "day": "2023-08-10",
+            "candidate": 1.5079815374999999,
+            "reference": 3.295011825266293,
+            "candidate_volume_base": 110,
+            "candidate_executions": 23,
+            "absoluteLogError": 0.7816377303260305
+          }
+        ],
+        "candidate_days": 1177
+      },
+      "jpy_path_vs_btc_path": {
+        "days": 1161,
+        "mean_absolute_log_error": 0.10244591432755429,
+        "median_absolute_log_error": 0.06600350266583901,
+        "p90_absolute_log_error": 0.24323448328430827,
+        "p99_absolute_log_error": 0.6512550855304582,
+        "within_10_percent": 64.34108527131782,
+        "within_25_percent": 87.85529715762274,
+        "worst": [
+          {
+            "day": "2020-11-18",
+            "candidate": 1.1419503582089552,
+            "reference": 0.26674365,
+            "candidate_volume_base": 422.09999999999997,
+            "candidate_executions": 27,
+            "absoluteLogError": 1.4542048352645034
+          },
+          {
+            "day": "2023-08-10",
+            "candidate": 3.2945773686801747,
+            "reference": 1.5079815374999999,
+            "candidate_volume_base": 110.10000000000001,
+            "candidate_executions": 8,
+            "absoluteLogError": 0.781505868817229
+          },
+          {
+            "day": "2020-08-05",
+            "candidate": 1.100582015633724,
+            "reference": 2.35135,
+            "candidate_volume_base": 11.8,
+            "candidate_executions": 4,
+            "absoluteLogError": 0.7591504862984181
+          },
+          {
+            "day": "2021-01-06",
+            "candidate": 1.1583384104542234,
+            "reference": 0.5532574926,
+            "candidate_volume_base": 1055.2,
+            "candidate_executions": 20,
+            "absoluteLogError": 0.7389183307247059
+          },
+          {
+            "day": "2020-11-17",
+            "candidate": 1.1370357893036032,
+            "reference": 0.54806016,
+            "candidate_volume_base": 2960.1000000000004,
+            "candidate_executions": 56,
+            "absoluteLogError": 0.7297949082708021
+          },
+          {
+            "day": "2020-12-08",
+            "candidate": 1.2619950071326673,
+            "reference": 0.6137765322000001,
+            "candidate_volume_base": 788.9,
+            "candidate_executions": 22,
+            "absoluteLogError": 0.7208181789519497
+          },
+          {
+            "day": "2022-03-21",
+            "candidate": 9.31480687086722,
+            "reference": 4.5574777581,
+            "candidate_volume_base": 17.900000000000002,
+            "candidate_executions": 8,
+            "absoluteLogError": 0.7148359234322086
+          },
+          {
+            "day": "2021-01-09",
+            "candidate": 1.2513751375137514,
+            "reference": 0.6272107594,
+            "candidate_volume_base": 2101.799999999999,
+            "candidate_executions": 72,
+            "absoluteLogError": 0.6907157120850927
+          },
+          {
+            "day": "2021-01-07",
+            "candidate": 1.2166884291669944,
+            "reference": 0.6127312355999999,
+            "candidate_volume_base": 1947.499999999998,
+            "candidate_executions": 78,
+            "absoluteLogError": 0.6859616460515217
+          },
+          {
+            "day": "2020-12-05",
+            "candidate": 1.269367288832648,
+            "reference": 0.6395260848000001,
+            "candidate_volume_base": 600.5,
+            "candidate_executions": 23,
+            "absoluteLogError": 0.6855464479875999
+          }
+        ]
+      }
+    }
+  },
+  "import_manifests": [
+    {
+      "source": "coinmarketcap",
+      "venue": "aggregate",
+      "dataset": "btc_usd_daily_download_pre_coinbase",
+      "files": 1,
+      "source_rows": 541,
+      "latest_fetch_at": 1784401968,
+      "manifest_sha256": "83099b429f65c198b5f8a0b47dcf3179f70407548d1bb1e068dbb8359726ddc2"
+    },
+    {
+      "source": "coinmarketcap",
+      "venue": "aggregate",
+      "dataset": "xcp_usd_daily",
+      "files": 1,
+      "source_rows": 1096,
+      "latest_fetch_at": 1784399901,
+      "manifest_sha256": "adb29b2c36f0d10c1ca989072ce5f8e564302a686417d4b0d19f6e173f6dd639"
+    },
+    {
+      "source": "coinmarketcap",
+      "venue": "aggregate",
+      "dataset": "xcp_usd_daily_download_pre_api",
+      "files": 1,
+      "source_rows": 3439,
+      "latest_fetch_at": 1784401088,
+      "manifest_sha256": "ef13cfc5e6443fc9b5d71132a5666ab1cc31a87cbe58eae9a93e18f3f9b895d8"
+    },
+    {
+      "source": "ecb",
+      "venue": "reference",
+      "dataset": "eur_fx",
+      "files": 1,
+      "source_rows": 6418,
+      "latest_fetch_at": 1784397281,
+      "manifest_sha256": "bde5ed4632b939a505d8aa5da4b5142ea110d39e510085ffb558b01bee8041af"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "bitcrystals_btc",
+      "files": 120,
+      "source_rows": 2169,
+      "latest_fetch_at": 1784400188,
+      "manifest_sha256": "179b5aeb38bcdc5cd8e5a8a367e68174e960dcd3b3a8adad15f820e6a29de599"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "bitcrystals_jpy",
+      "files": 120,
+      "source_rows": 57569,
+      "latest_fetch_at": 1784400192,
+      "manifest_sha256": "3b4abf50fa8762f7e3b9202ac1bba740ccf010e68029eb0111927001e84ebeba"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "cicc_btc",
+      "files": 114,
+      "source_rows": 12055,
+      "latest_fetch_at": 1784400296,
+      "manifest_sha256": "ebca1505b60cb6987606486987cafc429d0fca034f1fbdaf5d1c92b3f13a0454"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "cicc_jpy",
+      "files": 114,
+      "source_rows": 466295,
+      "latest_fetch_at": 1784400301,
+      "manifest_sha256": "e51ea504121345146f9e2a4c5fa512a9ed073112ea9c5a95548a5e426d0b4bef"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "pepecash_btc",
+      "files": 115,
+      "source_rows": 41187,
+      "latest_fetch_at": 1784398287,
+      "manifest_sha256": "569b1529610f97585f8342b8f8db46443be8eff4fefb8f966e34bea30eb5f10e"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "pepecash_jpy",
+      "files": 115,
+      "source_rows": 852648,
+      "latest_fetch_at": 1784398287,
+      "manifest_sha256": "3612a8e8ee140b070c0cbd71ff370cdd36ac1a14bf059ecd6465acf0886a6edf"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "sjcx_btc",
+      "files": 120,
+      "source_rows": 1576,
+      "latest_fetch_at": 1784400178,
+      "manifest_sha256": "ae9e272f937e45fef172385b626d78035abd1e3accad87ff1e20d48578ab2add"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "sjcx_jpy",
+      "files": 120,
+      "source_rows": 27835,
+      "latest_fetch_at": 1784400183,
+      "manifest_sha256": "605ef7b0b177e952cfa6aeb3796b1e11e0cfde9c9a829147374bb547dba57b29"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "xcp_btc",
+      "files": 120,
+      "source_rows": 16063,
+      "latest_fetch_at": 1784396895,
+      "manifest_sha256": "5800dded61f88f59dac191905a46dcd5b52495dd661e852b4664c02fd4f725ef"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "xcp_jpy",
+      "files": 120,
+      "source_rows": 330897,
+      "latest_fetch_at": 1784398287,
+      "manifest_sha256": "1c8ac32e63154d4227be54b3fe004ba612ca5fb6611ac63f4101629e9ebd40d4"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "zaif_btc",
+      "files": 120,
+      "source_rows": 227369,
+      "latest_fetch_at": 1784400204,
+      "manifest_sha256": "b451122f81db5c41155d7b400f315435330d9bdd5b007631d16271823848c3db"
+    },
+    {
+      "source": "zaif",
+      "venue": "cex",
+      "dataset": "zaif_jpy",
+      "files": 120,
+      "source_rows": 5238980,
+      "latest_fetch_at": 1784400214,
+      "manifest_sha256": "a83701d30cac27e1e3390befae7d51bfcbb496f40550771065e64b38ec1b58f1"
+    }
+  ]
+}

@@ -24,7 +24,8 @@ async function electrsFetch(url: string): Promise<Response> {
     await response.body?.cancel();
     if (!retryable || attempt >= ELECTRS_RETRIES) throw new Error(`Electrs request ${response.status}`);
 
-    const requestedDelay = Number.isSafeInteger(retryAfter) && retryAfter >= 0 ? retryAfter * 1_000 : 250 * 2 ** attempt;
+    const requestedDelay =
+      Number.isSafeInteger(retryAfter) && retryAfter >= 0 ? retryAfter * 1_000 : 250 * 2 ** attempt;
     const delay = Math.min(ELECTRS_MAX_RETRY_MS, requestedDelay);
     await new Promise((resolve) => setTimeout(resolve, delay));
   }

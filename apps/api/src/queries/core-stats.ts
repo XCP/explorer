@@ -159,11 +159,7 @@ const CORE_METRICS: Record<MetricName, string> = {
   xcp_burned: "xcp_burned",
 };
 
-export function coreMetricSeries(
-  db: D1Database,
-  name: MetricName,
-  days: number,
-): Promise<MetricDayRow[]> {
+export function coreMetricSeries(db: D1Database, name: MetricName, days: number): Promise<MetricDayRow[]> {
   return metricStatement(db, name, days)
     .all<MetricDayRow>()
     .then((result) => result.results);

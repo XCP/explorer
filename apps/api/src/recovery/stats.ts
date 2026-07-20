@@ -3,8 +3,9 @@ import type { Env } from "#api/env";
 const DAY = 86_400;
 
 export async function refreshRecoveryStats(env: Env, force = false): Promise<{ refreshed: boolean }> {
-  const current = await env.RECOVERY_DB.prepare(`SELECT updated_at FROM recovery_stats_snapshot WHERE singleton=1`)
-    .first<{ updated_at: number }>();
+  const current = await env.RECOVERY_DB.prepare(
+    `SELECT updated_at FROM recovery_stats_snapshot WHERE singleton=1`,
+  ).first<{ updated_at: number }>();
   const now = Math.floor(Date.now() / 1000);
   if (!force && current && now - current.updated_at < DAY) return { refreshed: false };
 
@@ -49,13 +50,16 @@ export async function refreshRecoveryStats(env: Env, force = false): Promise<{ r
   const blockTimes = new Map<number, number>();
   for (let offset = 0; offset < spentHeights.results.length; offset += 100) {
     const results = await env.CORE_DB.batch(
-      spentHeights.results.slice(offset, offset + 100).map((row) =>
-        env.CORE_DB.prepare(`SELECT block_index,block_time FROM blocks WHERE block_index=?`).bind(row.spent_height),
-      ),
+      spentHeights.results
+        .slice(offset, offset + 100)
+        .map((row) =>
+          env.CORE_DB.prepare(`SELECT block_index,block_time FROM blocks WHERE block_index=?`).bind(row.spent_height),
+        ),
     );
     for (const result of results) {
       const row = result.results[0] as { block_index?: number; block_time?: number | null } | undefined;
-      if (row?.block_index != null && row.block_time != null) blockTimes.set(Number(row.block_index), Number(row.block_time));
+      if (row?.block_index != null && row.block_time != null)
+        blockTimes.set(Number(row.block_index), Number(row.block_time));
     }
   }
   const recovered = new Map<number, { outputs: number; spending_transactions: number; gross_sats: number }>();
@@ -79,27 +83,52 @@ export async function refreshRecoveryStats(env: Env, force = false): Promise<{ r
        protected_stamp_sats=excluded.protected_stamp_sats,unprotected_outputs=excluded.unprotected_outputs,
        unprotected_sats=excluded.unprotected_sats,recovery_addresses=excluded.recovery_addresses,updated_at=excluded.updated_at`,
     ).bind(
-      summary.recoverable_outputs, summary.recoverable_sats, summary.protected_stamp_outputs,
-      summary.protected_stamp_sats, summary.unprotected_outputs, summary.unprotected_sats,
-      summary.recovery_addresses, now,
+      summary.recoverable_outputs,
+      summary.recoverable_sats,
+      summary.protected_stamp_outputs,
+      summary.protected_stamp_sats,
+      summary.unprotected_outputs,
+      summary.unprotected_sats,
+      summary.recovery_addresses,
+      now,
     ),
-    ...months.results.map((row) => env.RECOVERY_DB.prepare(
-      `INSERT INTO recovery_monthly_stats VALUES (?,?,?,?,?,?) ON CONFLICT(month) DO UPDATE SET
+    ...months.results.map((row) =>
+      env.RECOVERY_DB.prepare(
+        `INSERT INTO recovery_monthly_stats VALUES (?,?,?,?,?,?) ON CONFLICT(month) DO UPDATE SET
        unprotected_outputs=excluded.unprotected_outputs,unprotected_sats=excluded.unprotected_sats,
        protected_stamp_outputs=excluded.protected_stamp_outputs,protected_stamp_sats=excluded.protected_stamp_sats,
        updated_at=excluded.updated_at`,
-    ).bind(row.month,row.unprotected_outputs,row.unprotected_sats,row.protected_stamp_outputs,row.protected_stamp_sats,now)),
-    ...addresses.results.map((row) => env.RECOVERY_DB.prepare(
-      `INSERT INTO recovery_address_stats VALUES (?,?,?,?,?,?) ON CONFLICT(address) DO UPDATE SET
+      ).bind(
+        row.month,
+        row.unprotected_outputs,
+        row.unprotected_sats,
+        row.protected_stamp_outputs,
+        row.protected_stamp_sats,
+        now,
+      ),
+    ),
+    ...addresses.results.map((row) =>
+      env.RECOVERY_DB.prepare(
+        `INSERT INTO recovery_address_stats VALUES (?,?,?,?,?,?) ON CONFLICT(address) DO UPDATE SET
        unprotected_outputs=excluded.unprotected_outputs,unprotected_sats=excluded.unprotected_sats,
        protected_stamp_outputs=excluded.protected_stamp_outputs,protected_stamp_sats=excluded.protected_stamp_sats,
        updated_at=excluded.updated_at`,
-    ).bind(row.address,row.unprotected_outputs,row.unprotected_sats,row.protected_stamp_outputs,row.protected_stamp_sats,now)),
-    ...[...recovered].map(([month, row]) => env.RECOVERY_DB.prepare(
-      `INSERT INTO recovery_monthly_recovered VALUES (?,?,?,?,?) ON CONFLICT(month) DO UPDATE SET
+      ).bind(
+        row.address,
+        row.unprotected_outputs,
+        row.unprotected_sats,
+        row.protected_stamp_outputs,
+        row.protected_stamp_sats,
+        now,
+      ),
+    ),
+    ...[...recovered].map(([month, row]) =>
+      env.RECOVERY_DB.prepare(
+        `INSERT INTO recovery_monthly_recovered VALUES (?,?,?,?,?) ON CONFLICT(month) DO UPDATE SET
        outputs=excluded.outputs,spending_transactions=excluded.spending_transactions,
        gross_sats=excluded.gross_sats,updated_at=excluded.updated_at`,
-    ).bind(month,row.outputs,row.spending_transactions,row.gross_sats,now)),
+      ).bind(month, row.outputs, row.spending_transactions, row.gross_sats, now),
+    ),
   ];
   for (let offset = 0; offset < statements.length; offset += 100) {
     await env.RECOVERY_DB.batch(statements.slice(offset, offset + 100));

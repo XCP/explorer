@@ -5,9 +5,17 @@ import { addressReputationRow, addressSummary } from "#api/queries/addresses";
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async first<T>() { return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -40,19 +48,56 @@ test("compact address summary derives identity counts without scanning string ke
     INSERT INTO blocks VALUES(199,1700000000),(200,1700000600);
   `);
 
-  assert.deepEqual({ ...(await addressSummary(d1(db), "holder")) }, {
-    xcp: "12.50000000",assets: 3,issued: 2,dispensers: 2,open_dispensers: 1,open_orders: 1,
-    first_block: 100,last_block: 200,dispenser_trust: 7.3,
-  });
-  assert.deepEqual({ ...(await addressSummary(d1(db), "unknown")) }, {
-    xcp: null,assets: 0,issued: 0,dispensers: 0,open_dispensers: 0,open_orders: 0,
-    first_block: null,last_block: null,dispenser_trust: null,
-  });
-  assert.deepEqual({ ...(await addressReputationRow(d1(db), "holder")) }, {
-    address_id: 1,assets_held: 3,first_block: 100,last_block: 200,disp_trust: 7.26,xcp: 12.5,tip: 200,
-    last_active_at: 1700000600,observed_at: 1700000600,
-    reputation: null,rank_position: null,population: null,duration_score: null,creation_score: null,
-    economic_score: null,participation_score: null,calculated_at: null,model_version: null,
-  });
+  assert.deepEqual(
+    { ...(await addressSummary(d1(db), "holder")) },
+    {
+      xcp: "12.50000000",
+      assets: 3,
+      issued: 2,
+      dispensers: 2,
+      open_dispensers: 1,
+      open_orders: 1,
+      first_block: 100,
+      last_block: 200,
+      dispenser_trust: 7.3,
+    },
+  );
+  assert.deepEqual(
+    { ...(await addressSummary(d1(db), "unknown")) },
+    {
+      xcp: null,
+      assets: 0,
+      issued: 0,
+      dispensers: 0,
+      open_dispensers: 0,
+      open_orders: 0,
+      first_block: null,
+      last_block: null,
+      dispenser_trust: null,
+    },
+  );
+  assert.deepEqual(
+    { ...(await addressReputationRow(d1(db), "holder")) },
+    {
+      address_id: 1,
+      assets_held: 3,
+      first_block: 100,
+      last_block: 200,
+      disp_trust: 7.26,
+      xcp: 12.5,
+      tip: 200,
+      last_active_at: 1700000600,
+      observed_at: 1700000600,
+      reputation: null,
+      rank_position: null,
+      population: null,
+      duration_score: null,
+      creation_score: null,
+      economic_score: null,
+      participation_score: null,
+      calculated_at: null,
+      model_version: null,
+    },
+  );
   assert.equal(await addressReputationRow(d1(db), "unknown"), null);
 });

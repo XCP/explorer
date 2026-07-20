@@ -7,7 +7,7 @@ const isBitcoinAddress = (address: string) =>
 
 const ACTIVITY_QUERIES = [
   `SELECT min(block_index) first_block,max(block_index) last_block FROM sends
-    WHERE source_address_id=?1 OR destination_address_id=?1`,
+    WHERE source_id=?1 OR destination_id=?1 OR source_address_id=?1 OR destination_address_id=?1`,
   `SELECT min(block_index) first_block,max(block_index) last_block FROM dispenses
     WHERE source_id=?1 OR destination_id=?1`,
   `SELECT min(block_index) first_block,max(block_index) last_block FROM issuances WHERE issuer_id=?1`,
@@ -75,23 +75,31 @@ collected AS (SELECT count(DISTINCT balance.asset_id) stamps FROM balances balan
   JOIN tags tag ON tag.entity_id=entity.entity_id AND tag.tag='stamp'
   WHERE balance.address_id=(SELECT address_id FROM identity) AND CAST(balance.quantity AS INTEGER)>0)
 SELECT identity.address_id,?2,coalesce(?3,0),
-  (SELECT count(DISTINCT destination_address_id) FROM sends WHERE source_address_id=identity.address_id),
-  (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id),
+  (SELECT count(DISTINCT coalesce(destination_address_id,destination_id)) FROM sends
+    WHERE source_id=identity.address_id OR source_address_id=identity.address_id),
+  (SELECT count(DISTINCT coalesce(source_address_id,source_id)) FROM sends
+    WHERE destination_id=identity.address_id OR destination_address_id=identity.address_id),
   earned.btc,earned.dispenses,
   (SELECT count(*) FROM dividends WHERE source_id=identity.address_id),
   (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id),coalesce(creator.locked_assets,0),
   spent.btc,coalesce((SELECT sum(CAST(fee AS REAL))/1e8 FROM transactions WHERE source_id=identity.address_id),0),
-  holding.assets_held,(SELECT count(DISTINCT asset_id) FROM sends WHERE destination_address_id=identity.address_id),
+  holding.assets_held,(SELECT count(DISTINCT asset_id) FROM sends
+    WHERE destination_id=identity.address_id OR destination_address_id=identity.address_id),
   coalesce(creator.survived,0),coalesce(creator.distributed,0),coalesce(creator.hits,0),earned.clean,spent.clean,
   infra.exchange_flag,
   CASE WHEN infra.exchange_flag=0 AND holding.assets_held=0
-    AND (SELECT count(DISTINCT destination_address_id) FROM sends WHERE source_address_id=identity.address_id)=1
-    AND EXISTS(SELECT 1 FROM sends send JOIN address_signals signal ON signal.address_id=send.destination_address_id
-      WHERE send.source_address_id=identity.address_id AND signal.is_exchange=1) THEN 1 ELSE 0 END,
+    AND (SELECT count(DISTINCT coalesce(destination_address_id,destination_id)) FROM sends
+      WHERE source_id=identity.address_id OR source_address_id=identity.address_id)=1
+    AND EXISTS(SELECT 1 FROM sends send JOIN address_signals signal
+      ON signal.address_id=coalesce(send.destination_address_id,send.destination_id)
+      WHERE (send.source_id=identity.address_id OR send.source_address_id=identity.address_id)
+        AND signal.is_exchange=1) THEN 1 ELSE 0 END,
   infra.burn_flag,
-  (SELECT count(DISTINCT send.asset_id) FROM sends send JOIN address_signals burn ON burn.address_id=send.destination_address_id
+  (SELECT count(DISTINCT send.asset_id) FROM sends send JOIN address_signals burn
+      ON burn.address_id=coalesce(send.destination_address_id,send.destination_id)
     LEFT JOIN asset_signals asset ON asset.asset_id=send.asset_id
-    WHERE send.source_address_id=identity.address_id AND burn.is_burn=1 AND coalesce(asset.low_quality,0)=0),
+    WHERE (send.source_id=identity.address_id OR send.source_address_id=identity.address_id)
+      AND burn.is_burn=1 AND coalesce(asset.low_quality,0)=0),
   coalesce((SELECT 2*ln(1+(max(block_index)-min(block_index))/4320.0)+1.5*ln(1+count(*))
     FROM (
       SELECT block_index FROM dispensers INDEXED BY idx_dispensers_origin WHERE origin_id=identity.address_id
@@ -99,11 +107,7 @@ SELECT identity.address_id,?2,coalesce(?3,0),
       SELECT block_index FROM dispensers INDEXED BY idx_dispensers_source
       WHERE source_id=identity.address_id AND origin_id IS NULL
     )),0),
-  CASE WHEN infra.exchange_flag=0 AND infra.burn_flag=0
-    AND NOT EXISTS(SELECT 1 FROM emblem_vaults WHERE btc_address_id=identity.address_id)
-    AND (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id)=0
-    AND (SELECT count(DISTINCT source_address_id) FROM sends WHERE destination_address_id=identity.address_id)>=500
-    THEN 1 ELSE 0 END,
+  0,
   (SELECT count(*) FROM order_matches WHERE tx0_address_id=identity.address_id)
     +(SELECT count(*) FROM order_matches WHERE tx1_address_id=identity.address_id),
   stamp.created,collected.stamps,stamp.src20,

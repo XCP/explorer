@@ -11,10 +11,7 @@
 import type { Env } from "#api/env";
 import { fetchTokenscanDirectory, type TokenscanCollection } from "#api/integrations/tokenscan-directory";
 import { canonicalCollection, EXCLUDED_COLLECTIONS } from "#api/indexer/collections";
-import {
-  COLLECTION_EVIDENCE_UPSERT_SQL,
-  projectCollectionMembershipTags,
-} from "#api/indexer/collection-membership";
+import { COLLECTION_EVIDENCE_UPSERT_SQL, projectCollectionMembershipTags } from "#api/indexer/collection-membership";
 import { invalidateCollectionReads } from "#api/indexer/collection-cache";
 
 const slugify = (s: string) =>
@@ -75,14 +72,12 @@ export async function crawlTokenscanCollections(env: Env): Promise<Record<string
   const stale = (prior.results ?? []).filter((row) => !fresh.has(`${row.tag}\0${row.asset}`));
   for (let i = 0; i < stale.length; i += 100) {
     await env.CORE_DB.batch(
-      stale
-        .slice(i, i + 100)
-        .map((row) =>
-          env.CORE_DB.prepare(
-            `DELETE FROM collection_membership_evidence WHERE source='tokenscan' AND tag=?
+      stale.slice(i, i + 100).map((row) =>
+        env.CORE_DB.prepare(
+          `DELETE FROM collection_membership_evidence WHERE source='tokenscan' AND tag=?
              AND entity_id=(SELECT entity_id FROM entity_dictionary WHERE entity_type='asset' AND entity_key=?)`,
-          ).bind(row.tag, row.asset),
-        ),
+        ).bind(row.tag, row.asset),
+      ),
     );
   }
   await projectCollectionMembershipTags(env, [

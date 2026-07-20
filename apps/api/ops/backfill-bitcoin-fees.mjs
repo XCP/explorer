@@ -137,11 +137,7 @@ for (;;) {
   let failed = 0;
   let deferred = 0;
   for (let window = 0; window < page.rows.length; window += 100) {
-    const result = await resolvePage(
-      page.rows.slice(window, window + 100),
-      requestedProviders,
-      providerState,
-    );
+    const result = await resolvePage(page.rows.slice(window, window + 100), requestedProviders, providerState);
     const { fees, failures } = result;
     failed += failures.length;
     deferred += result.deferred;
@@ -157,7 +153,15 @@ for (;;) {
   pages += 1;
   after = page.next;
   console.log(
-    JSON.stringify({ event: "fee_page_complete", total, requested: page.rows.length, updated, failed, deferred, next_tx: after }),
+    JSON.stringify({
+      event: "fee_page_complete",
+      total,
+      requested: page.rows.length,
+      updated,
+      failed,
+      deferred,
+      next_tx: after,
+    }),
   );
 }
 

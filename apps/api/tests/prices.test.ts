@@ -13,8 +13,36 @@ import {
   PRUNE_BURN_XCP_USD_SQL,
   PRUNE_OBSERVED_USD_SQL,
   PRUNE_XCP_USD_SQL,
+  PRICE_SELECTION_POLICY,
+  PRICE_SELECTION_PREDICATE,
+  REFRESH_PRICING_HEALTH_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
+
+test("the selected-price policy is named and resolves equal-fidelity sources deterministically", () => {
+  assert.equal(PRICE_SELECTION_POLICY, "usd-payment-v1");
+  const run = (sources: Array<[string, number]>) => {
+    const db = fixture();
+    for (const [source, usd] of sources)
+      db.exec(`INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+        VALUES('2026-02-01','XCP',${usd},'${source}','2026-02-01',2)
+        ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+          observed_day=excluded.observed_day,fidelity=excluded.fidelity WHERE ${PRICE_SELECTION_PREDICATE}`);
+    const selected = { ...db.prepare(`SELECT usd,source FROM prices WHERE day='2026-02-01'`).get() };
+    db.close();
+    return selected;
+  };
+  const forward = run([
+    ["dextrade_xcpbtc_spot", 2],
+    ["coinmarketcap_aggregate", 3],
+  ]);
+  const reverse = run([
+    ["coinmarketcap_aggregate", 3],
+    ["dextrade_xcpbtc_spot", 2],
+  ]);
+  assert.deepEqual(forward, { usd: 3, source: "coinmarketcap_aggregate" });
+  assert.deepEqual(reverse, forward);
+});
 
 test("USD reconciliation advances new rows without wrapping when caught up", () => {
   assert.deepEqual(tradeUsdWindow(10, 20), { from: 10, to: 20 });
@@ -37,6 +65,9 @@ function fixture(): DatabaseSync {
       PRIMARY KEY(day,base_currency,quote_currency,source,venue));
     CREATE TABLE prices(
       day TEXT,currency TEXT,usd REAL,source TEXT,observed_day TEXT,fidelity INTEGER NOT NULL DEFAULT 0,
+      policy_version TEXT NOT NULL DEFAULT 'legacy-fidelity',price_kind TEXT NOT NULL DEFAULT 'unknown',
+      age_days INTEGER,derivation_depth INTEGER,observation_count INTEGER,venue_count INTEGER,volume_base REAL,
+      disagreement_class TEXT,selection_reason TEXT,
       PRIMARY KEY(day,currency));
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'BTC');
     INSERT INTO order_matches VALUES
@@ -44,7 +75,7 @@ function fixture(): DatabaseSync {
       (1,'10000000000',2,'20000000',strftime('%s','2026-01-01'),'completed'),
       (1,'100000000',2,'100000000',strftime('%s','2026-01-01'),'completed'),
       (1,'100000000',2,'100000000',strftime('%s','2026-01-02'),'pending');
-    INSERT INTO prices VALUES
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity) VALUES
       ('2026-01-01','BTC',100000,'coinbase','2026-01-01',3),
       ('2026-01-08','BTC',110000,'coinbase','2026-01-08',3),
       ('2026-01-09','BTC',120000,'coinbase','2026-01-09',3);
@@ -61,8 +92,15 @@ test("genesis burns materialize as protocol conversions rather than trades", () 
   db.exec(BUILD_BURN_PRICE_OBSERVATIONS_SQL);
   assert.deepEqual(
     { ...db.prepare(`SELECT day,source,venue,price,volume_base,trades,method FROM market_price_observations`).get() },
-    { day: "2014-01-02", source: "counterparty", venue: "burn", price: 0.001,
-      volume_base: 2000, trades: 2, method: "protocol_conversion_vwm" },
+    {
+      day: "2014-01-02",
+      source: "counterparty",
+      venue: "burn",
+      price: 0.001,
+      volume_base: 2000,
+      trades: 2,
+      method: "protocol_conversion_vwm",
+    },
   );
   const changes = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
   db.exec(BUILD_BURN_PRICE_OBSERVATIONS_SQL);
@@ -76,14 +114,20 @@ test("genesis burns materialize as protocol conversions rather than trades", () 
 test("genesis XCP/USD is reproducibly derived from the burn conversion and same-day BTC/USD", () => {
   const db = fixture();
   db.exec(`
-    INSERT INTO prices VALUES('2014-01-02','BTC',800,'coinmarketcap_aggregate','2014-01-02',2);
-    INSERT INTO prices VALUES('2014-01-02','XCP',9,'coinmarketcap_archive','2014-01-02',0);
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2014-01-02','BTC',800,'coinmarketcap_aggregate','2014-01-02',2);
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2014-01-02','XCP',9,'coinmarketcap_archive','2014-01-02',0);
     INSERT INTO market_price_observations VALUES(
       '2014-01-02','XCP','BTC','counterparty','burn',0.001,1000,2,NULL,NULL,'protocol_conversion_vwm');
   `);
   db.exec(BUILD_BURN_XCP_USD_SQL);
   assert.deepEqual(
-    { ...db.prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2014-01-02' AND currency='XCP'`).get() },
+    {
+      ...db
+        .prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2014-01-02' AND currency='XCP'`)
+        .get(),
+    },
     { usd: 0.8, source: "burn_vwm", observed_day: "2014-01-02", fidelity: 1 },
   );
   db.exec(`DELETE FROM market_price_observations WHERE venue='burn'`);
@@ -116,7 +160,10 @@ test("XCP/BTC materialization is idempotent and prunes only obsolete source days
     '2025-12-31','XCP','BTC','counterparty','dex',9,1,1,NULL,NULL,'volume_weighted_median')`);
   db.exec(PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   assert.deepEqual(
-    db.prepare(`SELECT day FROM market_price_observations ORDER BY day`).all().map((row) => row.day),
+    db
+      .prepare(`SELECT day FROM market_price_observations ORDER BY day`)
+      .all()
+      .map((row) => row.day),
     ["2026-01-01"],
   );
 
@@ -140,13 +187,36 @@ test("derived XCP/USD expires after seven days and records provenance", () => {
       { day: "2026-01-08", usd: 220, source: "dex_vwm", observed_day: "2026-01-01", fidelity: 1 },
     ],
   );
+  assert.deepEqual(
+    {
+      ...db
+        .prepare(
+          `SELECT policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,
+            volume_base,disagreement_class,selection_reason FROM prices
+           WHERE currency='XCP' AND day='2026-01-08'`,
+        )
+        .get(),
+    },
+    {
+      policy_version: "usd-payment-v1",
+      price_kind: "derived",
+      age_days: 7,
+      derivation_depth: 1,
+      observation_count: 3,
+      venue_count: 1,
+      volume_base: 201,
+      disagreement_class: "not_evaluated",
+      selection_reason: "fresh_dex_cross_rate",
+    },
+  );
   db.close();
 });
 
 test("a higher-fidelity observed price wins over a derived price", () => {
   const db = fixture();
   db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
-  db.exec(`INSERT INTO prices VALUES('2026-01-01','XCP',250,'market','2026-01-01',3)`);
+  db.exec(`INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+    VALUES('2026-01-01','XCP',250,'market','2026-01-01',3)`);
   db.exec(BUILD_XCP_USD_SQL);
   assert.deepEqual(
     { ...db.prepare(`SELECT usd,source,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get() },
@@ -163,7 +233,11 @@ test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles 
     '2026-01-01','XCP','USD','coinmarketcap','aggregate',250,0,0,NULL,NULL,'aggregate_daily_close')`);
   db.exec(BUILD_OBSERVED_USD_SQL);
   assert.deepEqual(
-    { ...db.prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`).get() },
+    {
+      ...db
+        .prepare(`SELECT usd,source,observed_day,fidelity FROM prices WHERE day='2026-01-01' AND currency='XCP'`)
+        .get(),
+    },
     { usd: 250, source: "coinmarketcap_aggregate", observed_day: "2026-01-01", fidelity: 2 },
   );
   db.exec(BUILD_XCP_USD_SQL);
@@ -181,7 +255,10 @@ test("observed aggregate BTC/USD fills only days without the higher-fidelity pri
     ('2026-01-01','BTC','USD','coinmarketcap','aggregate',90000,0,0,NULL,NULL,'aggregate_daily_close')`);
   db.exec(BUILD_OBSERVED_USD_SQL);
   assert.deepEqual(
-    db.prepare(`SELECT day,usd,source,fidelity FROM prices WHERE currency='BTC' ORDER BY day`).all().map((row) => ({ ...row })),
+    db
+      .prepare(`SELECT day,usd,source,fidelity FROM prices WHERE currency='BTC' ORDER BY day`)
+      .all()
+      .map((row) => ({ ...row })),
     [
       { day: "2014-01-01", usd: 800, source: "coinmarketcap_aggregate", fidelity: 2 },
       { day: "2026-01-01", usd: 100000, source: "coinbase", fidelity: 3 },
@@ -206,12 +283,17 @@ test("derived XCP/USD replay is idempotent and stale pruning preserves observed 
   assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - beforeReplay, 0);
 
   db.exec(`
-    INSERT INTO prices VALUES('2025-12-31','XCP',1,'dex_vwm','2025-12-31',1);
-    INSERT INTO prices VALUES('2026-01-09','XCP',250,'market','2026-01-09',3);
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2025-12-31','XCP',1,'dex_vwm','2025-12-31',1);
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2026-01-09','XCP',250,'market','2026-01-09',3);
   `);
   db.exec(PRUNE_XCP_USD_SQL);
   assert.deepEqual(
-    db.prepare(`SELECT day,source FROM prices WHERE currency='XCP' ORDER BY day`).all().map((row) => ({ ...row })),
+    db
+      .prepare(`SELECT day,source FROM prices WHERE currency='XCP' ORDER BY day`)
+      .all()
+      .map((row) => ({ ...row })),
     [
       { day: "2026-01-01", source: "dex_vwm" },
       { day: "2026-01-08", source: "dex_vwm" },
@@ -242,6 +324,68 @@ test("trade USD reconciliation clears expired derivations without touching direc
       { currency: "XCP", usd_value: 400 },
       { currency: "XCP", usd_value: null },
       { currency: "USDC", usd_value: 2 },
+    ],
+  );
+  db.close();
+});
+
+test("pricing health materializes coverage, divergence, and latest source without hiding missing rows", () => {
+  const db = fixture();
+  db.exec(`
+    CREATE TABLE trades(block_time INTEGER,currency TEXT,total REAL,usd_value REAL);
+    CREATE TABLE pricing_health(currency TEXT PRIMARY KEY,trades INTEGER,missing INTEGER,divergent INTEGER,
+      latest_price_day TEXT,latest_price_source TEXT,latest_observed_day TEXT,generated_at INTEGER);
+    INSERT INTO trades VALUES
+      (strftime('%s','2026-01-01'),'BTC',2,200000),
+      (strftime('%s','2026-01-09'),'XCP',2,NULL),
+      (strftime('%s','2026-01-01'),'USDC',3,2);
+  `);
+  db.prepare(REFRESH_PRICING_HEALTH_SQL).run(123);
+  assert.deepEqual(
+    db
+      .prepare(
+        `SELECT currency,trades,missing,divergent,latest_price_day,latest_price_source,generated_at
+      FROM pricing_health ORDER BY currency`,
+      )
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      {
+        currency: "BTC",
+        trades: 1,
+        missing: 0,
+        divergent: 0,
+        latest_price_day: "2026-01-09",
+        latest_price_source: "coinbase",
+        generated_at: 123,
+      },
+      {
+        currency: "ETH",
+        trades: 0,
+        missing: 0,
+        divergent: 0,
+        latest_price_day: null,
+        latest_price_source: null,
+        generated_at: 123,
+      },
+      {
+        currency: "USDC",
+        trades: 1,
+        missing: 0,
+        divergent: 1,
+        latest_price_day: null,
+        latest_price_source: null,
+        generated_at: 123,
+      },
+      {
+        currency: "XCP",
+        trades: 1,
+        missing: 1,
+        divergent: 0,
+        latest_price_day: null,
+        latest_price_source: null,
+        generated_at: 123,
+      },
     ],
   );
   db.close();

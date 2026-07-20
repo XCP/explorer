@@ -11,7 +11,7 @@ const READ_SQL = `SELECT asset.asset, asset.asset_longname, top.depositors
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec(`
-    CREATE TABLE sends(asset_id INTEGER, source_address_id INTEGER, destination_address_id INTEGER);
+    CREATE TABLE sends(asset_id INTEGER, source_id INTEGER, destination_id INTEGER);
     CREATE TABLE address_signals(address_id INTEGER PRIMARY KEY, is_exchange INTEGER NOT NULL);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY, asset TEXT, asset_longname TEXT);
     CREATE TABLE core_state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -35,9 +35,11 @@ test("exchange leaderboard counts distinct depositors and publishes generations 
   db.prepare(BUILD_EXCHANGE_TOP_ASSETS_SQL).run(1);
   assert.deepEqual(
     db
-      .prepare(`SELECT asset.asset,top.depositors FROM exchange_top_assets top
+      .prepare(
+        `SELECT asset.asset,top.depositors FROM exchange_top_assets top
         JOIN asset_dictionary asset ON asset.asset_id=top.asset_id
-        WHERE generation=1 ORDER BY depositors DESC,asset.asset`)
+        WHERE generation=1 ORDER BY depositors DESC,asset.asset`,
+      )
       .all()
       .map((row) => ({ ...row })),
     [

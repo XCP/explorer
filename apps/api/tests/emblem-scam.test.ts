@@ -97,13 +97,13 @@ test("Emblem scam attribution converges without reset-first writes", () => {
   );
   assert.deepEqual(
     { ...db.prepare(`SELECT vault_scams,likely_service FROM address_signals WHERE address_id=12`).get() },
-    { vault_scams: 1, likely_service: 1 },
+    { vault_scams: 1, likely_service: 0 },
   );
   assert.deepEqual(
     { ...db.prepare(`SELECT is_emblem_vault,likely_service FROM address_signals WHERE address_id=20`).get() },
     { is_emblem_vault: 1, likely_service: 0 },
   );
-  assert.equal(db.prepare(`SELECT likely_service FROM address_signals WHERE address_id=13`).get()?.likely_service, 1);
+  assert.equal(db.prepare(`SELECT likely_service FROM address_signals WHERE address_id=13`).get()?.likely_service, 0);
   db.exec(REFRESH_SCAM_SELLERS_SQL);
   db.exec(REFRESH_SHELL_SIGNALS_SQL);
   assert.equal(db.prepare(`SELECT scams FROM emblem_scam_sellers WHERE seller_id=1`).get()?.scams, 1);

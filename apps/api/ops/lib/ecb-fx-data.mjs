@@ -1,7 +1,11 @@
-const ECB_URL = "https://data-api.ecb.europa.eu/service/data/EXR/D.USD+JPY.EUR.SP00.A?startPeriod=2014-01-01&format=csvdata";
+const ECB_URL =
+  "https://data-api.ecb.europa.eu/service/data/EXR/D.USD+JPY.EUR.SP00.A?startPeriod=2014-01-01&format=csvdata";
 
 export function parseEcbReferenceRates(csv) {
-  const lines = csv.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
+  const lines = csv
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .split(/\r?\n/);
   const header = lines[0]?.split(",");
   const currencyIndex = header?.indexOf("CURRENCY") ?? -1;
   const denominatorIndex = header?.indexOf("CURRENCY_DENOM") ?? -1;

@@ -38,11 +38,7 @@ export async function graphCuts(db: D1Database): Promise<{ address: GraphCuts; a
 }
 
 // per-entity score. table/keyCol are fixed literals chosen by the caller (never user input).
-export async function graphScore(
-  db: D1Database,
-  kind: "address" | "asset",
-  id: string,
-): Promise<GraphScoreRow | null> {
+export async function graphScore(db: D1Database, kind: "address" | "asset", id: string): Promise<GraphScoreRow | null> {
   const relation =
     kind === "address"
       ? `address_signals signal JOIN address_dictionary entity ON entity.address_id=signal.address_id`
@@ -97,7 +93,10 @@ function topBy(
       ? `address_signals signal JOIN address_dictionary entity ON entity.address_id=signal.address_id`
       : `asset_signals signal JOIN asset_dictionary entity ON entity.asset_id=signal.asset_id`;
   const key = kind === "address" ? "entity.address" : "entity.asset";
-  const infra = kind === "address" ? `AND NOT EXISTS (SELECT 1 FROM curated WHERE curated.key=entity.address AND curated.kind IN ('exchange','burn'))` : "";
+  const infra =
+    kind === "address"
+      ? `AND NOT EXISTS (SELECT 1 FROM curated WHERE curated.key=entity.address AND curated.kind IN ('exchange','burn'))`
+      : "";
   return q<GraphTopRow>(
     db,
     `SELECT ${key} key,COALESCE(signal.graph_trust,0) trust,COALESCE(signal.graph_distrust,0) distrust

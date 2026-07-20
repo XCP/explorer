@@ -5,6 +5,7 @@ import {
   parseZaifCsvIndex,
   parseZaifTimestamp,
   parseZaifTrades,
+  summarizePriceAgreement,
 } from "#ops/lib/zaif-market-data";
 
 test("Zaif CSV discovery keeps unique monthly files for the requested pair", () => {
@@ -16,26 +17,42 @@ test("Zaif CSV discovery keeps unique monthly files for the requested pair", () 
   ]);
 });
 
+test("price agreement reports overlap, proportional error, and tail observations", () => {
+  const report = summarizePriceAgreement(
+    [
+      { day: "2026-01-01", price: 100 },
+      { day: "2026-01-02", price: 125 },
+      { day: "2026-01-03", price: 999 },
+    ],
+    [
+      { day: "2026-01-01", price: 100 },
+      { day: "2026-01-02", price: 100 },
+    ],
+  );
+  assert.equal(report.days, 2);
+  assert.equal(report.mean_absolute_log_error, Math.log(1.25) / 2);
+  assert.equal(report.median_absolute_log_error, 0);
+  assert.equal(report.p90_absolute_log_error, 0);
+  assert.equal(report.p99_absolute_log_error, 0);
+  assert.equal(report.within_10_percent, 50);
+  assert.equal(report.within_25_percent, 100);
+  assert.deepEqual(
+    report.worst.map((row: { day: string }) => row.day),
+    ["2026-01-02", "2026-01-01"],
+  );
+});
+
 test("Zaif timestamps are interpreted as JST rather than UTC", () => {
   const epoch = parseZaifTimestamp("2026-07-18 10:49:48.123456");
   assert.equal(new Date(epoch * 1_000).toISOString(), "2026-07-18T01:49:48.000Z");
-  assert.equal(
-    new Date(parseZaifTimestamp("2016-08-02 00:30:00") * 1_000).toISOString(),
-    "2016-08-01T15:30:00.000Z",
-  );
+  assert.equal(new Date(parseZaifTimestamp("2016-08-02 00:30:00") * 1_000).toISOString(), "2016-08-01T15:30:00.000Z");
 });
 
 test("Zaif CSV parser accepts empty months and rejects invalid executions", () => {
   const header = "timestamp,price,amount,trade_type\n";
   assert.deepEqual(parseZaifTrades(header, "xcp_btc"), []);
-  assert.throws(
-    () => parseZaifTrades(`${header}2026-01-01 12:00:00,0,1,bid`, "xcp_btc"),
-    /numeric row/,
-  );
-  assert.throws(
-    () => parseZaifTrades(`${header}2026-01-01 12:00:00,1,1,unknown`, "xcp_btc"),
-    /side row/,
-  );
+  assert.throws(() => parseZaifTrades(`${header}2026-01-01 12:00:00,0,1,bid`, "xcp_btc"), /numeric row/);
+  assert.throws(() => parseZaifTrades(`${header}2026-01-01 12:00:00,1,1,unknown`, "xcp_btc"), /side row/);
 });
 
 test("Zaif daily aggregation uses the volume-weighted median and UTC day", () => {

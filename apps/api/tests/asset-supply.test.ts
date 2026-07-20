@@ -46,7 +46,9 @@ test("supply queue chunks identity lookups below D1's SQL-variable ceiling", asy
 
   await enqueueCoreSupply(d1(sqlite), names);
 
-  const queue = JSON.parse(String(sqlite.prepare(`SELECT value FROM core_state WHERE key='asset_supply_queue'`).get()?.value));
+  const queue = JSON.parse(
+    String(sqlite.prepare(`SELECT value FROM core_state WHERE key='asset_supply_queue'`).get()?.value),
+  );
   assert.equal(queue.length, names.length);
   assert.deepEqual(
     [...queue].sort((a: number, b: number) => a - b),

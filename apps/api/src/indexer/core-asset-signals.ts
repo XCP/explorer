@@ -82,6 +82,7 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
     WHERE asset_id=(SELECT asset_id FROM identity) AND block_time>0 AND total>0
       AND buyer_id IS NOT NULL AND seller_id IS NOT NULL AND buyer_id<>seller_id
       AND (venue='dex' OR (venue='dispense' AND sale_class='single')
+        OR (venue='tokenly_swapbot' AND sale_class='single')
         OR (venue='emblem' AND sale_class='real'))
   )
 SELECT identity.asset_id,asset.issuer_id,asset.divisible,asset.locked,

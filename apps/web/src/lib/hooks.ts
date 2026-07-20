@@ -55,10 +55,15 @@ export const useIndex = <T = unknown>(name: RecordKind, offset = 0, limit = 50) 
   useList<T>(`/v2/${name}`, { offset, limit });
 
 // Unified trades ledger (typed end-to-end — the reference idiom for new hooks).
-export const useTrades = (filter: { venue?: string; currency?: string; asset?: string } = {}, offset = 0, limit = 50) =>
-  useList<TradeRow>("/v2/trades", { ...filter, offset, limit });
-export function useTradeStats() {
-  const { data } = useSWR<Envelope<TradeVenueStats[]>>(apiUrl("/v2/trades/stats"));
+export const useTrades = (
+  filter: { venue?: string; currency?: string; asset?: string; include_low_quality?: number } = {},
+  offset = 0,
+  limit = 50,
+) => useList<TradeRow>("/v2/trades", { ...filter, offset, limit });
+export function useTradeStats(includeLowQuality = false) {
+  const { data } = useSWR<Envelope<TradeVenueStats[]>>(
+    apiUrl("/v2/trades/stats", { include_low_quality: includeLowQuality ? 1 : undefined }),
+  );
   return { venues: data?.result ?? [] };
 }
 

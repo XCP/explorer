@@ -6,6 +6,8 @@ import {
   SCARCE_TRADES_SQL,
   DISPENSE_TRADE_LEGS_SQL,
   DISPENSE_TRADES_SQL,
+  SWAPBOT_TRADE_LEGS_SQL,
+  SWAPBOT_TRADES_SQL,
   coreDexTradesSql,
   emblemTradesSql,
 } from "#api/indexer/trades";
@@ -30,11 +32,75 @@ function d1(db: DatabaseSync): D1Database {
   return { prepare: (sql: string) => new Statement(db, sql) } as unknown as D1Database;
 }
 
+test("Tokenly Swapbot matcher accepts documented mechanical returns and withholds ambiguous outputs", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+    CREATE TABLE tokenly_swapbots(
+      address TEXT PRIMARY KEY,active_from_block INTEGER,active_to_block INTEGER,
+      match_window_blocks INTEGER);
+    CREATE TABLE tokenly_swapbot_inputs(address TEXT,asset TEXT,PRIMARY KEY(address,asset));
+    CREATE TABLE sends(
+      event_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,
+      source_id INTEGER,destination_id INTEGER,asset_id INTEGER,quantity_normalized TEXT);
+    CREATE TABLE trades(
+      venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,
+      currency TEXT,total REAL,price REAL GENERATED ALWAYS AS (total/quantity) VIRTUAL,usd_value REAL,
+      buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,sale_class TEXT,
+      PRIMARY KEY(venue,ref));
+    CREATE TABLE trade_legs(venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
+      PRIMARY KEY(venue,trade_ref,leg_index));
+    INSERT INTO asset_dictionary VALUES(1,'BITCRYSTALS'),(2,'CARD');
+    INSERT INTO address_dictionary VALUES(1,'bot'),(2,'buyer');
+    INSERT INTO tokenly_swapbots VALUES('bot',100,200,12);
+    INSERT INTO tokenly_swapbot_inputs VALUES('bot','BITCRYSTALS');
+    INSERT INTO sends VALUES
+      (10,x'10',110,1000,2,1,1,'250'),
+      (11,x'11',113,1100,1,2,2,'1'),
+      (20,x'20',120,1200,2,1,1,'300'),
+      (21,x'21',121,1210,2,1,1,'400'),
+      (22,x'22',123,1300,1,2,2,'1');
+  `);
+  db.exec(SWAPBOT_TRADES_SQL);
+  db.exec(SWAPBOT_TRADE_LEGS_SQL);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT venue,ref,asset_id,quantity,currency,total,buyer_id,seller_id,sale_class FROM trades`)
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      {
+        venue: "tokenly_swapbot",
+        ref: "10",
+        asset_id: 2,
+        quantity: 1,
+        currency: "BITCRYSTALS",
+        total: 250,
+        buyer_id: 2,
+        seller_id: 1,
+        sale_class: "single",
+      },
+    ],
+  );
+  assert.deepEqual(
+    db
+      .prepare(`SELECT venue,trade_ref,leg_index,asset_id,quantity FROM trade_legs`)
+      .all()
+      .map((row) => ({ ...row })),
+    [{ venue: "tokenly_swapbot", trade_ref: "10", leg_index: 11, asset_id: 2, quantity: 1 }],
+  );
+});
+
 test("compact trades restore public identities, filters, and venue totals", async () => {
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+    CREATE TABLE telegram_imports(sha256 TEXT PRIMARY KEY,chat_url TEXT);
+    CREATE TABLE telegram_sales(chat_id TEXT,message_id INTEGER,chat_name TEXT,import_sha256 TEXT);
+    CREATE TABLE tokenly_swapbots(address TEXT PRIMARY KEY,bot_slug TEXT,evidence_url TEXT);
+    CREATE TABLE asset_signals(asset_id INTEGER PRIMARY KEY,low_quality INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE trades(
       venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,
       currency TEXT,total REAL,price REAL GENERATED ALWAYS AS (total/quantity) VIRTUAL,usd_value REAL,
@@ -43,13 +109,14 @@ test("compact trades restore public identities, filters, and venue totals", asyn
     CREATE TABLE trade_legs(
       venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
       PRIMARY KEY(venue,trade_ref,leg_index));
-    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,observed_day TEXT,PRIMARY KEY(day,currency));
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,source TEXT,observed_day TEXT,PRIMARY KEY(day,currency));
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'RAREPEPE');
     INSERT INTO address_dictionary VALUES(1,'buyer'),(2,'seller');
     INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,buyer_id,seller_id,tx_hash)
       VALUES('dispense','1',1,20,10,2,'BTC',0.5,30000,1,2,x'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total,usd_value,external_tx_hash)
       VALUES('emblem','2',2,10,9,1,'ETH',3,6000,'ethereum-hash');
+    INSERT INTO prices VALUES('1970-01-01','BTC',60000,'coinbase','1970-01-01');
   `);
 
   const rows = (await listTrades(d1(db), { asset: "xcp", limit: 10, offset: 0 })).map((row) => ({ ...row }));
@@ -64,21 +131,43 @@ test("compact trades restore public identities, filters, and venue totals", asyn
       total: 0.5,
       price: 0.25,
       usd_value: 30000,
+      usd_basis: "execution_day",
+      usd_source: "coinbase",
+      usd_price_day: "1970-01-01",
+      usd_observed_day: "1970-01-01",
+      low_quality: 0,
       buyer: "buyer",
       seller: "seller",
       tx_hash: "a".repeat(64),
       sale_class: null,
       leg_count: 1,
+      source_name: null,
+      source_url: null,
     },
   ]);
   assert.deepEqual(
     (await tradeVenueStats(d1(db))).map((row) => ({ ...row })),
     [
-      { venue: "dispense", trades: 1, assets: 1, last_time: 20, usd_known: 30000 },
-      { venue: "emblem", trades: 1, assets: 1, last_time: 10, usd_known: 6000 },
+      {
+        venue: "dispense",
+        trades: 1,
+        assets: 1,
+        last_time: 20,
+        usd_known: 30000,
+        usd_unpriced_trades: 0,
+        low_quality_trades: 0,
+      },
+      {
+        venue: "emblem",
+        trades: 1,
+        assets: 1,
+        last_time: 10,
+        usd_known: 6000,
+        usd_unpriced_trades: 0,
+        low_quality_trades: 0,
+      },
     ],
   );
-
 });
 
 test("recent trades do not substitute a current quote for execution-day USD", async () => {
@@ -86,15 +175,19 @@ test("recent trades do not substitute a current quote for execution-day USD", as
   db.exec(`
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+    CREATE TABLE telegram_imports(sha256 TEXT PRIMARY KEY,chat_url TEXT);
+    CREATE TABLE telegram_sales(chat_id TEXT,message_id INTEGER,chat_name TEXT,import_sha256 TEXT);
+    CREATE TABLE tokenly_swapbots(address TEXT PRIMARY KEY,bot_slug TEXT,evidence_url TEXT);
+    CREATE TABLE asset_signals(asset_id INTEGER PRIMARY KEY,low_quality INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE trades(
       venue TEXT,ref TEXT,asset_id INTEGER,block_time INTEGER,block_index INTEGER,quantity REAL,
       currency TEXT,total REAL,price REAL GENERATED ALWAYS AS (total/quantity) VIRTUAL,usd_value REAL,
       buyer_id INTEGER,seller_id INTEGER,tx_hash BLOB,external_tx_hash TEXT,sale_class TEXT,PRIMARY KEY(venue,ref));
     CREATE TABLE trade_legs(venue TEXT,trade_ref TEXT,leg_index INTEGER,asset_id INTEGER,quantity REAL,
       PRIMARY KEY(venue,trade_ref,leg_index));
-    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,observed_day TEXT,PRIMARY KEY(day,currency));
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,source TEXT,observed_day TEXT,PRIMARY KEY(day,currency));
     INSERT INTO asset_dictionary VALUES(1,'CARD');
-    INSERT INTO prices VALUES(date('now'),'XCP',1.5,date('now'));
+    INSERT INTO prices VALUES(date('now'),'XCP',1.5,'current_quote',date('now'));
     INSERT INTO trades(venue,ref,asset_id,block_time,block_index,quantity,currency,total)
       VALUES('dex','recent',1,unixepoch('now','-1 day'),1,1,'XCP',125);
   `);
@@ -107,7 +200,12 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
   db.exec(`
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+    CREATE TABLE telegram_imports(sha256 TEXT PRIMARY KEY,chat_url TEXT);
+    CREATE TABLE telegram_sales(chat_id TEXT,message_id INTEGER,chat_name TEXT,import_sha256 TEXT);
+    CREATE TABLE tokenly_swapbots(address TEXT PRIMARY KEY,bot_slug TEXT,evidence_url TEXT);
     CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,divisible INTEGER);
+    CREATE TABLE asset_signals(asset_id INTEGER PRIMARY KEY,low_quality INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL,PRIMARY KEY(day,currency));
     CREATE TABLE order_matches(
       tx0_hash BLOB,tx1_hash BLOB,tx0_address_id INTEGER,tx1_address_id INTEGER,
       forward_asset_id INTEGER,forward_quantity TEXT,backward_asset_id INTEGER,backward_quantity TEXT,
@@ -254,6 +352,9 @@ test("trade identity migration replaces source-local and lossy references", () =
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
+    CREATE TABLE telegram_imports(sha256 TEXT PRIMARY KEY,chat_url TEXT);
+    CREATE TABLE telegram_sales(chat_id TEXT,message_id INTEGER,chat_name TEXT,import_sha256 TEXT);
+    CREATE TABLE tokenly_swapbots(address TEXT PRIMARY KEY,bot_slug TEXT,evidence_url TEXT);
     CREATE TABLE dispenses(event_index INTEGER,dispense_id INTEGER);
     CREATE TABLE emblem_sales(tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT);
     CREATE TABLE trades(venue TEXT,ref TEXT,asset_id INTEGER,PRIMARY KEY(venue,ref));

@@ -12,9 +12,17 @@ import {
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -66,11 +74,19 @@ test("compact address relationships merge protocol interactions and preserve swe
     INSERT INTO sweeps VALUES(1,2,10,100),(2,1,11,101);
   `);
   const binding = d1(db);
-  assert.deepEqual({ ...(await addressConnections(binding, "alice", 12))[0] }, {
-    cp: "bob",interactions: 4,is_exchange: 1,
-  });
-  assert.deepEqual((await addressLineage(binding, "alice")).map((row) => ({ ...row })), [
-    { direction: "out",counterparty: "bob",block_index: 10,block_time: 100 },
-    { direction: "in",counterparty: "bob",block_index: 11,block_time: 101 },
-  ]);
+  assert.deepEqual(
+    { ...(await addressConnections(binding, "alice", 12))[0] },
+    {
+      cp: "bob",
+      interactions: 4,
+      is_exchange: 1,
+    },
+  );
+  assert.deepEqual(
+    (await addressLineage(binding, "alice")).map((row) => ({ ...row })),
+    [
+      { direction: "out", counterparty: "bob", block_index: 10, block_time: 100 },
+      { direction: "in", counterparty: "bob", block_index: 11, block_time: 101 },
+    ],
+  );
 });

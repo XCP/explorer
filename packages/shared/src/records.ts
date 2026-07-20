@@ -155,7 +155,7 @@ export interface DispenseRow {
   dispenser_tx_hash?: string | null;
   /** BTC the buyer paid, raw satoshis as text — a dispense is a sale, not a free send. */
   btc_amount: string | null;
-  /** USD value at sale time, from the trades ledger where known. */
+  /** Approximate execution-day USD payment value from the trades ledger where known. */
   usd_value: number | null;
 }
 

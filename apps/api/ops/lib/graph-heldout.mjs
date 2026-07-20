@@ -49,7 +49,11 @@ function percentileCut(values, percentile) {
 }
 
 function labelResult(labels, classify, score) {
-  const rows = labels.map((label) => ({ ...label, score: score(label.entity_id), detected: classify(label.entity_id) }));
+  const rows = labels.map((label) => ({
+    ...label,
+    score: score(label.entity_id),
+    detected: classify(label.entity_id),
+  }));
   const byType = Object.fromEntries(
     [...new Set(rows.map((row) => row.entity_type))].map((type) => {
       const typed = rows.filter((row) => row.entity_type === type);
@@ -63,16 +67,21 @@ function labelResult(labels, classify, score) {
     recall: rows.length ? rows.filter((row) => row.detected).length / rows.length : null,
     zero_score: rows.filter((row) => row.score === 0).length,
     by_entity_type: byType,
-    examples_missed: rows.filter((row) => !row.detected).slice(0, 20).map(({ key, entity_type, score: value }) => ({
-      key,
-      entity_type,
-      score: value,
-    })),
+    examples_missed: rows
+      .filter((row) => !row.detected)
+      .slice(0, 20)
+      .map(({ key, entity_type, score: value }) => ({
+        key,
+        entity_type,
+        score: value,
+      })),
   };
 }
 
 export function evaluateHeldoutGraph({ edges, seeds, maxNode, tip, halfLifeBlocks = null, holdoutFold = 0 }) {
-  const heldout = seeds.filter((seed) => validationFold(`${seed.entity_type}:${seed.key}:${seed.slot}`) === holdoutFold);
+  const heldout = seeds.filter(
+    (seed) => validationFold(`${seed.entity_type}:${seed.key}:${seed.slot}`) === holdoutFold,
+  );
   const training = seeds.filter((seed) => !heldout.includes(seed));
   const trustVectors = Array.from({ length: GRAPH_K }, (_, slot) =>
     ppr(
@@ -101,7 +110,10 @@ export function evaluateHeldoutGraph({ edges, seeds, maxNode, tip, halfLifeBlock
   return {
     holdout_fold: holdoutFold,
     variant: halfLifeBlocks ? { temporal_half_life_blocks: halfLifeBlocks } : { temporal_half_life_blocks: null },
-    training: { trust: training.filter((seed) => seed.slot < GRAPH_K).length, distrust: training.length - training.filter((seed) => seed.slot < GRAPH_K).length },
+    training: {
+      trust: training.filter((seed) => seed.slot < GRAPH_K).length,
+      distrust: training.length - training.filter((seed) => seed.slot < GRAPH_K).length,
+    },
     heldout: { trust: trustLabels.length, distrust: distrustLabels.length },
     cuts: { trust: trustCut, distrust: distrustCut },
     trust: labelResult(

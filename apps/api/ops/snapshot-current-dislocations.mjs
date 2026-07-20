@@ -52,12 +52,22 @@ try {
   db.exec("ROLLBACK");
   throw error;
 }
-const total = db.prepare(`SELECT COUNT(*) observations,COUNT(DISTINCT measured_at) cohorts
-  FROM dislocation_observations`).get();
+const total = db
+  .prepare(
+    `SELECT COUNT(*) observations,COUNT(DISTINCT measured_at) cohorts
+  FROM dislocation_observations`,
+  )
+  .get();
 db.close();
-process.stdout.write(`${JSON.stringify({
-  measured_at: report.measured_at,
-  recorded: report.candidates.length,
-  total_observations: Number(total.observations),
-  cohorts: Number(total.cohorts),
-}, null, 2)}\n`);
+process.stdout.write(
+  `${JSON.stringify(
+    {
+      measured_at: report.measured_at,
+      recorded: report.candidates.length,
+      total_observations: Number(total.observations),
+      cohorts: Number(total.cohorts),
+    },
+    null,
+    2,
+  )}\n`,
+);

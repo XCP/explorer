@@ -110,4 +110,3 @@ const report = {
 writeFileSync(resolve(root, "trade-history.json"), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 db.close();
-

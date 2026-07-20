@@ -14,11 +14,23 @@ test("Dex-Trade XCP/BTC parser requires a positive ticker backed by a recent tra
     { pair: "XCPBTC", price: 0.000023, latestPrice: 0.000022, latestTime: now - 60, latestVolume: 4 },
   );
   assert.throws(
-    () => parseDexTradeMarket("XCPBTC", { status: true, data: { last: "0.000023" } }, { status: true, data: [{ timestamp: now - 8 * 86_400 }] }, now),
+    () =>
+      parseDexTradeMarket(
+        "XCPBTC",
+        { status: true, data: { last: "0.000023" } },
+        { status: true, data: [{ timestamp: now - 8 * 86_400 }] },
+        now,
+      ),
     /stale/,
   );
   assert.throws(
-    () => parseDexTradeMarket("XCPBTC", { status: true, data: { last: "0" } }, { status: true, data: [{ timestamp: now - 60 }] }, now),
+    () =>
+      parseDexTradeMarket(
+        "XCPBTC",
+        { status: true, data: { last: "0" } },
+        { status: true, data: [{ timestamp: now - 60 }] },
+        now,
+      ),
     /invalid/,
   );
 });

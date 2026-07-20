@@ -27,7 +27,9 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   const cursor = await getCoreStateInt(env.CORE_DB, "scarce_cursor");
   const rows =
     (
-      await env.CORE_DB.prepare(`SELECT asset_id,asset FROM asset_dictionary WHERE asset_id>? ORDER BY asset_id LIMIT ?`)
+      await env.CORE_DB.prepare(
+        `SELECT asset_id,asset FROM asset_dictionary WHERE asset_id>? ORDER BY asset_id LIMIT ?`,
+      )
         .bind(cursor, ASSETS_PER_RUN)
         .all<{ asset_id: number; asset: string }>()
     ).results || [];
@@ -63,8 +65,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
     for (const { row, sales, failed } of results) {
       if (failed) {
         out.failed++;
-        firstFailedAssetId =
-          firstFailedAssetId === null ? row.asset_id : Math.min(firstFailedAssetId, row.asset_id);
+        firstFailedAssetId = firstFailedAssetId === null ? row.asset_id : Math.min(firstFailedAssetId, row.asset_id);
         continue;
       }
       for (const s of sales) {
@@ -77,9 +78,7 @@ export async function crawlScarceSales(env: Env): Promise<Record<string, unknown
   }
 
   if (upserts.length) {
-    const stmts = upserts.map((u) =>
-      env.CORE_DB.prepare(SCARCE_SALE_UPSERT_SQL).bind(u.sold_at, u.price, u.asset),
-    );
+    const stmts = upserts.map((u) => env.CORE_DB.prepare(SCARCE_SALE_UPSERT_SQL).bind(u.sold_at, u.price, u.asset));
     for (let i = 0; i < stmts.length; i += 50) await env.CORE_DB.batch(stmts.slice(i, i + 50));
     out.sales_found = upserts.length;
   }

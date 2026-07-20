@@ -6,7 +6,12 @@ export const ADDRESS_REPUTATION_REFRESH_SECONDS = 86_400;
 export const ADDRESS_REPUTATION_BANDS = [
   { tier: "Exceptional", slug: "exceptional", minimum: 99, meaning: "top 1% — an exceptional observed track record" },
   { tier: "Strong", slug: "strong", minimum: 90, meaning: "top 10% — a strong, substantial observed track record" },
-  { tier: "Established", slug: "established", minimum: 50, meaning: "upper half — an established observed track record" },
+  {
+    tier: "Established",
+    slug: "established",
+    minimum: 50,
+    meaning: "upper half — an established observed track record",
+  },
   { tier: "Limited", slug: "limited", minimum: 0, meaning: "limited evidence relative to ranked addresses" },
 ] as const;
 
@@ -16,7 +21,7 @@ export const addressReputationRefreshDue = (now: number, refreshedAt: number): b
 // Classification is a prerequisite, not a scoring input. Only user-like addresses
 // with at least one directly observed family of evidence enter the comparison set.
 export const ADDRESS_REPUTATION_ELIGIBLE_SQL = `signal.is_exchange=0 AND signal.is_deposit=0 AND signal.is_burn=0
-  AND COALESCE(signal.is_emblem_vault,0)=0 AND COALESCE(signal.likely_service,0)=0
+  AND COALESCE(signal.is_emblem_vault,0)=0
   AND COALESCE(signal.vault_scams,0)+COALESCE(signal.shell_scams,0)+COALESCE(signal.dump_scams,0)=0
   AND (signal.last_block>COALESCE(signal.first_block,signal.last_block)
     OR signal.survived_assets>0 OR signal.dividends>0 OR signal.locked_assets>0
@@ -86,22 +91,13 @@ export function addressReputationTier(reputation: number): string {
   return ADDRESS_REPUTATION_BANDS.find((band) => reputation >= band.minimum)?.tier ?? "Limited";
 }
 
-export type AddressReputationState =
-  | "ranked"
-  | "exchange"
-  | "deposit"
-  | "vault"
-  | "burn"
-  | "service"
-  | "integrity"
-  | "unrated";
+export type AddressReputationState = "ranked" | "exchange" | "deposit" | "vault" | "burn" | "integrity" | "unrated";
 
 export const ADDRESS_REPUTATION_STATE_LABELS: Record<Exclude<AddressReputationState, "ranked">, string> = {
   exchange: "Exchange",
   deposit: "Exchange deposit",
   vault: "Vault",
   burn: "Burn",
-  service: "Service",
   integrity: "Integrity flag",
   unrated: "No history",
 };
@@ -113,7 +109,6 @@ export function addressReputationState(row: Record<string, unknown>): AddressRep
   if (yes("is_deposit")) return "deposit";
   if (yes("is_emblem_vault")) return "vault";
   if (yes("is_burn")) return "burn";
-  if (yes("likely_service")) return "service";
   if (count("vault_scams") + count("shell_scams") + count("dump_scams") > 0) return "integrity";
   return row.reputation == null ? "unrated" : "ranked";
 }

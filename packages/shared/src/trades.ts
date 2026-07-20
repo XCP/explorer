@@ -10,12 +10,19 @@ export interface TradeRow {
   currency: "XCP" | "BTC" | "ETH" | "USDC" | string | null;
   total: number | null; // in `currency` units
   price: number | null; // generated: total/quantity
-  usd_value: number | null; // filled where known (USDC at ingest; backfill via prices)
+  usd_value: number | null; // historical payment value; never substituted with a current quote
+  usd_basis: "execution_day" | "direct_usd" | null;
+  usd_source: string | null;
+  usd_price_day: string | null;
+  usd_observed_day: string | null;
+  low_quality: 0 | 1;
   buyer: string | null;
   seller: string | null;
   tx_hash: string | null;
   sale_class: "single" | "bundle" | string | null;
   leg_count: number;
+  source_name: string | null;
+  source_url: string | null;
 }
 
 /** One venue's totals (GET /v2/trades/stats returns Envelope<TradeVenueStats[]>). */
@@ -25,4 +32,6 @@ export interface TradeVenueStats {
   assets: number; // distinct Counterparty assets sold on this venue
   last_time: number | null; // unix seconds of the most recent trade
   usd_known: number | null; // SUM(usd_value) over rows where USD is known
+  usd_unpriced_trades: number;
+  low_quality_trades: number;
 }

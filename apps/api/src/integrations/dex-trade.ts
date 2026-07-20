@@ -25,7 +25,8 @@ export function parseDexTradeMarket(
   const ticker = object(tickerValue, "Dex-Trade ticker response must be an object");
   const data = object(ticker.data, "Dex-Trade ticker data must be an object");
   const rate = Number(data.last);
-  if (ticker.status !== true || !Number.isFinite(rate) || rate <= 0) throw new Error("Dex-Trade XCP/BTC ticker is invalid");
+  if (ticker.status !== true || !Number.isFinite(rate) || rate <= 0)
+    throw new Error("Dex-Trade XCP/BTC ticker is invalid");
 
   const trades = object(tradesValue, "Dex-Trade trades response must be an object");
   if (trades.status !== true || !Array.isArray(trades.data)) throw new Error("Dex-Trade trades data is invalid");
@@ -47,7 +48,10 @@ export function parseDexTradeMarket(
   return { pair, price: rate, latestPrice, latestTime, latestVolume };
 }
 
-export async function fetchDexTradeMarket(pair: DexTradePair, fetcher: typeof fetch = fetch): Promise<DexTradeObservation> {
+export async function fetchDexTradeMarket(
+  pair: DexTradePair,
+  fetcher: typeof fetch = fetch,
+): Promise<DexTradeObservation> {
   const init = {
     headers: { "user-agent": "xcp.io-indexer", accept: "application/json" },
     signal: AbortSignal.timeout(10_000),

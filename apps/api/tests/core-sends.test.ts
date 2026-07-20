@@ -5,7 +5,10 @@ import { listSends } from "#api/queries/records";
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...values: unknown[]) {
     this.values = values;
     return this;
@@ -37,9 +40,12 @@ test("compact sends restore identities and preserve deterministic MPMA order", a
   `);
 
   const rows = (await listSends(d1(db), 10, 0)).map((row) => ({ ...row }));
-  assert.deepEqual(rows.map(({ destination, quantity_normalized, memo }) => ({ destination, quantity_normalized, memo })), [
-    { destination: "second", quantity_normalized: "2.5", memo: null },
-    { destination: "first", quantity_normalized: "1.5", memo: "hello" },
-  ]);
+  assert.deepEqual(
+    rows.map(({ destination, quantity_normalized, memo }) => ({ destination, quantity_normalized, memo })),
+    [
+      { destination: "second", quantity_normalized: "2.5", memo: null },
+      { destination: "first", quantity_normalized: "1.5", memo: "hello" },
+    ],
+  );
   assert.equal(rows[0].tx_hash, "a".repeat(64));
 });

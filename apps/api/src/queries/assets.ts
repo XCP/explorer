@@ -126,15 +126,12 @@ export function featuredAssets(db: D1Database, limit: number): Promise<FeaturedA
 
 /** Chain tip (max block) — substituted into the address-decay term of the reputation expression. */
 /** Holder base bucketed by factual address classification or materialized Reputation band. */
-export function holderTiers(
-  db: D1Database,
-  asset: string,
-): Promise<HolderTierRow[]> {
+export function holderTiers(db: D1Database, asset: string): Promise<HolderTierRow[]> {
   return q<HolderTierRow>(
     db,
     `WITH h AS (
        SELECT CAST(b.quantity AS REAL) q,sg.is_exchange xch,sg.is_deposit dep,
-         sg.is_emblem_vault vlt,sg.is_burn brn,sg.likely_service svc,
+         sg.is_emblem_vault vlt,sg.is_burn brn,
          COALESCE(sg.vault_scams,0)+COALESCE(sg.shell_scams,0)+COALESCE(sg.dump_scams,0) integrity,
          reputation.reputation
        FROM balances b JOIN address_signals sg ON sg.address_id=b.address_id
@@ -143,7 +140,7 @@ export function holderTiers(
          AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0),
      tot AS (SELECT SUM(q) s FROM h)
      SELECT CASE WHEN xch=1 THEN 'Exchange' WHEN dep=1 THEN 'Deposit' WHEN vlt=1 THEN 'Vault'
-                 WHEN brn=1 THEN 'Burn' WHEN svc=1 THEN 'Service' WHEN integrity>0 THEN 'Integrity flag'
+                 WHEN brn=1 THEN 'Burn' WHEN integrity>0 THEN 'Integrity flag'
                  WHEN reputation>=99 THEN 'Exceptional' WHEN reputation>=90 THEN 'Strong'
                  WHEN reputation>=50 THEN 'Established' WHEN reputation IS NOT NULL THEN 'Limited'
                  ELSE 'Unrated' END tier,
@@ -187,7 +184,7 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
     `SELECT b.holder, b.holder_type, b.quantity, b.quantity_normalized,
             CASE WHEN s.is_burn=1 THEN 'burn' WHEN s.is_exchange=1 THEN 'exchange'
                  WHEN s.is_emblem_vault=1 THEN 'vault' WHEN s.is_deposit=1 THEN 'deposit'
-                 WHEN s.likely_service=1 THEN 'service' WHEN s.survived_assets>=20 THEN 'creator'
+                 WHEN s.survived_assets>=20 THEN 'creator'
                  WHEN s.assets_held>=500 THEN 'whale' WHEN s.assets_held>=100 THEN 'collector'
                  END role
      FROM balances b LEFT JOIN address_signals s ON s.address=b.holder

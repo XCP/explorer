@@ -6,7 +6,10 @@ import { graphCuts, graphOverview, graphScore } from "#api/queries/graph";
 
 class Statement {
   private args: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...args: unknown[]) {
     this.args = args;
     return this;
@@ -53,11 +56,17 @@ test("compact graph reads use canonical identities and only the active generatio
   assert.deepEqual(await graphScore(binding, "address", "alice"), { trust: 0.8, distrust: 0.1 });
   assert.deepEqual((await graphCuts(binding)).asset, { trust: 0.3, distrust: 0.5 });
   const ego = await addressEgo(binding, "alice", 10);
-  assert.deepEqual(ego.nodes.map((node) => node.id), ["alice", "bob"]);
+  assert.deepEqual(
+    ego.nodes.map((node) => node.id),
+    ["alice", "bob"],
+  );
   assert.equal(ego.edges.length, 1);
   assert.equal(ego.edges[0].target, "bob");
   const holders = await assetHolders(binding, "CARD", 10);
-  assert.deepEqual(holders.nodes.map((node) => node.id), ["CARD", "bob", "carol"]);
+  assert.deepEqual(
+    holders.nodes.map((node) => node.id),
+    ["CARD", "bob", "carol"],
+  );
   assert.equal(holders.edges.filter((edge) => !edge.spoke).length, 2);
   const overview = await graphOverview(binding);
   assert.equal(overview.addresses.tiers.trusted, 2);

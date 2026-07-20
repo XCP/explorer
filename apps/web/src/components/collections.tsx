@@ -116,18 +116,15 @@ export function Collections() {
   const { data, error, isLoading } = useSWR<Envelope<CollectionProfile[]>>(apiUrl("/v2/collections"));
   const [sort, setSort] = useState<SortState | undefined>();
   const sorted = [...(data?.result ?? [])].sort((a, b) => {
-    if (!sort) return b.rated_pct - a.rated_pct || (b.median_rating ?? -1) - (a.median_rating ?? -1) || b.members - a.members;
+    if (!sort)
+      return b.rated_pct - a.rated_pct || (b.median_rating ?? -1) - (a.median_rating ?? -1) || b.members - a.members;
     const value = VALUE[sort.key] ?? VALUE.rated;
     const difference = value(a) - value(b);
     return sort.dir === "asc" ? difference : -difference;
   });
   const onSort = (key: string) =>
     setSort((current) =>
-      current?.key !== key
-        ? { key, dir: "desc" }
-        : current.dir === "desc"
-          ? { key, dir: "asc" }
-          : undefined,
+      current?.key !== key ? { key, dir: "desc" } : current.dir === "desc" ? { key, dir: "asc" } : undefined,
     );
 
   return (
@@ -137,8 +134,7 @@ export function Collections() {
         <p>
           Counterparty projects described by Rating coverage, typical Rating, holder overlap, concentration, market
           activity, realized value, and integrity evidence. No collection score: every observed axis stays visible.
-          Ranked by rated-member coverage;
-          click a column to re-sort.{" "}
+          Ranked by rated-member coverage; click a column to re-sort.{" "}
           <Link href="/collections/candidates" className="underline underline-offset-2">
             Discover untagged candidates →
           </Link>

@@ -41,7 +41,9 @@ export async function projectCollectionMembership(env: Env, tag: string): Promis
      ) WHERE priority=1
      ON CONFLICT(entity_id,tag) DO UPDATE SET
        source=excluded.source,value=excluded.value,meta=excluded.meta`,
-  ).bind(tag).run();
+  )
+    .bind(tag)
+    .run();
 
   await env.CORE_DB.prepare(
     `DELETE FROM tags AS projection
@@ -51,7 +53,9 @@ export async function projectCollectionMembership(env: Env, tag: string): Promis
          SELECT 1 FROM collection_membership_evidence evidence
          WHERE evidence.entity_id=projection.entity_id AND evidence.tag=projection.tag
        )`,
-  ).bind(tag).run();
+  )
+    .bind(tag)
+    .run();
 }
 
 export async function projectCollectionMembershipTags(env: Env, tags: Iterable<string>): Promise<void> {

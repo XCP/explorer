@@ -5,9 +5,17 @@ import { reputationTierMembers, reputationTop } from "#api/queries/addresses";
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
-  bind(...values: unknown[]) { this.values = values; return this; }
-  async all<T>() { return { results: this.db.prepare(this.sql).all(...this.values) as T[] }; }
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
@@ -24,7 +32,10 @@ test("compact reputation rankings restore address identities", async () => {
   `);
   const binding = d1(db);
   const top = await reputationTop(binding);
-  assert.deepEqual(top.map((row) => row.address), ["alice", "bob"]);
+  assert.deepEqual(
+    top.map((row) => row.address),
+    ["alice", "bob"],
+  );
   const tier = await reputationTierMembers(binding, 90, 100.1, 10, 0);
   assert.equal(tier.length, 1);
   assert.equal(tier[0].address, "alice");

@@ -46,11 +46,27 @@ test("operational status aggregates durable frontiers without counting recovery 
             calculated_at: 100,
           },
         ]
-      : [
-          { key: "last_event_index", value: "120" },
-          { key: "last_block_index", value: "101" },
-          { key: "last_block_hash", value: "abc" },
-        ],
+      : sql.includes("FROM pricing_health")
+        ? [
+            {
+              currency: "XCP",
+              trades: 10,
+              missing: 0,
+              divergent: 0,
+              latest_price_day: "2026-07-18",
+              latest_price_source: "coinmarketcap_aggregate",
+              latest_observed_day: "2026-07-18",
+              generated_at: 120,
+            },
+          ]
+        : sql.includes("MAX(rowid) tip FROM trades")
+          ? [{ tip: 500 }]
+          : [
+              { key: "last_event_index", value: "120" },
+              { key: "last_block_index", value: "101" },
+              { key: "last_block_hash", value: "abc" },
+              { key: "usd_cur", value: "490" },
+            ],
   );
   const recovery = new Database((sql) => {
     if (sql.includes("FROM recovery_state"))
@@ -74,6 +90,26 @@ test("operational status aggregates durable frontiers without counting recovery 
   assert.deepEqual(result.core, {
     replay: { last_event_index: 120, last_block_index: 101, last_block_hash: "abc" },
     activity_outlook: { healthy: true, rows: 10, ineligible: 0, calculated_at: 100 },
+    pricing: {
+      healthy: false,
+      reconciliation_cursor: 490,
+      trade_tip: 500,
+      pending_rows: 10,
+      snapshot_age_seconds: 3,
+      currencies: [
+        {
+          currency: "XCP",
+          trades: 10,
+          missing: 0,
+          divergent: 0,
+          latest_price_day: "2026-07-18",
+          latest_price_source: "coinmarketcap_aggregate",
+          latest_observed_day: "2026-07-18",
+          latest_price_age_days: 0,
+          generated_at: 120,
+        },
+      ],
+    },
   });
   assert.equal(result.recovery.import.rows_seen, 12_000);
   assert.equal(result.recovery.verification.complete, false);
@@ -102,4 +138,29 @@ test("verification is complete only after all imports complete and the indexed f
   const result = await operationalStatus({ CORE_DB: core, RECOVERY_DB: recovery } as unknown as Env, 1);
   assert.equal(result.recovery.verification.complete, true);
   assert.equal(result.recovery.verification.has_unchecked_outputs, false);
+});
+
+test("pricing status is healthy only when its complete snapshot is fresh and reconciled", async () => {
+  const now = Math.floor(Date.parse("2026-07-18T12:00:00Z") / 1000);
+  const currencies = ["BTC", "ETH", "XCP", "USDC"].map((currency) => ({
+    currency,
+    trades: 1,
+    missing: 0,
+    divergent: 0,
+    latest_price_day: currency === "USDC" ? null : "2026-07-18",
+    latest_price_source: currency === "USDC" ? null : "source",
+    latest_observed_day: currency === "USDC" ? null : "2026-07-18",
+    generated_at: now - 60,
+  }));
+  const core = new Database((sql) => {
+    if (sql.includes("FROM pricing_health")) return currencies;
+    if (sql.includes("MAX(rowid) tip FROM trades")) return [{ tip: 10 }];
+    if (sql.includes("FROM core_state")) return [{ key: "usd_cur", value: "10" }];
+    return [];
+  });
+  const recovery = new Database(() => []);
+  const result = await operationalStatus({ CORE_DB: core, RECOVERY_DB: recovery } as unknown as Env, now);
+  assert.equal(result.core.pricing.healthy, true);
+  assert.equal(result.core.pricing.snapshot_age_seconds, 60);
+  assert.equal(result.core.pricing.currencies.find((row) => row.currency === "XCP")?.latest_price_age_days, 0);
 });

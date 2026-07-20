@@ -46,7 +46,6 @@ const RULES: Rule[] = [
       JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
       WHERE send.destination_address_id IS NOT NULL`,
   },
-  { tag: "service", scope: "address", select: addressSelect("signal.likely_service=1") },
   { tag: "dex_trader", scope: "address", select: addressSelect("signal.dex_trades>=10") },
   { tag: "frequent_dex_trader", scope: "address", select: addressSelect("signal.dex_trades>=100") },
   { tag: "collector", scope: "address", select: addressSelect("signal.assets_held>=100") },
@@ -121,6 +120,8 @@ async function reconcileRule(db: D1Database, rule: Rule, keys?: string[]): Promi
 export async function buildTags(env: Env): Promise<Record<string, unknown>> {
   const db = env.CORE_DB;
   await ensureEntities(db);
+  // Retire the former inbound-peer heuristic; it never represented a coherent identity.
+  await db.prepare(`DELETE FROM tags WHERE source='computed' AND tag='service'`).run();
   const rules = RULES;
   let written = 0;
   for (const rule of rules) written += await reconcileRule(db, rule);

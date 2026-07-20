@@ -73,8 +73,12 @@ interface Graph {
 }
 
 function buildSyntheticGraph(db: DatabaseSync): Graph {
-  const insertEntity = db.prepare(`INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('address',?)`);
-  const selectEntity = db.prepare(`SELECT entity_id FROM entity_dictionary WHERE entity_type='address' AND entity_key=?`);
+  const insertEntity = db.prepare(
+    `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key) VALUES('address',?)`,
+  );
+  const selectEntity = db.prepare(
+    `SELECT entity_id FROM entity_dictionary WHERE entity_type='address' AND entity_key=?`,
+  );
   const id = (name: string): number => {
     insertEntity.run(name);
     return selectEntity.get(name)!.entity_id as number;
@@ -172,20 +176,30 @@ function vectors(db: DatabaseSync) {
   const trustSlots = Array.from({ length: K }, (_, i) => i).join(",");
   const trust: Map0 = new Map();
   for (const r of db
-    .prepare(`SELECT entity.entity_key node,MIN(rank.rank) tr FROM graph_rank rank
+    .prepare(
+      `SELECT entity.entity_key node,MIN(rank.rank) tr FROM graph_rank rank
       JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id
-      WHERE rank.generation=${GENERATION} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id`)
+      WHERE rank.generation=${GENERATION} AND rank.slot IN (${trustSlots}) GROUP BY rank.entity_id`,
+    )
     .all())
     trust.set(r.node as string, r.tr as number);
   const distrust: Map0 = new Map();
-  for (const r of db.prepare(`SELECT entity.entity_key node,rank.rank dr FROM graph_rank rank
+  for (const r of db
+    .prepare(
+      `SELECT entity.entity_key node,rank.rank dr FROM graph_rank rank
     JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id
-    WHERE rank.generation=${GENERATION} AND rank.slot=${DISTRUST_SLOT}`).all())
+    WHERE rank.generation=${GENERATION} AND rank.slot=${DISTRUST_SLOT}`,
+    )
+    .all())
     distrust.set(r.node as string, r.dr as number);
   const plain: Map0 = new Map();
-  for (const r of db.prepare(`SELECT entity.entity_key node,rank.rank pr FROM graph_rank rank
+  for (const r of db
+    .prepare(
+      `SELECT entity.entity_key node,rank.rank pr FROM graph_rank rank
     JOIN entity_dictionary entity ON entity.entity_id=rank.entity_id
-    WHERE rank.generation=${GENERATION} AND rank.slot=${CONTROL_SLOT}`).all())
+    WHERE rank.generation=${GENERATION} AND rank.slot=${CONTROL_SLOT}`,
+    )
+    .all())
     plain.set(r.node as string, r.pr as number);
   return { trust, distrust, plain };
 }
@@ -259,8 +273,12 @@ test("gauntlet: isolated newcomer is unscored (zero, not negative)", () => {
   run(db, g);
   const { trust, distrust } = vectors(db);
   // never entered the graph at all -> no node row.
-  const present = db.prepare(`SELECT COUNT(*) c FROM graph_node node JOIN entity_dictionary entity
-    ON entity.entity_id=node.entity_id WHERE entity.entity_key=?`).get(g.newcomer)!.c as number;
+  const present = db
+    .prepare(
+      `SELECT COUNT(*) c FROM graph_node node JOIN entity_dictionary entity
+    ON entity.entity_id=node.entity_id WHERE entity.entity_key=?`,
+    )
+    .get(g.newcomer)!.c as number;
   assert.equal(present, 0, "newcomer has no edges -> absent from graph_node");
   const t = trust.get(g.newcomer) ?? 0,
     d = distrust.get(g.newcomer) ?? 0;
@@ -367,11 +385,13 @@ test("normalized edge builder resolves compact relationships through canonical e
   for (const sql of ENTITY_IDENTITY_STATEMENTS) db.exec(sql);
   for (const sql of entityEdgeStatements(generation)) db.exec(sql);
   const edges = db
-    .prepare(`SELECT source.entity_key source,destination.entity_key destination,ROUND(edge.weight,6) weight
+    .prepare(
+      `SELECT source.entity_key source,destination.entity_key destination,ROUND(edge.weight,6) weight
       FROM graph_edges edge
       JOIN entity_dictionary source ON source.entity_id=edge.source_entity_id
       JOIN entity_dictionary destination ON destination.entity_id=edge.destination_entity_id
-      WHERE edge.generation=? ORDER BY source.entity_key,destination.entity_key`)
+      WHERE edge.generation=? ORDER BY source.entity_key,destination.entity_key`,
+    )
     .all(generation);
   assert.deepEqual(
     edges.map((row) => ({ ...row })),
@@ -384,7 +404,11 @@ test("normalized edge builder resolves compact relationships through canonical e
       { source: "buyer", destination: "operator", weight: 0.693147 },
     ],
   );
-  assert.equal(edges.some((row) => row.source === "exchange"), false, "excluded infrastructure cannot endorse");
+  assert.equal(
+    edges.some((row) => row.source === "exchange"),
+    false,
+    "excluded infrastructure cannot endorse",
+  );
   db.close();
 });
 
@@ -399,7 +423,10 @@ test("normalized seeds resolve polymorphic identities without key collisions", (
   `);
   db.prepare(entitySeedInsertStatement(4, 2)).run("address", "SAME", 0, 0.25, "asset", "SAME", 1, 0.5);
   assert.deepEqual(
-    db.prepare(`SELECT entity_id,slot,score FROM graph_seed ORDER BY entity_id`).all().map((row) => ({ ...row })),
+    db
+      .prepare(`SELECT entity_id,slot,score FROM graph_seed ORDER BY entity_id`)
+      .all()
+      .map((row) => ({ ...row })),
     [
       { entity_id: 1, slot: 0, score: 0.25 },
       { entity_id: 2, slot: 1, score: 0.5 },

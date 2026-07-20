@@ -23,3 +23,8 @@ coverage/
 .dry-run/
 test-results/
 playwright-report/
+# per-machine working areas — agent scratch, local tool checkouts, generated reports
+.codex-tmp/
+tools/
+outputs/
+apps/web/artifacts/

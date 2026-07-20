@@ -615,7 +615,7 @@ export const REGISTRY: Registry = {
         priority: 2,
         w: "80px",
         w760: "78px",
-        cell: (r) => (r.usd_value != null ? `$${commas(r.usd_value.toFixed(r.usd_value >= 100 ? 0 : 2))}` : "—"),
+        cell: (r) => (r.usd_value != null ? `≈$${commas(r.usd_value.toFixed(r.usd_value >= 100 ? 0 : 2))}` : "—"),
       },
       { label: "Dispenser", priority: 3, w: "minmax(115px,1fr)", omitOn: "address", cell: (r) => addrCell(r.source) },
       {

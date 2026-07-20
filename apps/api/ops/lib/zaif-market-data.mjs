@@ -6,7 +6,9 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchWithRetry(fetcher, url) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const response = await fetcher(url, { headers: { accept: "text/csv,text/html", "user-agent": "xcp.io-market-import" } });
+    const response = await fetcher(url, {
+      headers: { accept: "text/csv,text/html", "user-agent": "xcp.io-market-import" },
+    });
     if (response.ok || !RETRYABLE.has(response.status) || attempt === 4) return response;
     await delay(1_000 * 2 ** attempt);
   }
@@ -37,7 +39,10 @@ export function parseZaifTimestamp(value) {
 }
 
 export function parseZaifTrades(csv, pair) {
-  const lines = csv.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
+  const lines = csv
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .split(/\r?\n/);
   if (!lines[0] || lines[0].trim() !== "timestamp,price,amount,trade_type") {
     throw new Error(`Unexpected Zaif ${pair} CSV header`);
   }
@@ -67,20 +72,58 @@ export function aggregateZaifDaily(trades) {
     group.push(trade);
     groups.set(day, group);
   }
-  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, rows]) => {
-    rows.sort((a, b) => a.price - b.price);
-    const volume = rows.reduce((sum, row) => sum + row.amount, 0);
-    let cumulative = 0;
-    const median = rows.find((row) => (cumulative += row.amount) * 2 >= volume);
-    return {
-      day,
-      price: median.price,
-      volumeBase: volume,
-      trades: rows.length,
-      firstTime: Math.min(...rows.map((row) => row.time)),
-      lastTime: Math.max(...rows.map((row) => row.time)),
-    };
-  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, rows]) => {
+      rows.sort((a, b) => a.price - b.price);
+      const volume = rows.reduce((sum, row) => sum + row.amount, 0);
+      let cumulative = 0;
+      const median = rows.find((row) => (cumulative += row.amount) * 2 >= volume);
+      return {
+        day,
+        price: median.price,
+        volumeBase: volume,
+        trades: rows.length,
+        firstTime: Math.min(...rows.map((row) => row.time)),
+        lastTime: Math.max(...rows.map((row) => row.time)),
+      };
+    });
+}
+
+/** Compare positive daily prices without allowing nominal price scale to dominate the result. */
+export function summarizePriceAgreement(candidateRows, referenceRows) {
+  const reference = new Map(referenceRows.map((row) => [row.day, Number(row.price)]));
+  const overlaps = candidateRows
+    .flatMap((row) => {
+      const candidate = Number(row.price);
+      const expected = reference.get(row.day);
+      if (!(candidate > 0) || !(expected > 0)) return [];
+      return [
+        {
+          day: row.day,
+          candidate,
+          reference: expected,
+          candidate_volume_base: Number(row.volume_xcp ?? row.volumeBase ?? 0),
+          candidate_executions: Number(row.executions ?? row.trades ?? 0),
+          absoluteLogError: Math.abs(Math.log(candidate / expected)),
+        },
+      ];
+    })
+    .sort((left, right) => left.absoluteLogError - right.absoluteLogError);
+  const errors = overlaps.map((row) => row.absoluteLogError);
+  const percentile = (fraction) => errors[Math.floor((errors.length - 1) * fraction)] ?? null;
+  const within = (fraction) =>
+    overlaps.length ? (100 * errors.filter((error) => error <= Math.log(1 + fraction)).length) / overlaps.length : null;
+  return {
+    days: overlaps.length,
+    mean_absolute_log_error: overlaps.length ? errors.reduce((sum, error) => sum + error, 0) / overlaps.length : null,
+    median_absolute_log_error: percentile(0.5),
+    p90_absolute_log_error: percentile(0.9),
+    p99_absolute_log_error: percentile(0.99),
+    within_10_percent: within(0.1),
+    within_25_percent: within(0.25),
+    worst: overlaps.slice(-10).reverse(),
+  };
 }
 
 async function sha256(value) {

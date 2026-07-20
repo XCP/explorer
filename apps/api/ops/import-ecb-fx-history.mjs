@@ -7,10 +7,23 @@ const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const history = await fetchEcbReferenceRates();
 let written = 0;
 for (let offset = 0; offset < history.rows.length; offset += 60) {
-  const values = history.rows.slice(offset, offset + 60).map((row) => `(${[
-    quote(row.day),quote(row.baseCurrency),quote(row.quoteCurrency),quote("ecb"),quote("reference"),
-    row.price,0,0,quote("official_daily_reference"),
-  ].join(",")})`).join(",");
+  const values = history.rows
+    .slice(offset, offset + 60)
+    .map(
+      (row) =>
+        `(${[
+          quote(row.day),
+          quote(row.baseCurrency),
+          quote(row.quoteCurrency),
+          quote("ecb"),
+          quote("reference"),
+          row.price,
+          0,
+          0,
+          quote("official_daily_reference"),
+        ].join(",")})`,
+    )
+    .join(",");
   const result = executeRemoteD1(`INSERT INTO market_price_observations(
     day,base_currency,quote_currency,source,venue,price,volume_base,trades,method
   ) VALUES ${values}

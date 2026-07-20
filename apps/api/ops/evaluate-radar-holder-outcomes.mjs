@@ -14,7 +14,8 @@ const horizonSeconds = 180 * 86400;
 
 function rowsFor(cutoff) {
   return db
-    .prepare(`WITH past AS (
+    .prepare(
+      `WITH past AS (
       SELECT asset_id,COUNT(*) past_sales,COUNT(DISTINCT buyer_id) past_buyers,
         COUNT(DISTINCT strftime('%Y-%m',block_time,'unixepoch')) past_active_months
       FROM market_trades WHERE asset_id IS NOT NULL AND block_time<=? GROUP BY asset_id
@@ -42,7 +43,8 @@ function rowsFor(cutoff) {
     FROM holder_outcomes tracked
     JOIN historical_concentration concentration USING(cutoff_label,asset_id)
     JOIN past USING(asset_id) LEFT JOIN future_sellers USING(asset_id)
-    WHERE tracked.cutoff_label=? AND past.past_sales>=3 AND past.past_buyers>=2 AND past.past_active_months>=2`)
+    WHERE tracked.cutoff_label=? AND past.past_sales>=3 AND past.past_buyers>=2 AND past.past_active_months>=2`,
+    )
     .all(cutoff.timestamp, cutoff.label, cutoff.timestamp, cutoff.timestamp + horizonSeconds, cutoff.label)
     .map((row) => {
       const numeric = Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value)]));
@@ -82,13 +84,25 @@ const evaluations = concentration.cutoffs.map((cutoff) => {
     cutoff: cutoff.label,
     cohort: rows.length,
     concentration: [
-      summarize(rows.filter((row) => row.top1_share < 0.25), "top1<25%"),
-      summarize(rows.filter((row) => row.top1_share >= 0.25 && row.top1_share < 0.5), "25%<=top1<50%"),
+      summarize(
+        rows.filter((row) => row.top1_share < 0.25),
+        "top1<25%",
+      ),
+      summarize(
+        rows.filter((row) => row.top1_share >= 0.25 && row.top1_share < 0.5),
+        "25%<=top1<50%",
+      ),
       summarize(high, "top1>=50%"),
     ],
     dominant_holder: [
-      summarize(high.filter((row) => row.creator_is_top1 === 1), "creator is dominant"),
-      summarize(high.filter((row) => row.creator_is_top1 === 0), "non-creator is dominant"),
+      summarize(
+        high.filter((row) => row.creator_is_top1 === 1),
+        "creator is dominant",
+      ),
+      summarize(
+        high.filter((row) => row.creator_is_top1 === 0),
+        "non-creator is dominant",
+      ),
     ],
     creator_dominant_future_reduction: {
       assets: high.filter((row) => row.creator_is_top1 === 1).length,

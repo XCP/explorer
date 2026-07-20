@@ -16,9 +16,15 @@ const EMBLEM_WINDOW = 5_000;
 // invocation bounded by vault count so D1 can finish the projection atomically.
 const EMBLEM_DIRTY_BATCH = 1;
 const DEX_RECONCILE_INTERVAL_BLOCKS = 6;
+const SWAPBOT_PROJECTION_VERSION = 1;
 
 export function coreDexTradesSql(): string {
-  const forwardMoney = `forward_asset.asset IN ('XCP','BTC')`;
+  const day = `date(match.block_time,'unixepoch')`;
+  const forwardMoney = `(forward_asset.asset IN ('XCP','BTC') OR
+    (backward_asset.asset NOT IN ('XCP','BTC') AND EXISTS(SELECT 1 FROM prices price
+      WHERE price.day=${day} AND price.currency=forward_asset.asset)))`;
+  const backwardMoney = `EXISTS(SELECT 1 FROM prices price
+    WHERE price.day=${day} AND price.currency=backward_asset.asset)`;
   return `INSERT INTO trades(
       venue,ref,asset_id,block_time,block_index,quantity,currency,total,buyer_id,seller_id,tx_hash
     )
@@ -28,7 +34,9 @@ export function coreDexTradesSql(): string {
       CAST(CASE WHEN ${forwardMoney} THEN match.backward_quantity ELSE match.forward_quantity END AS REAL)
         / CASE WHEN sold_asset.divisible=1 THEN 1e8 ELSE 1 END,
       CASE WHEN ${forwardMoney} THEN forward_asset.asset ELSE backward_asset.asset END,
-      CAST(CASE WHEN ${forwardMoney} THEN match.forward_quantity ELSE match.backward_quantity END AS REAL) / 1e8,
+      CAST(CASE WHEN ${forwardMoney} THEN match.forward_quantity ELSE match.backward_quantity END AS REAL)
+        / CASE WHEN (CASE WHEN ${forwardMoney} THEN forward_asset.asset ELSE backward_asset.asset END) IN ('XCP','BTC')
+            OR money_asset.divisible=1 THEN 1e8 ELSE 1 END,
       CASE WHEN ${forwardMoney} THEN match.tx0_address_id ELSE match.tx1_address_id END,
       CASE WHEN ${forwardMoney} THEN match.tx1_address_id ELSE match.tx0_address_id END,
       match.tx1_hash
@@ -37,8 +45,9 @@ export function coreDexTradesSql(): string {
     JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
     LEFT JOIN assets sold_asset ON sold_asset.asset_id=
       CASE WHEN ${forwardMoney} THEN match.backward_asset_id ELSE match.forward_asset_id END
+    LEFT JOIN assets money_asset ON money_asset.asset_id=
+      CASE WHEN ${forwardMoney} THEN match.forward_asset_id ELSE match.backward_asset_id END
     WHERE match.status='completed'
-      AND (forward_asset.asset IN ('XCP','BTC') OR backward_asset.asset IN ('XCP','BTC'))
       AND match.block_index>? AND match.block_index<=?
     ON CONFLICT(venue,ref) DO UPDATE SET
       asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
@@ -194,6 +203,71 @@ export const SCARCE_TRADES_SQL = `INSERT INTO trades(
     OR trades.block_index IS NOT excluded.block_index OR trades.quantity IS NOT excluded.quantity
     OR trades.currency IS NOT excluded.currency OR trades.total IS NOT excluded.total`;
 
+/**
+ * Reconstruct Counterparty-token purchases from documented Tokenly Swapbot addresses.
+ *
+ * An output is eligible only when the bot returns a different asset to the payer within
+ * the registry's bounded confirmation window. If an output can attach to more than one
+ * payment, the entire possible parent payment is withheld. This deliberately sacrifices
+ * coverage instead of turning an OTC-style round trip into an attributed venue sale.
+ */
+const SWAPBOT_MATCHES = `WITH eligible AS (
+    SELECT bot.address,bot_address.address_id bot_id,payment.event_index payment_event,
+      payment.tx_hash payment_tx_hash,payment.block_index payment_block,
+      payment.block_time payment_time,payment.source_id buyer_id,payment.asset_id payment_asset_id,
+      CAST(payment.quantity_normalized AS REAL) payment_quantity,
+      output.event_index output_event,output.asset_id output_asset_id,
+      CAST(output.quantity_normalized AS REAL) output_quantity,
+      COUNT(*) OVER (PARTITION BY output.event_index) eligible_payments
+    FROM tokenly_swapbots bot
+    JOIN address_dictionary bot_address ON bot_address.address=bot.address
+    JOIN tokenly_swapbot_inputs accepted ON accepted.address=bot.address
+    JOIN asset_dictionary payment_asset ON payment_asset.asset=accepted.asset
+    JOIN sends payment ON payment.destination_id=bot_address.address_id
+      AND payment.asset_id=payment_asset.asset_id
+      AND payment.block_index BETWEEN bot.active_from_block AND bot.active_to_block
+      AND CAST(payment.quantity_normalized AS REAL)>0
+    JOIN sends output ON output.source_id=bot_address.address_id
+      AND output.destination_id=payment.source_id AND output.asset_id<>payment.asset_id
+      AND output.block_index BETWEEN payment.block_index AND payment.block_index+bot.match_window_blocks
+      AND CAST(output.quantity_normalized AS REAL)>0
+  ), clean_parents AS (
+    SELECT payment_event FROM eligible GROUP BY payment_event HAVING MAX(eligible_payments)=1
+  ), clean AS (
+    SELECT eligible.* FROM eligible JOIN clean_parents USING(payment_event)
+  )`;
+
+export const SWAPBOT_TRADES_SQL = `${SWAPBOT_MATCHES}
+  INSERT INTO trades(
+    venue,ref,asset_id,block_time,block_index,quantity,currency,total,
+    buyer_id,seller_id,tx_hash,sale_class
+  )
+  SELECT 'tokenly_swapbot',CAST(payment_event AS TEXT),
+    CASE WHEN COUNT(*)=1 THEN MIN(output_asset_id) END,payment_time,payment_block,
+    CASE WHEN COUNT(*)=1 THEN MIN(output_quantity) END,payment_asset.asset,payment_quantity,
+    buyer_id,bot_id,payment_tx_hash,CASE WHEN COUNT(*)=1 THEN 'single' ELSE 'bundle' END
+  FROM clean JOIN asset_dictionary payment_asset ON payment_asset.asset_id=payment_asset_id
+  GROUP BY payment_event,payment_time,payment_block,payment_asset.asset,payment_quantity,
+    buyer_id,bot_id,payment_tx_hash HAVING 1
+  ON CONFLICT(venue,ref) DO UPDATE SET
+    asset_id=excluded.asset_id,block_time=excluded.block_time,block_index=excluded.block_index,
+    quantity=excluded.quantity,currency=excluded.currency,total=excluded.total,
+    buyer_id=excluded.buyer_id,seller_id=excluded.seller_id,tx_hash=excluded.tx_hash,
+    sale_class=excluded.sale_class
+  WHERE trades.asset_id IS NOT excluded.asset_id OR trades.block_time IS NOT excluded.block_time
+    OR trades.block_index IS NOT excluded.block_index OR trades.quantity IS NOT excluded.quantity
+    OR trades.currency IS NOT excluded.currency OR trades.total IS NOT excluded.total
+    OR trades.buyer_id IS NOT excluded.buyer_id OR trades.seller_id IS NOT excluded.seller_id
+    OR trades.tx_hash IS NOT excluded.tx_hash OR trades.sale_class IS NOT excluded.sale_class`;
+
+export const SWAPBOT_TRADE_LEGS_SQL = `${SWAPBOT_MATCHES}
+  INSERT INTO trade_legs(venue,trade_ref,leg_index,asset_id,quantity)
+  SELECT 'tokenly_swapbot',CAST(payment_event AS TEXT),output_event,output_asset_id,output_quantity
+  FROM clean WHERE 1
+  ON CONFLICT(venue,trade_ref,leg_index) DO UPDATE SET
+    asset_id=excluded.asset_id,quantity=excluded.quantity
+  WHERE trade_legs.asset_id IS NOT excluded.asset_id OR trade_legs.quantity IS NOT excluded.quantity`;
+
 export interface TradesBuildProgress {
   tip: number;
   dex?: { from: number; to: number };
@@ -250,12 +324,14 @@ export async function reconcileDirtyEmblemTrades(db: D1Database): Promise<{
     )`;
   const results = await db.batch([
     db.prepare(emblemTradesSql(dirtyFilter)).bind(EMBLEM_DIRTY_BATCH, EMBLEM_DIRTY_BATCH),
-    db.prepare(
-      `DELETE FROM emblem_trade_dirty WHERE (contract_id,token_id) IN (
+    db
+      .prepare(
+        `DELETE FROM emblem_trade_dirty WHERE (contract_id,token_id) IN (
          SELECT contract_id,token_id FROM emblem_trade_dirty
          ORDER BY contract_id,token_id LIMIT ?
        )`,
-    ).bind(EMBLEM_DIRTY_BATCH),
+      )
+      .bind(EMBLEM_DIRTY_BATCH),
   ]);
   const remaining = Number(
     (await db.prepare(`SELECT COUNT(*) remaining FROM emblem_trade_dirty`).first<{ remaining: number }>())?.remaining ??
@@ -309,6 +385,15 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
 
   const scarce = await env.CORE_DB.prepare(SCARCE_TRADES_SQL).run();
   writes.scarce = scarce.meta.rows_written ?? 0;
+  const swapbotVersion = await getCoreStateInt(env.CORE_DB, "trades_tokenly_swapbot_version");
+  if (swapbotVersion < SWAPBOT_PROJECTION_VERSION) {
+    const swapbot = await env.CORE_DB.batch([
+      env.CORE_DB.prepare(SWAPBOT_TRADES_SQL),
+      env.CORE_DB.prepare(SWAPBOT_TRADE_LEGS_SQL),
+    ]);
+    writes.tokenly_swapbot = swapbot.reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0);
+    await setCoreState(env.CORE_DB, "trades_tokenly_swapbot_version", SWAPBOT_PROJECTION_VERSION);
+  }
   return {
     tip,
     dex: dex.range,

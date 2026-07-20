@@ -77,8 +77,12 @@ while (state().cursor < receipt.max_block && (!stopAfterChunks || completedThisR
 }
 
 const finalState = state();
-const observed = db.prepare(`SELECT COUNT(*) rows,MIN(block_index) min_block,MAX(block_index) max_block,
-  MIN(block_time) min_time,MAX(block_time) max_time FROM block_times`).get();
+const observed = db
+  .prepare(
+    `SELECT COUNT(*) rows,MIN(block_index) min_block,MAX(block_index) max_block,
+  MIN(block_time) min_time,MAX(block_time) max_time FROM block_times`,
+  )
+  .get();
 const report = {
   ...receipt,
   schema: "xcp-radar-block-times/1",

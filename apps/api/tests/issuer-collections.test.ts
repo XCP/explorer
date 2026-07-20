@@ -5,7 +5,10 @@ import { buildIssuerCollections, issuerCollection, issuerCollectionMeta } from "
 
 class Statement {
   private args: unknown[] = [];
-  constructor(private readonly db: DatabaseSync, private readonly sql: string) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
   bind(...args: unknown[]) {
     this.args = args;
     return this;
@@ -52,8 +55,13 @@ test("issuer collection rebuild writes and reconciles compact entity tags", asyn
   const result = await buildIssuerCollections({ CORE_DB: d1(db) } as never);
   assert.equal(result.collections, 3);
   assert.deepEqual(
-    db.prepare(`SELECT entity.entity_key asset,tag.tag,tag.source FROM tags tag
-      JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id`).all().map((row) => ({ ...row })),
+    db
+      .prepare(
+        `SELECT entity.entity_key asset,tag.tag,tag.source FROM tags tag
+      JOIN entity_dictionary entity ON entity.entity_id=tag.entity_id`,
+      )
+      .all()
+      .map((row) => ({ ...row })),
     [{ asset: "CORRUPTJSUN", tag: "corruptionaires", source: "issuer" }],
   );
   db.close();

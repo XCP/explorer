@@ -9,6 +9,7 @@ export function assertUsdPricingAudit(identity, reconciliation) {
   for (const field of [
     "calendar_available_unpriced",
     "priced_without_calendar",
+    "divergent_trade_values",
     "usdc_mismatches",
     "expired_xcp_carries",
   ]) {

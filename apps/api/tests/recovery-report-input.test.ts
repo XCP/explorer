@@ -6,7 +6,10 @@ const address = "1BitcoinEaterAddressDontSendf59kuE";
 const recoveryTxid = "1".repeat(64);
 
 test("a recovery report accepts an available input owned by its address", () => {
-  assert.equal(isRecoveryReportInput({ recovery_address: address, classification: "recoverable" }, address, recoveryTxid), true);
+  assert.equal(
+    isRecoveryReportInput({ recovery_address: address, classification: "recoverable" }, address, recoveryTxid),
+    true,
+  );
 });
 
 test("a confirmed recovery can replay only the input it actually spent", () => {

@@ -214,7 +214,7 @@ export function entityFinalizeStatements(generation: number): string[] {
 const ENTITY_EXCLUDED = (addressId: string) => `(
   EXISTS (SELECT 1 FROM address_signals signal WHERE signal.address_id=${addressId}
            AND (signal.is_exchange=1 OR signal.is_burn=1 OR signal.is_deposit=1
-                OR signal.is_emblem_vault=1 OR signal.likely_service=1))
+                OR signal.is_emblem_vault=1))
   OR EXISTS (SELECT 1 FROM address_dictionary address JOIN curated
               ON curated.key=address.address AND curated.kind IN ('exchange','burn')
              WHERE address.address_id=${addressId})

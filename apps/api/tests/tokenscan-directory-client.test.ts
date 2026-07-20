@@ -35,8 +35,14 @@ test("collection evidence retains independent providers for one membership", () 
   db.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).run("A", "one", "tokenscan", null, "provider");
   db.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).run("A", "one", "collection", null, "fresh");
   assert.deepEqual(
-    db.prepare(`SELECT source,meta FROM collection_membership_evidence ORDER BY source`).all().map((row) => ({ ...row })),
-    [{ source: "collection", meta: "fresh" }, { source: "tokenscan", meta: "provider" }],
+    db
+      .prepare(`SELECT source,meta FROM collection_membership_evidence ORDER BY source`)
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      { source: "collection", meta: "fresh" },
+      { source: "tokenscan", meta: "provider" },
+    ],
   );
 });
 
@@ -48,15 +54,14 @@ test("collection and artist upserts resolve one canonical asset entity", () => {
     CREATE TABLE collection_membership_evidence(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,
       observed_at INTEGER,PRIMARY KEY(entity_id,tag,source));
     INSERT INTO entity_dictionary VALUES(1,'asset','CARD');`);
-  db.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).run(
-    "CARD", "rare-pepe", "collection", 1002, '{"series":1,"card":2}',
-  );
+  db.prepare(COLLECTION_EVIDENCE_UPSERT_SQL).run("CARD", "rare-pepe", "collection", 1002, '{"series":1,"card":2}');
   db.prepare(ARTIST_TAG_UPSERT_SQL).run("CARD", "artist-satoshi", '{"name":"Satoshi"}');
   assert.deepEqual(
-    db.prepare(`SELECT tag,source,value,meta FROM tags ORDER BY tag`).all().map((row) => ({ ...row })),
-    [
-      { tag: "artist-satoshi", source: "artist", value: null, meta: '{"name":"Satoshi"}' },
-    ],
+    db
+      .prepare(`SELECT tag,source,value,meta FROM tags ORDER BY tag`)
+      .all()
+      .map((row) => ({ ...row })),
+    [{ tag: "artist-satoshi", source: "artist", value: null, meta: '{"name":"Satoshi"}' }],
   );
   assert.deepEqual(
     { ...db.prepare(`SELECT tag,source,value,meta FROM collection_membership_evidence`).get() },

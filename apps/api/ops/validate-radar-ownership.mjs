@@ -118,7 +118,8 @@ let comparison = null;
 if (complete) {
   const nativeIds = receipt.native_asset_ids.join(",") || "-1";
   comparison = db
-    .prepare(`SELECT
+    .prepare(
+      `SELECT
       SUM(c.updated_event_index<=? AND r.holder_id IS NULL) missing_from_replay,
       SUM(c.updated_event_index<=? AND r.holder_id IS NOT NULL AND c.quantity!=r.quantity) quantity_mismatches,
       SUM(c.updated_event_index<=? AND c.asset_id NOT IN (${nativeIds})
@@ -126,7 +127,8 @@ if (complete) {
       SUM(c.updated_event_index<=? AND r.holder_id IS NOT NULL AND c.quantity=r.quantity) exact_matches,
       SUM(c.updated_event_index>?) changed_after_frontier
     FROM canonical_balances c
-    LEFT JOIN balances r ON r.holder_id=c.holder_id AND r.asset_id=c.asset_id`)
+    LEFT JOIN balances r ON r.holder_id=c.holder_id AND r.asset_id=c.asset_id`,
+    )
     .get(
       replay.frontier_event_index,
       replay.frontier_event_index,
@@ -135,9 +137,11 @@ if (complete) {
       replay.frontier_event_index,
     );
   comparison.replay_only = db
-    .prepare(`SELECT COUNT(*) count FROM balances replay
+    .prepare(
+      `SELECT COUNT(*) count FROM balances replay
       WHERE NOT EXISTS (SELECT 1 FROM canonical_balances canonical
-        WHERE canonical.holder_id=replay.holder_id AND canonical.asset_id=replay.asset_id)`)
+        WHERE canonical.holder_id=replay.holder_id AND canonical.asset_id=replay.asset_id)`,
+    )
     .get().count;
 }
 const report = { ...receipt, schema: "xcp-radar-ownership-validation/1", ...finalState, complete, comparison };

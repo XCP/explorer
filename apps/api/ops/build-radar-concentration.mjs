@@ -49,7 +49,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS historical_replay_state(
   CREATE INDEX IF NOT EXISTS idx_issuance_history_block_asset
     ON issuance_history(block_index,asset_id,event_index);`);
 const concentrationColumns = new Set(
-  db.prepare(`PRAGMA table_info(historical_concentration)`).all().map((column) => column.name),
+  db
+    .prepare(`PRAGMA table_info(historical_concentration)`)
+    .all()
+    .map((column) => column.name),
 );
 if (!concentrationColumns.has("top1_holder_id")) {
   db.exec(`ALTER TABLE historical_concentration ADD COLUMN top1_holder_id INTEGER;

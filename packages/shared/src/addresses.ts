@@ -79,7 +79,7 @@ export interface AddressDispenseRow {
   dispenser_tx_hash: string | null;
   /** BTC the buyer paid, raw satoshis as text. */
   btc_amount: string | null;
-  /** USD value at sale time, from the trades ledger where known. */
+  /** Approximate execution-day USD payment value from the trades ledger where known. */
   usd_value: number | null;
 }
 
@@ -235,10 +235,10 @@ export interface ReputationTierSummary {
  *  the infrastructure that's filtered out. Shown as the "who counts" act on /reputation. */
 export interface ReputationFunnel {
   total_addresses: number; // every REAL address = infrastructure + scored (footprint-less rows excluded)
-  infrastructure: number; // exchanges + deposits + vaults + burns + services
+  infrastructure: number; // exchanges + deposits + vaults + burns
   no_history: number; // 0 by definition — a historyless row is a contradiction (see NOT_INFRA)
   scored: number; // the real-user pool that gets a tier
-  by_kind: { exchanges: number; deposits: number; vaults: number; burns: number; services: number };
+  by_kind: { exchanges: number; deposits: number; vaults: number; burns: number };
 }
 
 /** GET /v2/reputation/tiers — the reputation system overview: the funnel, the score distribution, and the
@@ -275,4 +275,27 @@ export interface ExchangesPayload {
   summary: { exchanges: number; deposit_addresses: number } | null;
   exchanges: ExchangeRow[];
   top_assets: Array<{ asset: string; asset_longname: string | null; depositors: number }>;
+  market_history: Array<{ year: string; usd_volume: number; observations: number }>;
+  market_asset_history: Array<{ year: string; asset: string; usd_volume: number }>;
+  market_assets: Array<{
+    asset: string;
+    usd_volume: number;
+    observations: number;
+    first_day: string;
+    last_day: string;
+  }>;
+  aggregate_market_assets: Array<{
+    asset: string;
+    reported_usd_volume: number;
+    observations: number;
+    first_day: string;
+    last_day: string;
+  }>;
+  combined_market_history: Array<{ year: string; asset: string; usd_volume: number }>;
+  combined_market_assets: Array<{
+    asset: string;
+    usd_volume: number;
+    first_day: string;
+    last_day: string;
+  }>;
 }

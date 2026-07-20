@@ -35,7 +35,7 @@ import {
 export const addresses = router();
 
 // Real-user population filter shared by every reputation-tier read. The ONLY thing that isn't a real
-// user is infrastructure (exchange / deposit / burn / vault / service). EVERYTHING ELSE that we know
+// user is explicitly identified infrastructure (exchange / deposit / burn / vault). EVERYTHING ELSE that we know
 // about appeared on-chain doing SOMETHING — received or sent an asset, bought from a dispenser, created
 // one, issued, traded — and therefore has history. "No history" is a contradiction: if it were truly
 // historyless we wouldn't have a row for it. So the gate is "not infrastructure AND has any on-chain
@@ -252,7 +252,6 @@ addresses.get("/v2/reputation/tiers", (c) =>
         deposits: f?.deposits ?? 0,
         vaults: f?.vaults ?? 0,
         burns: f?.burns ?? 0,
-        services: f?.services ?? 0,
       },
     };
     return {
