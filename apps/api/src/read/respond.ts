@@ -55,10 +55,10 @@ export async function cached(
 ): Promise<Response> {
   const { ttl, edge = Math.min(ttl, 30), swr = ttl, staleKey } = opts;
   const now = Math.floor(Date.now() / 1000);
-  const send = (body: string, ctype = "application/json") =>
+  const send = (body: string, ctype = "application/json", maxAge = edge) =>
     c.body(body, 200, {
       "content-type": ctype,
-      "cache-control": `public, max-age=${edge}`,
+      "cache-control": `public, max-age=${maxAge}`,
       "access-control-allow-origin": "*",
     });
   const write = async (): Promise<string> => {
@@ -118,7 +118,9 @@ export async function cached(
         const now2 = Math.floor(Date.now() / 1000);
         const claimed = await claimCacheRefresh(c.env.CORE_DB, staleKey, now2).catch(() => false);
         if (claimed) ctx.waitUntil(write().catch(() => {}));
-        const response = send(prior.body, prior.ctype);
+        // max-age=0 keeps the edge middleware from pinning the PRIOR version's body under the
+        // CURRENT contract key for the full edge TTL — the recompute must be the first body cached.
+        const response = send(prior.body, prior.ctype, 0);
         response.headers.set("x-d1-cache", "STALE-VERSION");
         return response;
       }
