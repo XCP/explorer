@@ -133,6 +133,47 @@ export default async function YearPageRoute({ params }: { params: Promise<{ year
         </div>
       </header>
 
+      {/* ---- the burn (2014's founding chapter — leads when the payload carries it) ---- */}
+      {page.burn && (
+        <section className="yr-band">
+          <div className="yr-in">
+            <div className="yr-kicker">
+              <span>{kicker("the burn")}</span>
+              <span className="rule" />
+            </div>
+            <h2 className="display">Born by destruction</h2>
+            <p className="yr-lede">
+              Between <b>{page.burn.first_day}</b> and <b>{page.burn.last_day}</b>, <b>{commas(page.burn.burners)}</b>{" "}
+              addresses sent <b>{commas(page.burn.btc_burned)} BTC</b> to an address nobody can spend from —{" "}
+              <span className="font-mono">1CounterpartyXXXXXXXXXXXXXXXUWLpVr</span> — and received{" "}
+              <b className="grn">{commas(page.burn.xcp_earned)} XCP</b>. No premine, no sale: the entire supply was
+              bought with provable destruction, and every XCP that has ever existed traces back to these{" "}
+              {commas(page.burn.burns)} burns.
+            </p>
+            <div className="yr-stats">
+              <div className="yr-stat money">
+                <div className="display v">{commas(page.burn.btc_burned)}</div>
+                <div className="l">BTC destroyed, forever</div>
+              </div>
+              <div className="yr-stat chain">
+                <div className="display v">{usdShort(page.burn.xcp_earned).replace("$", "")}</div>
+                <div className="l">XCP born ({commas(page.burn.xcp_earned)})</div>
+              </div>
+              <div className="yr-stat">
+                <div className="display v">{commas(page.burn.burners)}</div>
+                <div className="l">burners — the founding cohort</div>
+              </div>
+              <div className="yr-stat">
+                <div className="display v">
+                  {Math.round((Date.parse(page.burn.last_day) - Date.parse(page.burn.first_day)) / 86_400_000) + 1}
+                </div>
+                <div className="l">days the window was open</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ---- the price ---- */}
       {page.xcp_daily.length > 1 && page.scoreboard.xcp && (
         <section className="yr-band">
@@ -281,30 +322,67 @@ export default async function YearPageRoute({ params }: { params: Promise<{ year
         </section>
       )}
 
-      {/* ---- the sale of the year ---- */}
-      {page.sale_of_year && page.sale_of_year.usd >= 100 && (
+      {/* ---- the sales of the year: cards and coins ---- */}
+      {((page.sale_of_year && page.sale_of_year.usd >= 100) ||
+        (page.currency_sale_of_year && page.currency_sale_of_year.usd >= 100)) && (
         <section className="yr-band">
           <div className="yr-in">
             <div className="yr-kicker">
-              <span>{kicker("the sale")}</span>
+              <span>{kicker("the sales")}</span>
               <span className="rule" />
             </div>
-            <h2 className="display">Sale of the year</h2>
-            <div className="yr-sale">
-              <img src={artUrl(page.sale_of_year.asset, ART_WIDTH.card)} alt={`${page.sale_of_year.asset} card art`} />
-              <div>
-                <div className="display sp">${commas(page.sale_of_year.usd)}</div>
-                <div className="sn">
-                  <Link href={`/asset/${encodeURIComponent(page.sale_of_year.asset)}` as Route}>
-                    {page.sale_of_year.asset}
-                  </Link>{" "}
-                  · {page.sale_of_year.quantity <= 1 ? "1 of 1 sold" : `${commas(page.sale_of_year.quantity)} units`}
-                </div>
-                <div className="sd">
-                  {page.sale_of_year.day} · settled in {page.sale_of_year.currency} · via {page.sale_of_year.venue}
+            <h2 className="display">Sales of the year</h2>
+            {page.sale_of_year && page.sale_of_year.usd >= 100 && (
+              <div className="yr-sale">
+                <img
+                  src={artUrl(page.sale_of_year.asset, ART_WIDTH.card)}
+                  alt={`${page.sale_of_year.asset} card art`}
+                />
+                <div>
+                  <div className="yr-kicker !mb-1">
+                    <span>cards</span>
+                  </div>
+                  <div className="display sp">${commas(page.sale_of_year.usd)}</div>
+                  <div className="sn">
+                    <Link href={`/asset/${encodeURIComponent(page.sale_of_year.asset)}` as Route}>
+                      {page.sale_of_year.asset}
+                    </Link>{" "}
+                    · {page.sale_of_year.quantity <= 1 ? "1 of 1 sold" : `${commas(page.sale_of_year.quantity)} units`}
+                  </div>
+                  <div className="sd">
+                    {page.sale_of_year.day} · settled in {page.sale_of_year.currency} · via {page.sale_of_year.venue}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+            {page.currency_sale_of_year && page.currency_sale_of_year.usd >= 100 && (
+              <div className="yr-sale">
+                <img
+                  src={artUrl(page.currency_sale_of_year.asset, ART_WIDTH.card, "icon")}
+                  alt={`${page.currency_sale_of_year.asset} icon`}
+                />
+                <div>
+                  <div className="yr-kicker !mb-1">
+                    <span>coins &amp; currencies</span>
+                  </div>
+                  <div className="display sp">${commas(page.currency_sale_of_year.usd)}</div>
+                  <div className="sn">
+                    <Link href={`/asset/${encodeURIComponent(page.currency_sale_of_year.asset)}` as Route}>
+                      {page.currency_sale_of_year.asset}
+                    </Link>{" "}
+                    ·{" "}
+                    {page.currency_sale_of_year.asset === "BTC"
+                      ? // BTC has no issuance row, so trade quantities stay in raw satoshis.
+                        `${commas(page.currency_sale_of_year.quantity / 1e8)} BTC in one fill`
+                      : `${commas(page.currency_sale_of_year.quantity)} units in one fill`}
+                  </div>
+                  <div className="sd">
+                    {page.currency_sale_of_year.day} · settled in {page.currency_sale_of_year.currency} · via{" "}
+                    {page.currency_sale_of_year.venue}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}

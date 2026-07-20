@@ -20,7 +20,7 @@ marked *(context — verify)*. 2026 figures are partial (through ~Jul 19).
 
 | Year | Txs | Actors | Newcomers | New assets (issuers) | Raw DEX fills / $ | Clean $ all venues | XCP open→close (hi) |
 |---|---|---|---|---|---|---|---|
-| 2014 | 134,093 | 13,513 | 13,513 | 7,074 (696) | 3,610 / $252k | $252k | $0.54→$4.03 ($9.41) |
+| 2014 | 134,093 | 13,513 | 13,513 | 7,074 (696) | 3,610 / $252k | $211k | $0.54→$4.03 ($9.41) |
 | 2015 | 265,335 | 13,684 | 11,684 | 36,552 (1,139) | 3,476 / $48k | $51k | $3.98→$0.60 ($3.98) |
 | 2016 | 351,843 | 20,871 | 16,824 | 18,778 (1,382) | 20,306 / $1.19M | $631k | $0.61→$1.72 ($5.60) |
 | 2017 | 401,390 | 39,696 | 33,987 | 8,412 (1,472) | 49,811 / $16.2M | $3.3M | $1.92→$32.86 ($36.33) |
@@ -63,8 +63,10 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
   founding sacrifice; no premine, no ICO — provable destruction. Opens every version of this story.
 - XCP's first price: $0.54, spiking to $9.41 within the year, closing $4.03.
 - **The BTC DEX actually worked here**: BTC was the #1 traded "asset" ($83k) — order matching against
-  real bitcoin, before fees killed it. The top-asset list is proto-securities: MPTSTOCK, SJCX (Storj
-  ran on Counterparty).
+  real bitcoin, before fees killed it. The rest of the top list is proto-securities: SJCX (Storj ran
+  on Counterparty). (MPTSTOCK/MPBTC — the Multipool tokens, $40.5k combined — were owner-flagged
+  low quality 2026-07-20: one seller into 34 buyers at the era's infamous prices; 2014 clean is
+  now $211k.)
 - Protocol was a toybox: RPS (rock-paper-scissors) enabled Jun 29; betting live; Counterparty Bitbowl
   cards (Super Bowl prediction assets, 32 cards) — gambling was the first culture.
 - **Betting was a 2014-only phenomenon: 1,105 bets** — then 0 in 2015, a last gasp of 28 in 2016,

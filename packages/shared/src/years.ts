@@ -107,6 +107,16 @@ export interface YearZaif {
   usd: number;
 }
 
+/** The proof-of-burn founding event — non-null only for 2014. */
+export interface YearBurn {
+  burns: number;
+  burners: number;
+  btc_burned: number;
+  xcp_earned: number;
+  first_day: string;
+  last_day: string;
+}
+
 export interface YearProtocolEvent {
   date: string;
   name: string;
@@ -144,7 +154,10 @@ export interface YearPage {
   venues: YearVenue[];
   settlement: YearSettlement[];
   top_assets: YearTopAsset[];
+  /** Biggest single clean fill by a collection member (cards) and by a non-member (coins). */
   sale_of_year: YearSale | null;
+  currency_sale_of_year: YearSale | null;
+  burn: YearBurn | null;
   collections: YearCollection[];
   cards: YearCard[];
   zaif: YearZaif | null;

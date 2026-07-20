@@ -6,6 +6,8 @@ import {
   YEARS_CATALOG,
   toOhlc,
   yearActivityLedger,
+  yearBurn,
+  yearCurrencySale,
   yearCleanLedger,
   yearCollections,
   yearEnd,
@@ -55,6 +57,8 @@ function fixture(): D1Database {
       quantity REAL, currency TEXT, total REAL, usd_value REAL, buyer_id INTEGER, seller_id INTEGER,
       PRIMARY KEY(venue, ref));
     CREATE TABLE prices(day TEXT, currency TEXT, usd REAL, PRIMARY KEY(day, currency));
+    CREATE TABLE burns(tx_index INTEGER PRIMARY KEY, block_time INTEGER, source_id INTEGER,
+      burned TEXT, earned TEXT);
     CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY, entity_type TEXT, entity_key TEXT);
     CREATE TABLE collection_membership_evidence(entity_id INTEGER, tag TEXT, source TEXT);
     CREATE TABLE tags(entity_id INTEGER, tag TEXT, source TEXT, meta TEXT);
@@ -80,6 +84,10 @@ function fixture(): D1Database {
 
     INSERT INTO prices VALUES ('2017-01-01','XCP',1.92), ('2017-06-01','XCP',10),
       ('2017-12-31','XCP',32.86), ('2017-01-01','BTC',992.95), ('2017-12-31','BTC',13863.13);
+
+    INSERT INTO burns VALUES
+      (1, ${yearStart(2014) + 100}, 500, '100000000', '150000000000'),
+      (2, ${yearStart(2014) + 200}, 501, '50000000', '75000000000');
 
     INSERT INTO entity_dictionary VALUES (7,'asset','CARD');
     INSERT INTO collection_membership_evidence VALUES (7,'rare-pepe','tokenscan');
@@ -123,6 +131,27 @@ test("clean year detail excludes flagged assets and prices PEPECASH endpoints", 
   assert.equal(vwap!.first_vwap, 0.03);
   assert.equal(vwap!.last_vwap, 0.06);
   assert.equal(vwap!.change_pct, 100);
+});
+
+test("burn totals appear only inside the burn window and currency sale skips collection members", async () => {
+  const db = fixture();
+  const burn = await yearBurn(db, yearStart(2014), yearEnd(2014));
+  assert.deepEqual(
+    { ...burn },
+    {
+      burns: 2,
+      burners: 2,
+      btc_burned: 1.5,
+      xcp_earned: 2250,
+      first_day: "2014-01-01",
+      last_day: "2014-01-01",
+    },
+  );
+  assert.equal(await yearBurn(db, yearStart(2017), yearEnd(2017)), null);
+  // CARD is a collection member and WASHY is wash-flagged; the coins side falls to PEPECASH.
+  const sale = await yearCurrencySale(db, yearStart(2017), yearEnd(2017));
+  assert.equal(sale?.asset, "PEPECASH");
+  assert.equal(sale?.usd, 60);
 });
 
 test("collections resolve display names from tag metadata", async () => {

@@ -12,6 +12,7 @@
  * "clean" everywhere means asset_signals.low_quality = 0 (wash/pump denylist + heuristics).
  */
 import type {
+  YearBurn,
   YearCard,
   YearCollection,
   YearEditorial,
@@ -216,6 +217,44 @@ export function yearSaleOfYear(db: D1Database, start: number, end: number): Prom
        AND trade.quantity<=10 AND COALESCE(signal.low_quality, 0)=0
      GROUP BY trade.venue, trade.ref
      ORDER BY trade.usd_value DESC LIMIT 1`,
+    start,
+    end,
+  );
+}
+
+/** Biggest single clean fill by an asset with NO collection membership — the coins-and-currencies
+ *  counterpart to the card sale. No quantity cap: currencies trade in size by nature. */
+export function yearCurrencySale(db: D1Database, start: number, end: number): Promise<YearSale | null> {
+  return one<YearSale>(
+    db,
+    `SELECT dictionary.asset, ROUND(trade.usd_value) usd, date(trade.block_time, 'unixepoch') day,
+       trade.currency, trade.venue, trade.quantity
+     FROM trades trade
+     JOIN asset_dictionary dictionary ON dictionary.asset_id=trade.asset_id
+     LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
+     WHERE trade.block_time>=?1 AND trade.block_time<?2 AND trade.usd_value IS NOT NULL
+       AND COALESCE(signal.low_quality, 0)=0
+       AND NOT EXISTS (
+         SELECT 1 FROM entity_dictionary entity
+         JOIN collection_membership_evidence evidence ON evidence.entity_id=entity.entity_id
+         WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset
+       )
+     ORDER BY trade.usd_value DESC LIMIT 1`,
+    start,
+    end,
+  );
+}
+
+/** The founding sacrifice — rows exist only inside the 2014 burn window. */
+export function yearBurn(db: D1Database, start: number, end: number): Promise<YearBurn | null> {
+  return one<YearBurn>(
+    db,
+    `SELECT COUNT(*) burns, COUNT(DISTINCT source_id) burners,
+       ROUND(SUM(CAST(burned AS REAL))/1e8, 1) btc_burned,
+       ROUND(SUM(CAST(earned AS REAL))/1e8) xcp_earned,
+       MIN(date(block_time, 'unixepoch')) first_day, MAX(date(block_time, 'unixepoch')) last_day
+     FROM burns WHERE block_time>=?1 AND block_time<?2
+     HAVING COUNT(*) > 0`,
     start,
     end,
   );

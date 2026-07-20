@@ -15,7 +15,9 @@ import {
   toOhlc,
   yearActivityLedger,
   yearAssetLedger,
+  yearBurn,
   yearCards,
+  yearCurrencySale,
   yearCleanLedger,
   yearCollections,
   yearEnd,
@@ -35,7 +37,7 @@ import {
   yearZaif,
 } from "#api/queries/years";
 
-const YEARS_CACHE_VERSION = "v2"; // v2: settlement currencies exclude wash-flagged assets
+const YEARS_CACHE_VERSION = "v3"; // v3: burn + currency sale fields; MPTSTOCK/MPBTC lowq reflag
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;
@@ -128,6 +130,8 @@ years.get("/v2/years/:year", (c) => {
         settlement,
         topAssets,
         sale,
+        currencySale,
+        burn,
         collections,
         cards,
         daily,
@@ -142,6 +146,8 @@ years.get("/v2/years/:year", (c) => {
         yearSettlement(db, start, end),
         yearTopAssets(db, start, end),
         yearSaleOfYear(db, start, end),
+        yearCurrencySale(db, start, end),
+        yearBurn(db, start, end),
         yearCollections(db, start, end),
         yearCards(db, start, end),
         yearXcpDaily(db, year),
@@ -187,6 +193,8 @@ years.get("/v2/years/:year", (c) => {
           settlement,
           top_assets: topAssets,
           sale_of_year: sale,
+          currency_sale_of_year: currencySale,
+          burn,
           collections,
           cards,
           zaif,
