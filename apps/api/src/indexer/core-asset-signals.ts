@@ -67,7 +67,8 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
     )
   ),
   sales AS (
-    SELECT coalesce(max(usd_value),0) max_realized_usd,
+    SELECT coalesce(max(CASE WHEN buyer_id IS NULL OR seller_id IS NULL OR buyer_id<>seller_id
+        THEN usd_value END),0) max_realized_usd,
       coalesce(sum(CASE WHEN venue='emblem' THEN 1 ELSE 0 END),0) emblem_trades,
       count(DISTINCT strftime('%Y-%m',block_time,'unixepoch')) active_trade_months,
       max(block_time) last_trade_time

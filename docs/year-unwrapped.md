@@ -16,23 +16,25 @@ marked *(context — verify)*. 2026 figures are partial (through ~Jul 19).
   evidence can adopt assets issued before a collection existed (a 2015-registered asset can be a
   2021 Fake Rare). For "born in year X" claims, pair first-issuance with same-year activity.
 
-**Master table** (raw DEX = venue 'dex' unfiltered; clean $ = all venues, quality-filtered):
+**Master table** (raw DEX = venue 'dex', literal self-fills excluded; clean $ = all venues,
+quality-filtered. Since 2026-07-20 NO volume figure anywhere counts a buyer=seller fill — the
+2016 raw tape halved in USD when that rule landed ($1.19M→$526k), and 2017's shed $4.2M):
 
 | Year | Txs | Actors | Newcomers | New assets (issuers) | Raw DEX fills / $ | Clean $ all venues | XCP open→close (hi) |
 |---|---|---|---|---|---|---|---|
-| 2014 | 134,093 | 13,513 | 13,513 | 7,074 (696) | 3,610 / $252k | $193k | $0.54→$4.03 ($9.41) |
-| 2015 | 265,335 | 13,684 | 11,684 | 36,552 (1,139) | 3,476 / $48k | $51k | $3.98→$0.60 ($3.98) |
-| 2016 | 351,843 | 20,871 | 16,824 | 18,778 (1,382) | 20,306 / $1.19M | $607k | $0.61→$1.72 ($5.60) |
-| 2017 | 401,390 | 39,696 | 33,987 | 8,412 (1,472) | 49,811 / $16.2M | $3.3M | $1.92→$32.86 ($36.33) |
-| 2018 | 253,180 | 21,423 | 16,822 | 3,610 (801) | 29,735 / $7.0M | $868k | $32.15→$2.10 ($88.93) |
-| 2019 | 76,177 | 13,362 | 11,117 | 1,112 (185) | 5,612 / $197k | $120k | $2.20→$1.44 ($3.56) |
-| 2020 | 58,475 | 3,705 | 2,556 | 493 (111) | 10,872 / $98k | $153k | $1.47→$1.11 ($2.08) |
-| 2021 | 294,773 | 13,446 | 10,939 | 15,818 (818) | 35,748 / $26.4M | $163.6M | $1.12→$10.07 ($27.38) |
-| 2022 | 374,190 | 21,647 | 16,642 | 29,884 (1,544) | 20,331 / $5.4M | $47.2M | $10.65→$2.58 ($14.91) |
-| 2023 | 409,346 | 63,818 | 59,041 | 83,093 (9,868) | 8,287 / $1.3M | $30.8M | $2.58→$4.27 ($5.05) |
-| 2024 | 363,066 | 21,703 | 16,634 | 34,751 (2,521) | 2,103 / $746k | $10.8M | $4.11→$7.28 ($12.51) |
-| 2025 | 122,667 | 7,167 | 4,150 | 6,544 (354) | 3,326 / $116k | $5.9M | $7.12→$1.93 ($9.00) |
-| 2026* | 44,318 | 2,674 | 1,280 | 9,423 (207) | 2,120 / $52k | $1.0M | $2.01→$1.49 ($2.12) |
+| 2014 | 134,093 | 13,513 | 13,513 | 7,074 (696) | 3,427 / $250k | $192k | $0.54→$4.03 ($9.41) |
+| 2015 | 265,335 | 13,684 | 11,684 | 36,552 (1,139) | 3,412 / $48k | $50k | $3.98→$0.60 ($3.98) |
+| 2016 | 351,843 | 20,871 | 16,824 | 18,778 (1,382) | 18,248 / $526k | $513k | $0.61→$1.72 ($5.60) |
+| 2017 | 401,390 | 39,696 | 33,987 | 8,412 (1,472) | 47,548 / $12.1M | $3.3M | $1.92→$32.86 ($36.33) |
+| 2018 | 253,180 | 21,423 | 16,822 | 3,610 (801) | 28,992 / $6.9M | $845k | $32.15→$2.10 ($88.93) |
+| 2019 | 76,177 | 13,362 | 11,117 | 1,112 (185) | 5,379 / $165k | $119k | $2.20→$1.44 ($3.56) |
+| 2020 | 58,475 | 3,705 | 2,556 | 493 (111) | 10,737 / $85k | $151k | $1.47→$1.11 ($2.08) |
+| 2021 | 294,773 | 13,446 | 10,939 | 15,818 (818) | 35,509 / $26.2M | $163.5M | $1.12→$10.07 ($27.38) |
+| 2022 | 374,190 | 21,647 | 16,642 | 29,884 (1,544) | 20,086 / $5.3M | $47.1M | $10.65→$2.58 ($14.91) |
+| 2023 | 409,346 | 63,818 | 59,041 | 83,093 (9,868) | 8,276 / $1.3M | $30.6M | $2.58→$4.27 ($5.05) |
+| 2024 | 363,066 | 21,703 | 16,634 | 34,751 (2,521) | 2,097 / $746k | $10.4M | $4.11→$7.28 ($12.51) |
+| 2025 | 122,667 | 7,167 | 4,150 | 6,544 (354) | 3,319 / $116k | $5.5M | $7.12→$1.93 ($9.00) |
+| 2026* | 44,318 | 2,674 | 1,280 | 9,423 (207) | 2,096 / $52k | $923k | $2.01→$1.49 ($2.12) |
 
 **Sale of the year** (biggest single clean fill, ≤10 units, collection members — the ladder is a
 story on its own, and its settlement currency traces the money arc):
@@ -65,8 +67,8 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
 - **The BTC DEX actually worked here**: BTC was the #1 traded "asset" ($83k) — order matching against
   real bitcoin, before fees killed it. The rest of the top list is proto-securities: SJCX (Storj ran
   on Counterparty). (MPTSTOCK/MPBTC — the Multipool tokens, $40.5k combined — were owner-flagged
-  low quality 2026-07-20: one seller into 34 buyers at the era's infamous prices; 2014 clean is
-  now $211k.)
+  low quality 2026-07-20: one seller into 34 buyers at the era's infamous prices; with those flags
+  and the self-fill exclusion, 2014 clean is now $192k.)
 - Protocol was a toybox: RPS (rock-paper-scissors) enabled Jun 29; betting live; Counterparty Bitbowl
   cards (Super Bowl prediction assets, 32 cards) — gambling was the first culture.
 - **Betting was a 2014-only phenomenon: 1,105 bets** — then 0 in 2015, a last gasp of 28 in 2016,
@@ -105,7 +107,7 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
 - The redemption comes later: TEDDY, CUPCAKE, CALENDAR, DINOSAUR — March 2015 single-word names —
   all slept ~6.6 years and woke the same week of Nov 2021 as "vintage" collectibles. Plant this
   seed on the 2015 page, pay it off on 2021's.
-- Price collapsed $3.98 → $0.60 (−85%). Clean market: $51k all year. The first crypto winter.
+- Price collapsed $3.98 → $0.60 (−85%). Clean market: $50k all year. The first crypto winter.
 - But the seeds: **Spells of Genesis begins minting** (44 cards) — game assets before "NFT" existed.
   FDCARD (Sept) = first Force of Will / game-card trade era. THE-COUNTERPART collection (190) active.
 - SJCX (Storj) was the real economy: #1 traded asset.
@@ -123,7 +125,7 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
 ## 2016 — The Frog Appears
 
 - **Rare Pepe: 497 cards in its first four months** (born September). PEPECASH becomes the #1 traded
-  asset ($74.6k, 1,669 fills). The meme economy starts here.
+  asset ($74.0k, 1,649 fills). The meme economy starts here.
 - Force of Will (161 cards) + Spells of Genesis (56) — the trading-card-game year.
 - **Zaif ICO'd its own ZAIF token on Counterparty** ($34.3k DEX volume) **and listed XCP mid-year**
   — our attributable yen prints begin here (136 JPY trading days in 2016). Japan's decade-long
@@ -146,8 +148,9 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
 - XCP $1.92 → $32.86, peak $36.33 Dec 19; 17× vs Bitcoin's 14×.
 - **Zaif's yen books: 532,299 XCP, $12.1M** — the one provable CEX lane. Japan everywhere: BitGirls
   talent tokens paying weekly HYOU dividends, HOMMALICOIN paying XCP, Memorychain (152 cards).
-- Raw DEX record that still stands: 49,811 fills, $16.2M printed. Clean: 41,079 / $3.3M — the
-  $12.9M gap is DIAMONDBOND/TROPTIONS-style wash. Raw-vs-real is the page's honesty device.
+- Raw DEX record that still stands: 47,548 fills, $12.1M printed (self-fills now excluded even
+  from raw — that rule alone deleted $4.2M of 2017's tape). Clean: 40,584 / $3.3M — the remaining
+  gap is DIAMONDBOND/TROPTIONS-style wash. Raw-vs-real is the page's honesty device.
   (RRAM — $195k on 36 fills — was added to the curated lowq list 2026-07-20 after its 3-address
   ring pattern surfaced; its buyer=seller rate was only 3.7%, so the automatic ≥50% self-trade rule
   missed it. A ring-trade heuristic is a worthwhile future signal.)
@@ -176,8 +179,8 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
   the same week as the top — mania's last receipt.
 - **Rare Pepe closes the book**: final 240 cards. The scene's response to the crash: new games —
   Mafia Wars (168), **Bitcorn born** (147) — play instead of speculation.
-- Trading halves (raw $7.0M, clean $892k — after the 2026-07-20 owner flags on SCUDOCOIN and GALGO,
-  which had carried $266k of 2018's "clean" tape). Telegram OTC appears as a venue (37 fills) —
+- Trading halves (raw $6.9M, clean $845k — after the 2026-07-20 owner flags on SCUDOCOIN and GALGO,
+  which had carried $266k of 2018's "clean" tape, plus the self-fill exclusion). Telegram OTC appears as a venue (37 fills) —
   trust-based trading starts filling the CEX gap.
 - **But Japan bought the crash: 2018 was Zaif's biggest XCP year ever — 1,655,898 XCP through the
   yen books, triple 2017.** While the West capitulated, the yen lane absorbed it. Sharpest
@@ -227,7 +230,7 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
 
 - **3,705 actors all year — the all-time low.** 2,556 newcomers. 493 new assets. The chain nearly
   went silent.
-- And yet: dispensers reached parity with the DEX ($73k vs $79k clean) — the vending machines kept
+- And yet: dispensers reached parity with the DEX ($73k vs $78k clean) — the vending machines kept
   the lights on. MPMA sends activate Feb 9 (batch sends — infrastructure again).
 - **The first Emblem Vault fill: $18.** The bridge that would carry $90M the next year enters as a
   rounding error. Great closing beat.
@@ -240,8 +243,8 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
 
 ## 2021 — The Rediscovery
 
-- **$163.6M clean volume — the all-time record** — and it's not the DEX: Emblem $90.5M + dispensers
-  $43.7M + DEX $26.4M + Scarce City auctions $3.0M. The NFT world found the OG chain through a
+- **$163.5M clean volume — the all-time record** — and it's not the DEX: Emblem $90.5M + dispensers
+  $43.7M + DEX $26.2M + Scarce City auctions $3.0M. The NFT world found the OG chain through a
   wrapper, and the market structure inverted in one year.
 - **PEPEMILLION: $896,411** — the biggest card sale in Counterparty history (Nov 20, in BTC).
   RAREPEPE (the nakamoto card): $8.06M across just 65 fills.

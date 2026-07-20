@@ -444,8 +444,10 @@ export function coreAssetSales(db: D1Database, asset: string): Promise<AssetSale
           last AS (
             SELECT usd_value,quantity,block_time FROM trades
             WHERE asset_id=(SELECT asset_id FROM identity) AND usd_value IS NOT NULL AND quantity>0
+              AND (buyer_id IS NULL OR seller_id IS NULL OR buyer_id<>seller_id)
             ORDER BY block_time DESC LIMIT 1)
-     SELECT (SELECT SUM(usd_value) FROM trades WHERE asset_id=(SELECT asset_id FROM identity)) realized_usd,
+     SELECT (SELECT SUM(usd_value) FROM trades WHERE asset_id=(SELECT asset_id FROM identity)
+              AND (buyer_id IS NULL OR seller_id IS NULL OR buyer_id<>seller_id)) realized_usd,
             (SELECT usd_value/quantity FROM last) last_price_usd,
             (SELECT block_time FROM last) last_sale_time`,
     asset,

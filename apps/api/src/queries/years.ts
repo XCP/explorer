@@ -32,6 +32,11 @@ export const FIRST_YEAR = 2014;
 export const yearStart = (year: number): number => Date.UTC(year, 0, 1) / 1000;
 export const yearEnd = (year: number): number => Date.UTC(year + 1, 0, 1) / 1000;
 
+/** Literal self-fills (buyer = seller) never count toward volume or sales — for ANY asset. Rows
+ *  missing a party (dispenses, emblem) are real sales and stay. Kept as a per-alias fragment. */
+const realTrade = (alias: string) =>
+  `(${alias}.buyer_id IS NULL OR ${alias}.seller_id IS NULL OR ${alias}.buyer_id<>${alias}.seller_id)`;
+
 /* ---------- all-year ledgers (single scans; shared by index + pages) ---------- */
 
 export interface YearLedgerRow {
@@ -72,9 +77,10 @@ export function yearAssetLedger(db: D1Database) {
 export function yearRawDexLedger(db: D1Database) {
   return q<{ y: string; fills: number; usd: number }>(
     db,
-    `SELECT strftime('%Y', block_time, 'unixepoch') y,
-       COUNT(*) fills, ROUND(COALESCE(SUM(usd_value), 0)) usd
-     FROM trades WHERE venue='dex' AND block_time IS NOT NULL GROUP BY y`,
+    `SELECT strftime('%Y', trade.block_time, 'unixepoch') y,
+       COUNT(*) fills, ROUND(COALESCE(SUM(trade.usd_value), 0)) usd
+     FROM trades trade WHERE trade.venue='dex' AND trade.block_time IS NOT NULL
+       AND ${realTrade("trade")} GROUP BY y`,
   );
 }
 
@@ -84,7 +90,8 @@ export function yearCleanLedger(db: D1Database) {
     `SELECT strftime('%Y', trade.block_time, 'unixepoch') y,
        COUNT(*) fills, ROUND(COALESCE(SUM(trade.usd_value), 0)) usd
      FROM trades trade LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
-     WHERE trade.block_time IS NOT NULL AND COALESCE(signal.low_quality, 0)=0 GROUP BY y`,
+     WHERE trade.block_time IS NOT NULL AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")} GROUP BY y`,
   );
 }
 
@@ -135,6 +142,7 @@ export function yearVenues(db: D1Database, start: number, end: number): Promise<
     `SELECT trade.venue, COUNT(*) fills, ROUND(COALESCE(SUM(trade.usd_value), 0)) usd
      FROM trades trade LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
      WHERE trade.block_time>=?1 AND trade.block_time<?2 AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")}
      GROUP BY trade.venue ORDER BY usd DESC`,
     start,
     end,
@@ -150,6 +158,7 @@ export function yearMonthly(db: D1Database, start: number, end: number): Promise
          COUNT(*) clean_fills, ROUND(COALESCE(SUM(trade.usd_value), 0)) clean_usd
        FROM trades trade LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
        WHERE trade.block_time>=?1 AND trade.block_time<?2 AND COALESCE(signal.low_quality, 0)=0
+         AND ${realTrade("trade")}
        GROUP BY month
      ), mint AS (
        SELECT CAST(strftime('%m', first_issuance_block_time, 'unixepoch') AS INTEGER) month,
@@ -179,6 +188,7 @@ export function yearSettlement(db: D1Database, start: number, end: number): Prom
      LEFT JOIN asset_signals signal ON signal.asset_id=dictionary.asset_id
      WHERE trade.venue='dex' AND trade.block_time>=?1 AND trade.block_time<?2
        AND trade.currency IS NOT NULL AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")}
      GROUP BY trade.currency ORDER BY fills DESC LIMIT 8`,
     start,
     end,
@@ -196,6 +206,7 @@ export function yearTopAssets(db: D1Database, start: number, end: number): Promi
      LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
      WHERE trade.block_time>=?1 AND trade.block_time<?2
        AND trade.usd_value IS NOT NULL AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")}
      GROUP BY trade.asset_id ORDER BY usd DESC LIMIT 10`,
     start,
     end,
@@ -215,6 +226,7 @@ export function yearSaleOfYear(db: D1Database, start: number, end: number): Prom
      LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
      WHERE trade.block_time>=?1 AND trade.block_time<?2 AND trade.usd_value IS NOT NULL
        AND trade.quantity<=10 AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")}
      GROUP BY trade.venue, trade.ref
      ORDER BY trade.usd_value DESC LIMIT 1`,
     start,
@@ -234,6 +246,7 @@ export function yearCurrencySale(db: D1Database, start: number, end: number): Pr
      LEFT JOIN asset_signals signal ON signal.asset_id=trade.asset_id
      WHERE trade.block_time>=?1 AND trade.block_time<?2 AND trade.usd_value IS NOT NULL
        AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")}
        AND NOT EXISTS (
          SELECT 1 FROM entity_dictionary entity
          JOIN collection_membership_evidence evidence ON evidence.entity_id=entity.entity_id
@@ -295,6 +308,7 @@ export function yearCards(db: D1Database, start: number, end: number): Promise<Y
      WHERE trade.block_time>=?1 AND trade.block_time<?2 AND trade.usd_value IS NOT NULL
        AND state.first_issuance_block_time>=?1 AND state.first_issuance_block_time<?2
        AND COALESCE(signal.low_quality, 0)=0
+       AND ${realTrade("trade")}
      GROUP BY trade.asset_id ORDER BY usd DESC LIMIT 10`,
     start,
     end,
@@ -324,6 +338,7 @@ export async function yearPepecashVwap(
      FROM trades trade JOIN asset_dictionary dictionary ON dictionary.asset_id=trade.asset_id
      WHERE dictionary.asset='PEPECASH' AND trade.block_time>=?1 AND trade.block_time<?2
        AND trade.usd_value IS NOT NULL AND trade.quantity>0
+       AND ${realTrade("trade")}
      GROUP BY m ORDER BY m`,
     start,
     end,

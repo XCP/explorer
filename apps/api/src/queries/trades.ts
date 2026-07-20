@@ -91,7 +91,8 @@ export function tradeVenueStats(db: D1Database, includeLowQuality = false): Prom
     db,
     `SELECT trade.venue, COUNT(*) trades, COUNT(DISTINCT trade.asset_id) assets,
             MAX(trade.block_time) last_time,
-            SUM(trade.usd_value) usd_known,
+            SUM(CASE WHEN trade.buyer_id IS NOT NULL AND trade.buyer_id=trade.seller_id
+                  THEN NULL ELSE trade.usd_value END) usd_known,
             SUM(CASE WHEN trade.usd_value IS NULL THEN 1 ELSE 0 END) usd_unpriced_trades,
             SUM(CASE WHEN ${QUALITY} THEN 1 ELSE 0 END) low_quality_trades
        FROM trades trade
