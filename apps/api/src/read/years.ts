@@ -37,7 +37,10 @@ import {
   yearZaif,
 } from "#api/queries/years";
 
-const YEARS_CACHE_VERSION = "v3"; // v3: burn + currency sale fields; MPTSTOCK/MPBTC lowq reflag
+const YEARS_CACHE_VERSION = "v4"; // v4: SCUDOCOIN/GALGO/FUUUUUH/FRIGG lowq reflag
+// The prior version's rows serve during recompute so a bump never cold-starts readers. Move BOTH
+// constants forward together on the next bump (v5/v4, then v6/v5, …).
+const YEARS_CACHE_STALE_VERSION = "v3";
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;
@@ -100,7 +103,7 @@ years.get("/v2/years", (c) =>
   cached(
     c,
     `years:index:${YEARS_CACHE_VERSION}`,
-    { ttl: 86_400, edge: 3_600, swr: 604_800 },
+    { ttl: 86_400, edge: 3_600, swr: 604_800, staleKey: `years:index:${YEARS_CACHE_STALE_VERSION}` },
     async (): Promise<Envelope<YearIndex>> => ({ result: await buildIndex(c.env.CORE_DB) }),
   ),
 );
@@ -114,7 +117,10 @@ years.get("/v2/years/:year", (c) => {
   return cached(
     c,
     `years:${year}:${YEARS_CACHE_VERSION}`,
-    partial ? { ttl: 3_600, edge: 300, swr: 86_400 } : { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 },
+    {
+      ...(partial ? { ttl: 3_600, edge: 300, swr: 86_400 } : { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }),
+      staleKey: `years:${year}:${YEARS_CACHE_STALE_VERSION}`,
+    },
     async (): Promise<Envelope<YearPage>> => {
       const db = c.env.CORE_DB;
       const start = yearStart(year);

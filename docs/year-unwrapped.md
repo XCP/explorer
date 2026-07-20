@@ -24,7 +24,7 @@ marked *(context — verify)*. 2026 figures are partial (through ~Jul 19).
 | 2015 | 265,335 | 13,684 | 11,684 | 36,552 (1,139) | 3,476 / $48k | $51k | $3.98→$0.60 ($3.98) |
 | 2016 | 351,843 | 20,871 | 16,824 | 18,778 (1,382) | 20,306 / $1.19M | $631k | $0.61→$1.72 ($5.60) |
 | 2017 | 401,390 | 39,696 | 33,987 | 8,412 (1,472) | 49,811 / $16.2M | $3.3M | $1.92→$32.86 ($36.33) |
-| 2018 | 253,180 | 21,423 | 16,822 | 3,610 (801) | 29,735 / $7.0M | $1.16M | $32.15→$2.10 ($88.93) |
+| 2018 | 253,180 | 21,423 | 16,822 | 3,610 (801) | 29,735 / $7.0M | $892k | $32.15→$2.10 ($88.93) |
 | 2019 | 76,177 | 13,362 | 11,117 | 1,112 (185) | 5,612 / $197k | $120k | $2.20→$1.44 ($3.56) |
 | 2020 | 58,475 | 3,705 | 2,556 | 493 (111) | 10,872 / $98k | $153k | $1.47→$1.11 ($2.08) |
 | 2021 | 294,773 | 13,446 | 10,939 | 15,818 (818) | 35,748 / $26.4M | $163.6M | $1.12→$10.07 ($27.38) |
@@ -176,8 +176,9 @@ SATOSHICARD is sale-of-the-year four times across a decade — the evergreen gra
   the same week as the top — mania's last receipt.
 - **Rare Pepe closes the book**: final 240 cards. The scene's response to the crash: new games —
   Mafia Wars (168), **Bitcorn born** (147) — play instead of speculation.
-- Trading halves (raw $7.0M, clean $1.2M). Telegram OTC appears as a venue (37 fills) — trust-based
-  trading starts filling the CEX gap.
+- Trading halves (raw $7.0M, clean $892k — after the 2026-07-20 owner flags on SCUDOCOIN and GALGO,
+  which had carried $266k of 2018's "clean" tape). Telegram OTC appears as a venue (37 fills) —
+  trust-based trading starts filling the CEX gap.
 - **But Japan bought the crash: 2018 was Zaif's biggest XCP year ever — 1,655,898 XCP through the
   yen books, triple 2017.** While the West capitulated, the yen lane absorbed it. Sharpest
   contrarian fact of the year.

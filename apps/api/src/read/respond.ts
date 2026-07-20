@@ -42,10 +42,18 @@ export async function claimCacheRefresh(db: D1Database, key: string, now: number
 export async function cached(
   c: Ctx,
   key: string,
-  opts: { ttl: number; edge?: number; swr?: number },
+  opts: {
+    ttl: number;
+    edge?: number;
+    swr?: number;
+    /** A previous cache key (e.g. the prior version of a versioned key). On a primary miss the
+     *  stale body serves immediately and the primary computes in the background, so a version
+     *  bump never opens a cold window for readers. */
+    staleKey?: string;
+  },
   producer: () => Promise<unknown>,
 ): Promise<Response> {
-  const { ttl, edge = Math.min(ttl, 30), swr = ttl } = opts;
+  const { ttl, edge = Math.min(ttl, 30), swr = ttl, staleKey } = opts;
   const now = Math.floor(Date.now() / 1000);
   const send = (body: string, ctype = "application/json") =>
     c.body(body, 200, {
@@ -89,6 +97,29 @@ export async function cached(
         if (claimed) ctx.waitUntil(write().catch(() => {}));
         const response = send(hit.body, hit.ctype);
         response.headers.set("x-d1-cache", "STALE");
+        return response;
+      }
+    }
+  }
+  if (staleKey) {
+    const prior = await c.env.CORE_DB.prepare(`SELECT body, ctype FROM cache WHERE key=?`)
+      .bind(staleKey)
+      .first<{ body: string; ctype: string }>()
+      .catch(() => null);
+    if (prior?.body) {
+      const ctx = (() => {
+        try {
+          return c.executionCtx;
+        } catch {
+          return null;
+        }
+      })();
+      if (ctx) {
+        const now2 = Math.floor(Date.now() / 1000);
+        const claimed = await claimCacheRefresh(c.env.CORE_DB, staleKey, now2).catch(() => false);
+        if (claimed) ctx.waitUntil(write().catch(() => {}));
+        const response = send(prior.body, prior.ctype);
+        response.headers.set("x-d1-cache", "STALE-VERSION");
         return response;
       }
     }

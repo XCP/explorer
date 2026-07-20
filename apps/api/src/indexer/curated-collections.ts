@@ -117,6 +117,12 @@ export const CURATED_COLLECTIONS: readonly CuratedCollection[] = [
     site: "https://www.thecounterp.art/",
     assets: THE_COUNTERPART_ASSETS,
   },
+  {
+    // The collection's own currency — the feeds tag the cards but miss the money.
+    tag: "penisium",
+    name: "Penisium",
+    assets: ["PENISIUM"],
+  },
 ];
 
 export async function buildCuratedCollections(env: Env): Promise<Record<string, unknown>> {
