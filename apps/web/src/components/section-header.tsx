@@ -33,7 +33,22 @@ export function SectionHeader({ children, flush = false }: { children: ReactNode
  *  grail/trusted/locked come from the lab file; open/og/neutral are app extensions in globals.css. */
 export type SectionChipVariant = "grail" | "trusted" | "locked" | "open" | "og" | "neutral" | "collection";
 
-export function SectionChip({ variant = "neutral", children }: { variant?: SectionChipVariant; children: ReactNode }) {
+export function SectionChip({
+  variant = "neutral",
+  href,
+  children,
+}: {
+  variant?: SectionChipVariant;
+  href?: Route;
+  children: ReactNode;
+}) {
+  if (href) {
+    return (
+      <Link href={href} className={`chip ${variant}`}>
+        {children}
+      </Link>
+    );
+  }
   return <span className={`chip ${variant}`}>{children}</span>;
 }
 

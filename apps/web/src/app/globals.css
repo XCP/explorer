@@ -90,6 +90,9 @@ body {
 .sh-name a:hover { color:var(--color-accent); }
 .chips { display:flex; gap:6px; flex-wrap:wrap; }
 .chip { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-2xs); font-weight:600; padding:2px 9px; border-radius:99px; border:1px solid; font-family:var(--mono); letter-spacing:.03em; }
+/* A chip that is a link keeps its variant tint (the variant rules outrank a:hover) and signals
+   the link by brightening — border sharpens to the text colour, wash deepens slightly. */
+a.chip:hover { border-color:currentColor; filter:brightness(1.12); }
 .chip.grail { color:#fcd34d; border-color:#8a6420; background:rgba(120,86,27,.15); }
 .chip.trusted { color:#7dd3fc; border-color:#1a7391; background:rgba(21,94,117,.15); }
 .chip.locked { color:#86efac; border-color:#1d7f42; background:rgba(22,101,52,.15); } /* locked supply = good */

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import type { Route } from "next";
 import Link from "next/link";
 import { Trophy, CalendarDays, LockOpen } from "lucide-react";
 import type { AssetDetail, AssetMarket } from "@xcp/shared/assets";
@@ -384,7 +385,11 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
           name={nameNode}
           chips={
             <>
-              {collection && <SectionChip variant="collection">{collectionLabel(collection)}</SectionChip>}
+              {collection && (
+                <SectionChip variant="collection" href={`/tag/${encodeURIComponent(collection)}` as Route}>
+                  {collectionLabel(collection)}
+                </SectionChip>
+              )}
               {issuedYear != null && (
                 <SectionChip variant="neutral">
                   <CalendarDays className="size-3" aria-hidden /> {issuedYear}
