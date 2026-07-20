@@ -1,7 +1,7 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { API_BASE } from "@/lib/api/url";
-import { readJsonResponse } from "@/lib/api/response";
+import { ApiResponseError, readJsonResponse } from "@/lib/api/response";
 
 const BINDING_TIMEOUT_MS = 5_000;
 const ORIGIN_TIMEOUT_MS = 15_000;
@@ -29,19 +29,43 @@ async function serverFetch(url: string, init: NextFetchInit): Promise<Response> 
       if (binding) {
         const response = await binding.fetch(url, { ...init, signal: AbortSignal.timeout(BINDING_TIMEOUT_MS) });
         if (response.status < 500) return response;
+        console.error(`serverFetch binding ${url} -> ${response.status}`);
+      } else {
+        console.error(`serverFetch: API_WORKER binding missing for ${url}`);
       }
-    } catch {
-      // Outside the OpenNext runtime, or a failed binding: use ordinary fetch below.
+    } catch (error) {
+      console.error(
+        `serverFetch binding threw for ${url}:`,
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      );
     }
   }
-  return fetch(url, { ...init, signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS) });
+  const fallback = await fetch(url, { ...init, signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS) });
+  console.error(`serverFetch fallback ${url} -> ${fallback.status}`);
+  return fallback;
 }
 
 /** Server-side API read with route-selected freshness and canonical 404 translation. */
 export async function getJson<T>(path: string, options: { revalidate?: number } = {}): Promise<T> {
-  const response = await serverFetch(API_BASE + path, { next: { revalidate: options.revalidate ?? 30 } });
-  if (response.status === 404) throw new NotFoundError(path);
-  return readJsonResponse<T>(response);
+  try {
+    const response = await serverFetch(API_BASE + path, { next: { revalidate: options.revalidate ?? 30 } });
+    if (response.status === 404) {
+      // Only the API's own JSON 404 means "this resource does not exist". A 404 from the transport
+      // (e.g. Cloudflare's block on sibling workers.dev fetches after a binding timeout) is an
+      // infrastructure failure — treating it as NotFound turns transient outages into rendered,
+      // ISR-cached not-found pages (the /year launch failure mode).
+      if (response.headers.get("content-type")?.includes("json")) throw new NotFoundError(path);
+      throw new ApiResponseError(response.status, `non-API 404 for ${path}`);
+    }
+    return await readJsonResponse<T>(response);
+  } catch (error) {
+    // Surfaced in `wrangler tail` — server-side read failures are otherwise invisible in prod.
+    console.error(
+      `getJson ${path} failed:`,
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    );
+    throw error;
+  }
 }
 
 export type { Envelope } from "@xcp/shared/envelope";
