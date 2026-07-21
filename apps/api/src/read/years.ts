@@ -37,10 +37,10 @@ import {
   yearZaif,
 } from "#api/queries/years";
 
-const YEARS_CACHE_VERSION = "v9"; // v9: index summaries carry the editorial title
+const YEARS_CACHE_VERSION = "v10"; // v10: BONUSBTC + HLTH lowq flags
 // The prior version's rows serve during recompute so a bump never cold-starts readers. Move BOTH
-// constants forward together on the next bump (v10/v9, then v11/v10, …).
-const YEARS_CACHE_STALE_VERSION = "v8";
+// constants forward together on the next bump (v11/v10, then v12/v11, …).
+const YEARS_CACHE_STALE_VERSION = "v9";
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;
