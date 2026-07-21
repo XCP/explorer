@@ -22,9 +22,14 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 6. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API and CDN
    image shapes above exempt because machine-readable clients and image elements cannot complete an HTML challenge.
 7. Transaction-hash-shaped `/address/*` requests that cannot be supported address forms: block at WAF.
+8. Retired `app.xcp.io/api/v1/asset/XCP` and `/api/v1/usd-prices` contracts: return `410 Gone` at WAF without invoking
+   either Worker. Legacy search/swap remain temporarily available for already-installed wallet version 0.5.0.
 
 The former blanket Managed Challenge for every `/asset/*`, `/address/*`, and `/tx/*` page is disabled. Do not restore
 it as a substitute for route-specific limits.
+
+Wallet extension 0.5.1 uses `api.xcp.io/v2` for price, asset search, and market pairs, and `cdn.xcp.io` for media. Retire
+the remaining legacy search/swap forwarding only after 0.5.1 adoption is visible in traffic.
 
 ## Rate, managed WAF, cache, and zone settings
 

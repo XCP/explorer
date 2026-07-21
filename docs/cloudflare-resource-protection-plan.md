@@ -15,8 +15,11 @@ Layers 1–2 deployed and verified on 2026-07-21:
 - API sampled logs use bounded route families and record duration plus edge/D1 cache outcomes without entity IDs;
 - CDN exemption is limited to GET/HEAD image and image-transform paths and skips only SBFM;
 - exact public JSON reads and CDN image paths are also excluded from the later datacenter challenge;
-- the read-only legacy `app.xcp.io/api/v1/*` forwarding surface has the same machine-client treatment; unsupported
-  legacy contracts still return application `404` rather than a Cloudflare HTML challenge;
+- the read-only legacy `app.xcp.io/api/v1/*` forwarding surface has the same machine-client treatment; other
+  unsupported legacy contracts return application `404` rather than a Cloudflare HTML challenge;
+- wallet extension 0.5.1 migrated price, search, market, and media traffic to canonical `api.xcp.io/v2` and
+  `cdn.xcp.io`; the obsolete XCP price and USD-prices contracts now return edge-generated `410`, while legacy
+  search/swap remain during the installed-client transition;
 - the blanket detail-page challenge is disabled; malformed-address, datacenter, managed-WAF, and interim sweep controls
   remain;
 - active operator scripts support optional Access service-token headers; their defaults remain on `workers.dev` until
