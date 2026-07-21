@@ -3,7 +3,7 @@
 interface __BaseEnv_CloudflareEnv {
   NEXT_INC_CACHE_R2_BUCKET: R2Bucket;
   ASSETS: Fetcher;
-  NEXT_PUBLIC_API_BASE: "https://xcp-api.me-bbe.workers.dev";
+  NEXT_PUBLIC_API_BASE: "https://api.xcp.io";
   API_WORKER: Fetcher /* xcp-api */;
 }
 declare namespace Cloudflare {

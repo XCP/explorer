@@ -31,7 +31,7 @@ const ECOSYSTEM: FooterLink[] = [
 ];
 const DATA: FooterLink[] = [
   ["USD methodology", "/usd-methodology"],
-  ["API", "https://xcp-api.me-bbe.workers.dev"],
+  ["API", "https://api.xcp.io"],
   ["IMG CDN", "https://cdn.xcp.io"],
   ["GitHub repo", "https://github.com/XCP/explorer"],
 ];

@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Warm the connections on the critical path: the art CDN (LCP images) and the API origin (client
             SWR reads). React hoists these to <head>. crossOrigin on the API since its fetches are CORS. */}
         <link rel="preconnect" href="https://cdn.xcp.io" />
-        <link rel="preconnect" href="https://xcp-api.me-bbe.workers.dev" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://api.xcp.io" crossOrigin="anonymous" />
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:rounded focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-sm focus:text-zinc-100"

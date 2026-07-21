@@ -5,9 +5,9 @@ import { NextResponse } from "next/server";
  * crawlers still sweep that inventory years later — previously each hit was an UNCACHEABLE SSR 404
  * (private, no-store), i.e. the most expensive response we serve, repeatable forever. These paths
  * now die here as a cacheable 410 Gone: no render, de-indexes the URL (410 is the strongest removal
- * signal; a 301 would just invite the crawler back), and a zone cache rule holds it at the edge so
- * repeat hits never reach the worker at all. The address matcher also cheaply rejects transaction
- * hashes put in the address namespace, while passing real address routes through unchanged.
+ * signal; a 301 would just invite the crawler back). The zone WAF now terminates these locale paths
+ * before this Worker; this middleware remains defense-in-depth for workers.dev. The address matcher
+ * also cheaply rejects transaction hashes put in the address namespace while passing real routes.
  */
 export function middleware(request: Request) {
   const { pathname } = new URL(request.url);

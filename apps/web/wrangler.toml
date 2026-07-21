@@ -23,7 +23,11 @@ directory = ".open-next/assets"
 binding = "ASSETS"
 
 [vars]
-NEXT_PUBLIC_API_BASE = "https://xcp-api.me-bbe.workers.dev"
+NEXT_PUBLIC_API_BASE = "https://api.xcp.io"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.01
 
 # Server components can't fetch a sibling worker's public workers.dev URL from inside Cloudflare
 # (same issue the API works around for xcpdex) — server-side reads go through this binding.

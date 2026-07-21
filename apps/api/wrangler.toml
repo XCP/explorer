@@ -5,6 +5,10 @@ minify = true
 workers_dev = true
 routes = [{ pattern = "api.xcp.io/*", zone_name = "xcp.io" }]
 
+[observability]
+enabled = true
+head_sampling_rate = 0.01
+
 [limits]
 cpu_ms = 300000
 

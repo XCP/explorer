@@ -3,6 +3,23 @@
 Status: proposed, reviewed against production configuration and traffic on 2026-07-21. No policy in this document is
 authorization to deploy every rule at once. Follow the staged rollout and rollback gates below.
 
+## Implementation status
+
+Layer 1 deployed and verified on 2026-07-21:
+
+- browser API base changed from `xcp-api.me-bbe.workers.dev` to zone-protected `https://api.xcp.io`;
+- exact public `api.xcp.io` `/v2` GET/HEAD/OPTIONS traffic skips only SBFM, while managed WAF and future rate controls
+  remain applicable;
+- retired locale namespaces return a WAF-generated `410 Gone` before the web Worker;
+- API and web Workers have 1% Workers Logs head sampling enabled;
+- existing API live contract suite passed 33/33 after deployment;
+- CDN image policy, the broad CDN Skip, document rate threshold, blanket detail challenge, public API `workers.dev`
+  availability, and admin Access remain unchanged pending their dependency stages.
+
+The transitional API `workers.dev` origin remains reachable because current ops scripts use it. Browser traffic no
+longer depends on it, but admin protection is incomplete until those scripts migrate and the origin is disabled or gains
+equivalent Worker-native service authentication.
+
 ## Objective
 
 Protect Worker CPU, D1 reads, upstream subrequests, and bandwidth from automated abuse without putting routine explorer
@@ -79,11 +96,9 @@ reliability analysis separate from hostile-client analysis.
 
 - `apps/web/wrangler.toml` routes `xcp.io/*` and `www.xcp.io/*` to the OpenNext Worker and retains the
   `workers.dev` origin for deployment verification.
-- Browser-side API calls currently use `NEXT_PUBLIC_API_BASE=https://xcp-api.me-bbe.workers.dev`. Unlike server-side
-  service-binding calls, those requests bypass every `xcp.io` zone WAF, SBFM, rate-limit, Cache Rule, and Access policy.
-  The API Worker's `/admin/*` surface is also reachable on `workers.dev` (with Bearer authentication, but after the
-  Worker starts). This is an architectural prerequisite: either move browser traffic to `https://api.xcp.io` and
-  disable/protect the API `workers.dev` origin, or implement equivalent Worker-native controls there.
+- Browser-side API calls now use `NEXT_PUBLIC_API_BASE=https://api.xcp.io`. Server-side calls continue through the
+  service binding. The API Worker's `/admin/*` surface remains reachable on `workers.dev` (with Bearer authentication,
+  but after the Worker starts), so ops migration and origin protection remain architectural prerequisites.
 - The web Worker uses an R2 incremental-cache binding.
 - Server-side API reads use an `API_WORKER` service binding, avoiding a public-network round trip.
 - Dynamic detail fetches already use revalidation: transactions 5 seconds, addresses/assets/blocks 30 seconds, UTXOs
@@ -120,15 +135,16 @@ Production currently has:
 - CDN images eligible for a one-year edge TTL and one-day browser TTL;
 - one sweep rate rule at 240 documents/minute/IP/colo, using Managed Challenge;
 - a blanket Managed Challenge for `/address/*`, `/asset/*`, and `/tx/*` for non-verified bots;
-- broad Skip rules for every path containing `/api/` and for all of `cdn.xcp.io`;
+- a narrow SBFM-only Skip for canonical public API reads, plus a still-broad Skip for all of `cdn.xcp.io`;
+- a WAF custom `410` for all retired locale namespaces;
 - a hard block for impossible transaction-hash-shaped address routes, ordered before the blanket page challenge.
 
 ### Findings
 
 1. The blanket detail-page challenge is route-based, not behavior-based. It is the principal source of avoidable human
    friction and should be removed after replacement controls are ready.
-2. The API Skip rule bypasses rate limiting, managed WAF, and Super Bot Fight Mode for any path containing `/api/` on
-   any hostname. It is much broader than the source's real public API (`/v2/*`) and broader than any justified exception.
+2. The former path-wide API Skip bypassed rate limiting, managed WAF, and SBFM. Layer 1 replaced it with an exact
+   `api.xcp.io` public-read exception that skips only SBFM.
 3. Permissive CDN image delivery is intentional and justified: a single legitimate page may request hundreds of images,
    objects have a one-year edge TTL, and egress is not the constrained resource. The problem is scope, not
    permissiveness—the current whole-host Skip also covers `/admin/*` and any future non-image path on `cdn.xcp.io`.
@@ -362,6 +378,11 @@ Cloudflare's aggregate `504` and `204` groups include Worker Cache API and servi
 proof that end users received those statuses. Workers Logs/traces must attribute client response versus internal
 subrequest before an endpoint is classified unhealthy or abusive.
 
+The post-Layer-1 live contract run also supplied one cold/post-deploy latency sample. It is not a steady-state benchmark,
+but it prioritizes observation: `/v2/emblem/assets` took about 3.5 seconds, `/v2/emblem/stats` and
+`/v2/collections/candidates` about 2.3 seconds, native `/v2/assets/XCP` about 1.4 seconds, and `/v2/assets` about 1.2
+seconds. Their cache-miss rates and D1/upstream timing should be measured before assigning family-specific budgets.
+
 ## Rollout sequence
 
 ### Phase A: establish observability and close the API-origin ambiguity
@@ -454,14 +475,15 @@ Not recommended:
 - [ ] Export current custom, managed, rate-limit, cache, bot, and zone settings to a sanitized versioned artifact.
 - [ ] Resolve the browser `workers.dev` API origin versus zone-protected `api.xcp.io`; protect or disable every public
       admin origin while retaining service-binding traffic.
-- [ ] Add and Trace-test the locale WAF custom-response tombstone.
-- [ ] Verify Worker invocation avoidance for retired locale requests.
+- [x] Add and Trace-test the locale WAF custom-response tombstone.
+- [x] Verify Worker invocation avoidance for retired locale requests.
 - [ ] Build shared route-shape validators and tests for web/API namespaces.
-- [ ] Add structured Workers observability with safe sampling/redaction.
+- [x] Enable 1% Workers Logs head sampling on API and web Workers; structured Analytics Engine decisions remain pending.
 - [ ] Inventory all callers relying on `/api/`, CDN, Telegram, and operator Skip behavior; identify the exact canonical
       CDN image prefixes and methods.
 - [ ] Create Cloudflare Access application/service token for `/admin/*` callers without colliding with app Bearer auth.
-- [ ] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions.
+- [ ] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions. Public API completed;
+      CDN scoping remains pending.
 - [ ] Replace the 240/minute challenge rule with a Pro-compatible empirically derived non-interactive ceiling.
 - [ ] Disable the blanket detail-page Managed Challenge.
 - [ ] Add Worker rate-limit bindings by public API route family.
