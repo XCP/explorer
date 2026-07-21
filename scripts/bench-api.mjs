@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 
-const base = (process.env.API_BASE || "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
+const base = (process.env.API_BASE || "https://api.xcp.io").replace(/\/$/, "");
 const samples = Math.max(1, Math.min(10, Number.parseInt(process.env.BENCH_SAMPLES || "3", 10) || 3));
 const address = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
 const paths = [

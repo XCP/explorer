@@ -18,12 +18,14 @@
  * instances: keep --rps low (default 4) and --max bounded; bulk sweeps belong on your own node.
  */
 import { readFileSync } from "node:fs";
+import { cloudflareAccessHeaders } from "./lib/cloudflare-access.mjs";
 
 const arg = (name, dflt) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.split("=").slice(1).join("=") : dflt;
 };
 const API = arg("api", "https://xcp-api.me-bbe.workers.dev");
+const ACCESS_HEADERS = cloudflareAccessHeaders();
 const BASE = arg("base", "https://blockstream.info/api");
 const TOKEN = readFileSync(arg("token-file", "admin.tok"), "utf8").trim();
 const MAX = parseInt(arg("max", "1000"), 10);
@@ -76,7 +78,11 @@ async function esploraSummary(addr) {
 async function push(rows) {
   const res = await fetch(`${API}/admin/btc-stats`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    headers: {
+      ...ACCESS_HEADERS,
+      Authorization: `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(rows),
     signal: AbortSignal.timeout(30_000),
   });
@@ -87,6 +93,7 @@ let done = 0;
 const failures = [];
 while (done < MAX) {
   const page = await getJson(`${API}/admin/btc-stats/addresses?limit=${Math.min(200, MAX - done)}&offset=${offset}`, {
+    ...ACCESS_HEADERS,
     Authorization: `Bearer ${TOKEN}`,
   });
   const addrs = page.result ?? [];

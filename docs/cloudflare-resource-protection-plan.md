@@ -1,24 +1,33 @@
 # Cloudflare resource-protection plan
 
-Status: proposed, reviewed against production configuration and traffic on 2026-07-21. No policy in this document is
-authorization to deploy every rule at once. Follow the staged rollout and rollback gates below.
+Status: active staged rollout, reviewed against production configuration and traffic on 2026-07-21. Follow the staged
+rollout and rollback gates below.
 
 ## Implementation status
 
-Layer 1 deployed and verified on 2026-07-21:
+Layers 1–2 deployed and verified on 2026-07-21:
 
 - browser API base changed from `xcp-api.me-bbe.workers.dev` to zone-protected `https://api.xcp.io`;
 - exact public `api.xcp.io` `/v2` GET/HEAD/OPTIONS traffic skips only SBFM, while managed WAF and future rate controls
   remain applicable;
 - retired locale namespaces return a WAF-generated `410 Gone` before the web Worker;
 - API and web Workers have 1% Workers Logs head sampling enabled;
+- API sampled logs use bounded route families and record duration plus edge/D1 cache outcomes without entity IDs;
+- CDN exemption is limited to GET/HEAD image and image-transform paths and skips only SBFM;
+- exact public JSON reads and CDN image paths are also excluded from the later datacenter challenge;
+- the read-only legacy `app.xcp.io/api/v1/*` forwarding surface has the same machine-client treatment; unsupported
+  legacy contracts still return application `404` rather than a Cloudflare HTML challenge;
+- the blanket detail-page challenge is disabled; malformed-address, datacenter, managed-WAF, and interim sweep controls
+  remain;
+- active operator scripts support optional Access service-token headers; their defaults remain on `workers.dev` until
+  Access exists so unattended maintenance is not broken;
 - existing API live contract suite passed 33/33 after deployment;
-- CDN image policy, the broad CDN Skip, document rate threshold, blanket detail challenge, public API `workers.dev`
-  availability, and admin Access remain unchanged pending their dependency stages.
+- document rate threshold, public API `workers.dev` availability, and admin Access remain pending their dependency stages.
 
-The transitional API `workers.dev` origin remains reachable because current ops scripts use it. Browser traffic no
-longer depends on it, but admin protection is incomplete until those scripts migrate and the origin is disabled or gains
-equivalent Worker-native service authentication.
+The transitional API `workers.dev` origin remains reachable for rollback and operator jobs. Browser traffic no longer
+depends on it, but admin protection is incomplete until Access is available, operator defaults migrate, and the origin is
+disabled or gains equivalent Worker-native service authentication. The current Cloudflare automation token receives
+`403` from the Access API, so that boundary cannot be created safely through tonight's automation credentials.
 
 ## Objective
 
@@ -472,20 +481,19 @@ Not recommended:
 
 ## Implementation task list
 
-- [ ] Export current custom, managed, rate-limit, cache, bot, and zone settings to a sanitized versioned artifact.
+- [x] Export current custom, managed, rate-limit, cache, bot, and zone settings to a sanitized versioned artifact.
 - [ ] Resolve the browser `workers.dev` API origin versus zone-protected `api.xcp.io`; protect or disable every public
       admin origin while retaining service-binding traffic.
 - [x] Add and Trace-test the locale WAF custom-response tombstone.
 - [x] Verify Worker invocation avoidance for retired locale requests.
 - [ ] Build shared route-shape validators and tests for web/API namespaces.
-- [x] Enable 1% Workers Logs head sampling on API and web Workers; structured Analytics Engine decisions remain pending.
-- [ ] Inventory all callers relying on `/api/`, CDN, Telegram, and operator Skip behavior; identify the exact canonical
+- [x] Enable 1% Workers Logs head sampling on API and web Workers; structured bounded API decisions are live.
+- [x] Inventory all callers relying on `/api/`, CDN, Telegram, and operator Skip behavior; identify the exact canonical
       CDN image prefixes and methods.
 - [ ] Create Cloudflare Access application/service token for `/admin/*` callers without colliding with app Bearer auth.
-- [ ] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions. Public API completed;
-      CDN scoping remains pending.
+- [x] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions.
 - [ ] Replace the 240/minute challenge rule with a Pro-compatible empirically derived non-interactive ceiling.
-- [ ] Disable the blanket detail-page Managed Challenge.
+- [x] Disable the blanket detail-page Managed Challenge.
 - [ ] Add Worker rate-limit bindings by public API route family.
 - [ ] Provide documented API identities/quotas for legitimate bulk clients.
 - [ ] Collect seven days of cache/rate/security metrics.

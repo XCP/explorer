@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { BITCOIN_FEE_PROVIDERS, fetchProviderFee } from "./lib/bitcoin-fee-providers.mjs";
+import { cloudflareAccessHeaders } from "./lib/cloudflare-access.mjs";
 
 function arg(name, fallback) {
   const prefix = `--${name}=`;
@@ -8,6 +9,7 @@ function arg(name, fallback) {
 }
 
 const API = arg("api", "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
+const ACCESS_HEADERS = cloudflareAccessHeaders();
 const requestedProviderNames = new Set(
   arg("providers", BITCOIN_FEE_PROVIDERS.map((provider) => provider.name).join(","))
     .split(",")
@@ -35,7 +37,12 @@ const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mil
 async function api(path, init = {}) {
   const response = await fetch(`${API}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", ...init.headers },
+    headers: {
+      ...ACCESS_HEADERS,
+      Authorization: `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
     signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);

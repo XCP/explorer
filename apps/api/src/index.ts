@@ -5,6 +5,7 @@ import type { Env } from "#api/env";
 export type { Env } from "#api/env";
 import { extensionApi } from "#api/extension-api";
 import { describeHttpError, requestId } from "#api/http/errors";
+import { requestTelemetry } from "#api/http/telemetry";
 import { syncCoreEvents } from "#api/indexer/sync";
 import { read } from "#api/read/router";
 import { recoveryRead } from "#api/recovery/read";
@@ -14,6 +15,10 @@ import { runRecoveryMaintenance } from "#api/scheduler/recovery-maintenance";
 import { verify } from "#api/verify";
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Workers Logs head-samples this bounded record at the configured 1% rate. Entity identifiers and raw
+// attacker-controlled paths are deliberately excluded.
+app.use("*", requestTelemetry);
 
 // Replica-local, stale-tolerant reads. Cache writes still route to the primary.
 app.use("/v2/*", async (c, next) => {
