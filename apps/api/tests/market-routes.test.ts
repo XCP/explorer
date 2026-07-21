@@ -41,7 +41,11 @@ const bindings = (provider: Response | Response[], quote: { usd: number; day: st
   }) as Env;
 
 test("canonical market route exposes an ordered pair without compatibility wrapping", async () => {
-  const response = await markets.request("/markets/pepecash/xcp", undefined, bindings(Response.json(providerMarket)));
+  const response = await markets.request(
+    "/v2/markets/pepecash/xcp",
+    undefined,
+    bindings(Response.json(providerMarket)),
+  );
   assert.equal(response.status, 200);
   const body = (await response.json()) as { result: Record<string, unknown> };
   assert.equal(body.result.baseAsset, "PEPECASH");
@@ -53,7 +57,7 @@ test("canonical market route exposes an ordered pair without compatibility wrapp
 
 test("canonical market route distinguishes a missing pair from provider drift", async () => {
   const missing = await markets.request(
-    "/markets/UNKNOWN/XCP",
+    "/v2/markets/UNKNOWN/XCP",
     undefined,
     bindings([
       Response.json({ error: "Pair not found" }, { status: 404 }),
@@ -63,7 +67,7 @@ test("canonical market route distinguishes a missing pair from provider drift", 
   assert.equal(missing.status, 404);
 
   const malformed = await markets.request(
-    "/markets/PEPECASH/XCP",
+    "/v2/markets/PEPECASH/XCP",
     undefined,
     bindings(Response.json({ ...providerMarket, last_price: "0.0022" })),
   );
@@ -72,7 +76,7 @@ test("canonical market route distinguishes a missing pair from provider drift", 
 
 test("canonical market route resolves an ordered pair from the provider's reverse orientation", async () => {
   const response = await markets.request(
-    "/markets/XCP/PEPECASH",
+    "/v2/markets/XCP/PEPECASH",
     undefined,
     bindings([Response.json({ error: "Pair not found" }, { status: 404 }), Response.json(providerMarket)]),
   );
@@ -89,7 +93,7 @@ test("canonical market route resolves an ordered pair from the provider's revers
 
 test("XCP/USD quote uses the newest indexed price observation", async () => {
   const response = await markets.request(
-    "/quotes/XCP/USD",
+    "/v2/quotes/XCP/USD",
     undefined,
     bindings(Response.json({}), { usd: 2.73, day: "2026-07-12" }),
   );
@@ -106,9 +110,9 @@ test("XCP/USD quote uses the newest indexed price observation", async () => {
 });
 
 test("XCP/USD quote fails closed when no valid observation exists", async () => {
-  assert.equal((await markets.request("/quotes/XCP/USD", undefined, bindings(Response.json({}), null))).status, 503);
+  assert.equal((await markets.request("/v2/quotes/XCP/USD", undefined, bindings(Response.json({}), null))).status, 503);
   assert.equal(
-    (await markets.request("/quotes/XCP/USD", undefined, bindings(Response.json({}), { usd: 0, day: "" }))).status,
+    (await markets.request("/v2/quotes/XCP/USD", undefined, bindings(Response.json({}), { usd: 0, day: "" }))).status,
     503,
   );
 });

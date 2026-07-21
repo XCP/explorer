@@ -13,7 +13,7 @@ const assetName = (value: string): string => {
   return asset;
 };
 
-markets.get("/markets/:base/:quote", async (c) => {
+markets.get("/v2/markets/:base/:quote", async (c) => {
   const requestedBase = assetName(c.req.param("base"));
   const requestedQuote = assetName(c.req.param("quote"));
   let market;
@@ -31,7 +31,7 @@ markets.get("/markets/:base/:quote", async (c) => {
   return J(c, { result: market }, 30);
 });
 
-markets.get("/quotes/XCP/USD", async (c) => {
+markets.get("/v2/quotes/XCP/USD", async (c) => {
   const quote = await latestUsdQuote(c.env.CORE_DB, "XCP");
   if (!quote || !Number.isFinite(quote.usd) || quote.usd <= 0) {
     throw new HTTPException(503, { message: "XCP/USD quote is temporarily unavailable" });
