@@ -9,7 +9,7 @@
  */
 import type { Env } from "#api/env";
 import { fetchCoinbaseCandles, fetchCoinbaseSpot } from "#api/integrations/coinbase";
-import { fetchDexTradeMarket, type DexTradeObservation } from "#api/integrations/dex-trade";
+import { fetchDexTradeHistory, fetchDexTradeMarket, type DexTradeObservation } from "#api/integrations/dex-trade";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 // Coinbase product + first-listed day (unix sec) per currency.
@@ -63,6 +63,31 @@ const selectionPredicate = (current = "prices", candidate = "excluded") => `(
 )`;
 
 export const PRICE_SELECTION_PREDICATE = selectionPredicate();
+
+/** Import Dex-Trade's daily XCP/BTC candle history (their chart endpoint reaches back to 2024-06-30)
+ *  as venue=cex observations with executed volume — the corroboration series the single-day spot
+ *  captures never accumulated. Candle prices are satoshis (÷1e8 → BTC/XCP); volume is base-asset
+ *  satoshi units (÷1e8 → XCP). Observations only: the daily calendar's selection policy is untouched. */
+export async function importDexTradeHistory(env: Env): Promise<Record<string, unknown>> {
+  const now = Math.floor(Date.now() / 1_000);
+  const candles = await fetchDexTradeHistory("XCPBTC", now);
+  let written = 0;
+  for (let i = 0; i < candles.length; i += 50) {
+    const batch = candles.slice(i, i + 50).map((candle) =>
+      env.CORE_DB.prepare(
+        `INSERT INTO market_price_observations(
+           day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+         VALUES(date(?1,'unixepoch'),'XCP','BTC','dex-trade','cex',?2,?3,0,?1,?1,'daily_close')
+         ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
+           price=excluded.price,volume_base=excluded.volume_base,method=excluded.method,
+           first_time=excluded.first_time,last_time=excluded.last_time`,
+      ).bind(candle.time, candle.close / 1e8, candle.volume / 1e8),
+    );
+    const results = await env.CORE_DB.batch(batch);
+    written += results.length;
+  }
+  return { candles: candles.length, written, from: candles[0]?.time, to: candles[candles.length - 1]?.time };
+}
 
 /** Persist a directly observed BTC/USD ticker and a recent XCP/BTC exchange ticker, with explicit lower
  * fidelity than the completed daily calendar but higher fidelity than a carried on-chain edge. This prices

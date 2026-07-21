@@ -25,7 +25,7 @@ import { buildScamAttribution } from "#api/indexer/emblem-scam";
 import { graphEval } from "#api/indexer/graph-eval";
 import { buildTrades, reconcileDirtyEmblemTrades } from "#api/indexer/trades";
 import { buildGraphTrust } from "#api/indexer/graph";
-import { crawlPrices, crawlSpotPrices, applyTradeUsd } from "#api/indexer/prices";
+import { crawlPrices, crawlSpotPrices, applyTradeUsd, importDexTradeHistory } from "#api/indexer/prices";
 import { curatedList, curatedUpsert, curatedDelete } from "#api/queries/curated";
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
@@ -325,6 +325,15 @@ admin.post("/admin/crawl-prices", async (c) => {
 
 admin.post("/admin/crawl-spot-prices", async (c) => {
   return c.json(await crawlSpotPrices(c.env));
+});
+
+// One-shot/refreshable import of Dex-Trade's daily XCP/BTC candles as venue=cex observations.
+admin.post("/admin/import-dextrade-history", async (c) => {
+  try {
+    return c.json(await importDexTradeHistory(c.env));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Dex-Trade import failed" }, 500);
+  }
 });
 
 // Map trades onto the price calendar (fills usd_value). Loop until {done:true}.

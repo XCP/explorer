@@ -48,6 +48,58 @@ export function parseDexTradeMarket(
   return { pair, price: rate, latestPrice, latestTime, latestVolume };
 }
 
+/** One daily candle from Dex-Trade's chart endpoint (socket.dex-trade.com/graph/hist).
+ *  Prices arrive in SATOSHIS per XCP (the public ticker's `last` is decimal BTC — different scale);
+ *  volume arrives in base-asset satoshi units. Conversion to BTC/XCP and XCP happens at import. */
+export type DexTradeCandle = {
+  time: number; // unix seconds, day-aligned
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export function parseDexTradeHistory(value: unknown): DexTradeCandle[] {
+  if (!Array.isArray(value)) throw new Error("Dex-Trade history response must be an array");
+  const candles = value.map((row, index) => {
+    const candle = object(row, `Dex-Trade candle ${index} must be an object`);
+    const time = Number(candle.time);
+    const open = Number(candle.open);
+    const high = Number(candle.high);
+    const low = Number(candle.low);
+    const close = Number(candle.close);
+    const volume = Number(candle.volume);
+    if (!Number.isInteger(time) || time <= 0) throw new Error(`Dex-Trade candle ${index} time is invalid`);
+    for (const [name, price] of [
+      ["open", open],
+      ["high", high],
+      ["low", low],
+      ["close", close],
+    ] as const) {
+      if (!Number.isFinite(price) || price <= 0) throw new Error(`Dex-Trade candle ${index} ${name} is invalid`);
+    }
+    if (high < low) throw new Error(`Dex-Trade candle ${index} has high below low`);
+    if (!Number.isFinite(volume) || volume < 0) throw new Error(`Dex-Trade candle ${index} volume is invalid`);
+    return { time, open, high, low, close, volume };
+  });
+  return candles.sort((a, b) => a.time - b.time);
+}
+
+export async function fetchDexTradeHistory(
+  pair: DexTradePair,
+  end: number,
+  limit = 3000,
+  fetcher: typeof fetch = fetch,
+): Promise<DexTradeCandle[]> {
+  const response = await fetcher(`https://socket.dex-trade.com/graph/hist?t=${pair}&r=D&end=${end}&limit=${limit}`, {
+    headers: { "user-agent": "xcp.io-indexer", accept: "application/json" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`Dex-Trade history request failed: ${response.status}`);
+  return parseDexTradeHistory(await response.json());
+}
+
 export async function fetchDexTradeMarket(
   pair: DexTradePair,
   fetcher: typeof fetch = fetch,

@@ -555,3 +555,16 @@ unchanged in coverage (4,584 gap-free days), CMC/burn/spot still own their eras,
 gap now prices as 8 full-rank market days plus 6 thin-labeled days. The evaluation follows the Zaif
 precedent: observations stored per venue, selection gated by measured evidence, disagreement inspected
 rather than overwritten.
+
+### 2026-07-21 — Dex-Trade daily candle history imported and scored
+
+Dex-Trade's chart endpoint (socket.dex-trade.com/graph/hist, r=D) retains daily XCP/BTC OHLCV from
+2024-06-30. All 660 candles are imported as `source=dex-trade, venue=cex, method=daily_close`
+observations (close ÷1e8 → BTC/XCP; volume ÷1e8 → XCP; trades stored as 0 = no claimed count, the
+CMC-import convention). Scored against the CMC aggregate over all 660 overlap days: 0.1475 mean
+|ln err|, 80.2% within 25%, worst day 0.64 — noisier than Zaif XCP/JPY (0.032 median) and the
+floored on-chain market edge (0.114 mean) but with bounded tails, and it contributes an attributable
+CEX volume series (623k XCP over two years). Context: Dex-Trade shows deposit/withdrawal instability
+and may delist, which is why the live-quote plan is a median of independent same-day sources
+(Zaif XCP/JPY via ECB, the on-chain market edge, Dex-Trade while it lasts) rather than any single
+ticker. Selection policy unchanged by this import — observations only.
