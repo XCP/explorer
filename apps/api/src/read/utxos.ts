@@ -4,8 +4,8 @@
  * or a historical holder whose last event says where the assets went.
  */
 import type { Envelope } from "@xcp/shared/envelope";
-import type { UtxoDetail } from "@xcp/shared/utxos";
-import { router, J } from "#api/read/respond";
+import type { UtxoDetail, UtxoEvent } from "@xcp/shared/utxos";
+import { router, J, lim, off } from "#api/read/respond";
 import { utxoBalances, utxoController, utxoHistory } from "#api/queries/utxos";
 
 const UTXO_SHAPE = /^([0-9a-fA-F]{64}):(0|[1-9][0-9]*)$/;
@@ -17,6 +17,22 @@ const hashBytes = (hex: string): Uint8Array => {
 };
 
 export const utxos = router();
+
+// The history as a standard paged record feed (the web's DetailTabs contract: limit/offset + next_offset).
+utxos.get("/v2/utxos/:utxo/history", async (c) => {
+  const raw = decodeURIComponent(c.req.param("utxo"));
+  const match = UTXO_SHAPE.exec(raw);
+  if (!match) return c.json({ error: "expected txid:vout" }, 400);
+  const limit = lim(c, 50, 100);
+  const offset = off(c);
+  const rows = await utxoHistory(c.env.CORE_DB, `${match[1]!.toLowerCase()}:${match[2]!}`);
+  const page = rows.slice(offset, offset + limit);
+  const body: Envelope<UtxoEvent[]> = {
+    result: page,
+    next_offset: offset + limit < rows.length ? offset + limit : null,
+  };
+  return J(c, body, 60);
+});
 
 utxos.get("/v2/utxos/:utxo", async (c) => {
   const raw = decodeURIComponent(c.req.param("utxo"));
