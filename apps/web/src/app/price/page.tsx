@@ -69,19 +69,20 @@ export default async function PricePageRoute() {
   ];
 
   const overview = (
-    <div className="mag">
+    <>
+      {/* Full-width hero: the chart owns the row; USD / in-BTC / vs-BTC modes live inside it. */}
       <div className="plate">
         <div className="bg-[#0e1218] p-3">
           <PriceHistoryChart history={page.history} />
         </div>
         <div className="cap">
           <span>
-            <b>XCP</b> · daily USD since {page.history[0]?.day.slice(0, 4)} · log scale
+            <b>XCP</b> · daily since {page.history[0]?.day.slice(0, 4)} · log scale
           </span>
           <span>{commas(page.history.length)} days</span>
         </div>
       </div>
-      <div className="magcol">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="card factcard">
           <h2>How this number is made</h2>
           <div className="body">
@@ -136,7 +137,7 @@ export default async function PricePageRoute() {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 
   return (

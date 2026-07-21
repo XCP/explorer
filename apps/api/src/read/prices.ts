@@ -39,7 +39,7 @@ prices.get("/v2/price/ticker", async (c) => {
 });
 
 prices.get("/v2/price", (c) =>
-  cached(c, "price:page:1", { ttl: 600, edge: 300, swr: 3600 }, async (): Promise<Envelope<PricePage>> => {
+  cached(c, "price:page:3", { ttl: 600, edge: 300, swr: 3600 }, async (): Promise<Envelope<PricePage>> => {
     const db = c.env.CORE_DB;
     const [xcp, btc, history, sources, sats, venues] = await Promise.all([
       latestPrice(db, "XCP"),

@@ -21,6 +21,13 @@ export interface PriceHistoryPoint {
   day: string;
   usd: number;
   source: string;
+  /** Same-day BTC/USD from the calendar — lets clients denominate in sats or index vs BTC. */
+  btc?: number | null;
+  /** XCP supply as of this day (whole units), cumulated from the 1:1 credit/debit ledger — burns
+   *  grew it, fees and destructions shrink it. Includes escrowed coins. */
+  supply?: number | null;
+  /** On-chain XCP/BTC executed volume this day (XCP units, DEX + dispenses; null = no executions). */
+  vol?: number | null;
 }
 
 export interface PriceSourceEra {
