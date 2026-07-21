@@ -581,7 +581,7 @@ the authorized monthly CSV import stays authoritative — live rows never overwr
 150-trade public window spanned 35 UTC days and wrote 9 new days beyond the CSV cutoff.
 Dex-Trade candle import extended to PEPECASH/BTC (94 daily candles from 2024-07-05).
 
-### 2026-07-21 — PROPOSAL (not yet applied): Zaif joins daily selection, ranked — not a median
+### 2026-07-21 — APPLIED same day: Zaif joins daily selection, ranked — not a median
 
 Research toward replacing the fragile Dex-Trade-first fallback. Three measurements over prod data:
 
@@ -611,3 +611,9 @@ Dex-Trade posts the largest volume on 591 of 742 days and volume-weighting hands
 biased venue. Consistent with the reference-rate literature's reason for excluding venues by
 quality criteria rather than trusting reported volume. Within-source volume-weighting (the daily
 VWM) remains in force everywhere.
+
+Applied 2026-07-21 as proposed. Production outcome matched the pre-computed impact exactly: two
+days changed source (2026-07-19 $1.4882→$1.3039, 2026-07-20 $1.4986→$1.3863, dextrade→zaif_vwm),
+five XCP trades repriced ($55.43→$51.13 combined), nothing else moved. Fixture tests cover rank
+placement (beats Dex-Trade, loses to CMC), the ≤4-day FX carry (older FX → no row), and prune
+re-derivability.

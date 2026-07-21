@@ -48,6 +48,7 @@ const sourceRank = (source: string) => `CASE ${source}
   WHEN 'coinbase' THEN 50
   WHEN 'coinbase_spot' THEN 40
   WHEN 'coinmarketcap_aggregate' THEN 30
+  WHEN 'zaif_vwm' THEN 25
   WHEN 'dextrade_xcpbtc_spot' THEN 20
   WHEN 'burn_vwm' THEN 10
   WHEN 'market_vwm' THEN 6
@@ -488,6 +489,52 @@ export const PRUNE_OBSERVED_USD_SQL = `DELETE FROM prices
       AND observation.quote_currency='USD'
       AND observation.source='coinmarketcap' AND observation.venue='aggregate' AND observation.price>0)`;
 
+/** Zaif XCP/JPY daily VWM through the official ECB cross (EUR/USD ÷ EUR/JPY, ≤4-day weekend carry) —
+ *  the best-measured XCP source in the audit (0.032 median |ln err| vs CMC; ranked-Zaif-first beat
+ *  every alternative 2× in the 749-day CMC holdout, see the 2026-07-21 proposal). UNfloored by
+ *  measurement: an order book prices even single fills sanely. Ranked between the CMC aggregate
+ *  (which keeps every day it covers) and the Dex-Trade spot it supersedes as first fallback. */
+export const BUILD_ZAIF_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+    policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
+    disagreement_class,selection_reason)
+  SELECT z.day,'XCP',z.price*usd_leg.price/jpy_leg.price,'zaif_vwm',z.day,2,'${PRICE_SELECTION_POLICY}','derived',
+    0,1,NULLIF(z.trades,0),1,NULLIF(z.volume_base,0),'not_evaluated','first_party_cex_fx_cross'
+  FROM market_price_observations z
+  JOIN market_price_observations usd_leg ON usd_leg.source='ecb' AND usd_leg.venue='reference'
+    AND usd_leg.base_currency='EUR' AND usd_leg.quote_currency='USD' AND usd_leg.day=(
+      SELECT u.day FROM market_price_observations u
+      WHERE u.source='ecb' AND u.venue='reference' AND u.base_currency='EUR' AND u.quote_currency='USD'
+        AND u.day<=z.day AND u.day>=date(z.day,'-4 days') ORDER BY u.day DESC LIMIT 1)
+  JOIN market_price_observations jpy_leg ON jpy_leg.source='ecb' AND jpy_leg.venue='reference'
+    AND jpy_leg.base_currency='EUR' AND jpy_leg.quote_currency='JPY' AND jpy_leg.day=(
+      SELECT j.day FROM market_price_observations j
+      WHERE j.source='ecb' AND j.venue='reference' AND j.base_currency='EUR' AND j.quote_currency='JPY'
+        AND j.day<=z.day AND j.day>=date(z.day,'-4 days') ORDER BY j.day DESC LIMIT 1)
+  WHERE z.source='zaif' AND z.venue='cex' AND z.base_currency='XCP' AND z.quote_currency='JPY'
+    AND z.price>0 AND usd_leg.price>0 AND jpy_leg.price>0
+  ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
+    price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
+    observation_count=excluded.observation_count,venue_count=excluded.venue_count,volume_base=excluded.volume_base,
+    disagreement_class=excluded.disagreement_class,selection_reason=excluded.selection_reason
+  WHERE ${PRICE_SELECTION_PREDICATE} AND (
+    prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
+    OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
+  )`;
+
+export const PRUNE_ZAIF_XCP_USD_SQL = `DELETE FROM prices
+  WHERE currency='XCP' AND source='zaif_vwm' AND NOT EXISTS (
+    SELECT 1 FROM market_price_observations z
+    WHERE z.source='zaif' AND z.venue='cex' AND z.base_currency='XCP' AND z.quote_currency='JPY'
+      AND z.day=prices.day AND z.price>0
+      AND EXISTS (SELECT 1 FROM market_price_observations u
+        WHERE u.source='ecb' AND u.venue='reference' AND u.base_currency='EUR' AND u.quote_currency='USD'
+          AND u.day<=z.day AND u.day>=date(z.day,'-4 days'))
+      AND EXISTS (SELECT 1 FROM market_price_observations j
+        WHERE j.source='ecb' AND j.venue='reference' AND j.base_currency='EUR' AND j.quote_currency='JPY'
+          AND j.day<=z.day AND j.day>=date(z.day,'-4 days'))
+  )`;
+
 /** During the genesis burn, on-chain BTC/XCP conversion × same-day BTC/USD is reproducible XCP/USD evidence. */
 export const BUILD_BURN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
     policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
@@ -683,6 +730,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const observedUsdPrune = await env.CORE_DB.prepare(PRUNE_OBSERVED_USD_SQL).run();
   const burnXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_BURN_XCP_USD_SQL).run();
   const burnXcpUsdPrune = await env.CORE_DB.prepare(PRUNE_BURN_XCP_USD_SQL).run();
+  const zaifXcpUsdPrune = await env.CORE_DB.prepare(PRUNE_ZAIF_XCP_USD_SQL).run();
+  const zaifXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_ZAIF_XCP_USD_SQL).run();
   const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
   const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
   const thinXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_THIN_XCP_USD_SQL).run();
@@ -699,6 +748,8 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     observed_usd_pruned: observedUsdPrune.meta.rows_written ?? 0,
     burn_xcp_usd_upserted: burnXcpUsdUpsert.meta.rows_written ?? 0,
     burn_xcp_usd_pruned: burnXcpUsdPrune.meta.rows_written ?? 0,
+    zaif_xcp_usd_upserted: zaifXcpUsdUpsert.meta.rows_written ?? 0,
+    zaif_xcp_usd_pruned: zaifXcpUsdPrune.meta.rows_written ?? 0,
     xcp_usd_upserted: xcpUsdUpsert.meta.rows_written ?? 0,
     thin_xcp_usd_upserted: thinXcpUsdUpsert.meta.rows_written ?? 0,
     xcp_usd_pruned: xcpUsdPrune.meta.rows_written ?? 0,

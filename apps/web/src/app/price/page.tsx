@@ -44,9 +44,13 @@ const SOURCE_STORY: Record<string, { name: string; note: string }> = {
     name: "CMC aggregate",
     note: "observed multi-exchange daily aggregates (historical import)",
   },
+  zaif_vwm: {
+    name: "Zaif XCP/JPY",
+    note: "first-party yen executions × the official ECB cross — the best-measured source (0.032 median error)",
+  },
   dextrade_xcpbtc_spot: {
     name: "Dex-Trade spot",
-    note: "latest CEX XCP/BTC execution × Coinbase BTC/USD (today's live quote)",
+    note: "latest CEX XCP/BTC execution × Coinbase BTC/USD (last-resort live quote)",
   },
   coinbase_spot: { name: "Coinbase spot", note: "intraday BTC/USD ticker" },
 };

@@ -11,12 +11,14 @@ import {
   BUILD_OBSERVED_USD_SQL,
   BUILD_THIN_XCP_USD_SQL,
   BUILD_XCP_USD_SQL,
+  BUILD_ZAIF_XCP_USD_SQL,
   PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   PRUNE_BURN_PRICE_OBSERVATIONS_SQL,
   PRUNE_BURN_XCP_USD_SQL,
   PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL,
   PRUNE_OBSERVED_USD_SQL,
   PRUNE_XCP_USD_SQL,
+  PRUNE_ZAIF_XCP_USD_SQL,
   PRICE_SELECTION_POLICY,
   PRICE_SELECTION_PREDICATE,
   REFRESH_PRICING_HEALTH_SQL,
@@ -372,6 +374,59 @@ test("derived XCP/USD replay is idempotent and stale pruning preserves observed 
       { day: "2026-01-09", source: "market" },
     ],
   );
+  db.close();
+});
+
+test("Zaif XCP/JPY crosses through ECB at rank between the CMC aggregate and the Dex-Trade spot", () => {
+  const db = fixture();
+  db.exec(`
+    INSERT INTO market_price_observations VALUES
+      ('2026-01-08','XCP','JPY','zaif','cex',200,11,2,NULL,NULL,'volume_weighted_median'),
+      ('2026-01-06','EUR','USD','ecb','reference',1.10,0,0,NULL,NULL,'reference_rate'),
+      ('2026-01-06','EUR','JPY','ecb','reference',160,0,0,NULL,NULL,'reference_rate');
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2026-01-08','XCP',1.6,'dextrade_xcpbtc_spot','2026-01-08',2);
+  `);
+  db.exec(BUILD_ZAIF_XCP_USD_SQL);
+  // ¥200 × (1.10/160) = $1.375 replaces the lower-ranked spot; FX carried 2 days (≤4 allowed).
+  assert.deepEqual(
+    {
+      ...db
+        .prepare(
+          `SELECT ROUND(usd,6) usd,source,fidelity,observation_count,volume_base,selection_reason
+           FROM prices WHERE day='2026-01-08' AND currency='XCP'`,
+        )
+        .get(),
+    },
+    {
+      usd: 1.375,
+      source: "zaif_vwm",
+      fidelity: 2,
+      observation_count: 2,
+      volume_base: 11,
+      selection_reason: "first_party_cex_fx_cross",
+    },
+  );
+  // The CMC aggregate still outranks it on any day it covers.
+  db.exec(`INSERT INTO market_price_observations VALUES(
+    '2026-01-08','XCP','USD','coinmarketcap','aggregate',1.42,0,0,NULL,NULL,'aggregate_daily_close')`);
+  db.exec(BUILD_OBSERVED_USD_SQL);
+  assert.equal(
+    db.prepare(`SELECT source FROM prices WHERE day='2026-01-08' AND currency='XCP'`).get()?.source,
+    "coinmarketcap_aggregate",
+  );
+  // A Zaif day whose FX legs are older than the 4-day carry produces NO row.
+  db.exec(`INSERT INTO market_price_observations VALUES
+    ('2026-01-20','XCP','JPY','zaif','cex',210,3,1,NULL,NULL,'volume_weighted_median')`);
+  db.exec(BUILD_ZAIF_XCP_USD_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE day='2026-01-20' AND currency='XCP'`).get()?.n, 0);
+  // Prune removes zaif_vwm rows whose observation evidence is gone.
+  db.exec(`
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2025-12-01','XCP',1,'zaif_vwm','2025-12-01',2);
+  `);
+  db.exec(PRUNE_ZAIF_XCP_USD_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE source='zaif_vwm' AND day='2025-12-01'`).get()?.n, 0);
   db.close();
 });
 

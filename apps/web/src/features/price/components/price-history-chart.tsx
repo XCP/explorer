@@ -21,6 +21,7 @@ const SOURCE_LABELS: Record<string, string> = {
   market_vwm_thin: "on-chain market (thin)",
   dex_vwm: "on-chain DEX",
   coinmarketcap_aggregate: "CMC aggregate",
+  zaif_vwm: "Zaif XCP/JPY",
   dextrade_xcpbtc_spot: "Dex-Trade spot",
   coinbase_spot: "Coinbase spot",
 };
