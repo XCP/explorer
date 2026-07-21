@@ -580,3 +580,27 @@ the authorized monthly CSV import stays authoritative — live rows never overwr
 `volume_weighted_median` rows, and the CSV import overwrites live ones. First live poll: the
 150-trade public window spanned 35 UTC days and wrote 9 new days beyond the CSV cutoff.
 Dex-Trade candle import extended to PEPECASH/BTC (94 daily candles from 2024-07-05).
+
+### 2026-07-21 — PROPOSAL (not yet applied): Zaif joins daily selection, ranked — not a median
+
+Research toward replacing the fragile Dex-Trade-first fallback. Three measurements over prod data:
+
+1. Zaif XCP/JPY through the ECB cross vs CMC, by year: 0.024–0.041 mean |ln err| every year since
+   2022 (worst single day 0.23). The circularity worry (CMC now lists Zaif as its only XCP market)
+   does NOT collapse the comparison to zero — residual ~3–4% is method/timing noise — and 2019/2021
+   (0.11/0.15) show the eras when CMC carried genuinely different venues. No retroactive change is
+   warranted on CMC-present days.
+2. Zaif liquidity-floor sweep (2023+): floors only hurt (unfloored 0.0325 mean / 92.6% within 10%;
+   every floor tested was worse). A real order book prices even single fills sanely — unlike
+   dispenser dust. Zaif therefore enters selection UNfloored.
+3. Holdout test, 2024-07→2026-07 (749 days, CMC hidden): predict CMC from the remaining sources.
+   Current behavior (Dex-Trade-first): 0.168 mean err, 36.7% within 10%. Ranked Zaif-first: 0.078 /
+   73.5%. Median-of-available-sources: 0.127 / 53.4%. The median LOSES because Dex-Trade (+15–20%)
+   and the on-chain edge share an upward bias; a median of {accurate, biased, biased} is biased.
+   Ranked selection by measured quality beats voting when quality is this asymmetric.
+
+Proposal: keep usd-payment-v1's ranked architecture; add `zaif_vwm` (XCP/JPY daily VWM × ECB cross,
+≤4-day FX carry, no liquidity floor, fidelity 2) ranked BETWEEN coinmarketcap_aggregate and
+dextrade_xcpbtc_spot. Effect: zero change to any CMC-present day; on CMC-absent days the calendar
+falls to Zaif first (measured 2× better than today's fallback), then Dex-Trade, then the on-chain
+tiers. The live crawlMarketQuotes job already stores the needed Zaif observations.
