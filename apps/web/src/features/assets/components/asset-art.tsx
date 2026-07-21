@@ -12,6 +12,7 @@ export function AssetArt({
   w = ART_WIDTH.card,
   video = false,
   html = false,
+  audio = false,
   original = false,
 }: {
   asset: string;
@@ -22,6 +23,7 @@ export function AssetArt({
   w?: ArtWidth;
   video?: boolean;
   html?: boolean;
+  audio?: boolean;
   original?: boolean;
 }) {
   const [pixel, setPixel] = useState(stamp || asset[0] === "A"); // initial guess avoids a flash before load
@@ -61,6 +63,15 @@ export function AssetArt({
         >
           view source ↗
         </a>
+      </div>
+    );
+  }
+  if (audio) {
+    // On-chain audio (e.g. an Opus inscription). No cover art exists — the plate IS the player.
+    return (
+      <div className={`aspect-square w-full bg-zinc-900 flex flex-col items-center justify-center gap-4 ${className}`}>
+        <div className="font-mono text-xs uppercase tracking-widest text-zinc-500">on-chain audio</div>
+        <audio controls preload="none" src={rawArtUrl(asset)} className="w-4/5" aria-label={`${asset} audio`} />
       </div>
     );
   }
