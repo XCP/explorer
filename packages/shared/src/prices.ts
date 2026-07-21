@@ -26,7 +26,8 @@ export interface PriceHistoryPoint {
   /** XCP supply as of this day (whole units), cumulated from the 1:1 credit/debit ledger — burns
    *  grew it, fees and destructions shrink it. Includes escrowed coins. */
   supply?: number | null;
-  /** On-chain XCP/BTC executed volume this day (XCP units, DEX + dispenses; null = no executions). */
+  /** Total ATTRIBUTABLE executed XCP volume this day (XCP units): on-chain DEX + dispenses, plus
+   *  Zaif and Dex-Trade execution volume where observed. null = no attributable executions. */
   vol?: number | null;
 }
 

@@ -44,12 +44,19 @@ export function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
      )
      SELECT xcp.day, ROUND(xcp.usd, 6) usd, xcp.source, ROUND(btc.usd, 2) btc,
        ROUND((SELECT s.supply FROM supply_by_day s WHERE s.day<=xcp.day ORDER BY s.day DESC LIMIT 1)) supply,
-       ROUND(market.volume_base) vol
+       /* Total attributable executed volume: on-chain (dex+dispense) + Zaif + Dex-Trade, XCP units. */
+       ROUND(COALESCE(market.volume_base,0) + COALESCE(zaif.volume_base,0) + COALESCE(cex.volume_base,0)) vol
      FROM prices xcp
      LEFT JOIN prices btc ON btc.currency='BTC' AND btc.day=xcp.day
      LEFT JOIN market_price_observations market ON market.day=xcp.day
        AND market.source='counterparty' AND market.venue='market'
        AND market.base_currency='XCP' AND market.quote_currency='BTC'
+     LEFT JOIN market_price_observations zaif ON zaif.day=xcp.day
+       AND zaif.source='zaif' AND zaif.venue='cex'
+       AND zaif.base_currency='XCP' AND zaif.quote_currency='JPY'
+     LEFT JOIN market_price_observations cex ON cex.day=xcp.day
+       AND cex.source='dex-trade' AND cex.venue='cex'
+       AND cex.base_currency='XCP' AND cex.quote_currency='BTC'
      WHERE xcp.currency='XCP' ORDER BY xcp.day`,
   );
 }

@@ -31,7 +31,11 @@ const MODES: { key: Mode; label: string; title: string }[] = [
   { key: "sats", label: "in BTC", title: "Denominated in satoshis — the chain-native unit" },
   { key: "ratio", label: "vs BTC", title: "Relative performance: XCP/BTC indexed to the first day" },
   { key: "mcap", label: "MCAP", title: "Market cap: price × that day's actual supply (burn-grown, fee-shrunk)" },
-  { key: "vol", label: "VOL", title: "On-chain XCP/BTC executed volume (DEX + dispensers), days with executions" },
+  {
+    key: "vol",
+    label: "VOL",
+    title: "Attributable executed XCP volume: DEX + dispensers + Zaif + Dex-Trade, days with executions",
+  },
 ];
 
 const fmtUsd = (v: number) => (v >= 100 ? `$${Math.round(v)}` : v >= 1 ? `$${v.toFixed(2)}` : `$${v.toFixed(4)}`);
