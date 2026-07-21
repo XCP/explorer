@@ -48,7 +48,9 @@ const sourceRank = (source: string) => `CASE ${source}
   WHEN 'coinmarketcap_aggregate' THEN 30
   WHEN 'dextrade_xcpbtc_spot' THEN 20
   WHEN 'burn_vwm' THEN 10
+  WHEN 'market_vwm' THEN 6
   WHEN 'dex_vwm' THEN 5
+  WHEN 'market_vwm_thin' THEN 4
   ELSE 0 END`;
 
 const selectionPredicate = (current = "prices", candidate = "excluded") => `(
@@ -145,6 +147,17 @@ async function upsertDexTradeObservation(db: D1Database, observation: DexTradeOb
 
 const DERIVED_FRESH_DAYS = 7;
 
+/**
+ * Liquidity floor for the market edge to price a day at full rank. Measured against the CMC
+ * aggregate over every overlap day (2026-07-20 sweep): unfloored the combined edge shows 0.245
+ * mean |ln err| with a 19.9 worst case (dust-trigger and promo-dispenser days); at >=10 fills and
+ * >=100 XCP it reaches 0.114 / 88% within 25% — better than the DEX-only edge ever measured
+ * (0.195 / 74%). Days below the floor still price via the THIN tier, which ranks beneath every
+ * other source and therefore only ever fills days nothing better covers (e.g. Feb 3-6, 2014).
+ */
+const MARKET_EDGE_MIN_TRADES = 10;
+const MARKET_EDGE_MIN_VOLUME_XCP = 100;
+
 export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
@@ -195,6 +208,121 @@ export const PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_pri
       AND CAST(match.forward_quantity AS INTEGER)>0 AND CAST(match.backward_quantity AS INTEGER)>0
       AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+  )`;
+
+/** XCP-for-BTC dispenses are executions at posted prices — the venue that carried XCP/BTC liquidity
+ *  through the DEX's quiet years (2021: 4,446 fills/159.8 BTC vs a fading order book). Executions
+ *  only — open dispensers are asks, not prices — and literal self-fills are excluded, consistent
+ *  with the volume rule everywhere else. */
+export const BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+  day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+  WITH observations AS (
+    SELECT date(dispense.block_time,'unixepoch') day,
+      CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL) price,
+      CAST(dispense.dispense_quantity AS INTEGER) volume_xcp,
+      dispense.block_time observation_time
+    FROM dispenses dispense
+    WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+      AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
+      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+  ), ranked AS (
+    SELECT day,price,volume_xcp,observation_time,
+      SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
+      SUM(volume_xcp) OVER(PARTITION BY day) total_volume,
+      COUNT(*) OVER(PARTITION BY day) trades,
+      MIN(observation_time) OVER(PARTITION BY day) first_time,
+      MAX(observation_time) OVER(PARTITION BY day) last_time
+    FROM observations
+  )
+  SELECT day,'XCP','BTC','counterparty','dispense',MIN(price),MAX(total_volume)/1e8,MAX(trades),
+    MIN(first_time),MAX(last_time),'volume_weighted_median'
+  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day
+  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
+    volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
+    last_time=excluded.last_time,method=excluded.method
+  WHERE market_price_observations.price IS NOT excluded.price
+    OR market_price_observations.volume_base IS NOT excluded.volume_base
+    OR market_price_observations.trades IS NOT excluded.trades
+    OR market_price_observations.first_time IS NOT excluded.first_time
+    OR market_price_observations.last_time IS NOT excluded.last_time
+    OR market_price_observations.method IS NOT excluded.method`;
+
+export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
+  WHERE source='counterparty' AND venue='dispense' AND base_currency='XCP' AND quote_currency='BTC'
+    AND day NOT IN (
+    SELECT DISTINCT date(dispense.block_time,'unixepoch') FROM dispenses dispense
+    WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+      AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
+      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+  )`;
+
+/** The combined on-chain XCP/BTC edge: one TRUE volume-weighted median over the union of DEX order
+ *  matches and dispense executions — not a blend of per-venue medians. This is the edge the USD
+ *  cross-rate consumes; the per-venue rows above it exist for provenance and display. */
+export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+  day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+  WITH observations AS (
+    SELECT date(match.block_time,'unixepoch') day,
+      CASE WHEN forward_asset.asset='XCP'
+        THEN CAST(match.backward_quantity AS REAL)/CAST(match.forward_quantity AS REAL)
+        ELSE CAST(match.forward_quantity AS REAL)/CAST(match.backward_quantity AS REAL) END price,
+      CASE WHEN forward_asset.asset='XCP' THEN CAST(match.forward_quantity AS INTEGER)
+        ELSE CAST(match.backward_quantity AS INTEGER) END volume_xcp,
+      match.block_time observation_time
+    FROM order_matches match
+    JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
+    JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
+    WHERE match.status='completed' AND CAST(match.forward_quantity AS INTEGER)>0
+      AND CAST(match.backward_quantity AS INTEGER)>0
+      AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
+        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+    UNION ALL
+    SELECT date(dispense.block_time,'unixepoch') day,
+      CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL) price,
+      CAST(dispense.dispense_quantity AS INTEGER) volume_xcp,
+      dispense.block_time observation_time
+    FROM dispenses dispense
+    WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+      AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
+      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+  ), ranked AS (
+    SELECT day,price,volume_xcp,observation_time,
+      SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
+      SUM(volume_xcp) OVER(PARTITION BY day) total_volume,
+      COUNT(*) OVER(PARTITION BY day) trades,
+      MIN(observation_time) OVER(PARTITION BY day) first_time,
+      MAX(observation_time) OVER(PARTITION BY day) last_time
+    FROM observations
+  )
+  SELECT day,'XCP','BTC','counterparty','market',MIN(price),MAX(total_volume)/1e8,MAX(trades),
+    MIN(first_time),MAX(last_time),'cross_venue_volume_weighted_median'
+  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day
+  ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
+    volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
+    last_time=excluded.last_time,method=excluded.method
+  WHERE market_price_observations.price IS NOT excluded.price
+    OR market_price_observations.volume_base IS NOT excluded.volume_base
+    OR market_price_observations.trades IS NOT excluded.trades
+    OR market_price_observations.first_time IS NOT excluded.first_time
+    OR market_price_observations.last_time IS NOT excluded.last_time
+    OR market_price_observations.method IS NOT excluded.method`;
+
+export const PRUNE_MARKET_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
+  WHERE source='counterparty' AND venue='market' AND base_currency='XCP' AND quote_currency='BTC'
+    AND day NOT IN (
+      SELECT date(match.block_time,'unixepoch')
+      FROM order_matches match
+      JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
+      JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
+      WHERE match.status='completed' AND match.block_time IS NOT NULL
+        AND CAST(match.forward_quantity AS INTEGER)>0 AND CAST(match.backward_quantity AS INTEGER)>0
+        AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
+          OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+      UNION
+      SELECT date(dispense.block_time,'unixepoch') FROM dispenses dispense
+      WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+        AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
+        AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
   )`;
 
 /** Genesis burns are protocol conversions, not trades. They form the authoritative pre-DEX XCP/BTC edge. */
@@ -285,18 +413,20 @@ export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
     policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
     disagreement_class,selection_reason)
-  SELECT btc.day,'XCP',edge.price*btc.usd,'dex_vwm',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',
+  SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',
     CAST(julianday(btc.day)-julianday(edge.day) AS INTEGER),1,edge.trades,1,edge.volume_base,
-    'not_evaluated','fresh_dex_cross_rate'
+    'not_evaluated','fresh_market_cross_rate'
   FROM prices btc
   JOIN market_price_observations edge ON edge.day=(
     SELECT recent.day FROM market_price_observations recent
     WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
       AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
-      AND recent.source='counterparty' AND recent.venue='dex'
+      AND recent.source='counterparty' AND recent.venue='market'
+      AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
     ORDER BY recent.day DESC LIMIT 1)
   WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
-    AND edge.source='counterparty' AND edge.venue='dex'
+    AND edge.source='counterparty' AND edge.venue='market'
+    AND edge.trades>=${MARKET_EDGE_MIN_TRADES} AND edge.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
     price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
@@ -307,18 +437,53 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
   )`;
 
+/** The thin tier: same cross-rate over the freshest edge REGARDLESS of the liquidity floor, at a
+ *  rank beneath every other source — it can never displace anything, so it only ever fills days
+ *  that would otherwise have no price at all. Labeled distinctly so a reader always sees that the
+ *  day was priced on thin evidence. */
+export const BUILD_THIN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+    policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
+    disagreement_class,selection_reason)
+  SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm_thin',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',
+    CAST(julianday(btc.day)-julianday(edge.day) AS INTEGER),1,edge.trades,1,edge.volume_base,
+    'not_evaluated','thin_market_cross_rate'
+  FROM prices btc
+  JOIN market_price_observations edge ON edge.day=(
+    SELECT recent.day FROM market_price_observations recent
+    WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
+      AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
+      AND recent.source='counterparty' AND recent.venue='market'
+    ORDER BY recent.day DESC LIMIT 1)
+  WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+    AND edge.source='counterparty' AND edge.venue='market'
+  ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+    observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
+    price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
+    observation_count=excluded.observation_count,venue_count=excluded.venue_count,volume_base=excluded.volume_base,
+    disagreement_class=excluded.disagreement_class,selection_reason=excluded.selection_reason
+  WHERE ${PRICE_SELECTION_PREDICATE} AND (
+    prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
+    OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
+  )`;
+
+// Each tier must remain RE-DERIVABLE at its own rank or it goes: a full-rank market_vwm row needs a
+// liquidity-QUALIFIED edge in its freshness window (else it was priced under a laxer regime and the
+// thin build re-labels it honestly next pass), a thin row needs any edge at all, and a transitional
+// dex_vwm row is stale by definition. Runs BEFORE the builds so one crawl converges.
 export const PRUNE_XCP_USD_SQL = `DELETE FROM prices
-  WHERE currency='XCP' AND source='dex_vwm' AND NOT EXISTS (
-    SELECT 1 FROM prices btc
-    JOIN market_price_observations edge ON edge.day=(
-      SELECT recent.day FROM market_price_observations recent
-      WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
+  WHERE currency='XCP' AND (
+    source='dex_vwm'
+    OR (source='market_vwm' AND NOT EXISTS (
+      SELECT 1 FROM market_price_observations recent
+      WHERE recent.day BETWEEN date(prices.day,'-${DERIVED_FRESH_DAYS} days') AND prices.day
         AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
-        AND recent.source='counterparty' AND recent.venue='dex'
-      ORDER BY recent.day DESC LIMIT 1)
-    WHERE btc.currency='BTC' AND btc.day=prices.day
-      AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
-      AND edge.source='counterparty' AND edge.venue='dex'
+        AND recent.source='counterparty' AND recent.venue='market'
+        AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}))
+    OR (source='market_vwm_thin' AND NOT EXISTS (
+      SELECT 1 FROM market_price_observations recent
+      WHERE recent.day BETWEEN date(prices.day,'-${DERIVED_FRESH_DAYS} days') AND prices.day
+        AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
+        AND recent.source='counterparty' AND recent.venue='market'))
   )`;
 
 async function upsertPrices(db: D1Database, rows: PriceWrite[]) {
@@ -405,6 +570,10 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   // twice per BTC calendar day and D1 reported 8.3m rows read; this scans matches once, then seeks days.
   const xcpBtcUpsert = await env.CORE_DB.prepare(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL).run();
   const xcpBtcPrune = await env.CORE_DB.prepare(PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL).run();
+  const dispenseUpsert = await env.CORE_DB.prepare(BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL).run();
+  const dispensePrune = await env.CORE_DB.prepare(PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL).run();
+  const marketUpsert = await env.CORE_DB.prepare(BUILD_MARKET_PRICE_OBSERVATIONS_SQL).run();
+  const marketPrune = await env.CORE_DB.prepare(PRUNE_MARKET_PRICE_OBSERVATIONS_SQL).run();
   const burnUpsert = await env.CORE_DB.prepare(BUILD_BURN_PRICE_OBSERVATIONS_SQL).run();
   const burnPrune = await env.CORE_DB.prepare(PRUNE_BURN_PRICE_OBSERVATIONS_SQL).run();
 
@@ -412,11 +581,16 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
   const observedUsdPrune = await env.CORE_DB.prepare(PRUNE_OBSERVED_USD_SQL).run();
   const burnXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_BURN_XCP_USD_SQL).run();
   const burnXcpUsdPrune = await env.CORE_DB.prepare(PRUNE_BURN_XCP_USD_SQL).run();
-  const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
   const xcpUsdPrune = await env.CORE_DB.prepare(PRUNE_XCP_USD_SQL).run();
+  const xcpUsdUpsert = await env.CORE_DB.prepare(BUILD_XCP_USD_SQL).run();
+  const thinXcpUsdUpsert = await env.CORE_DB.prepare(BUILD_THIN_XCP_USD_SQL).run();
   out.derived = {
     xcp_btc_upserted: xcpBtcUpsert.meta.rows_written ?? 0,
     xcp_btc_pruned: xcpBtcPrune.meta.rows_written ?? 0,
+    dispense_upserted: dispenseUpsert.meta.rows_written ?? 0,
+    dispense_pruned: dispensePrune.meta.rows_written ?? 0,
+    market_upserted: marketUpsert.meta.rows_written ?? 0,
+    market_pruned: marketPrune.meta.rows_written ?? 0,
     burn_xcp_btc_upserted: burnUpsert.meta.rows_written ?? 0,
     burn_xcp_btc_pruned: burnPrune.meta.rows_written ?? 0,
     observed_usd_upserted: observedUsdUpsert.meta.rows_written ?? 0,
@@ -424,6 +598,7 @@ export async function crawlPrices(env: Env): Promise<Record<string, unknown>> {
     burn_xcp_usd_upserted: burnXcpUsdUpsert.meta.rows_written ?? 0,
     burn_xcp_usd_pruned: burnXcpUsdPrune.meta.rows_written ?? 0,
     xcp_usd_upserted: xcpUsdUpsert.meta.rows_written ?? 0,
+    thin_xcp_usd_upserted: thinXcpUsdUpsert.meta.rows_written ?? 0,
     xcp_usd_pruned: xcpUsdPrune.meta.rows_written ?? 0,
   };
 

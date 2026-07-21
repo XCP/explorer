@@ -532,3 +532,26 @@ This sequence maximizes truthful coverage without turning sparse prices into fab
 - Coin Metrics, [market-candle coverage and methodology](https://docs.coinmetrics.io/market-data-timeseries/market-candles).
 - Kaiko, [exchange instrument reference data](https://docs.kaiko.com/rest-api/data-feeds/reference-data/basic-tier/exchange-trading-pair-codes-instruments).
 - Counterparty Forum archive, [2014 XCP exchange inventory](https://forums.counterparty.io/t/complete-list-of-xcp-exchanges/311).
+
+## 2026-07-20 addendum — the combined on-chain market edge (dispenses join the DEX)
+
+The derived XCP/BTC edge now unions DEX order matches with XCP-for-BTC dispense executions
+(`source=counterparty, venue=market`, one TRUE volume-weighted median over the merged execution set —
+not a blend of per-venue medians). Per-venue observations (`venue=dex`, `venue=dispense`) are retained
+for provenance. Literal self-fills (dispenser source = destination) never enter, consistent with the
+site-wide volume rule. Motivation: dispenses carried XCP/BTC liquidity through the DEX's quiet years
+(2021: 4,446 fills / 159.8 BTC vs a fading order book; 2025: 1,065 fills vs a near-silent book).
+
+Measured against the CoinMarketCap aggregate over every overlap day, the UNFLOORED combined edge is
+worse than DEX-only (0.245 vs 0.195 mean |ln err|; worst day 19.9 — dust-trigger and promo-dispenser
+days where someone buys sub-1-XCP for real sats or 2,000 XCP for 28 satoshis). A liquidity-floor sweep
+found ≥10 fills AND ≥100 XCP/day reaches 0.114 mean / 88.6% within 25% — better than the DEX-only edge
+ever measured — while retaining 690 qualifying overlap days.
+
+Selection therefore uses two tiers: `market_vwm` (edge meets the floor; rank just above the retired
+`dex_vwm`) and `market_vwm_thin` (same cross-rate below the floor; ranked beneath every source, so it
+can only fill otherwise-unpriced days, and the label says so). Result in production: the calendar is
+unchanged in coverage (4,584 gap-free days), CMC/burn/spot still own their eras, and the Feb 3–22 2014
+gap now prices as 8 full-rank market days plus 6 thin-labeled days. The evaluation follows the Zaif
+precedent: observations stored per venue, selection gated by measured evidence, disagreement inspected
+rather than overwritten.

@@ -22,6 +22,7 @@ import { candidates } from "#api/read/candidates";
 import { markets } from "#api/read/markets";
 import { years } from "#api/read/years";
 import { utxos } from "#api/read/utxos";
+import { prices } from "#api/read/prices";
 
 export const read = router();
 
@@ -79,3 +80,4 @@ read.route("/", candidates);
 read.route("/", markets);
 read.route("/", years);
 read.route("/", utxos);
+read.route("/", prices);

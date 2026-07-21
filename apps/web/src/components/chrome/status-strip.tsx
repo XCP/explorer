@@ -1,4 +1,6 @@
 "use client";
+import type { Route } from "next";
+import Link from "next/link";
 import { useStats, useMempoolCount } from "@/lib/hooks";
 import { usePrices } from "@/lib/prices";
 import { commas } from "@/lib/format";
@@ -56,7 +58,12 @@ export function StatusStrip() {
             <span className={`font-medium ${pending > 0 ? "text-amber-400" : "text-zinc-300"}`}>{commas(pending)}</span>
           </Cell>
         </span>
-        <span className="hidden items-center md:flex">
+        {/* The market cluster links to /price — the page that explains where these numbers come from. */}
+        <Link
+          href={"/price" as Route}
+          className="hidden items-center !no-underline md:flex"
+          title="Counterparty price history"
+        >
           <Cell>
             <span className="text-zinc-500">BTC</span>{" "}
             <span className="font-medium text-zinc-300">{btc != null ? `$${btc.toLocaleString()}` : "—"}</span>
@@ -69,7 +76,7 @@ export function StatusStrip() {
             </span>
             <Delta chg={xcpChange} />
           </Cell>
-        </span>
+        </Link>
       </div>
     </div>
   );

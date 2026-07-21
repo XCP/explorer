@@ -18,6 +18,7 @@
     "./radar": "./src/radar.ts",
     "./collections": "./src/collections.ts",
     "./years": "./src/years.ts",
-    "./utxos": "./src/utxos.ts"
+    "./utxos": "./src/utxos.ts",
+    "./prices": "./src/prices.ts"
   }
 }

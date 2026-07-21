@@ -6,11 +6,15 @@ import {
   BUILD_BURN_PRICE_OBSERVATIONS_SQL,
   BUILD_BURN_XCP_USD_SQL,
   BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
+  BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL,
+  BUILD_MARKET_PRICE_OBSERVATIONS_SQL,
   BUILD_OBSERVED_USD_SQL,
+  BUILD_THIN_XCP_USD_SQL,
   BUILD_XCP_USD_SQL,
   PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
   PRUNE_BURN_PRICE_OBSERVATIONS_SQL,
   PRUNE_BURN_XCP_USD_SQL,
+  PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL,
   PRUNE_OBSERVED_USD_SQL,
   PRUNE_XCP_USD_SQL,
   PRICE_SELECTION_POLICY,
@@ -58,6 +62,9 @@ function fixture(): DatabaseSync {
     CREATE TABLE order_matches(
       forward_asset_id INTEGER,forward_quantity TEXT,backward_asset_id INTEGER,backward_quantity TEXT,
       block_time INTEGER,status TEXT);
+    CREATE TABLE dispenses(
+      asset_id INTEGER,dispense_quantity TEXT,btc_amount TEXT,block_time INTEGER,
+      source_id INTEGER,destination_id INTEGER);
     CREATE TABLE burns(block_time INTEGER,burned TEXT,earned TEXT,status TEXT);
     CREATE TABLE market_price_observations(
       day TEXT,base_currency TEXT,quote_currency TEXT,source TEXT,venue TEXT,price REAL,
@@ -175,16 +182,19 @@ test("XCP/BTC materialization is idempotent and prunes only obsolete source days
 
 test("derived XCP/USD expires after seven days and records provenance", () => {
   const db = fixture();
-  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
+  // The fixture's day has 3 fills / 201 XCP — under the liquidity floor, so it prices at the
+  // clearly-labeled THIN tier rather than the full-rank market cross-rate.
   assert.deepEqual(
     db
       .prepare(`SELECT day,usd,source,observed_day,fidelity FROM prices WHERE currency='XCP' ORDER BY day`)
       .all()
       .map((row) => ({ ...row })),
     [
-      { day: "2026-01-01", usd: 200, source: "dex_vwm", observed_day: "2026-01-01", fidelity: 1 },
-      { day: "2026-01-08", usd: 220, source: "dex_vwm", observed_day: "2026-01-01", fidelity: 1 },
+      { day: "2026-01-01", usd: 200, source: "market_vwm_thin", observed_day: "2026-01-01", fidelity: 1 },
+      { day: "2026-01-08", usd: 220, source: "market_vwm_thin", observed_day: "2026-01-01", fidelity: 1 },
     ],
   );
   assert.deepEqual(
@@ -206,15 +216,70 @@ test("derived XCP/USD expires after seven days and records provenance", () => {
       venue_count: 1,
       volume_base: 201,
       disagreement_class: "not_evaluated",
-      selection_reason: "fresh_dex_cross_rate",
+      selection_reason: "thin_market_cross_rate",
     },
   );
   db.close();
 });
 
+test("a liquidity-qualified market day earns full rank and outranks the thin tier", () => {
+  const db = fixture();
+  // Ten 20-XCP fills on 2026-01-08 at 0.004 BTC/XCP: 10 trades, 200 XCP — clears the floor.
+  for (let i = 0; i < 10; i++) {
+    db.prepare(
+      `INSERT INTO order_matches VALUES(1,'2000000000',2,'8000000',strftime('%s','2026-01-08'),'completed')`,
+    ).run();
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT day,usd,source FROM prices WHERE currency='XCP' ORDER BY day`)
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      // 01-01: only the thin 3-fill edge reaches it — thin tier.
+      { day: "2026-01-01", usd: 200, source: "market_vwm_thin" },
+      // 01-08 and the 01-09 carry ride the QUALIFIED edge at full rank: 0.004 × BTC.
+      { day: "2026-01-08", usd: 440, source: "market_vwm" },
+      { day: "2026-01-09", usd: 480, source: "market_vwm" },
+    ],
+  );
+  db.close();
+});
+
+test("dispense executions carry the on-chain price when the order book is silent", () => {
+  const db = fixture();
+  // 2026-01-08 has NO order matches — only two arm's-length dispenses at 0.003 BTC/XCP and one
+  // literal self-fill at a fantasy price that must not count.
+  db.exec(`INSERT INTO dispenses VALUES
+    (1,'100000000','300000',strftime('%s','2026-01-08'),10,20),
+    (1,'100000000','300000',strftime('%s','2026-01-08'),11,21),
+    (1,'100000000','99900000',strftime('%s','2026-01-08'),12,12)`);
+  db.exec(BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL);
+  assert.deepEqual(
+    { ...db.prepare(`SELECT venue,price,trades,method FROM market_price_observations WHERE venue='dispense'`).get() },
+    { venue: "dispense", price: 0.003, trades: 2, method: "volume_weighted_median" },
+  );
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
+  // Two fills are under the floor, so the fresher dispense edge prices the day on the thin tier:
+  // 0.003 × 110,000 = 330 — labeled as thin evidence rather than silently at full rank.
+  assert.deepEqual(
+    { ...db.prepare(`SELECT usd,source,observed_day FROM prices WHERE currency='XCP' AND day='2026-01-08'`).get() },
+    { usd: 330, source: "market_vwm_thin", observed_day: "2026-01-08" },
+  );
+  db.exec(`DELETE FROM dispenses`);
+  db.exec(PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM market_price_observations WHERE venue='dispense'`).get()?.n, 0);
+  db.close();
+});
+
 test("a higher-fidelity observed price wins over a derived price", () => {
   const db = fixture();
-  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(`INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
     VALUES('2026-01-01','XCP',250,'market','2026-01-01',3)`);
   db.exec(BUILD_XCP_USD_SQL);
@@ -227,7 +292,7 @@ test("a higher-fidelity observed price wins over a derived price", () => {
 
 test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles by provenance", () => {
   const db = fixture();
-  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
   db.exec(`INSERT INTO market_price_observations VALUES(
     '2026-01-01','XCP','USD','coinmarketcap','aggregate',250,0,0,NULL,NULL,'aggregate_daily_close')`);
@@ -276,15 +341,22 @@ test("observed aggregate BTC/USD fills only days without the higher-fidelity pri
 
 test("derived XCP/USD replay is idempotent and stale pruning preserves observed prices", () => {
   const db = fixture();
-  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
   const beforeReplay = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
   assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - beforeReplay, 0);
 
+  // A stale market_vwm day, a LEGACY dex_vwm row (superseded source, always re-won or purged), and
+  // a higher-fidelity observed row that pruning must never touch.
   db.exec(`
     INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
-      VALUES('2025-12-31','XCP',1,'dex_vwm','2025-12-31',1);
+      VALUES('2025-12-31','XCP',1,'market_vwm','2025-12-31',1);
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2025-12-30','XCP',1,'dex_vwm','2025-12-30',1);
     INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
       VALUES('2026-01-09','XCP',250,'market','2026-01-09',3);
   `);
@@ -295,8 +367,8 @@ test("derived XCP/USD replay is idempotent and stale pruning preserves observed 
       .all()
       .map((row) => ({ ...row })),
     [
-      { day: "2026-01-01", source: "dex_vwm" },
-      { day: "2026-01-08", source: "dex_vwm" },
+      { day: "2026-01-01", source: "market_vwm_thin" },
+      { day: "2026-01-08", source: "market_vwm_thin" },
       { day: "2026-01-09", source: "market" },
     ],
   );
@@ -305,8 +377,9 @@ test("derived XCP/USD replay is idempotent and stale pruning preserves observed 
 
 test("trade USD reconciliation clears expired derivations without touching direct USD sales", () => {
   const db = fixture();
-  db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
   db.exec(`
     CREATE TABLE trades(block_time INTEGER,currency TEXT,total REAL,usd_value REAL);
     INSERT INTO trades VALUES
