@@ -106,7 +106,11 @@ export default async function YearPageRoute({ params }: { params: Promise<{ year
       <header className="pt-16 pb-0">
         <div className="yr-in">
           <div className="flex justify-between gap-4 flex-wrap yr-kicker !mb-0">
-            <span>xcp.io · year in review</span>
+            <span>
+              <Link href={"/year" as Route} className="!no-underline hover:text-[color:var(--t2)]">
+                xcp.io · year in review
+              </Link>
+            </span>
             <span>
               {page.partial ? `in progress · as of ${new Date(page.as_of * 1000).toISOString().slice(0, 10)}` : "final"}
             </span>

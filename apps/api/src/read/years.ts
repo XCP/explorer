@@ -37,10 +37,10 @@ import {
   yearZaif,
 } from "#api/queries/years";
 
-const YEARS_CACHE_VERSION = "v8"; // v8: PLATONCOIN lowq flag (ring-candidates find)
+const YEARS_CACHE_VERSION = "v9"; // v9: index summaries carry the editorial title
 // The prior version's rows serve during recompute so a bump never cold-starts readers. Move BOTH
-// constants forward together on the next bump (v9/v8, then v10/v9, …).
-const YEARS_CACHE_STALE_VERSION = "v7";
+// constants forward together on the next bump (v10/v9, then v11/v10, …).
+const YEARS_CACHE_STALE_VERSION = "v8";
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;
@@ -71,6 +71,7 @@ async function buildIndex(db: D1Database): Promise<YearIndex> {
   for (let year = FIRST_YEAR; year <= now; year++) {
     years.push({
       year,
+      title: YEARS_CATALOG[year]?.title ?? String(year),
       partial: year === now,
       transactions: activityBy.get(year)?.transactions ?? 0,
       actors: activityBy.get(year)?.actors ?? 0,

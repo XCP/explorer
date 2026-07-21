@@ -14,6 +14,8 @@ export interface YearOhlc {
 
 export interface YearSummary {
   year: number;
+  /** The catalog's editorial title ("The Burn", "The Mania Year") — the yearbook cover reads these. */
+  title: string;
   /** Only the current (in-progress) year; partial years hold no records. */
   partial: boolean;
   transactions: number;
