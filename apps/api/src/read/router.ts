@@ -21,6 +21,7 @@ import { radar } from "#api/read/radar";
 import { candidates } from "#api/read/candidates";
 import { markets } from "#api/read/markets";
 import { years } from "#api/read/years";
+import { utxos } from "#api/read/utxos";
 
 export const read = router();
 
@@ -77,3 +78,4 @@ read.route("/", radar);
 read.route("/", candidates);
 read.route("/", markets);
 read.route("/", years);
+read.route("/", utxos);

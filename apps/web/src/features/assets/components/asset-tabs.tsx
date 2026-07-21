@@ -1,5 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
+import type { Route } from "next";
+import Link from "next/link";
 import { Flame, Landmark, Vault, ArrowDownToLine, Server, Fish, Layers, Hammer, type LucideIcon } from "lucide-react";
 import type { AssetFeedCounts, BalanceRow, HolderRole } from "@xcp/shared/assets";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
@@ -60,7 +62,13 @@ const holderCols = (supply: number | null): Col<BalanceRow>[] => [
     priority: 1,
     cell: (r) => (
       <span className="ht-address inline-flex items-center gap-1.5 min-w-0">
-        {r.holder_type === "address" ? addrCell(r.holder) : <span className="font-mono">{short(r.holder)}</span>}
+        {r.holder_type === "address" ? (
+          addrCell(r.holder)
+        ) : (
+          <Link className="font-mono" href={`/utxo/${r.holder}` as Route} title={r.holder}>
+            {short(r.holder)}
+          </Link>
+        )}
         {r.role ? <RoleBadge role={r.role} /> : null}
       </span>
     ),
@@ -96,8 +104,8 @@ const holderCols = (supply: number | null): Col<BalanceRow>[] => [
 // Feed tabs reuse the registry's column layouts; the asset context suppresses the Asset column the
 // page already answers (R4). Feed tabs are EARNED: any feed tab whose count is known and zero is
 // omitted entirely, so a dormant asset shows only Overview, Related, and whatever activity it
-// actually has. Tabs whose count is unknown (the count read failed) still render; Overview and
-// Related always render.
+// actually has. Tabs whose count is unknown (the count read failed) still render; Overview always
+// renders, and Related renders unless the asset has known-zero supply (no holders → no co-holds).
 export function AssetTabs({
   asset,
   collection = null,
@@ -134,7 +142,9 @@ export function AssetTabs({
     { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS, count: feedCounts?.subassets },
     { label: "Pools", path: `${base}/pools`, cols: POOL_COLS, count: feedCounts?.pools },
     { label: "Trades", path: `${base}/trades`, cols: TRADE_COLS, count: feedCounts?.sales },
-    { label: "Related", panel: <RelatedTab asset={asset} collection={collection} /> },
+    // Related is co-holder overlap, so a known-zero-supply asset (never issued, or fully
+    // destroyed) can never populate it — the tab would only ever be an empty panel.
+    ...(supply === 0 ? [] : [{ label: "Related", panel: <RelatedTab asset={asset} collection={collection} /> }]),
   ];
   // the zero-count rule: a feed tab with a KNOWN empty feed doesn't earn a spot in the bar.
   const earned = tabs.filter((t) => !("path" in t) || t.count == null || t.count > 0);
