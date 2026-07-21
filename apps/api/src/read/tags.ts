@@ -50,7 +50,9 @@ tags.get("/v2/tags/:tag", async (c) => {
   const tag = c.req.param("tag");
   const stats = await getTagStats(c.env.CORE_DB, CONV_RAW, tag);
   if (!stats) return c.json({ error: "Tag not found" }, 404);
-  const limit = lim(c),
+  // Cap 1000: collection pages fetch a whole membership in one page so client-side sorting and the
+  // card view operate on the full set, not a 50-row window. Protocol-family tags still paginate.
+  const limit = lim(c, 50, 1000),
     offset = off(c);
   const rows = await listTagAssetMembers(c.env.CORE_DB, tag, limit, offset);
   const body: TagDetail = { ...enrich(stats), members: rows };

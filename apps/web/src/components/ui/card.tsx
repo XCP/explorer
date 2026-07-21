@@ -29,11 +29,14 @@ export const Stat = ({
 export const Card = ({
   title,
   icon,
+  action,
   children,
   bodyClassName = "p-4",
 }: {
   title?: string;
   icon?: ReactNode;
+  /** Right-aligned header control (e.g. a view toggle); rendered only when a title row exists. */
+  action?: ReactNode;
   children: ReactNode;
   bodyClassName?: string;
 }) => (
@@ -44,6 +47,7 @@ export const Card = ({
       <h2 className="flex items-center gap-1.5 border-b border-[#1a1d24] px-4 py-3 font-mono text-[11px] font-semibold uppercase tracking-[0.09em] text-[#a3adbc]">
         {icon && <span className="text-zinc-400">{icon}</span>}
         {title}
+        {action && <span className="ml-auto normal-case tracking-normal">{action}</span>}
       </h2>
     )}
     <div className={bodyClassName}>{children}</div>

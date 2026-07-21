@@ -21,6 +21,17 @@ const COLS: Col<CollectionProfile>[] = [
     priority: 1,
     cell: (row) => (
       <span className="flex items-center gap-2 min-w-0">
+        {/* The CDN's legacy logo library — 900 collection logos keyed by these exact tag slugs.
+            Tags without one just lose the img node (hide-on-error), never a broken-image glyph. */}
+        <img
+          src={`https://cdn.xcp.io/img/logo-icon/${encodeURIComponent(row.tag)}`}
+          alt=""
+          loading="lazy"
+          className="size-[22px] shrink-0 rounded-[3px] object-cover bg-zinc-900"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
         <Link href={`/tag/${encodeURIComponent(row.tag)}`} className="font-medium truncate">
           {row.name === row.tag ? collectionLabel(row.tag) : row.name}
         </Link>
