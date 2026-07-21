@@ -192,28 +192,34 @@ export function addressReputationRow(db: D1Database, address: string): Promise<A
   );
 }
 
-/** Top counterparties merged across sends + dispenses + DEX order-matches (excludes self + deposit plumbing). */
+/** Top counterparties merged across sends + dispenses + DEX order-matches (excludes self + deposit plumbing).
+ *  D1 caps compound-SELECT terms LOW (a six-arm UNION ALL fails to even parse: "too many terms in
+ *  compound SELECT" — this endpoint 500'd for EVERY address until 2026-07-21). The parser counts
+ *  syntactic terms per compound, so each per-table pair lives in its own two-term CTE and the final
+ *  merge unions three CTE references. */
 export function addressConnections(db: D1Database, address: string, limit: number): Promise<AddressConnectionRow[]> {
   return q<AddressConnectionRow>(
     db,
-    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1), edges AS (
+    `WITH identity AS (SELECT address_id FROM address_dictionary WHERE address=?1), send_edges AS (
        SELECT destination_id cp,COUNT(*) n FROM sends
         WHERE source_id=(SELECT address_id FROM identity) AND destination_id IS NOT NULL GROUP BY destination_id
        UNION ALL
        SELECT source_id cp,COUNT(*) n FROM sends
         WHERE destination_id=(SELECT address_id FROM identity) AND source_id IS NOT NULL GROUP BY source_id
-       UNION ALL
+     ), dispense_edges AS (
        SELECT destination_id cp,COUNT(*) n FROM dispenses
         WHERE source_id=(SELECT address_id FROM identity) GROUP BY destination_id
        UNION ALL
        SELECT source_id cp,COUNT(*) n FROM dispenses
         WHERE destination_id=(SELECT address_id FROM identity) GROUP BY source_id
-       UNION ALL
+     ), match_edges AS (
        SELECT tx1_address_id cp,COUNT(*) n FROM order_matches
         WHERE tx0_address_id=(SELECT address_id FROM identity) GROUP BY tx1_address_id
        UNION ALL
        SELECT tx0_address_id cp,COUNT(*) n FROM order_matches
         WHERE tx1_address_id=(SELECT address_id FROM identity) GROUP BY tx0_address_id
+     ), edges AS (
+       SELECT cp,n FROM send_edges UNION ALL SELECT cp,n FROM dispense_edges UNION ALL SELECT cp,n FROM match_edges
      ), grouped AS (
        SELECT cp,SUM(n) interactions FROM edges
         WHERE cp IS NOT NULL AND cp<>(SELECT address_id FROM identity) GROUP BY cp
