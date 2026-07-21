@@ -20,6 +20,7 @@ import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
 import { crawlEmblemTransfers } from "#api/indexer/emblem-transfers";
 import { crawlEmblemListings } from "#api/indexer/emblem-listings";
 import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
+import { syncCounterTags } from "#api/indexer/counters";
 import { buildScamAttribution } from "#api/indexer/emblem-scam";
 import { graphEval } from "#api/indexer/graph-eval";
 import { buildTrades, reconcileDirtyEmblemTrades } from "#api/indexer/trades";
@@ -296,6 +297,15 @@ admin.post("/admin/reconcile-emblem-trades", async (c) => {
     return c.json(await reconcileDirtyEmblemTrades(c.env.CORE_DB));
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Emblem reconciliation failed" }, 500);
+  }
+});
+
+// Trust-but-verify sync of Bitcoin Counters (bitcoincounters.com) into asset tags — see indexer/counters.ts.
+admin.post("/admin/sync-counters", async (c) => {
+  try {
+    return c.json(await syncCounterTags(c.env.CORE_DB));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "counter sync failed" }, 500);
   }
 });
 

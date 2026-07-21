@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Landmark,
   History,
+  Hash,
   type LucideIcon,
 } from "lucide-react";
 
@@ -49,6 +50,12 @@ const CLASS: Record<string, { label: string; Icon: LucideIcon; tone: Tone; title
     tone: "protocol",
     title: "SRC-721 — the Bitcoin Stamps composable-NFT standard",
   },
+  counter: {
+    label: "Counter",
+    Icon: Hash,
+    tone: "protocol",
+    title: "Bitcoin Counter — a file in Bitcoin witness data, owned through this asset's balance",
+  },
   // behavior — descriptive observations, not implicit Rating inputs
   vaulted: {
     label: "Vaulted",
@@ -79,6 +86,7 @@ const ORDER = [
   "stamp",
   "src20",
   "src721",
+  "counter",
   "vaulted",
   "durable",
   "broad",
