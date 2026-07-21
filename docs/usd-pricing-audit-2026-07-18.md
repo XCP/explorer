@@ -604,3 +604,10 @@ Proposal: keep usd-payment-v1's ranked architecture; add `zaif_vwm` (XCP/JPY dai
 dextrade_xcpbtc_spot. Effect: zero change to any CMC-present day; on CMC-absent days the calendar
 falls to Zaif first (measured 2× better than today's fallback), then Dex-Trade, then the on-chain
 tiers. The live crawlMarketQuotes job already stores the needed Zaif observations.
+
+Volume-across-sources addendum (same holdout): volume-weighted average 0.165, volume-weighted
+median 0.177, largest-volume-wins 0.177 — all ~2× worse than ranked Zaif-first (0.078), because
+Dex-Trade posts the largest volume on 591 of 742 days and volume-weighting hands the price to the
+biased venue. Consistent with the reference-rate literature's reason for excluding venues by
+quality criteria rather than trusting reported volume. Within-source volume-weighting (the daily
+VWM) remains in force everywhere.
