@@ -7,6 +7,7 @@
  * print, peak, today — and a crosshair naming the day, the value, and the SOURCE that produced it.
  */
 import { useMemo, useRef, useState } from "react";
+import { trackEvent } from "@/lib/fathom";
 
 const W = 1000;
 const H = 380;
@@ -138,6 +139,7 @@ export function PriceHistoryChart({
             onClick={() => {
               setMode(m.key);
               setHover(null);
+              trackEvent(`price mode: ${m.key}`);
             }}
             className={`rounded px-2.5 py-1 font-mono text-[11px] uppercase tracking-wide ring-1 ring-inset transition-colors ${
               mode === m.key

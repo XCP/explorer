@@ -13,6 +13,7 @@ import {
   SectionChip,
   type SectionStat,
 } from "@/components/section-header";
+import { AssetActions } from "@/features/assets/components/asset-actions";
 import { AssetArt } from "@/features/assets/components/asset-art";
 import { AssetTabs } from "@/features/assets/components/asset-tabs";
 import { AssetClassifications } from "@/features/assets/components/asset-classifications";
@@ -409,21 +410,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
               )}
             </>
           }
-          actions={
-            <>
-              <a href={`https://xcpdex.com/${item.asset}`} target="_blank" rel="noopener noreferrer" className="btn2">
-                Trade on xcpdex ↗
-              </a>
-              <a
-                href={`https://digirare.com/cards/${encodeURIComponent(item.asset)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn2 primary"
-              >
-                Collect ↗
-              </a>
-            </>
-          }
+          actions={<AssetActions asset={item.asset} />}
         />
         <SectionStats stats={assetStats(item, market)} />
       </SectionHeader>

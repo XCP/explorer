@@ -8,6 +8,7 @@ import { SecondaryButton } from "@/components/ui/buttons";
 import { RecordTable } from "@/features/records/components/record-table";
 import type { Col, RecordContext } from "@/features/records/cells";
 import { useStats } from "@/lib/hooks";
+import { trackEvent } from "@/lib/fathom";
 
 /** A tab is either a record feed (path + columns + optional mono count) or a self-contained panel
  *  (e.g. the asset Related tab) that mounts only while selected. */
@@ -122,6 +123,9 @@ export function DetailTabs({
   const select = (i: number) => {
     setActive(i);
     setOffset(0);
+    // Which tabs people actually open is the roadmap signal for these dense detail pages.
+    const label = entries[i] ? (entries[i] as TabDef).label : "Overview";
+    trackEvent(`tab: ${label.toLowerCase()}`);
   };
 
   const { barRef, itemRefs, moreRef, overflowStart, requestLayout } = useTabOverflow(entries.length);

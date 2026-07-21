@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "@/app/globals.css";
 import { SWRProvider } from "@/lib/swr-provider";
 import { TopBar } from "@/components/chrome/top-bar";
 import { Footer } from "@/components/chrome/footer";
+import { FATHOM_SITE_ID } from "@/lib/fathom";
 
 // Match the xcpdex family: Geist sans (UI) + Geist mono (numbers/hashes/addresses).
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -41,6 +43,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Footer />
           </div>
         </SWRProvider>
+        {/* Fathom (privacy-first, cookieless; auto-tracks SPA navigation). Production only so dev
+            sessions and preview origins don't pollute the numbers; events via lib/fathom trackEvent. */}
+        {process.env.NODE_ENV === "production" && (
+          <Script src="https://cdn.usefathom.com/script.js" data-site={FATHOM_SITE_ID} strategy="afterInteractive" />
+        )}
       </body>
     </html>
   );

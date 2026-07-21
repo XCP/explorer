@@ -12,6 +12,7 @@ import { type Col, type SortState, assetCell } from "@/features/records/cells";
 import { AssetArt } from "@/features/assets/components/asset-art";
 import { ART_WIDTH } from "@/lib/art";
 import { commas, compact } from "@/lib/format";
+import { trackEvent } from "@/lib/fathom";
 
 // A tag's asset members — table AND card views over the same sorted set. One 1000-row page covers
 // every collection whole (memorychain 152, rare-pepe 1,037), so sorting reorders the full
@@ -70,7 +71,10 @@ export function TagMembers({ tag }: { tag: string }) {
           type="button"
           role="tab"
           aria-selected={view === mode}
-          onClick={() => setView(mode)}
+          onClick={() => {
+            setView(mode);
+            trackEvent(`tag view: ${mode}`);
+          }}
           className={`rounded px-2.5 py-1 font-mono text-[11px] uppercase tracking-wide ring-1 ring-inset transition-colors ${
             view === mode
               ? "bg-white/10 text-zinc-200 ring-white/20"
