@@ -3,6 +3,17 @@ compatibility_date = "2025-03-01"
 compatibility_flags = ["nodejs_compat"]
 main = ".open-next/worker.js"
 
+# The production domain. Without these routes the worker lives only on workers.dev and the zone's
+# proxied apex/www records dead-end in Cloudflare's 403 (this is why xcp.io was down while
+# xcp-web.me-bbe.workers.dev worked). Host patterns are exact: api.* and cdn.* routes are untouched.
+routes = [
+  { pattern = "xcp.io", custom_domain = true },
+  { pattern = "www.xcp.io", custom_domain = true },
+]
+# Keep the workers.dev origin alive alongside the routes (wrangler disables it by default once
+# routes exist) — it's the deploy-verification origin and the API base the web client points at.
+workers_dev = true
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
