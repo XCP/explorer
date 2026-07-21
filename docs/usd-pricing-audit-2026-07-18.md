@@ -617,3 +617,18 @@ days changed source (2026-07-19 $1.4882→$1.3039, 2026-07-20 $1.4986→$1.3863,
 five XCP trades repriced ($55.43→$51.13 combined), nothing else moved. Fixture tests cover rank
 placement (beats Dex-Trade, loses to CMC), the ≤4-day FX carry (older FX → no row), and prune
 re-derivability.
+
+### 2026-07-21 — two verifications close open caveats
+
+Split-sample validation of the market-edge liquidity floor: re-scored on independent even/odd
+calendar-day halves, the (≥10 fills, ≥100 XCP) floor performs identically (0.1132 vs 0.1142 mean
+|ln err|, 87.4%/88.8% within 25%) and the floor ranking is stable across halves — the in-sample
+tuning caveat is resolved.
+
+First-party Zaif corroboration of the CMC-bridge calendars (the "missing attributable PEPECASH
+anchor"): Zaif JPY executions × the ECB cross versus the production calendars over every overlap
+day — PEPECASH 0.0601 mean |ln err| (80.3% within 10%, 95.7% within 25%, 1,201 days),
+BITCRYSTALS 0.0935 (91.4% within 25%, 1,201 days), SJCX 0.0966 (89.9% within 25%, 950 days).
+All three sit inside the XCP-era agreement norms, so the existing calendars — and the PEPECASH-
+settled 2017 card-economy valuations that rest on them — stand corroborated by an independent
+first-party source. No re-derivation warranted; tail disagreements remain evidence to inspect.
