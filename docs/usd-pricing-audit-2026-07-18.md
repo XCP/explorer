@@ -632,3 +632,17 @@ BITCRYSTALS 0.0935 (91.4% within 25%, 1,201 days), SJCX 0.0966 (89.9% within 25%
 All three sit inside the XCP-era agreement norms, so the existing calendars — and the PEPECASH-
 settled 2017 card-economy valuations that rest on them — stand corroborated by an independent
 first-party source. No re-derivation warranted; tail disagreements remain evidence to inspect.
+
+### 2026-07-21 — NEGATIVE RESULT: a PEPECASH on-chain edge does not clear the bar
+
+Tested whether the XCP market-edge design generalizes to price the ~2,991 PEPECASH fills on
+calendar-gap days (2020–2026): daily volume-weighted median over fill-implied USD prices
+(usd_value/quantity from PEPECASH-as-asset DEX + dispense fills, self-fills excluded) plus the
+newly imported Dex-Trade PEPECASH/BTC candles, scored against the corroborated calendar over
+952 overlap days. Best floored configuration reaches only 0.162–0.182 mean |ln err| (~73–76%
+within 25%) with a persistent 3.71 worst day, and restricting to DEX XCP-settled fills alone does
+not improve it (0.18–0.24, same worst). Unlike XCP's fungible order book, PEPECASH's fill tape is
+sparse card-style trading with wide spreads — its own executions cannot reproduce the reference
+price at acceptable fidelity. Decision: calendar-gap fills for PEPECASH (and the thinner bridge
+currencies a fortiori) remain honestly NULL rather than wearing ±20%-typical/40×-worst estimates.
+Revisit only if a new observed source surfaces (e.g. a licensed archive covering the gap years).
