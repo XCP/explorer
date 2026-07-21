@@ -16,7 +16,7 @@ import { backfillEthereumBlockTimes } from "#api/indexer/ethereum-block-times";
 import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
-import { crawlPrices, crawlSpotPrices, applyTradeUsd } from "#api/indexer/prices";
+import { crawlPrices, crawlSpotPrices, crawlMarketQuotes, applyTradeUsd } from "#api/indexer/prices";
 import { maybeRefreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { maybeRefreshAssetRatings } from "#api/indexer/asset-rating";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
@@ -77,6 +77,11 @@ const maybeCrawlPrices = (env: Env) => runCoreBlockGated(env.CORE_DB, "prices_sy
 const maybeCrawlSpotPrices = (env: Env) =>
   blockGatedProviderJob(env, "spot_prices_synced_blk", 1, () => crawlSpotPrices(env));
 
+// ~36 blocks ≈ 6 hours: four CMC free-tier credits a day, and Zaif's 150-trade public window
+// comfortably spans that gap on a pair that prints a handful of executions daily.
+const maybeCrawlMarketQuotes = (env: Env) =>
+  blockGatedProviderJob(env, "market_quotes_synced_blk", 36, () => crawlMarketQuotes(env));
+
 const maybeRefreshAssetEmergence = (env: Env) =>
   runCoreBlockGated(env.CORE_DB, "asset_emergence_refreshed_blk", 6, () => refreshAssetEmergence(env.CORE_DB));
 
@@ -93,6 +98,7 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("buildTrades", () => buildTrades(env));
       // Fresh sales need today's quote promptly. Historical calendar reconciliation remains the bounded daily job below.
       await runScheduledJob("crawlSpotPrices", () => maybeCrawlSpotPrices(env));
+      await runScheduledJob("crawlMarketQuotes", () => maybeCrawlMarketQuotes(env));
       await runScheduledJob("applyTradeUsd", () => applyTradeUsd(env));
       await runScheduledJob("runCoreAssetSignalsStep", () => runCoreAssetSignalsStep(env.CORE_DB));
       await runScheduledJob("maybeRefreshAssetRatings", () => maybeRefreshAssetRatings(env.CORE_DB));

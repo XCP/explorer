@@ -14,4 +14,6 @@ export interface Env {
   ALCHEMY_KEY: string;
   ETHERSCAN_KEY: string;
   SEQUENCE_ACCESS_KEY: string;
+  /** Optional: sustains the CMC aggregate calendar via free-tier quotes/latest; job skips when unset. */
+  CMC_API_KEY?: string;
 }

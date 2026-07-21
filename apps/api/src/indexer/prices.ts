@@ -10,6 +10,8 @@
 import type { Env } from "#api/env";
 import { fetchCoinbaseCandles, fetchCoinbaseSpot } from "#api/integrations/coinbase";
 import { fetchDexTradeHistory, fetchDexTradeMarket, type DexTradeObservation } from "#api/integrations/dex-trade";
+import { fetchCmcXcpLatest } from "#api/integrations/coinmarketcap";
+import { fetchZaifTrades, zaifDailyVwm } from "#api/integrations/zaif";
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 // Coinbase product + first-listed day (unix sec) per currency.
@@ -70,23 +72,98 @@ export const PRICE_SELECTION_PREDICATE = selectionPredicate();
  *  satoshi units (÷1e8 → XCP). Observations only: the daily calendar's selection policy is untouched. */
 export async function importDexTradeHistory(env: Env): Promise<Record<string, unknown>> {
   const now = Math.floor(Date.now() / 1_000);
-  const candles = await fetchDexTradeHistory("XCPBTC", now);
-  let written = 0;
-  for (let i = 0; i < candles.length; i += 50) {
-    const batch = candles.slice(i, i + 50).map((candle) =>
-      env.CORE_DB.prepare(
+  const out: Record<string, unknown> = {};
+  for (const pair of ["XCPBTC", "PEPECASHBTC"] as const) {
+    const base = pair.slice(0, -3); // XCP | PEPECASH — the candle pair minus its BTC quote
+    try {
+      const candles = await fetchDexTradeHistory(pair, now);
+      let written = 0;
+      for (let i = 0; i < candles.length; i += 50) {
+        const batch = candles.slice(i, i + 50).map((candle) =>
+          env.CORE_DB.prepare(
+            `INSERT INTO market_price_observations(
+               day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+             VALUES(date(?1,'unixepoch'),?4,'BTC','dex-trade','cex',?2,?3,0,?1,?1,'daily_close')
+             ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
+               price=excluded.price,volume_base=excluded.volume_base,method=excluded.method,
+               first_time=excluded.first_time,last_time=excluded.last_time`,
+          ).bind(candle.time, candle.close / 1e8, candle.volume / 1e8, base),
+        );
+        const results = await env.CORE_DB.batch(batch);
+        written += results.length;
+      }
+      out[base] = { candles: candles.length, written, from: candles[0]?.time, to: candles[candles.length - 1]?.time };
+    } catch (error) {
+      out[base] = { err: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return out;
+}
+
+/** Keep the two strongest XCP sources flowing forward: CMC's aggregate (one free-tier credit per
+ *  poll — the calendar's dominant source stopped accruing when the one-shot imports ended) and
+ *  Zaif's live XCP/JPY tape (best-measured source in the audit; the monthly CSV import stays
+ *  authoritative and overwrites live rows via its distinct method label). CMC lands in BOTH the
+ *  observation store and the daily calendar at its established rank; Zaif stays observation-only
+ *  until a selection-policy change is decided on its own merits. */
+export async function crawlMarketQuotes(env: Env): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  if (env.CMC_API_KEY) {
+    try {
+      const quote = await fetchCmcXcpLatest(env.CMC_API_KEY);
+      const day = quote.lastUpdated.slice(0, 10);
+      await env.CORE_DB.prepare(
         `INSERT INTO market_price_observations(
            day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
-         VALUES(date(?1,'unixepoch'),'XCP','BTC','dex-trade','cex',?2,?3,0,?1,?1,'daily_close')
+         VALUES(?1,'XCP','USD','coinmarketcap','aggregate',?2,0,0,?3,?3,'latest_quote')
          ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
-           price=excluded.price,volume_base=excluded.volume_base,method=excluded.method,
-           first_time=excluded.first_time,last_time=excluded.last_time`,
-      ).bind(candle.time, candle.close / 1e8, candle.volume / 1e8),
-    );
-    const results = await env.CORE_DB.batch(batch);
-    written += results.length;
+           price=excluded.price,first_time=COALESCE(market_price_observations.first_time,excluded.first_time),
+           last_time=excluded.last_time,method=excluded.method`,
+      )
+        .bind(day, quote.priceUsd, Math.floor(Date.parse(quote.lastUpdated) / 1000))
+        .run();
+      await upsertPrices(env.CORE_DB, [
+        {
+          day,
+          currency: "XCP",
+          usd: quote.priceUsd,
+          source: "coinmarketcap_aggregate",
+          observedDay: day,
+          fidelity: 2,
+          priceKind: "direct",
+          derivationDepth: 0,
+          selectionReason: "direct_aggregate_usd",
+        },
+      ]);
+      out.cmc = { day, usd: quote.priceUsd };
+    } catch (error) {
+      out.cmc = { err: error instanceof Error ? error.message : String(error) };
+    }
+  } else {
+    out.cmc = { skipped: "CMC_API_KEY not configured" };
   }
-  return { candles: candles.length, written, from: candles[0]?.time, to: candles[candles.length - 1]?.time };
+  try {
+    const days = zaifDailyVwm(await fetchZaifTrades("xcp_jpy"));
+    let written = 0;
+    for (const dayRow of days) {
+      const result = await env.CORE_DB.prepare(
+        `INSERT INTO market_price_observations(
+           day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+         VALUES(?1,'XCP','JPY','zaif','cex',?2,?3,?4,?5,?6,'live_poll_vwm')
+         ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
+           price=excluded.price,volume_base=excluded.volume_base,trades=excluded.trades,
+           first_time=excluded.first_time,last_time=excluded.last_time
+         WHERE market_price_observations.method='live_poll_vwm'`,
+      )
+        .bind(dayRow.day, dayRow.price, dayRow.volume, dayRow.trades, dayRow.firstTime, dayRow.lastTime)
+        .run();
+      written += result.meta.rows_written ?? 0;
+    }
+    out.zaif = { days: days.length, written };
+  } catch (error) {
+    out.zaif = { err: error instanceof Error ? error.message : String(error) };
+  }
+  return out;
 }
 
 /** Persist a directly observed BTC/USD ticker and a recent XCP/BTC exchange ticker, with explicit lower

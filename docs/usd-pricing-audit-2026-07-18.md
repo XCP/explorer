@@ -568,3 +568,15 @@ CEX volume series (623k XCP over two years). Context: Dex-Trade shows deposit/wi
 and may delist, which is why the live-quote plan is a median of independent same-day sources
 (Zaif XCP/JPY via ECB, the on-chain market edge, Dex-Trade while it lasts) rather than any single
 ticker. Selection policy unchanged by this import — observations only.
+
+### 2026-07-21 — forward tracking: CMC latest-quote cron + Zaif live tape
+
+The aggregate calendar no longer depends on one-shot imports. A ~6-hourly scheduled job
+(`crawlMarketQuotes`) polls CMC `quotes/latest` for id 132 (one free-tier credit per call, so the
+calendar survives the paid key lapsing) and writes both the observation row and the same-day
+calendar row at the established `coinmarketcap_aggregate` rank. The same job polls Zaif's public
+XCP/JPY trade endpoint and stores per-UTC-day volume-weighted medians as `method=live_poll_vwm`;
+the authorized monthly CSV import stays authoritative — live rows never overwrite
+`volume_weighted_median` rows, and the CSV import overwrites live ones. First live poll: the
+150-trade public window spanned 35 UTC days and wrote 9 new days beyond the CSV cutoff.
+Dex-Trade candle import extended to PEPECASH/BTC (94 daily candles from 2024-07-05).
