@@ -47,7 +47,7 @@ and `apps/api/docs/architecture.md` (data architecture) before structural work.
 
 ## Operational facts
 
-- Worker `xcp-api`, D1 db `xcpio`, live at https://xcp-api.me-bbe.workers.dev; web reads it via
+- Worker `xcp-api`, canonical D1 db `xcpio-core`, live at https://api.xcp.io; web reads it via
   `NEXT_PUBLIC_API_BASE`. Cron ticks every 2 min (`src/index.ts` scheduled handler).
 - The compact replay lock serializes scheduled and manual sync invocations.
 - Never commit token files (`.tt`, `.salestok` are gitignored admin tokens).

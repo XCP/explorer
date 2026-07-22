@@ -17,9 +17,7 @@ import assert from "node:assert/strict";
 
 const LIVE = !!process.env.LIVE_API;
 const BASE =
-  process.env.LIVE_API && process.env.LIVE_API !== "1"
-    ? process.env.LIVE_API.replace(/\/$/, "")
-    : "https://xcp-api.me-bbe.workers.dev";
+  process.env.LIVE_API && process.env.LIVE_API !== "1" ? process.env.LIVE_API.replace(/\/$/, "") : "https://api.xcp.io";
 
 /* ---------- generic structural matcher ---------- */
 // spec: field -> "string" | "number" | "boolean" | "object" | "array" | "null" | "any", "|"-unioned,

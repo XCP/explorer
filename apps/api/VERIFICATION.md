@@ -7,7 +7,7 @@ How we evaluate that the D1 mirror faithfully reproduces the live Counterparty n
 
 ```
 curl -s -H "Authorization: Bearer $XCPIO_ADMIN_TOKEN" \
-  "https://xcp-api.me-bbe.workers.dev/admin/verify" | jq
+  "https://api.xcp.io/admin/verify" | jq
 ```
 
 Implemented in `src/verify.ts`. Returns:
