@@ -384,7 +384,14 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
     <>
       <SectionHeader flush>
         <SectionIdentity
-          visual={<img className="icon" src={`https://cdn.xcp.io/img/icon/${encodeURIComponent(item.asset)}`} alt="" />}
+          visual={
+            <img
+              className="icon"
+              src={`https://cdn.xcp.io/img/icon/${encodeURIComponent(item.asset)}`}
+              alt=""
+              style={item.tags?.includes("stamp") ? { imageRendering: "pixelated" } : undefined}
+            />
+          }
           name={nameNode}
           chips={
             <>

@@ -13,7 +13,6 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://xcp.io"),
-  icons: { icon: "https://cdn.xcp.io/img/full/XCP" },
   title: {
     default: "xcp.io — Counterparty Explorer",
     template: "%s | XCP.io",

@@ -21,7 +21,7 @@ maintained internal links use the apex.
 
 ## Active protections
 
-- Single Redirects run before WAF: canonicalize `www`, and map exact `/favicon.ico` to the canonical XCP PNG.
+- Single Redirects canonicalize `www`; `/favicon.ico` is served directly by the web application's static assets.
 - Retired locale namespaces and exact retired API contracts terminate at the edge with `410`.
 - Transaction hashes placed in `/address/*` terminate at the edge with `410`.
 - The former blanket challenge on valid asset/address/transaction pages is disabled.
@@ -69,7 +69,7 @@ The 2026-07-22 scan queried live Rulesets and Access APIs, then performed extern
 
 | Component | Live result |
 | --- | --- |
-| Dynamic Redirect ruleset | Version 2, two rules |
+| Dynamic Redirect ruleset | Version 4, one `www` canonicalization rule |
 | Custom WAF ruleset | Version 47, nine rules |
 | Rate-limit ruleset | Version 5, one rule |
 | Managed WAF entry point | Version 3, Cloudflare + OWASP rulesets |

@@ -142,9 +142,9 @@ export function AssetTabs({
     { label: "Subassets", path: `${base}/subassets`, cols: ASSET_LIST_COLS, count: feedCounts?.subassets },
     { label: "Pools", path: `${base}/pools`, cols: POOL_COLS, count: feedCounts?.pools },
     { label: "Trades", path: `${base}/trades`, cols: TRADE_COLS, count: feedCounts?.sales },
-    // Related is co-holder overlap, so a known-zero-supply asset (never issued, or fully
-    // destroyed) can never populate it — the tab would only ever be an empty panel.
-    ...(supply === 0 ? [] : [{ label: "Related", panel: <RelatedTab asset={asset} collection={collection} /> }]),
+    // Related is co-holder overlap. An asset whose entire supply is escrowed can have positive
+    // supply but zero current holders, so holder count—not issued supply—is the correct gate.
+    ...(holderCount === 0 ? [] : [{ label: "Related", panel: <RelatedTab asset={asset} collection={collection} /> }]),
   ];
   // the zero-count rule: a feed tab with a KNOWN empty feed doesn't earn a spot in the bar.
   const earned = tabs.filter((t) => !("path" in t) || t.count == null || t.count > 0);
