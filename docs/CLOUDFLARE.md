@@ -134,6 +134,36 @@ measurements establish that the reported 15-second delay was primarily challenge
 regression. Continue measuring query and rendering tails independently; this finding does not excuse slow application
 paths elsewhere.
 
+## 24-48 hour success review
+
+Success does **not** require total bot traffic to decline. Valid documents now bypass SBFM, so successful `200` traffic
+may rise as requests that previously stopped at a challenge reach the application. The objective is fewer human
+interruptions and lower tail latency without a material increase in compute cost, errors, or saturation.
+
+At the next review, compare a complete 24-hour window with the pre-change baseline:
+
+| Signal | Expected outcome |
+| --- | --- |
+| Challenges on valid web documents | Approximately zero for ordinary `GET`/`HEAD` navigation |
+| Asset-page Worker wall time | Generally below 1 second; initial p95 target below about 1.5 seconds; no recurring 10-15 second stalls |
+| Public asset API latency | Low hundreds of milliseconds, without elevated `5xx` or service-binding fallback timeouts |
+| Browser experience | Normal and rapid multi-page browsing proceeds without challenges or throttling; record LCP p50/p95/p99 when RUM is available |
+| Impossible and retired routes | Continue terminating at the edge with the documented `403`/`410`, without Worker execution |
+| Sustained high-rate sweeps | Cross the 600 requests/minute/IP/colo ceiling and receive cheap `429`, not a CAPTCHA |
+| Worker, D1, R2, and CPU use | Stable enough that allowing valid documents does not create a material cost or saturation increase |
+| Error rate | No material increase in public `5xx`, Worker exceptions, or dependency timeouts |
+
+Interpret the result using these rules:
+
+1. If navigation is fast and resource use is stable, retain the policy even if bot requests or document `200`s rise.
+2. If navigation improves but resource cost rises materially, improve caching or add route-cost-specific budgets before
+   restoring challenges.
+3. If valid documents are still challenged, identify and narrow the remaining Cloudflare service or rule.
+4. If p95/p99 remains slow without challenges, investigate application queries, service-binding fallback, cache misses,
+   and frontend waterfalls separately.
+5. Treat raw bot-request counts as context, not the primary success metric. Distributed low-rate automation may remain
+   visible even when the protection strategy is working.
+
 ## Remaining work
 
 - Observe cache, WAF, rate, and Worker metrics for seven days before tightening public API budgets.
