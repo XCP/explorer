@@ -485,7 +485,7 @@ Not recommended:
 ## Implementation task list
 
 - [x] Export current custom, managed, rate-limit, cache, bot, and zone settings to a sanitized versioned artifact.
-- [ ] Resolve the browser `workers.dev` API origin versus zone-protected `api.xcp.io`; protect or disable every public
+- [x] Resolve the browser `workers.dev` API origin versus zone-protected `api.xcp.io`; protect or disable every public
       admin origin while retaining service-binding traffic.
 - [x] Add and Trace-test the locale WAF custom-response tombstone.
 - [x] Verify Worker invocation avoidance for retired locale requests.
@@ -493,7 +493,7 @@ Not recommended:
 - [x] Enable 1% Workers Logs head sampling on API and web Workers; structured bounded API decisions are live.
 - [x] Inventory all callers relying on `/api/`, CDN, Telegram, and operator Skip behavior; identify the exact canonical
       CDN image prefixes and methods.
-- [ ] Create Cloudflare Access application/service token for `/admin/*` callers without colliding with app Bearer auth.
+- [x] Create Cloudflare Access application/service token for `/admin/*` callers without colliding with app Bearer auth.
 - [x] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions.
 - [x] Replace the 240/minute challenge rule with a Pro-compatible empirically derived non-interactive ceiling. The live
       rule permits 600 apex document requests/minute/IP/colo, then returns plain-text `429` for ten minutes; static/RSC

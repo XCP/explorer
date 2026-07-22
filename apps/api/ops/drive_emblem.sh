@@ -3,7 +3,7 @@
 set -u
 # Token via env (ADMIN_TOKEN=...) or a local .emblemtok file; sent as a Bearer header, never in the URL.
 TOK="${ADMIN_TOKEN:-$(cat .emblemtok)}"
-URL="${XCP_API_BASE:-https://xcp-api.me-bbe.workers.dev}/admin/crawl-emblem"
+URL="${XCP_API_BASE:-https://api.xcp.io}/admin/crawl-emblem"
 ACCESS_ARGS=()
 if [ -n "${CF_ACCESS_CLIENT_ID:-}" ] || [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ]; then
   if [ -z "${CF_ACCESS_CLIENT_ID:-}" ] || [ -z "${CF_ACCESS_CLIENT_SECRET:-}" ]; then

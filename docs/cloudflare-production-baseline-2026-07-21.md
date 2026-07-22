@@ -11,12 +11,14 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 - `api.xcp.io/*` → `xcp-api`
 - `cdn.xcp.io` → `xcp-cdn`
 - Web browsers use `https://api.xcp.io`; web server components use the `API_WORKER` service binding.
-- API `workers.dev` remains enabled temporarily for rollback and legacy operator callers.
+- API `workers.dev` and preview URLs are disabled; the custom domain and Worker service binding are the only API entry
+  paths.
 
 ## Active custom protections, in evaluation order
 
 1. Existing Telegram application exception.
-2. Public API `GET|HEAD|OPTIONS /v2[/...]` and legacy `app.xcp.io/api/v1/*` reads: skip SBFM only.
+2. Public API `GET|HEAD|OPTIONS /v2[/...]`, legacy `app.xcp.io/api/v1/*` reads, and Access-protected
+   `api.xcp.io/admin[/...]`: skip SBFM only. Admin remains subject to Access and application Bearer authentication.
 3. Existing operator IP exception (values omitted).
 4. CDN `GET|HEAD /img/...`, `/cdn-cgi/image/...`, and exact canonical `/health`, plus transitional
    `app.xcp.io/img/...` reads used by installed wallet 0.5.0 clients: skip SBFM only.
@@ -24,8 +26,8 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
    `zh`, `cn`, `jp`) on the web hosts: return `410 Gone` at WAF.
 6. Retired legacy API contracts: exact `app.xcp.io` price paths and exact case-insensitive
    `xcp.io/api/asset/xcp[/]` return `410 Gone` before the datacenter challenge.
-7. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API and CDN
-   image shapes above exempt because machine-readable clients and image elements cannot complete an HTML challenge.
+7. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API, CDN image,
+   and Access-protected admin shapes above exempt because machine-readable clients cannot complete an HTML challenge.
 8. Transaction-hash-shaped `/address/*` requests that cannot be supported address forms: block at WAF.
 
 Legacy search/swap remain temporarily available for already-installed wallet version 0.5.0.
@@ -33,7 +35,8 @@ Legacy search/swap remain temporarily available for already-installed wallet ver
 The former blanket Managed Challenge for every `/asset/*`, `/address/*`, and `/tx/*` page is disabled. Do not restore
 it as a substitute for route-specific limits.
 
-Custom ruleset version 42 moves exact retired API tombstones before the datacenter challenge and adds the old web-host
+Custom ruleset version 44 hands the exact Access-protected admin namespace through SBFM and the datacenter challenge.
+Version 42 moved exact retired API tombstones before the datacenter challenge and added the old web-host
 `/api/asset/xcp` contract. Version 41 aligned the datacenter exception with the exact media/health expression after
 rule-attributed events showed legacy `app.xcp.io/img/*` wallet requests receiving Managed Challenges. Remove the
 transitional legacy image clause after the wallet 0.5.1 adoption window; retain the canonical CDN clause.
@@ -52,8 +55,8 @@ The first six-hour GraphQL sample after the rollout is directional, not a seven-
   a valid replacement threshold by itself;
 - challenge-platform orchestration remained visible, so challenge counts must be attributed to their actual rule IDs
   before changing the document limiter;
-- public traffic still reached `xcp-api.me-bbe.workers.dev`, confirming that the rollback origin cannot yet be called
-  private or unused;
+- public traffic still reached `xcp-api.me-bbe.workers.dev` during the initial sample; after caller migration and Access
+  verification, that origin was disabled and now returns platform `404`;
 - the retired price contracts and locale prefixes returned edge `410`, while impossible 64-hex address routes returned
   edge `403`;
 - Cloudflare managed rules already returned edge `403` for representative `/.git/config` and `/wp-login.php` probes, so
@@ -81,12 +84,12 @@ those aggregates as public client failures without correlating Worker logs and e
 - API and web Workers: Workers Logs enabled with 1% head sampling.
 - API emits bounded `request_complete` records: method, route family, status, duration, edge-cache result, and D1-cache
   result. Raw entity identifiers and attacker-controlled paths are excluded.
-- API Worker version `bfc5fc30-7b51-4df0-9198-556e2c749bd2` includes an observe-only Rate Limiting binding at 600 public
+- API Worker version `d11958fd-d5cf-411f-92e3-70aba4f0aaba` includes an observe-only Rate Limiting binding at 600 public
   GETs/minute/client/route-family/Cloudflare location. Threshold crossings emit bounded `rate_budget_exceeded` records
   but never change the response. Reads without `CF-Connecting-IP`, including service-binding SSR traffic, bypass it.
-- Browsers, public benchmarks, and contract tests target `api.xcp.io`. Operator scripts accept optional
-  `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` headers for the planned Access boundary, but unattended admin
-  defaults remain on `workers.dev` until those credentials exist.
+- Browsers, public benchmarks, contract tests, and operator scripts target `api.xcp.io`. Operator scripts load the
+  Cloudflare Access service-token pair from environment variables or ignored `.dev.vars`, then send the independent
+  application Bearer token. API `workers.dev` and preview URLs are explicitly disabled.
 - CDN Worker version `12067e3e-c7f8-460a-ac75-f71ece62210f` explicitly stores ordinary image GET responses in the
   Cache API under one canonical key shared by `cdn.xcp.io` and transitional `app.xcp.io`. Range requests continue to
   read R2 directly; cached GETs preserve ETag/immutable headers and satisfy HEAD and conditional 304 requests. Live
@@ -107,28 +110,19 @@ Redirect ruleset version 2 also maps the exact case-insensitive apex `/favicon.i
 `308`, dropping query strings. The prior conventional-path miss produced 252 uncached HTML 404s and about 1.5 MB in the
 23-hour sample. The icon itself is a static application asset; neighboring paths such as `/favicon.png` are unaffected.
 
-## Known incomplete boundary
+## Administrative boundary
 
-Cloudflare Access was not created because the current automation token is denied access to the Zero Trust Access API.
-Until an Access-capable token or dashboard action is available, keep the API `workers.dev` origin enabled and retain the
-application's constant-time Bearer authentication. After Access is tested on `api.xcp.io/admin/*`, protect or disable the
-equivalent `workers.dev` admin origin before calling the boundary complete.
+The self-hosted Access application protects `api.xcp.io/admin/*` with a one-year service token and a Service Auth policy.
+The token secret is stored only in ignored local credential files. Access uses its dedicated client headers, while the
+Worker independently requires `Authorization: Bearer ADMIN_TOKEN`; neither credential alone is sufficient.
 
-A 2026-07-21 canary confirmed this dependency: a direct unauthenticated `workers.dev/admin/status` reached application
-Bearer authentication and returned JSON `401`, while `api.xcp.io/admin/status` was terminated before the Worker with a
-Cloudflare HTML `403`. A Worker subrouter hostname guard also failed to observe the direct origin as assumed and was
-removed before commit. Do not migrate unattended admin defaults or disable the direct origin based only on unit tests;
-first prove an authenticated operator request through the Access-protected custom domain.
+Production canaries proved the separation: no credentials and Bearer-only requests receive Cloudflare HTML `401`;
+Access-only receives application JSON `401`; both layers pass authentication and reach real read-only admin handlers.
+`/admin/backfills` and `/admin/bitcoin-fees?limit=1` returned JSON `200`. The direct `workers.dev` API returned platform
+`404` after disablement, while public `api.xcp.io/v2/status` remained `200` and the deployed contract suite passed 33/33.
 
-The current automation credential returns `403` for all three account endpoints below. A replacement account-scoped API
-token needs `Access: Apps and Policies Read/Write` and `Access: Service Tokens Read/Write`, limited to this account:
-
-- `GET /accounts/{account_id}/access/apps`
-- `GET /accounts/{account_id}/access/service_tokens`
-- `GET /accounts/{account_id}/access/organizations`
-
-After provisioning the token, create the application and service token, verify one real operator request carrying
-`CF-Access-Client-Id` and `CF-Access-Client-Secret`, and only then change operator defaults or the `workers.dev` boundary.
+`/admin/status` currently returns application JSON `500` after successful authentication. This is an operational-status
+handler defect, not an Access failure; use the proven read-only handlers above as boundary canaries until repaired.
 
 ## Immediate rollback
 
@@ -136,6 +130,8 @@ After provisioning the token, create the application and service token, verify o
 - CDN Cache API regression: revert `XCP/img-cdn` commits `ce077ad` and `d68d90e` and redeploy; the prior serving path
   remains functionally correct but performs repeated KV/R2 work.
 - Public API bot false positive: inspect the `/v2` SBFM-only Skip before changing managed WAF.
+- Admin outage: retain both authentication layers. Temporarily re-enable API `workers.dev` only if the custom domain is
+  unavailable and an urgent operator task cannot wait; disable it again immediately after recovery.
 - Shadow rate-budget issue: remove the middleware and binding; because the current mode is observe-only, no threshold
   adjustment is required to restore client behavior.
 - Locale false positive: disable the locale custom-response rule.
