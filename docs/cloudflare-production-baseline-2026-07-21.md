@@ -16,7 +16,8 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 1. Existing Telegram application exception.
 2. Public API `GET|HEAD|OPTIONS /v2[/...]` and legacy `app.xcp.io/api/v1/*` reads: skip SBFM only.
 3. Existing operator IP exception (values omitted).
-4. CDN `GET|HEAD /img/...` and `/cdn-cgi/image/...`: skip SBFM only.
+4. CDN `GET|HEAD /img/...` and `/cdn-cgi/image/...`, plus transitional `app.xcp.io/img/...` reads used by installed
+   wallet 0.5.0 clients: skip SBFM only.
 5. Retired locale roots/prefixes (`en`, `es`, `de`, `fr`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `ru`, `tr`, `uk`,
    `zh`, `cn`, `jp`) on the web hosts: return `410 Gone` at WAF.
 6. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API and CDN
@@ -27,6 +28,10 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 
 The former blanket Managed Challenge for every `/asset/*`, `/address/*`, and `/tx/*` page is disabled. Do not restore
 it as a substitute for route-specific limits.
+
+Custom ruleset version 39 aligned the datacenter exception with the same exact image expression after rule-attributed
+events showed legacy `app.xcp.io/img/*` wallet requests receiving Managed Challenges. Remove the transitional legacy
+image clause after the wallet 0.5.1 adoption window; retain the canonical CDN clause.
 
 Wallet extension 0.5.1 uses `api.xcp.io/v2` for price, asset search, and market pairs, and `cdn.xcp.io` for media. Retire
 the remaining legacy search/swap forwarding only after 0.5.1 adoption is visible in traffic. Version 0.5.1 was
@@ -85,6 +90,16 @@ Bearer authentication and returned JSON `401`, while `api.xcp.io/admin/status` w
 Cloudflare HTML `403`. A Worker subrouter hostname guard also failed to observe the direct origin as assumed and was
 removed before commit. Do not migrate unattended admin defaults or disable the direct origin based only on unit tests;
 first prove an authenticated operator request through the Access-protected custom domain.
+
+The current automation credential returns `403` for all three account endpoints below. A replacement account-scoped API
+token needs `Access: Apps and Policies Read/Write` and `Access: Service Tokens Read/Write`, limited to this account:
+
+- `GET /accounts/{account_id}/access/apps`
+- `GET /accounts/{account_id}/access/service_tokens`
+- `GET /accounts/{account_id}/access/organizations`
+
+After provisioning the token, create the application and service token, verify one real operator request carrying
+`CF-Access-Client-Id` and `CF-Access-Client-Secret`, and only then change operator defaults or the `workers.dev` boundary.
 
 ## Immediate rollback
 
