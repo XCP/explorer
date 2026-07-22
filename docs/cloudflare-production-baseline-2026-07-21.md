@@ -44,9 +44,9 @@ already-installed 0.5.0 clients have upgraded.
 
 The first six-hour GraphQL sample after the rollout is directional, not a seven-day baseline:
 
-- the highest raw web-host client/minute group was 486 requests, but no event was attributed to the 240/minute
-  document limiter; its static/RSC/verified-bot exclusions therefore matter and the raw total is not a valid replacement
-  threshold;
+- the highest raw web-host client/minute group was 486 requests, but the initial six-hour sample had no event attributed
+  to the 240/minute document limiter; its static/RSC/verified-bot exclusions therefore matter and the raw total was not
+  a valid replacement threshold by itself;
 - challenge-platform orchestration remained visible, so challenge counts must be attributed to their actual rule IDs
   before changing the document limiter;
 - public traffic still reached `xcp-api.me-bbe.workers.dev`, confirming that the rollback origin cannot yet be called
@@ -61,8 +61,10 @@ those aggregates as public client failures without correlating Worker logs and e
 
 ## Rate, managed WAF, cache, and zone settings
 
-- Interim rate rule: 240 web-document requests/minute/IP/colo, Managed Challenge; Next static/data prefetch and verified
-  bots exempt. Replace only after measured p99 traffic is available.
+- Non-interactive sweep ceiling: 600 apex web-document requests/minute/IP/colo, returning plain-text `429` for ten
+  minutes; Next static/data prefetch and verified bots are exempt. The previous 240/minute Managed Challenge recorded
+  646 actions in a subsequent 23-hour sample: 443 on the now-redirected `www` host and 203 on the apex, including
+  ordinary list pages. The higher ceiling removes CAPTCHA collateral while still bounding sustained HTML sweeps.
 - Cloudflare managed ruleset and OWASP Core Ruleset are enabled.
 - CDN cache rule remains enabled for `cdn.xcp.io`; the Worker supplies immutable or short fallback TTLs.
 - Security level: essentially off; Browser Integrity Check: on; challenge passage: 30 minutes.

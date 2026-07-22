@@ -495,7 +495,9 @@ Not recommended:
       CDN image prefixes and methods.
 - [ ] Create Cloudflare Access application/service token for `/admin/*` callers without colliding with app Bearer auth.
 - [x] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions.
-- [ ] Replace the 240/minute challenge rule with a Pro-compatible empirically derived non-interactive ceiling.
+- [x] Replace the 240/minute challenge rule with a Pro-compatible empirically derived non-interactive ceiling. The live
+      rule permits 600 apex document requests/minute/IP/colo, then returns plain-text `429` for ten minutes; static/RSC
+      traffic and verified bots remain exempt.
 - [x] Disable the blanket detail-page Managed Challenge.
 - [x] Add an observe-only Worker rate-limit binding by public API route family; enforcement remains pending evidence.
 - [ ] Provide documented API identities/quotas for legitimate bulk clients.
@@ -503,9 +505,9 @@ Not recommended:
 - [ ] Tune immutable, mutable, and negative TTLs from evidence.
 - [ ] Record final expressions, thresholds, owners, and rollback procedures after the canary.
 
-The first six-hour post-rollout sample is recorded in `cloudflare-production-baseline-2026-07-21.md`. It is not enough to
-select the replacement document threshold: raw per-client totals include traffic excluded by the active rate expression,
-and no event in that sample was attributed to the rate-rule ID. Preserve the current rule until rule-attributed events or
-a longer distribution justify a change. The next implementation priority is an observe-first Worker route-family budget;
-Cloudflare's binding is per-location and eventually consistent, and public anonymous IPs can represent shared users, so
-enforcement must begin at a deliberately high threshold and exclude service-binding traffic.
+The first six-hour post-rollout sample and the subsequent rule-attributed 23-hour review are recorded in
+`cloudflare-production-baseline-2026-07-21.md`. The old challenge fired 646 times, predominantly against the `www` host
+that now redirects before the rate phase, but also against ordinary apex list pages. It was replaced with a deliberately
+high, non-interactive ceiling. The next implementation priority is continued observation of the Worker route-family
+budget; Cloudflare's binding is per-location and eventually consistent, and public anonymous IPs can represent shared
+users, so enforcement must remain conservative and exclude service-binding traffic.
