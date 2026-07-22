@@ -22,16 +22,19 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
    `app.xcp.io/img/...` reads used by installed wallet 0.5.0 clients: skip SBFM only.
 5. Retired locale roots/prefixes (`en`, `es`, `de`, `fr`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `ru`, `tr`, `uk`,
    `zh`, `cn`, `jp`) on the web hosts: return `410 Gone` at WAF.
-6. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API and CDN
+6. Retired legacy API contracts: exact `app.xcp.io` price paths and exact case-insensitive
+   `xcp.io/api/asset/xcp[/]` return `410 Gone` before the datacenter challenge.
+7. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API and CDN
    image shapes above exempt because machine-readable clients and image elements cannot complete an HTML challenge.
-7. Transaction-hash-shaped `/address/*` requests that cannot be supported address forms: block at WAF.
-8. Retired `app.xcp.io/api/v1/asset/XCP` and `/api/v1/usd-prices` contracts: return `410 Gone` at WAF without invoking
-   either Worker. Legacy search/swap remain temporarily available for already-installed wallet version 0.5.0.
+8. Transaction-hash-shaped `/address/*` requests that cannot be supported address forms: block at WAF.
+
+Legacy search/swap remain temporarily available for already-installed wallet version 0.5.0.
 
 The former blanket Managed Challenge for every `/asset/*`, `/address/*`, and `/tx/*` page is disabled. Do not restore
 it as a substitute for route-specific limits.
 
-Custom ruleset version 41 aligns the datacenter exception with the same exact media/health expression after
+Custom ruleset version 42 moves exact retired API tombstones before the datacenter challenge and adds the old web-host
+`/api/asset/xcp` contract. Version 41 aligned the datacenter exception with the exact media/health expression after
 rule-attributed events showed legacy `app.xcp.io/img/*` wallet requests receiving Managed Challenges. Remove the
 transitional legacy image clause after the wallet 0.5.1 adoption window; retain the canonical CDN clause.
 
@@ -55,6 +58,9 @@ The first six-hour GraphQL sample after the rollout is directional, not a seven-
   edge `403`;
 - Cloudflare managed rules already returned edge `403` for representative `/.git/config` and `/wp-login.php` probes, so
   duplicating those signatures in a custom rule would add complexity without avoiding additional Worker execution.
+- a later 23-hour 404 inventory found 604 uncached `xcp.io/api/asset/xcp` responses totaling about 17 MB. Maintained web,
+  extension, and exchange sources had no caller, so that exact retired contract now returns a small edge `410`; adjacent
+  `/api/asset/*` paths are not included.
 
 Cloudflare HTTP analytics also contain Worker Cache API/subrequest-shaped `204` and `504` populations. Do not interpret
 those aggregates as public client failures without correlating Worker logs and external contract probes.
