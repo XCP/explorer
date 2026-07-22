@@ -25,7 +25,7 @@ const DISCOVER: FooterLink[] = [
 const ECOSYSTEM: FooterLink[] = [
   ["xcpdex", "https://xcpdex.com"],
   ["Digirare", "https://digirare.com"],
-  ["XCP Wallet", "https://www.xcp.io"],
+  ["XCP Wallet", "https://xcp.io"],
   ["counterparty.io", "https://counterparty.io"],
   ["GitHub", "https://github.com/CounterpartyXCP"],
 ];

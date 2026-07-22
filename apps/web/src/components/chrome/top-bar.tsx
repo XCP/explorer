@@ -79,7 +79,7 @@ function WalletButton({ full = false }: { full?: boolean }) {
       onClick={() => {
         const w = (window as { xcpwallet?: { connect?: () => Promise<void> } }).xcpwallet;
         if (w?.connect) w.connect().catch(() => {});
-        else window.open("https://www.xcp.io", "_blank");
+        else window.open("https://xcp.io", "_blank");
       }}
       className={`rounded-md text-[13px] font-semibold bg-(--color-xcp) text-white hover:brightness-110 transition ${full ? "w-full py-2.5" : "px-3.5 py-1.5"}`}
     >

@@ -5,7 +5,9 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 
 ## Public routing
 
-- `xcp.io/*`, `www.xcp.io/*` → `xcp-web`
+- `xcp.io/*` → `xcp-web` and is the canonical public web origin.
+- `www.xcp.io/*` → edge `308` to the same path and query string on `https://xcp.io`; the redirect runs before WAF and
+  does not invoke `xcp-web`.
 - `api.xcp.io/*` → `xcp-api`
 - `cdn.xcp.io` → `xcp-cdn`
 - Web browsers use `https://api.xcp.io`; web server components use the `API_WORKER` service binding.
@@ -71,7 +73,7 @@ those aggregates as public client failures without correlating Worker logs and e
 - API and web Workers: Workers Logs enabled with 1% head sampling.
 - API emits bounded `request_complete` records: method, route family, status, duration, edge-cache result, and D1-cache
   result. Raw entity identifiers and attacker-controlled paths are excluded.
-- API Worker version `87cc4baa-1988-4048-ba36-4ca73794c253` adds an observe-only Rate Limiting binding at 600 public
+- API Worker version `bfc5fc30-7b51-4df0-9198-556e2c749bd2` includes an observe-only Rate Limiting binding at 600 public
   GETs/minute/client/route-family/Cloudflare location. Threshold crossings emit bounded `rate_budget_exceeded` records
   but never change the response. Reads without `CF-Connecting-IP`, including service-binding SSR traffic, bypass it.
 - Browsers, public benchmarks, and contract tests target `api.xcp.io`. Operator scripts accept optional
@@ -84,6 +86,14 @@ those aggregates as public client failures without correlating Worker logs and e
 - CDN Workers Logs use 1% head sampling and bounded `cdn_request_complete` records containing only method, route type,
   canonical/legacy host class, status, and Cache API outcome. Asset identifiers and raw request paths are excluded.
 - CDN `workers.dev` and preview URLs are explicitly disabled; only the two reviewed custom domains are public.
+
+## Canonical web hostname
+
+The zone-level Single Redirect ruleset is `ba4608550cfd415cb9d5aff18489d192`. Rule
+`94865a2c15a4401e868b6c60bddbc10c` (`redirect_www_to_apex`) permanently redirects every `www.xcp.io` path to the apex
+with status `308` and preserves the query string. External probes verified `/`, `/assets?sort=rating&page=2`, and
+`/asset/RAREPEPE`. Source metadata and internal wallet links also use the apex. Keep the `www` DNS/Worker route attached
+as the Cloudflare redirect ingress; it is not a second application origin.
 
 ## Known incomplete boundary
 
