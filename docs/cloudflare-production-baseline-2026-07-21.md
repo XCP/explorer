@@ -16,8 +16,8 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 1. Existing Telegram application exception.
 2. Public API `GET|HEAD|OPTIONS /v2[/...]` and legacy `app.xcp.io/api/v1/*` reads: skip SBFM only.
 3. Existing operator IP exception (values omitted).
-4. CDN `GET|HEAD /img/...` and `/cdn-cgi/image/...`, plus transitional `app.xcp.io/img/...` reads used by installed
-   wallet 0.5.0 clients: skip SBFM only.
+4. CDN `GET|HEAD /img/...`, `/cdn-cgi/image/...`, and exact canonical `/health`, plus transitional
+   `app.xcp.io/img/...` reads used by installed wallet 0.5.0 clients: skip SBFM only.
 5. Retired locale roots/prefixes (`en`, `es`, `de`, `fr`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `ru`, `tr`, `uk`,
    `zh`, `cn`, `jp`) on the web hosts: return `410 Gone` at WAF.
 6. Existing datacenter-ASN Managed Challenge, with verified bots plus the exact canonical/legacy public API and CDN
@@ -29,9 +29,9 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 The former blanket Managed Challenge for every `/asset/*`, `/address/*`, and `/tx/*` page is disabled. Do not restore
 it as a substitute for route-specific limits.
 
-Custom ruleset version 39 aligned the datacenter exception with the same exact image expression after rule-attributed
-events showed legacy `app.xcp.io/img/*` wallet requests receiving Managed Challenges. Remove the transitional legacy
-image clause after the wallet 0.5.1 adoption window; retain the canonical CDN clause.
+Custom ruleset version 41 aligns the datacenter exception with the same exact media/health expression after
+rule-attributed events showed legacy `app.xcp.io/img/*` wallet requests receiving Managed Challenges. Remove the
+transitional legacy image clause after the wallet 0.5.1 adoption window; retain the canonical CDN clause.
 
 Wallet extension 0.5.1 uses `api.xcp.io/v2` for price, asset search, and market pairs, and `cdn.xcp.io` for media. Retire
 the remaining legacy search/swap forwarding only after 0.5.1 adoption is visible in traffic. Version 0.5.1 was
@@ -77,10 +77,13 @@ those aggregates as public client failures without correlating Worker logs and e
 - Browsers, public benchmarks, and contract tests target `api.xcp.io`. Operator scripts accept optional
   `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` headers for the planned Access boundary, but unattended admin
   defaults remain on `workers.dev` until those credentials exist.
-- CDN Worker version `58c486bb-1045-4d86-9113-2daa2b3033e7` explicitly stores ordinary image GET responses in the
+- CDN Worker version `12067e3e-c7f8-460a-ac75-f71ece62210f` explicitly stores ordinary image GET responses in the
   Cache API under one canonical key shared by `cdn.xcp.io` and transitional `app.xcp.io`. Range requests continue to
   read R2 directly; cached GETs preserve ETag/immutable headers and satisfy HEAD and conditional 304 requests. Live
   probes verified alias HITs with the same ETag and increasing `Age`.
+- CDN Workers Logs use 1% head sampling and bounded `cdn_request_complete` records containing only method, route type,
+  canonical/legacy host class, status, and Cache API outcome. Asset identifiers and raw request paths are excluded.
+- CDN `workers.dev` and preview URLs are explicitly disabled; only the two reviewed custom domains are public.
 
 ## Known incomplete boundary
 
