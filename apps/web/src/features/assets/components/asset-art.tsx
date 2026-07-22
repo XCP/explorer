@@ -103,8 +103,11 @@ export function AssetArt({
         setPixel(stamp || im.naturalWidth <= 96 || im.naturalHeight <= 96); // size = the real "should pixelate" signal
         if (natural) setRatio(`${im.naturalWidth} / ${im.naturalHeight}`);
       }}
-      style={ratio ? { aspectRatio: ratio } : undefined}
-      className={`bg-zinc-900 object-contain ${pixel ? "[image-rendering:pixelated]" : ""} ${className}`}
+      style={{
+        ...(ratio ? { aspectRatio: ratio } : {}),
+        ...(pixel ? { imageRendering: "pixelated" } : {}),
+      }}
+      className={`bg-zinc-900 object-contain ${className}`}
     />
   );
 }
