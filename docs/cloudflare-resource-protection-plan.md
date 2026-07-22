@@ -22,7 +22,8 @@ Layers 1–2 deployed and verified on 2026-07-21:
   search/swap remain during the installed-client transition;
 - the blanket detail-page challenge is disabled; malformed-address, datacenter, managed-WAF, and interim sweep controls
   remain;
-- active operator scripts support optional Access service-token headers and default to `api.xcp.io`;
+- active operator scripts support optional Access service-token headers; their defaults remain on `workers.dev` until
+  Access exists so unattended maintenance is not broken;
 - existing API live contract suite passed 33/33 after deployment;
 - document rate threshold, public API `workers.dev` availability, and admin Access remain pending their dependency stages.
 

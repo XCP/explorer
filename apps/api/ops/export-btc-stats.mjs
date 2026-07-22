@@ -11,7 +11,7 @@
  *   (planned) --source=counterparty  the CP node's /v2/bitcoin proxy (balance-grade only).
  *
  * Usage:
- *   node ops/export-btc-stats.mjs --api=https://api.xcp.io --token-file=admin.tok \
+ *   node ops/export-btc-stats.mjs --api=https://xcp-api.me-bbe.workers.dev --token-file=admin.tok \
  *     [--base=https://blockstream.info/api] [--offset=0] [--max=1000] [--rps=4]
  *
  * Resumable: prints the next offset on exit; pass it back via --offset. Be a good citizen on public
@@ -24,7 +24,7 @@ const arg = (name, dflt) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.split("=").slice(1).join("=") : dflt;
 };
-const API = arg("api", "https://api.xcp.io");
+const API = arg("api", "https://xcp-api.me-bbe.workers.dev");
 const ACCESS_HEADERS = cloudflareAccessHeaders();
 const BASE = arg("base", "https://blockstream.info/api");
 const TOKEN = readFileSync(arg("token-file", "admin.tok"), "utf8").trim();

@@ -9,8 +9,7 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 - `api.xcp.io/*` → `xcp-api`
 - `cdn.xcp.io` → `xcp-cdn`
 - Web browsers use `https://api.xcp.io`; web server components use the `API_WORKER` service binding.
-- API `workers.dev` remains enabled temporarily for rollback and traffic observation. Maintained operator callers now
-  default to `api.xcp.io`.
+- API `workers.dev` remains enabled temporarily for rollback and legacy operator callers.
 
 ## Active custom protections, in evaluation order
 
@@ -70,8 +69,9 @@ those aggregates as public client failures without correlating Worker logs and e
 - API Worker version `87cc4baa-1988-4048-ba36-4ca73794c253` adds an observe-only Rate Limiting binding at 600 public
   GETs/minute/client/route-family/Cloudflare location. Threshold crossings emit bounded `rate_budget_exceeded` records
   but never change the response. Reads without `CF-Connecting-IP`, including service-binding SSR traffic, bypass it.
-- Browsers, public benchmarks, contract tests, and maintained operator scripts target `api.xcp.io`. Operator scripts
-  accept optional `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` headers for the planned Access boundary.
+- Browsers, public benchmarks, and contract tests target `api.xcp.io`. Operator scripts accept optional
+  `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` headers for the planned Access boundary, but unattended admin
+  defaults remain on `workers.dev` until those credentials exist.
 
 ## Known incomplete boundary
 
@@ -79,6 +79,12 @@ Cloudflare Access was not created because the current automation token is denied
 Until an Access-capable token or dashboard action is available, keep the API `workers.dev` origin enabled and retain the
 application's constant-time Bearer authentication. After Access is tested on `api.xcp.io/admin/*`, protect or disable the
 equivalent `workers.dev` admin origin before calling the boundary complete.
+
+A 2026-07-21 canary confirmed this dependency: a direct unauthenticated `workers.dev/admin/status` reached application
+Bearer authentication and returned JSON `401`, while `api.xcp.io/admin/status` was terminated before the Worker with a
+Cloudflare HTML `403`. A Worker subrouter hostname guard also failed to observe the direct origin as assumed and was
+removed before commit. Do not migrate unattended admin defaults or disable the direct origin based only on unit tests;
+first prove an authenticated operator request through the Access-protected custom domain.
 
 ## Immediate rollback
 

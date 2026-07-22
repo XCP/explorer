@@ -8,7 +8,7 @@ function arg(name, fallback) {
   return process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? fallback;
 }
 
-const API = arg("api", "https://api.xcp.io").replace(/\/$/, "");
+const API = arg("api", "https://xcp-api.me-bbe.workers.dev").replace(/\/$/, "");
 const ACCESS_HEADERS = cloudflareAccessHeaders();
 const requestedProviderNames = new Set(
   arg("providers", BITCOIN_FEE_PROVIDERS.map((provider) => provider.name).join(","))
