@@ -77,6 +77,10 @@ those aggregates as public client failures without correlating Worker logs and e
 - Browsers, public benchmarks, and contract tests target `api.xcp.io`. Operator scripts accept optional
   `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` headers for the planned Access boundary, but unattended admin
   defaults remain on `workers.dev` until those credentials exist.
+- CDN Worker version `58c486bb-1045-4d86-9113-2daa2b3033e7` explicitly stores ordinary image GET responses in the
+  Cache API under one canonical key shared by `cdn.xcp.io` and transitional `app.xcp.io`. Range requests continue to
+  read R2 directly; cached GETs preserve ETag/immutable headers and satisfy HEAD and conditional 304 requests. Live
+  probes verified alias HITs with the same ETag and increasing `Age`.
 
 ## Known incomplete boundary
 
@@ -104,6 +108,8 @@ After provisioning the token, create the application and service token, verify o
 ## Immediate rollback
 
 - CDN breakage: restore the previous CDN Skip rule only long enough to diagnose, then re-scope it.
+- CDN Cache API regression: revert `XCP/img-cdn` commits `ce077ad` and `d68d90e` and redeploy; the prior serving path
+  remains functionally correct but performs repeated KV/R2 work.
 - Public API bot false positive: inspect the `/v2` SBFM-only Skip before changing managed WAF.
 - Shadow rate-budget issue: remove the middleware and binding; because the current mode is observe-only, no threshold
   adjustment is required to restore client behavior.
