@@ -103,6 +103,10 @@ with status `308` and preserves the query string. External probes verified `/`, 
 `/asset/RAREPEPE`. Source metadata and internal wallet links also use the apex. Keep the `www` DNS/Worker route attached
 as the Cloudflare redirect ingress; it is not a second application origin.
 
+Redirect ruleset version 2 also maps the exact case-insensitive apex `/favicon.ico` path to the static `/icon.svg` with
+`308`, dropping query strings. The prior conventional-path miss produced 252 uncached HTML 404s and about 1.5 MB in the
+23-hour sample. The icon itself is a static application asset; neighboring paths such as `/favicon.png` are unaffected.
+
 ## Known incomplete boundary
 
 Cloudflare Access was not created because the current automation token is denied access to the Zero Trust Access API.
