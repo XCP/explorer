@@ -1,5 +1,6 @@
 /** Cloudflare bindings and configuration available to the API Worker. */
 export interface Env {
+  PUBLIC_API_RATE_LIMITER?: RateLimit;
   CORE_DB: D1Database;
   RECOVERY_DB: D1Database;
   RECOVERY_TRANSACTIONS: R2Bucket;

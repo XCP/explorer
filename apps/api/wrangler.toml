@@ -12,6 +12,16 @@ head_sampling_rate = 0.01
 [limits]
 cpu_ms = 300000
 
+# Observe-only public API budget. The Worker logs threshold crossings but does
+# not return 429 yet; enforcement waits for measured route-family distributions.
+[[ratelimits]]
+name = "PUBLIC_API_RATE_LIMITER"
+namespace_id = "20260721"
+
+  [ratelimits.simple]
+  limit = 600
+  period = 60
+
 [triggers]
 crons = ["*/2 * * * *", "1-59/2 * * * *"]
 

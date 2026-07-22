@@ -497,7 +497,7 @@ Not recommended:
 - [x] Narrow broad API/CDN Skip rules while preserving exact public-API and image SBFM exceptions.
 - [ ] Replace the 240/minute challenge rule with a Pro-compatible empirically derived non-interactive ceiling.
 - [x] Disable the blanket detail-page Managed Challenge.
-- [ ] Add Worker rate-limit bindings by public API route family.
+- [x] Add an observe-only Worker rate-limit binding by public API route family; enforcement remains pending evidence.
 - [ ] Provide documented API identities/quotas for legitimate bulk clients.
 - [ ] Collect seven days of cache/rate/security metrics.
 - [ ] Tune immutable, mutable, and negative TTLs from evidence.

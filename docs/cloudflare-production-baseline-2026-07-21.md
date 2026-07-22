@@ -66,6 +66,9 @@ those aggregates as public client failures without correlating Worker logs and e
 - API and web Workers: Workers Logs enabled with 1% head sampling.
 - API emits bounded `request_complete` records: method, route family, status, duration, edge-cache result, and D1-cache
   result. Raw entity identifiers and attacker-controlled paths are excluded.
+- API Worker version `87cc4baa-1988-4048-ba36-4ca73794c253` adds an observe-only Rate Limiting binding at 600 public
+  GETs/minute/client/route-family/Cloudflare location. Threshold crossings emit bounded `rate_budget_exceeded` records
+  but never change the response. Reads without `CF-Connecting-IP`, including service-binding SSR traffic, bypass it.
 - Browsers and public benchmarks target `api.xcp.io`. Operator scripts accept optional `CF_ACCESS_CLIENT_ID` and
   `CF_ACCESS_CLIENT_SECRET` headers for the planned Access boundary, but unattended admin defaults remain on
   `workers.dev` until those credentials exist.
@@ -81,5 +84,7 @@ equivalent `workers.dev` admin origin before calling the boundary complete.
 
 - CDN breakage: restore the previous CDN Skip rule only long enough to diagnose, then re-scope it.
 - Public API bot false positive: inspect the `/v2` SBFM-only Skip before changing managed WAF.
+- Shadow rate-budget issue: remove the middleware and binding; because the current mode is observe-only, no threshold
+  adjustment is required to restore client behavior.
 - Locale false positive: disable the locale custom-response rule.
 - Navigation issue: the blanket detail challenge is already disabled; do not enable it without a documented incident.
