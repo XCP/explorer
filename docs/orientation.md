@@ -38,7 +38,7 @@ apps/api        Cloudflare Worker (Hono) + canonical D1 "xcpio-core" — api.xcp
                 graph (PageRank→graph_trust), holder-cohesion
   src/reputation/ pure scoring: config.ts (every weight/threshold) + score.ts + persona.ts
   migrations-core/ numbered canonical DDL; migrations-recovery/ owns the Bitcoin recovery store
-apps/web        Next.js 16 on OpenNext/Cloudflare — xcp.io / xcp-web.me-bbe.workers.dev
+apps/web        Next.js 16 on OpenNext/Cloudflare — xcp.io (workers.dev and previews disabled)
   src/lib/      api.ts, registry.tsx (record catalog → columns per kind), cells.tsx (v20 cell
                 grammar), format.ts, art.ts (CDN image URLs), tx.ts
   src/components/ flat; RecordTable renders every table on the v20 grammar
@@ -80,7 +80,7 @@ states, and interaction—not just colors and border radii.
 - **Think → test → repeat.** State product bets as falsifiable data tests; probe prod D1 before
   believing any claim (several "obvious" cut/keep calls this quarter were wrong until tested).
 - **Verify both the public and Worker origins.** Deployments run live API contract checks; browser work
-  should still probe `xcp-web.me-bbe.workers.dev` for origin-specific failures.
+  should probe the canonical `xcp.io` route; the alternate `workers.dev` origin is intentionally disabled.
 - **Prod deploys are owner-gated.** The permission classifier blocks `wrangler deploy` per-change;
   get an explicit go. Admin/backfill ops run through `wrangler dev --remote` + gitignored
   `.dev.vars` (never commit production secrets). The compact replay lock serializes scheduled and manual sync.

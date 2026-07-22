@@ -13,6 +13,7 @@ allowlist values, or Access secrets. Cloudflare remains the live authority; veri
 - Web browsers use `https://api.xcp.io`; web server components use the `API_WORKER` service binding.
 - API `workers.dev` and preview URLs are disabled; the custom domain and Worker service binding are the only API entry
   paths.
+- Web `workers.dev` and preview URLs are disabled; apex and `www` redirect ingress are the only web entry paths.
 
 ## Active custom protections, in evaluation order
 
@@ -82,6 +83,8 @@ those aggregates as public client failures without correlating Worker logs and e
 ## Worker controls
 
 - API and web Workers: Workers Logs enabled with 1% head sampling.
+- Web Worker version `70fd587c-425d-46c4-8ef3-3b97b8086892` disables `workers.dev` and preview URLs. External probes
+  converged to platform `404` after edge propagation while canonical static assets and the `www` redirect remained live.
 - API emits bounded `request_complete` records: method, route family, status, duration, edge-cache result, and D1-cache
   result. Raw entity identifiers and attacker-controlled paths are excluded.
 - API Worker version `d11958fd-d5cf-411f-92e3-70aba4f0aaba` includes an observe-only Rate Limiting binding at 600 public
@@ -132,6 +135,8 @@ handler defect, not an Access failure; use the proven read-only handlers above a
 - Public API bot false positive: inspect the `/v2` SBFM-only Skip before changing managed WAF.
 - Admin outage: retain both authentication layers. Temporarily re-enable API `workers.dev` only if the custom domain is
   unavailable and an urgent operator task cannot wait; disable it again immediately after recovery.
+- Web routing outage: temporarily re-enable web `workers.dev` only as a diagnostic origin; do not publish it as a
+  permanent alternate hostname because it bypasses zone protections and canonical redirects.
 - Shadow rate-budget issue: remove the middleware and binding; because the current mode is observe-only, no threshold
   adjustment is required to restore client behavior.
 - Locale false positive: disable the locale custom-response rule.
