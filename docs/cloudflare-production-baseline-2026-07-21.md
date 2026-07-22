@@ -29,7 +29,28 @@ The former blanket Managed Challenge for every `/asset/*`, `/address/*`, and `/t
 it as a substitute for route-specific limits.
 
 Wallet extension 0.5.1 uses `api.xcp.io/v2` for price, asset search, and market pairs, and `cdn.xcp.io` for media. Retire
-the remaining legacy search/swap forwarding only after 0.5.1 adoption is visible in traffic.
+the remaining legacy search/swap forwarding only after 0.5.1 adoption is visible in traffic. Version 0.5.1 was
+published as the latest GitHub release at 2026-07-21 23:58 UTC; do not treat its publication time as evidence that
+already-installed 0.5.0 clients have upgraded.
+
+## Initial post-rollout observation
+
+The first six-hour GraphQL sample after the rollout is directional, not a seven-day baseline:
+
+- the highest raw web-host client/minute group was 486 requests, but no event was attributed to the 240/minute
+  document limiter; its static/RSC/verified-bot exclusions therefore matter and the raw total is not a valid replacement
+  threshold;
+- challenge-platform orchestration remained visible, so challenge counts must be attributed to their actual rule IDs
+  before changing the document limiter;
+- public traffic still reached `xcp-api.me-bbe.workers.dev`, confirming that the rollback origin cannot yet be called
+  private or unused;
+- the retired price contracts and locale prefixes returned edge `410`, while impossible 64-hex address routes returned
+  edge `403`;
+- Cloudflare managed rules already returned edge `403` for representative `/.git/config` and `/wp-login.php` probes, so
+  duplicating those signatures in a custom rule would add complexity without avoiding additional Worker execution.
+
+Cloudflare HTTP analytics also contain Worker Cache API/subrequest-shaped `204` and `504` populations. Do not interpret
+those aggregates as public client failures without correlating Worker logs and external contract probes.
 
 ## Rate, managed WAF, cache, and zone settings
 

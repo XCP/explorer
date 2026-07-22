@@ -502,3 +502,10 @@ Not recommended:
 - [ ] Collect seven days of cache/rate/security metrics.
 - [ ] Tune immutable, mutable, and negative TTLs from evidence.
 - [ ] Record final expressions, thresholds, owners, and rollback procedures after the canary.
+
+The first six-hour post-rollout sample is recorded in `cloudflare-production-baseline-2026-07-21.md`. It is not enough to
+select the replacement document threshold: raw per-client totals include traffic excluded by the active rate expression,
+and no event in that sample was attributed to the rate-rule ID. Preserve the current rule until rule-attributed events or
+a longer distribution justify a change. The next implementation priority is an observe-first Worker route-family budget;
+Cloudflare's binding is per-location and eventually consistent, and public anonymous IPs can represent shared users, so
+enforcement must begin at a deliberately high threshold and exclude service-binding traffic.
