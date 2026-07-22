@@ -21,7 +21,7 @@ maintained internal links use the apex.
 
 ## Active protections
 
-- Single Redirects run before WAF: canonicalize `www`, and map exact `/favicon.ico` to the static icon.
+- Single Redirects run before WAF: canonicalize `www`, and map exact `/favicon.ico` to the canonical XCP PNG.
 - Retired locale namespaces and exact retired API contracts terminate at the edge with `410`.
 - Transaction hashes placed in `/address/*` terminate at the edge with `410`.
 - The former blanket challenge on valid asset/address/transaction pages is disabled.
