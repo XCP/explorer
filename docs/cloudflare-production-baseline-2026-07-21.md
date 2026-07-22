@@ -93,10 +93,13 @@ those aggregates as public client failures without correlating Worker logs and e
 - Browsers, public benchmarks, contract tests, and operator scripts target `api.xcp.io`. Operator scripts load the
   Cloudflare Access service-token pair from environment variables or ignored `.dev.vars`, then send the independent
   application Bearer token. API `workers.dev` and preview URLs are explicitly disabled.
-- CDN Worker version `12067e3e-c7f8-460a-ac75-f71ece62210f` explicitly stores ordinary image GET responses in the
+- CDN Worker version `f1a93dd7-f916-4e73-a699-8091e812eb2e` explicitly stores ordinary image GET responses in the
   Cache API under one canonical key shared by `cdn.xcp.io` and transitional `app.xcp.io`. Range requests continue to
   read R2 directly; cached GETs preserve ETag/immutable headers and satisfy HEAD and conditional 304 requests. Live
   probes verified alias HITs with the same ETag and increasing `Age`.
+- Missing decorative `logo` and `logo-icon` objects use a bounded negative cache: five minutes in browsers and one hour
+  in the shared Cache API. Live probes verified canonical MISS to legacy-alias HIT with the intended TTLs. Missing asset
+  art and placeholders remain `no-store`, so later ingestion is not hidden by the negative-cache policy.
 - CDN Workers Logs use 1% head sampling and bounded `cdn_request_complete` records containing only method, route type,
   canonical/legacy host class, status, and Cache API outcome. Asset identifiers and raw request paths are excluded.
 - CDN `workers.dev` and preview URLs are explicitly disabled; only the two reviewed custom domains are public.
