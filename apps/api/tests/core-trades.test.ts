@@ -123,6 +123,7 @@ test("compact trades restore public identities, filters, and venue totals", asyn
   assert.deepEqual(rows, [
     {
       venue: "dispense",
+      ref: "1",
       asset: "XCP",
       block_time: 20,
       block_index: 10,

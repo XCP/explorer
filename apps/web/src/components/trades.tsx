@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
-import type { TradeRow } from "@xcp/shared/trades";
+import useSWR from "swr";
+import type { TradeBundleDetail, TradeRow } from "@xcp/shared/trades";
+import { apiUrl, type Envelope } from "@/lib/api/url";
 import { useTrades, useTradeStats } from "@/lib/hooks";
 import { type Col, blockCell, addrCell, assetCell, timeCell, viewCell } from "@/features/records/cells";
 import { commas, compact } from "@/lib/format";
@@ -39,6 +41,38 @@ const venueChip = (v: string) => (
   <span className={`venue ${VENUE_CLASS[v] ?? "dex"}`}>{VENUE_LABEL[v] ?? v.toUpperCase()}</span>
 );
 
+/** Expandable bundle contents: legs load on first open from /v2/trades/bundle (immutable, so SWR
+ * caches them for the session). Each leg links to its asset page. */
+function BundleContents({ row }: { row: TradeRow }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useSWR<Envelope<TradeBundleDetail>>(
+    open ? apiUrl("/v2/trades/bundle", { venue: row.venue, ref: row.ref }) : null,
+  );
+  return (
+    <span className="flex min-w-0 flex-col gap-1">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-left font-mono text-xs text-zinc-300 hover:text-zinc-100"
+        title={open ? "Hide bundle contents" : "Show bundle contents"}
+      >
+        {commas(row.leg_count)}-asset bundle {open ? "▾" : "▸"}
+      </button>
+      {open && (
+        <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-4">
+          {data?.result
+            ? data.result.legs.map((leg, index) => (
+                <Link key={`${leg.asset}:${index}`} href={`/asset/${encodeURIComponent(leg.asset)}`}>
+                  {leg.asset}
+                  {leg.quantity != null && leg.quantity !== 1 ? ` ×${commas(leg.quantity)}` : ""}
+                </Link>
+              ))
+            : "loading…"}
+        </span>
+      )}
+    </span>
+  );
+}
+
 const money = (n: number | null, currency: string | null) => {
   if (n == null) return "—";
   // ≥1: 2dp comma-grouped; small: 3 significant digits; dust: full 8dp (never scientific notation)
@@ -63,13 +97,7 @@ export const TRADE_COLS: Col<TradeRow>[] = [
     w: "minmax(0,1.2fr)",
     omitOn: "asset",
     cell: (r) =>
-      r.asset ? (
-        assetCell(r.asset)
-      ) : r.sale_class === "bundle" && r.leg_count > 0 ? (
-        <span className="font-mono text-xs text-zinc-300">{commas(r.leg_count)}-asset bundle</span>
-      ) : (
-        "—"
-      ),
+      r.asset ? assetCell(r.asset) : r.sale_class === "bundle" && r.leg_count > 0 ? <BundleContents row={r} /> : "—",
   },
   { label: "Price", numeric: true, priority: 3, cell: (r) => money(r.price, r.currency) },
   { label: "Qty", numeric: true, priority: 2, w: "90px", cell: (r) => (r.quantity != null ? commas(r.quantity) : "—") },
@@ -119,6 +147,17 @@ export const TRADE_COLS: Col<TradeRow>[] = [
     cell: (r) =>
       r.source_url ? (
         <a href={r.source_url} target="_blank" rel="noreferrer" title={r.source_name ?? "Source"}>
+          ↗
+        </a>
+      ) : r.venue === "otc" && r.sale_class === "bundle" && r.tx_hash ? (
+        // A bundle's tx_hash is the BITCOIN payment, which has no Counterparty tx page — link the
+        // payment evidence externally until the tx page understands Bitcoin hashes.
+        <a
+          href={`https://mempool.space/tx/${r.tx_hash}`}
+          target="_blank"
+          rel="noreferrer"
+          title="Bitcoin payment transaction"
+        >
           ↗
         </a>
       ) : r.venue === "emblem" ? (

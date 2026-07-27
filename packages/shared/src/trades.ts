@@ -3,6 +3,7 @@
 /** One row per sale across every venue — DEX order-matches, dispenses, Emblem-vault NFT sales. */
 export interface TradeRow {
   venue: "dex" | "dispense" | "emblem" | string;
+  ref: string; // venue-scoped trade identity; with venue, keys GET /v2/trades/bundle
   asset: string | null; // the Counterparty card (null if unattributable)
   block_time: number | null;
   block_index: number | null; // Counterparty block, or ETH block_number for Emblem
@@ -23,6 +24,28 @@ export interface TradeRow {
   leg_count: number;
   source_name: string | null;
   source_url: string | null;
+}
+
+/** One asset inside a bundle sale (GET /v2/trades/bundle returns Envelope<TradeBundleDetail>). */
+export interface TradeBundleLeg {
+  asset: string;
+  quantity: number | null;
+}
+
+/** Why an on-chain OTC trade was admitted — the reproducible pairing evidence. */
+export interface OtcTradeEvidence {
+  btc_tx_hash: string; // the Bitcoin payment transaction (view on a Bitcoin explorer)
+  btc_payment_block: number;
+  payment_sats: number;
+  confidence: "likely" | "corroborated";
+  method: string;
+  evidence_note: string | null;
+}
+
+/** A bundle sale's contents plus, for OTC, its admission evidence. */
+export interface TradeBundleDetail {
+  legs: TradeBundleLeg[];
+  evidence: OtcTradeEvidence | null; // present only for venue 'otc'
 }
 
 /** One ring-trade review candidate (GET /v2/trades/ring-candidates returns Envelope<RingCandidate[]>).

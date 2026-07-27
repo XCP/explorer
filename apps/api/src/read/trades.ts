@@ -7,9 +7,9 @@
  * Standard envelope ({ result, next_offset }); SQL lives in queries/trades.ts.
  */
 import type { Envelope } from "@xcp/shared/envelope";
-import type { RingCandidate, TradeRow, TradeVenueStats } from "@xcp/shared/trades";
+import type { RingCandidate, TradeBundleDetail, TradeRow, TradeVenueStats } from "@xcp/shared/trades";
 import { router, J, cached, lim, off } from "#api/read/respond";
-import { listTrades, ringCandidates, tradeVenueStats } from "#api/queries/trades";
+import { listTrades, ringCandidates, tradeBundleDetail, tradeVenueStats } from "#api/queries/trades";
 
 export const trades = router();
 
@@ -45,6 +45,18 @@ trades.get("/v2/assets/:asset/trades", async (c) => {
     next_offset: rows.length === limit ? offset + limit : null,
   };
   return J(c, body);
+});
+
+// A bundle sale's contents: legs from trade_legs plus, for OTC, the admission evidence. The ref
+// arrives as a query parameter because OTC refs contain colons (bundle:<payment hash>:<event>).
+trades.get("/v2/trades/bundle", async (c) => {
+  const venue = c.req.query("venue");
+  const ref = c.req.query("ref");
+  if (!venue || !ref) return c.json({ error: "venue and ref are required" }, 400);
+  const detail = await tradeBundleDetail(c.env.CORE_DB, venue, ref);
+  if (!detail.legs.length) return c.json({ error: "unknown bundle" }, 404);
+  const body: Envelope<TradeBundleDetail> = { result: detail };
+  return J(c, body, 3600); // bundle contents are immutable once admitted
 });
 
 // Curation review board: assets whose volume concentrates in reciprocal address pairs (wash rings

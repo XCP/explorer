@@ -2,8 +2,15 @@
  * Trades queries — the only place that knows the `trades` table's SQL. Handlers call these and wrap
  * the result in the envelope; the row shape is the wire contract (@xcp/shared/trades).
  */
-import type { RingCandidate, TradeRow, TradeVenueStats } from "@xcp/shared/trades";
-import { q } from "#api/db";
+import type {
+  OtcTradeEvidence,
+  RingCandidate,
+  TradeBundleDetail,
+  TradeBundleLeg,
+  TradeRow,
+  TradeVenueStats,
+} from "@xcp/shared/trades";
+import { q, one } from "#api/db";
 
 const QUALITY = `(COALESCE(asset_signal.low_quality,0)=1
   OR COALESCE(currency_signal.low_quality,0)=1
@@ -12,7 +19,7 @@ const QUALITY = `(COALESCE(asset_signal.low_quality,0)=1
     JOIN asset_signals quality_signal ON quality_signal.asset_id=quality_leg.asset_id
     WHERE quality_leg.venue=trade.venue AND quality_leg.trade_ref=trade.ref AND quality_signal.low_quality=1))`;
 
-const SELECT = `SELECT trade.venue,asset.asset,trade.block_time,trade.block_index,trade.quantity,
+const SELECT = `SELECT trade.venue,trade.ref,asset.asset,trade.block_time,trade.block_index,trade.quantity,
   trade.currency,trade.total,trade.price,
   trade.usd_value,
   CASE WHEN trade.usd_value IS NULL THEN NULL
@@ -179,4 +186,27 @@ export function tradeVenueStats(db: D1Database, includeLowQuality = false): Prom
        ${includeLowQuality ? "" : `WHERE NOT ${QUALITY}`}
        GROUP BY trade.venue`,
   );
+}
+
+/** A bundle sale's legs plus, for OTC, the admission evidence behind the trade. */
+export async function tradeBundleDetail(db: D1Database, venue: string, ref: string): Promise<TradeBundleDetail> {
+  const [legs, evidence] = await Promise.all([
+    q<TradeBundleLeg>(
+      db,
+      `SELECT asset.asset, leg.quantity FROM trade_legs leg
+       JOIN asset_dictionary asset USING(asset_id)
+       WHERE leg.venue=? AND leg.trade_ref=? ORDER BY leg.leg_index`,
+      venue,
+      ref,
+    ),
+    venue === "otc"
+      ? one<OtcTradeEvidence>(
+          db,
+          `SELECT btc_tx_hash, btc_payment_block, payment_sats, confidence, method, evidence_note
+           FROM otc_trade_evidence WHERE ref=?`,
+          ref,
+        )
+      : Promise.resolve(null),
+  ]);
+  return { legs, evidence };
 }
