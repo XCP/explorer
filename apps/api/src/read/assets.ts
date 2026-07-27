@@ -379,10 +379,21 @@ function arweaveBareUrl(url: string): string | null {
   return m ? m[1] : null;
 }
 
-// Ordered fetch candidates for a JSON pointer: the URL as-given, then the arweave bare-tx fallback, then an
-// http downgrade for hosts whose https is broken. First 2xx wins.
+// Ordered fetch candidates for a JSON pointer: canonicalize our retired www host, then try the URL as-given,
+// the arweave bare-tx fallback, and an http downgrade for hosts whose https is broken. Asset descriptions are
+// immutable, so old www.xcp.io pointers must keep resolving after the site moved to the apex domain.
 function jsonCandidates(url: string): string[] {
-  const out = [url];
+  const out: string[] = [];
+  try {
+    const canonical = new URL(url);
+    if (canonical.hostname.toLowerCase() === "www.xcp.io") {
+      canonical.hostname = "xcp.io";
+      out.push(canonical.toString());
+    }
+  } catch {
+    // parseJsonDescriptor has already validated the scheme; retain the original as the fallback.
+  }
+  out.push(url);
   const bare = arweaveBareUrl(url);
   if (bare) out.push(bare);
   if (/^https:\/\//i.test(url)) out.push(url.replace(/^https:/i, "http:"));
@@ -415,6 +426,27 @@ assets.get("/v2/assets/:asset/enhanced", async (c) => {
   const r = await getCoreAsset(c.env.CORE_DB, c.req.param("asset").toUpperCase());
   const ptr = parseJsonDescriptor(r?.description || "");
   if (!ptr) return J(c, { result: null }, 300);
+  // MINTS points immutably to the retired www host. Browsers can follow the zone redirect to the restored static
+  // file, but an API Worker subrequest back through the sibling web Worker is not a reliable fetch path. Preserve
+  // the exact archived metadata here as a migration record rather than reporting a live file as offline.
+  if (/^https?:\/\/(?:www\.)?xcp\.io\/json\/mints\.json$/i.test(ptr.url)) {
+    return J(
+      c,
+      {
+        result: {
+          json: {
+            asset: "MINTS",
+            description: "FAIR MINT",
+            image: "https://cdn.xcp.io/img/icon/MINTS",
+            image_large: "https://cdn.xcp.io/img/full/MINTS",
+          },
+          url: ptr.url,
+          verified: false,
+        },
+      },
+      3600,
+    );
+  }
   try {
     // Try the pointer as-given, then the arweave bare-tx and http fallbacks (retrying flaky gateways).
     const { text, lastStatus } = await fetchExternalMetadata(jsonCandidates(ptr.url));

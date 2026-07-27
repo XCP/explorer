@@ -136,6 +136,31 @@ paths elsewhere.
 
 ## 24-48 hour success review
 
+### 2026-07-23 Fathom Analytics export
+
+The Fathom Analytics dashboard export for 2026-07-23 UTC is materially polluted by pageview records that do not
+correspond to Cloudflare zone requests. Its 15,000-row `Pages.csv` is capped: the rows contain 15,259 pageviews versus 18,399
+in `Summary.csv`. Within the exported rows, 7,657 pageviews use a 64-hex transaction hash as an `/address/*` parameter,
+and 2,295 use a retired locale prefix. The client distribution is also implausibly uniform: 18,190 of 18,211 reported
+visitors are Chrome and 18,196 are desktop, spread heavily across many countries.
+
+Request analytics establish that these Fathom rows are not a measure of Worker load. Samples of 40 exported
+transaction-hash address paths, 40 retired-locale paths, and 40 block paths had **zero corresponding zone request
+groups** during the same UTC day. Only one of 40 sampled asset paths and four of 40 plausible-address paths appeared at
+the edge; the latter four accounted for 245 real requests. In contrast, the zone recorded 4,372 real `410` responses:
+4,182 retired-locale requests, 156 requests to the retired `/api/asset/xcp` contract, and 34 transaction-hash-shaped
+address requests. The apex served 134,091 actual requests (about 777 MB), of which 123,363 were uncached `200`s and
+1,622 were cache hits.
+
+Treat this Fathom export as a mixture of real navigation and unsolicited or spoofed analytics events. It must not be
+used to size application traffic, infer origin cost, or justify new WAF blocks unless the candidate paths also appear
+in zone request analytics, Security Events, or Worker telemetry. The existing edge tombstones are working for the
+impossible paths that actually reach the zone; no new Cloudflare path rule is justified by this export alone. Fathom's
+API groups 19,435 of the day's 19,677 pageviews under `www.xcp.io` (13,399 HTTPS and 6,036 HTTP), even though Cloudflare
+redirects that hostname before the application and Fathom script execute; only 241 pageviews report canonical HTTPS
+`xcp.io`. Configure Fathom's site firewall to allow only `xcp.io`—not `www.xcp.io`—and report the dated export to Fathom
+if polluted events continue after the firewall change.
+
 Success does **not** require total bot traffic to decline. Valid documents now bypass SBFM, so successful `200` traffic
 may rise as requests that previously stopped at a challenge reach the application. The objective is fewer human
 interruptions and lower tail latency without a material increase in compute cost, errors, or saturation.
