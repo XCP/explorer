@@ -19,6 +19,7 @@
     "./collections": "./src/collections.ts",
     "./years": "./src/years.ts",
     "./utxos": "./src/utxos.ts",
+    "./bitcoin": "./src/bitcoin.ts",
     "./prices": "./src/prices.ts"
   }
 }
