@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { TxView } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
@@ -12,7 +13,7 @@ import { short } from "@/lib/format";
  * a just-broadcast tx), then the island polls it to settlement. This page's primary user is two parties
  * watching a payment confirm, so freshness beats cache: revalidate 5.
  */
-async function loadTx(hash: string): Promise<TxView | null> {
+const loadTx = cache(async (hash: string): Promise<TxView | null> => {
   try {
     const env = await getJson<Envelope<TxView>>(`/v2/transactions/${encodeURIComponent(hash)}`, { revalidate: 5 });
     return env.result ?? null;
@@ -20,7 +21,7 @@ async function loadTx(hash: string): Promise<TxView | null> {
     if (e instanceof NotFoundError) return null;
     throw e;
   }
-}
+});
 
 // The share unfurl SELLS when the page is a storefront — a dispenser link pasted into a chat must
 // read as "here's the thing, here's the price, it's open" (the owner's advertisement concept). The

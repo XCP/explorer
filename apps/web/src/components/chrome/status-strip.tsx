@@ -61,6 +61,7 @@ export function StatusStrip() {
         {/* The market cluster links to /price — the page that explains where these numbers come from. */}
         <Link
           href={"/price" as Route}
+          prefetch={false}
           className="hidden items-center !no-underline md:flex"
           title="Counterparty price history"
         >

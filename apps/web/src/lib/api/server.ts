@@ -16,6 +16,10 @@ export class NotFoundError extends Error {
 
 type NextFetchInit = RequestInit & { next?: { revalidate?: number } };
 
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
 // Production Server Components use the sibling Worker binding. Next dev/build falls back to the public
 // origin when the binding is absent or its local stub has nothing behind it.
 async function serverFetch(url: string, init: NextFetchInit): Promise<Response> {
@@ -24,9 +28,13 @@ async function serverFetch(url: string, init: NextFetchInit): Promise<Response> 
   // an ordinary 404 into the error boundary. The real binding exists only in
   // the deployed production Worker; development uses the public origin.
   if (process.env.NODE_ENV === "production") {
+    let usedBinding = false;
     try {
-      const binding = getCloudflareContext().env.API_WORKER;
+      // Async context access works in both SSR and SSG. The synchronous form throws while Next is
+      // prerendering static routes, producing noisy build errors and an avoidable public-origin fetch.
+      const binding = (await getCloudflareContext({ async: true })).env.API_WORKER;
       if (binding) {
+        usedBinding = true;
         const response = await binding.fetch(url, { ...init, signal: AbortSignal.timeout(BINDING_TIMEOUT_MS) });
         if (response.status < 500) return response;
         console.error(`serverFetch binding ${url} -> ${response.status}`);
@@ -38,6 +46,10 @@ async function serverFetch(url: string, init: NextFetchInit): Promise<Response> 
         `serverFetch binding threw for ${url}:`,
         error instanceof Error ? `${error.name}: ${error.message}` : String(error),
       );
+      // A service binding invokes this same API Worker directly and without public-network overhead.
+      // If that invocation itself times out, retrying the same work through api.xcp.io merely turns a
+      // five-second outage into the 20-second streamed-page failure captured in the address HAR.
+      if (usedBinding && isTimeout(error)) throw error;
     }
   }
   const fallback = await fetch(url, { ...init, signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS) });

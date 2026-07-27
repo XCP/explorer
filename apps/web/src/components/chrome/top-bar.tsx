@@ -130,6 +130,7 @@ export function TopBar() {
         <div className="max-w-[1200px] mx-auto flex items-center gap-3 sm:gap-5 px-4 py-[10px]">
           <Link
             href="/"
+            prefetch={false}
             className="font-bold tracking-wider font-mono text-[15px] text-zinc-100 no-underline hover:!brightness-100 shrink-0"
           >
             XCP<span className="text-(--color-xcp)">.io</span>
@@ -141,6 +142,7 @@ export function TopBar() {
               <Link
                 key={href}
                 href={href}
+                prefetch={false}
                 className={`!no-underline rounded-md px-[11px] py-1.5 transition-colors ${active(href) ? "!text-zinc-100 bg-zinc-900" : "!text-zinc-400 hover:!text-zinc-100"}`}
               >
                 {label}
@@ -191,6 +193,7 @@ export function TopBar() {
                 <Link
                   key={href}
                   href={href}
+                  prefetch={false}
                   className={`flex-1 text-center rounded-md border px-2 py-2 !no-underline text-sm ${active(href) ? "border-zinc-600 !text-zinc-100 bg-zinc-900" : "border-zinc-800 !text-zinc-400"}`}
                 >
                   {label}
@@ -210,6 +213,7 @@ export function TopBar() {
                       <Link
                         key={href}
                         href={href}
+                        prefetch={false}
                         className={`!no-underline py-1.5 text-sm ${active(href) ? "!text-zinc-100" : "!text-zinc-400"}`}
                       >
                         {label}

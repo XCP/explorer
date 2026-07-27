@@ -12,6 +12,24 @@ test("critical server-rendered routes return usable documents", async ({ page })
   }
 });
 
+test("address shell survives an unavailable API without global prefetch fan-out", async ({ page }) => {
+  const address = "bc1qd493k8hss09zt0xmjl2txaw2nyxrgztqr8aeh0";
+  const rscPrefetches: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.searchParams.has("_rsc")) rscPrefetches.push(url.pathname);
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.route("https://api.xcp.io/**", (route) => route.abort("failed"));
+
+  const response = await page.goto(`/address/${address}`, { waitUntil: "domcontentloaded" });
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: address, exact: true })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+  expect(rscPrefetches).toEqual([]);
+});
+
 test("global search shape-routes assets without a client error", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

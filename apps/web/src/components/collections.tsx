@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import type { CollectionProfile } from "@xcp/shared/collections";
 import type { Envelope } from "@xcp/shared/envelope";
@@ -14,6 +14,29 @@ import { commas, compact, collectionLabel } from "@/lib/format";
 
 const usd = (value: number) => (value > 0 ? `$${compact(value)}` : "—");
 
+/** Collection logos are optional. Probe through fetch so an expected CDN 404 stays a quiet absence instead of
+ * becoming a browser-level failed-image warning; mount the decorative image only after a successful response. */
+function CollectionLogo({ tag }: { tag: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    void fetch(`https://cdn.xcp.io/img/logo-icon/${encodeURIComponent(tag)}`, { signal: controller.signal })
+      .then(async (response) => (response.ok ? response.blob() : null))
+      .then((blob) => {
+        if (!blob || controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [tag]);
+  return src ? <img src={src} alt="" className="size-[22px] shrink-0 rounded-[3px] object-cover bg-zinc-900" /> : null;
+}
+
 const COLS: Col<CollectionProfile>[] = [
   {
     label: "Collection",
@@ -21,17 +44,7 @@ const COLS: Col<CollectionProfile>[] = [
     priority: 1,
     cell: (row) => (
       <span className="flex items-center gap-2 min-w-0">
-        {/* The CDN's legacy logo library — 900 collection logos keyed by these exact tag slugs.
-            Tags without one just lose the img node (hide-on-error), never a broken-image glyph. */}
-        <img
-          src={`https://cdn.xcp.io/img/logo-icon/${encodeURIComponent(row.tag)}`}
-          alt=""
-          loading="lazy"
-          className="size-[22px] shrink-0 rounded-[3px] object-cover bg-zinc-900"
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
+        <CollectionLogo tag={row.tag} />
         <Link href={`/tag/${encodeURIComponent(row.tag)}`} className="font-medium truncate">
           {row.name === row.tag ? collectionLabel(row.tag) : row.name}
         </Link>

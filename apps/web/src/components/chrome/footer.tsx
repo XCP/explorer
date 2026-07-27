@@ -52,7 +52,7 @@ function Column({ heading, links }: { heading: string; links: FooterLink[] }) {
             </li>
           ) : (
             <li key={href}>
-              <Link href={href as Route} className={linkClass}>
+              <Link href={href as Route} prefetch={false} className={linkClass}>
                 {label}
               </Link>
             </li>

@@ -92,6 +92,7 @@ export function NavMenu({ label, id, groups }: { label: string; id: string; grou
                     <Link
                       key={href}
                       href={href}
+                      prefetch={false}
                       className={`!no-underline text-[13px] rounded-md px-2.5 py-[7px] whitespace-nowrap ${pathname.startsWith(href) ? "!text-zinc-100 bg-sky-400/10" : "!text-zinc-400 hover:!text-zinc-100 hover:bg-white/5"}`}
                     >
                       {l}

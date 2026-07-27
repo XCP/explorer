@@ -28,7 +28,7 @@ export const read = router();
 
 // The Cache API is keyed before route handlers run, so D1 cache-key changes alone cannot invalidate an
 // already-cached response. Bump this contract version when a read response's historical meaning changes.
-const READ_EDGE_CACHE_VERSION = "20"; // 20: DOLLARCASH lowq flag
+const READ_EDGE_CACHE_VERSION = "22"; // 22: asset valuations/market volume, corrected tag realized volume, stale-if-error
 
 // Edge cache (Cloudflare Cache API) for read GETs. SSR reads arrive via the API_WORKER service binding,
 // which BYPASSES Cloudflare's CDN edge cache — so a fresh copy of a heavy read (e.g. the 9-query AssetDetail)
@@ -41,18 +41,47 @@ read.use("*", async (c, next) => {
   const keyUrl = new URL(c.req.url);
   keyUrl.searchParams.set("__read_contract", READ_EDGE_CACHE_VERSION);
   const key = new Request(keyUrl);
+  const isAssetDetail = /^\/v2\/assets\/[^/]+$/.test(keyUrl.pathname);
+  const fallbackUrl = new URL(keyUrl.origin + keyUrl.pathname);
+  fallbackUrl.searchParams.set("__asset_last_good", READ_EDGE_CACHE_VERSION);
+  const fallbackKey = new Request(fallbackUrl);
+  const lastGood = async () => {
+    if (!isAssetDetail) return undefined;
+    const stale = await cache.match(fallbackKey).catch(() => undefined);
+    if (!stale) return undefined;
+    const response = new Response(stale.body, stale);
+    response.headers.set("cache-control", "public, max-age=30, stale-while-revalidate=120");
+    response.headers.set("warning", '110 - "stale asset detail served after origin failure"');
+    response.headers.set("x-cache", "STALE-IF-ERROR");
+    return response;
+  };
   const hit = await cache.match(key).catch(() => undefined);
   if (hit) {
     const r = new Response(hit.body, hit);
     r.headers.set("x-cache", "HIT");
     return r;
   }
-  await next();
+  try {
+    await next();
+  } catch (error) {
+    const stale = await lastGood();
+    if (stale) return stale;
+    throw error;
+  }
   const res = c.res;
+  if (res && res.status >= 500) {
+    const stale = await lastGood();
+    if (stale) return stale;
+  }
   const cc = res?.headers.get("cache-control") || "";
   if (res && res.status === 200 && cc.includes("max-age") && !cc.includes("max-age=0")) {
     try {
       c.executionCtx.waitUntil(cache.put(key, res.clone()));
+      if (isAssetDetail) {
+        const durable = res.clone();
+        durable.headers.set("cache-control", "public, max-age=604800");
+        c.executionCtx.waitUntil(cache.put(fallbackKey, durable));
+      }
     } catch {
       /* no executionCtx (dev) */
     }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { TagDetail } from "@xcp/shared/tags";
 import type { CollectionProfile } from "@xcp/shared/collections";
@@ -7,7 +8,7 @@ import { Stat } from "@/components/ui/card";
 import { TagMembers } from "@/components/tag-members";
 import { commas, compact } from "@/lib/format";
 
-async function loadTag(tag: string): Promise<TagDetail | null> {
+const loadTag = cache(async (tag: string): Promise<TagDetail | null> => {
   try {
     const envelope = await getJson<Envelope<TagDetail>>(`/v2/tags/${encodeURIComponent(tag)}`, { revalidate: 300 });
     return envelope.result ?? null;
@@ -15,14 +16,14 @@ async function loadTag(tag: string): Promise<TagDetail | null> {
     if (error instanceof NotFoundError) return null;
     throw error;
   }
-}
+});
 
-async function loadCollection(tag: string): Promise<CollectionProfile | null> {
+const loadCollection = cache(async (tag: string): Promise<CollectionProfile | null> => {
   const envelope = await getJson<Envelope<CollectionProfile>>(`/v2/collection-profiles/${encodeURIComponent(tag)}`, {
     revalidate: 300,
   }).catch(() => null);
   return envelope?.result ?? null;
-}
+});
 
 const usd = (value: number) => (value > 0 ? `$${compact(value)}` : "—");
 

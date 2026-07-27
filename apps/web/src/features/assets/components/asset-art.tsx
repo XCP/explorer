@@ -28,8 +28,9 @@ export function AssetArt({
 }) {
   const [pixel, setPixel] = useState(stamp || asset[0] === "A"); // initial guess avoids a flash before load
   const [ratio, setRatio] = useState<string | undefined>();
-  // `video`/`html` = the wire's one-bit hints (the ingest-stamped tags) — skip the error cascade entirely
-  const [stage, setStage] = useState<"resized" | "raw" | "video">(video ? "video" : original ? "raw" : "resized");
+  // A `video` tag is only an ingest hint: some animated GIFs (QANON, for example) carry it too.
+  // Try hinted media once as an untouched image; genuine video fails <img> and advances to <video>.
+  const [stage, setStage] = useState<"resized" | "raw" | "video">(video || original ? "raw" : "resized");
   const [run, setRun] = useState(false);
 
   if (html) {

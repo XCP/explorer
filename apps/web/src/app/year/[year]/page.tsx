@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Route } from "next";
@@ -32,7 +33,7 @@ const RECORD_LABELS: Record<string, string> = {
   clean_usd: "most attributed USD ever settled",
 };
 
-async function loadYear(year: string): Promise<{ page: YearPage; index: YearIndex } | null> {
+const loadYear = cache(async (year: string): Promise<{ page: YearPage; index: YearIndex } | null> => {
   try {
     const [pageEnv, indexEnv] = await Promise.all([
       getJson<Envelope<YearPage>>(`/v2/years/${year}`, { revalidate: 3600 }),
@@ -44,7 +45,7 @@ async function loadYear(year: string): Promise<{ page: YearPage; index: YearInde
     if (error instanceof NotFoundError) return null;
     throw error;
   }
-}
+});
 
 export async function generateMetadata({ params }: { params: Promise<{ year: string }> }): Promise<Metadata> {
   const { year } = await params;
