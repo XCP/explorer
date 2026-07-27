@@ -7,7 +7,7 @@ import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
 import { isMainnetBitcoinAddress, parseCounterpartyMultisigIdentity } from "./lib/bitcoin-address.mjs";
 
-const POLICY_VERSION = "counterparty-bitcoin-index-v5-unified-utxo";
+const POLICY_VERSION = "counterparty-bitcoin-index-v6-compact-external";
 const TEN_GIB = 10 * 1024 ** 3;
 
 function option(name, fallback = "") {
@@ -480,6 +480,12 @@ const orphanChecks = {
   external_io_address: scalar(
     "SELECT count(*) FROM btc_external_io io LEFT JOIN btc_external_address a ON a.external_address_id=io.external_address_id WHERE a.external_address_id IS NULL",
   ),
+  external_summary_first_tx: scalar(
+    "SELECT count(*) FROM btc_external_summary s LEFT JOIN btc_tx tx ON tx.tx_id=s.first_tx_id WHERE tx.tx_id IS NULL",
+  ),
+  external_summary_last_tx: scalar(
+    "SELECT count(*) FROM btc_external_summary s LEFT JOIN btc_tx tx ON tx.tx_id=s.last_tx_id WHERE tx.tx_id IS NULL",
+  ),
   unknown_io_tx: scalar(
     "SELECT count(*) FROM btc_unknown_script_io io LEFT JOIN btc_tx tx ON tx.tx_id=io.tx_id WHERE tx.tx_id IS NULL",
   ),
@@ -489,11 +495,11 @@ const orphanChecks = {
   watched_utxo_address: scalar(
     "SELECT count(*) FROM watched_utxo u LEFT JOIN watched_address a ON a.address_id=u.address_id WHERE a.address_id IS NULL",
   ),
-  watched_utxo_tx: scalar(
-    "SELECT count(*) FROM watched_utxo u LEFT JOIN btc_tx tx ON tx.tx_hash=u.tx_hash WHERE tx.tx_id IS NULL",
-  ),
   address_stats_address: scalar(
     "SELECT count(*) FROM btc_address_stats s LEFT JOIN watched_address a ON a.address_id=s.address_id WHERE a.address_id IS NULL",
+  ),
+  address_monthly_address: scalar(
+    "SELECT count(*) FROM btc_address_monthly_stats s LEFT JOIN watched_address a ON a.address_id=s.address_id WHERE a.address_id IS NULL",
   ),
   direct_flow_tx: scalar(
     "SELECT count(*) FROM btc_direct_flow f LEFT JOIN btc_tx tx ON tx.tx_id=f.tx_id WHERE tx.tx_id IS NULL",
@@ -542,10 +548,15 @@ const ledgerInvariants = {
     coinbase_output_sats>subsidy_sats+total_fee_sats`),
   invalid_address_stats: scalar(`SELECT count(*) FROM btc_address_stats WHERE
     first_block>last_block OR input_txs<0 OR output_txs<0 OR sats_in<0 OR sats_out<0`),
+  invalid_address_monthly_stats: scalar(`SELECT count(*) FROM btc_address_monthly_stats WHERE
+    input_txs<0 OR output_txs<0 OR sats_in<0 OR sats_out<0`),
   negative_io_values: scalar(`SELECT
     (SELECT count(*) FROM btc_address_io WHERE value_sats<0)+
     (SELECT count(*) FROM btc_external_io WHERE value_sats<0)+
     (SELECT count(*) FROM btc_unknown_script_io WHERE value_sats<0)`),
+  invalid_external_summaries: scalar(`SELECT count(*) FROM btc_external_summary WHERE
+    transaction_count<=0 OR input_rows<0 OR output_rows<0 OR input_sats<0 OR output_sats<0 OR
+    first_tx_id>last_tx_id OR input_rows+output_rows<transaction_count`),
   invalid_recovery_spends: scalar(`SELECT count(*) FROM btc_recovery_output WHERE
     (classification='spent' AND (spent_by_tx_hash IS NULL OR spent_height IS NULL)) OR
     (spent_by_tx_hash IS NULL) IS NOT (spent_height IS NULL)`),
@@ -585,17 +596,14 @@ const flowFlagMismatches = scalar(`WITH watched_counts AS MATERIALIZED (
       count(DISTINCT CASE WHEN direction=0 THEN address_id END) payer_count,
       count(DISTINCT CASE WHEN direction=1 THEN address_id END) payee_count
     FROM btc_address_io GROUP BY tx_id
-  ), external_input AS MATERIALIZED (
-    SELECT tx_id FROM btc_external_io WHERE direction=0
-    UNION SELECT tx_id FROM btc_unknown_script_io WHERE direction=0
   ), expected AS (
     SELECT flow.tx_id,flow.payer_id,flow.payee_id,
       (CASE WHEN counts.payer_count>1 THEN 1 ELSE 0 END) |
       (CASE WHEN counts.payee_count>1 THEN 2 ELSE 0 END) |
       (CASE WHEN flow.payer_id=flow.payee_id THEN 4 ELSE 0 END) |
-      (CASE WHEN external.tx_id IS NOT NULL THEN 8 ELSE 0 END) flags
+      (CASE WHEN (tx.flags&8)<>0 THEN 8 ELSE 0 END) flags
     FROM btc_direct_flow flow JOIN watched_counts counts USING(tx_id)
-    LEFT JOIN external_input external USING(tx_id)
+    JOIN btc_tx tx USING(tx_id)
   )
   SELECT count(*) FROM expected JOIN btc_direct_flow flow USING(tx_id,payer_id,payee_id)
   WHERE expected.flags<>flow.attribution_flags`);
@@ -635,12 +643,7 @@ const sampleRows = {
     "address_id",
     0,
   ),
-  externalAddressIds: sampleColumn(
-    `SELECT external_address_id FROM btc_external_address
-    ORDER BY external_address_id LIMIT 100`,
-    "external_address_id",
-    0,
-  ),
+  externalAddresses: sampleColumn(`SELECT address FROM btc_external_summary LIMIT 100`, "address", ""),
   recoveryAddresses: sampleColumn(
     `SELECT recovery_address FROM btc_recovery_output
     WHERE recovery_address IS NOT NULL GROUP BY recovery_address
@@ -702,9 +705,9 @@ const operations = [
     parameters: sampleRows.addressIds,
   },
   {
-    name: "external_address_history",
-    query: db.prepare("SELECT * FROM btc_external_io WHERE external_address_id=? ORDER BY tx_id DESC LIMIT 100"),
-    parameters: sampleRows.externalAddressIds,
+    name: "external_address_summary",
+    query: db.prepare("SELECT * FROM btc_external_summary WHERE address=?"),
+    parameters: sampleRows.externalAddresses,
   },
   {
     name: "recovery_by_address",

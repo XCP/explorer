@@ -98,8 +98,10 @@ if (command === "benchmark") {
       "btc_block_metrics",
       "btc_tx",
       "btc_address_io",
+      "btc_address_monthly_stats",
       "btc_external_address",
       "btc_external_io",
+      "btc_external_summary",
       "btc_unknown_script_io",
       "btc_recovery_output",
       "btc_direct_flow",
@@ -424,6 +426,19 @@ if (command === "benchmark") {
   const limit = Math.min(1000, Math.max(1, integerOption("limit", 100)));
   output = timed(() => ({
     coverage: "counterparty-adjacent-transactions-only",
+    summary:
+      db
+        .prepare(
+          `SELECT transaction_count,input_rows,output_rows,input_sats,output_sats,
+            lower(hex(first_tx.tx_hash)) first_tx_hash,first_tx.block_height first_block,
+            lower(hex(last_tx.tx_hash)) last_tx_hash,last_tx.block_height last_block
+           FROM btc_external_summary summary
+           JOIN btc_tx first_tx ON first_tx.tx_id=summary.first_tx_id
+           JOIN btc_tx last_tx ON last_tx.tx_id=summary.last_tx_id
+           WHERE summary.address=?`,
+        )
+        .get(address) ?? null,
+    event_detail: "selected-transactions-only",
     rows: db
       .prepare(
         `

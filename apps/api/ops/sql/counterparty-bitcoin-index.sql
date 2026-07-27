@@ -109,6 +109,28 @@ CREATE TABLE IF NOT EXISTS btc_external_io (
 CREATE INDEX IF NOT EXISTS btc_external_io_tx
 ON btc_external_io(tx_id, direction, io_index);
 
+-- Compact evidence retained for every external address seen beside a watched
+-- Counterparty address. Multiple I/O rows for one address in one transaction
+-- increment transaction_count once. Singleton rows may be pruned after the
+-- historical pass; keeping them during the pass permits later promotion.
+CREATE TABLE IF NOT EXISTS btc_external_summary (
+  address TEXT PRIMARY KEY,
+  transaction_count INTEGER NOT NULL CHECK(transaction_count>0),
+  input_rows INTEGER NOT NULL CHECK(input_rows>=0),
+  output_rows INTEGER NOT NULL CHECK(output_rows>=0),
+  input_sats INTEGER NOT NULL CHECK(input_sats>=0),
+  output_sats INTEGER NOT NULL CHECK(output_sats>=0),
+  first_tx_id INTEGER NOT NULL REFERENCES btc_tx(tx_id),
+  last_tx_id INTEGER NOT NULL REFERENCES btc_tx(tx_id)
+) WITHOUT ROWID;
+
+-- Raw external event detail is opt-in. Market/OTC/reputation jobs place a
+-- transaction hash here before scanning or explicitly backfill it later.
+CREATE TABLE IF NOT EXISTS btc_external_event_watch (
+  tx_hash BLOB PRIMARY KEY,
+  reason TEXT NOT NULL
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS btc_unknown_script_io (
   tx_id INTEGER NOT NULL,
   direction INTEGER NOT NULL CHECK (direction IN (0, 1)),
@@ -176,6 +198,22 @@ CREATE TABLE IF NOT EXISTS btc_address_stats (
   sats_in INTEGER NOT NULL DEFAULT 0,
   sats_out INTEGER NOT NULL DEFAULT 0
 );
+
+-- Ordinary single-watched-address Bitcoin activity is retained as an exact
+-- calendar aggregate rather than millions of event rows. Event detail remains
+-- for Counterparty, multi-watched-address, UTXO/recovery, and selected evidence
+-- transactions.
+CREATE TABLE IF NOT EXISTS btc_address_monthly_stats (
+  address_id INTEGER NOT NULL,
+  month_start INTEGER NOT NULL,
+  input_txs INTEGER NOT NULL DEFAULT 0,
+  output_txs INTEGER NOT NULL DEFAULT 0,
+  sats_in INTEGER NOT NULL DEFAULT 0,
+  sats_out INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(address_id,month_start)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS btc_address_monthly_time
+ON btc_address_monthly_stats(month_start,address_id);
 
 CREATE TABLE IF NOT EXISTS scan_failure (
   block_height INTEGER NOT NULL,

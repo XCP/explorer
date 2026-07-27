@@ -10,6 +10,7 @@ import { requestTelemetry } from "#api/http/telemetry";
 import { syncCoreEvents } from "#api/indexer/sync";
 import { read } from "#api/read/router";
 import { recoveryRead } from "#api/recovery/read";
+import { bitcoinSidecarRead } from "#api/bitcoin-sidecar/read";
 import { runCanonicalMaintenance } from "#api/scheduler/canonical-maintenance";
 import { runScheduledJob } from "#api/scheduler/job";
 import { runRecoveryMaintenance } from "#api/scheduler/recovery-maintenance";
@@ -37,6 +38,7 @@ app.route("/", verify);
 app.route("/", extensionApi);
 app.route("/", admin);
 app.route("/", recoveryRead);
+app.route("/", bitcoinSidecarRead);
 
 app.onError((error, c) => {
   const failure = describeHttpError(error);

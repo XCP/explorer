@@ -11,11 +11,14 @@ explorer and must not retain unrelated blockchain data.
 
 Retain:
 
-- a compact transaction header for any transaction touching a watched Counterparty address;
-- every input or output attributable to a watched address;
+- a compact transaction header and watched I/O for Counterparty transactions, transactions touching
+  multiple watched addresses, Counterparty UTXO/recovery events, and explicitly selected evidence;
+- exact lifetime and calendar-month aggregates for ordinary single-watched-address Bitcoin activity;
+- the current watched UTXO frontier required for exact balances and later spends;
 - direct watched-address-to-watched-address payment edges;
 - the current unspent watched outputs required to process later raw blocks;
-- aggregate external-funding fingerprints and address statistics;
+- external identity and raw event detail only for explicitly selected OTC, market-integrity,
+  attribution, or forensic transaction hashes;
 - authoritative Bitcoin fees for every Counterparty protocol transaction hash;
 - one compact measurement row per Bitcoin block, including total and Counterparty transaction
   counts, serialized bytes, weight, and fees, plus subsidy and actual coinbase output value;
@@ -152,9 +155,13 @@ address set, and predate the authoritative Counterparty transaction universe. Th
 two distinct block-metric rows but no duplicate row in the bounded relevant-transaction table, whose
 hash uniqueness remains valid within this retention boundary.
 
-External funding/change information should initially be stored as aggregate fingerprints rather than
-raw non-Counterparty transaction histories. Add event-level external edges only if the measured size
-budget permits it.
+External funding/change identity and raw event rows are opt-in through a transaction-hash evidence
+watchlist. Watched-address facts and transaction structure flags remain authoritative; external
+participants can be backfilled from Core or an Electrs-compatible provider when a market, OTC,
+attribution, or forensic candidate is promoted. A v5 measurement at height 497,399 found that unrestricted external
+event tables and their indexes consumed approximately 4.73 GB of a 7.86 GB database. The equivalent
+all-address aggregate candidate was 3.74 GB but still grew too quickly in a 1,000-block continuation,
+so it was rejected in favor of explicit evidence selection.
 
 ## Counterparty-adjacent Bitcoin graph
 

@@ -13,11 +13,12 @@ import {
 } from "../src/recovery/classifier.ts";
 import { isMainnetBitcoinAddress, parseCounterpartyUtxoEntity } from "./lib/bitcoin-address.mjs";
 
-const POLICY_VERSION = "counterparty-bitcoin-index-v5-unified-utxo";
+const POLICY_VERSION = "counterparty-bitcoin-index-v6-compact-external";
 const SATOSHIS = 100_000_000;
 const TX_FLAG_WATCHED = 1;
 const TX_FLAG_COUNTERPARTY = 2;
 const TX_FLAG_COUNTERPARTY_UTXO = 4;
+const TX_FLAG_EXTERNAL_OR_UNKNOWN_INPUT = 8;
 const FLOW_MULTI_PAYER = 1;
 const FLOW_MULTI_PAYEE = 2;
 const FLOW_SELF = 4;
@@ -141,20 +142,30 @@ class BitcoinRpc {
       method,
       params,
     }));
-    const response = await fetch(this.url, {
-      method: "POST",
-      headers: { Authorization: this.authorization, "Content-Type": "application/json" },
-      body: JSON.stringify(requests),
-    });
-    if (!response.ok) throw new Error(`Bitcoin RPC HTTP ${response.status}`);
-    const payload = await response.json();
-    const byId = new Map(payload.map((item) => [item.id, item]));
-    return requests.map(({ id }) => {
-      const item = byId.get(id);
-      if (!item) throw new Error(`Bitcoin RPC omitted response ${id}`);
-      if (item.error) throw new Error(`${item.error.code}: ${item.error.message}`);
-      return item.result;
-    });
+    let lastError;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        const response = await fetch(this.url, {
+          method: "POST",
+          headers: { Authorization: this.authorization, "Content-Type": "application/json" },
+          body: JSON.stringify(requests),
+        });
+        if (!response.ok) throw new Error(`Bitcoin RPC HTTP ${response.status}`);
+        const payload = await response.json();
+        const byId = new Map(payload.map((item) => [item.id, item]));
+        return requests.map(({ id }) => {
+          const item = byId.get(id);
+          if (!item) throw new Error(`Bitcoin RPC omitted response ${id}`);
+          if (item.error) throw new Error(`${item.error.code}: ${item.error.message}`);
+          return item.result;
+        });
+      } catch (error) {
+        lastError = error;
+        if (attempt === 7) break;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 500 * 2 ** attempt)));
+      }
+    }
+    throw lastError;
   }
 
   async call(method, params = []) {
@@ -423,6 +434,12 @@ function isCounterpartyHash(txid) {
   return currentCounterpartyHashes.has(txid);
 }
 
+function counterpartySourceHash(tx) {
+  if (currentCounterpartyHashes.has(tx.txid)) return tx.txid;
+  if (typeof tx.hash === "string" && currentCounterpartyHashes.has(tx.hash)) return tx.hash;
+  return null;
+}
+
 console.log(
   JSON.stringify({
     event: "initialized",
@@ -494,6 +511,20 @@ const findExternalAddress = db.prepare("SELECT external_address_id FROM btc_exte
 const insertExternalIo = db.prepare(
   "INSERT OR REPLACE INTO btc_external_io(external_address_id,tx_id,direction,io_index,value_sats) VALUES(?,?,?,?,?)",
 );
+const upsertExternalSummary = db.prepare(`
+  INSERT INTO btc_external_summary(
+    address,transaction_count,input_rows,output_rows,input_sats,output_sats,first_tx_id,last_tx_id
+  ) VALUES(?,1,?,?,?,?,?,?)
+  ON CONFLICT(address) DO UPDATE SET
+    transaction_count=btc_external_summary.transaction_count+1,
+    input_rows=btc_external_summary.input_rows+excluded.input_rows,
+    output_rows=btc_external_summary.output_rows+excluded.output_rows,
+    input_sats=btc_external_summary.input_sats+excluded.input_sats,
+    output_sats=btc_external_summary.output_sats+excluded.output_sats,
+    first_tx_id=min(btc_external_summary.first_tx_id,excluded.first_tx_id),
+    last_tx_id=max(btc_external_summary.last_tx_id,excluded.last_tx_id)
+`);
+const isExternalEventWatched = db.prepare("SELECT 1 FROM btc_external_event_watch WHERE tx_hash=?");
 const insertUnknownIo = db.prepare(
   "INSERT OR REPLACE INTO btc_unknown_script_io(tx_id,direction,io_index,script_type,script_hash,value_sats) VALUES(?,?,?,?,?,?)",
 );
@@ -546,6 +577,16 @@ const upsertStats = db.prepare(`
     first_block=min(first_block,excluded.first_block), last_block=max(last_block,excluded.last_block),
     input_txs=input_txs+excluded.input_txs, output_txs=output_txs+excluded.output_txs,
     sats_in=sats_in+excluded.sats_in, sats_out=sats_out+excluded.sats_out
+`);
+const upsertMonthlyStats = db.prepare(`
+  INSERT INTO btc_address_monthly_stats(
+    address_id,month_start,input_txs,output_txs,sats_in,sats_out
+  ) VALUES(?,?,?,?,?,?)
+  ON CONFLICT(address_id,month_start) DO UPDATE SET
+    input_txs=input_txs+excluded.input_txs,
+    output_txs=output_txs+excluded.output_txs,
+    sats_in=sats_in+excluded.sats_in,
+    sats_out=sats_out+excluded.sats_out
 `);
 const checkpoint = db.prepare(`
   INSERT INTO scan_state(singleton,block_height,block_hash,policy_version,completed_at)
@@ -637,10 +678,14 @@ const totals = {
   blocks: 0,
   transactions: 0,
   relevantTransactions: 0,
+  detailedTransactions: 0,
+  aggregatedOnlyTransactions: 0,
   addressIoRows: 0,
   feeMatches: 0,
   externalAddressRows: 0,
   externalIoRows: 0,
+  externalSummaryRows: 0,
+  selectedExternalTransactions: 0,
   unknownScriptIoRows: 0,
   recoveryOutputs: 0,
   recoverySpends: 0,
@@ -752,7 +797,8 @@ function processBlock(block) {
     const counterpartyUtxoOutputs = (counterpartyUtxosByTxid.get(tx.txid) ?? []).filter(
       (item) => item.vout < tx.vout.length,
     );
-    const isCounterparty = isCounterpartyHash(tx.txid);
+    const counterpartyHash = counterpartySourceHash(tx);
+    const isCounterparty = counterpartyHash !== null;
     if (isCounterparty) {
       counterpartyTransactionCount += 1;
       counterpartySizeBytes += Number(tx.size);
@@ -802,12 +848,29 @@ function processBlock(block) {
     )
       continue;
     const feeSats = tx.fee === undefined ? null : btcToSats(tx.fee);
+    const distinctWatchedAddresses = new Set([
+      ...inputs.map((item) => item.addressId),
+      ...outputs.map((item) => item.addressId),
+    ]);
+    const preserveExternalEvents = Boolean(isExternalEventWatched.get(hashBlob(tx.txid)));
+    const retainDetailedEvent =
+      isCounterparty ||
+      counterpartyUtxoInputs.length > 0 ||
+      counterpartyUtxoOutputs.length > 0 ||
+      distinctWatchedAddresses.size > 1 ||
+      preserveExternalEvents;
+    const hasExternalInput = allInputs.some((item) => item.addressId === undefined) || unknownInputs.length > 0;
     const flags =
       (inputs.length || outputs.length ? TX_FLAG_WATCHED : 0) |
       (isCounterparty ? TX_FLAG_COUNTERPARTY : 0) |
-      (counterpartyUtxoInputs.length || counterpartyUtxoOutputs.length ? TX_FLAG_COUNTERPARTY_UTXO : 0);
-    const txId = Number(insertTx.get(hashBlob(tx.txid), block.height, position, block.time, feeSats, flags).tx_id);
+      (counterpartyUtxoInputs.length || counterpartyUtxoOutputs.length ? TX_FLAG_COUNTERPARTY_UTXO : 0) |
+      (hasExternalInput ? TX_FLAG_EXTERNAL_OR_UNKNOWN_INPUT : 0);
     totals.relevantTransactions += 1;
+    if (retainDetailedEvent) totals.detailedTransactions += 1;
+    else totals.aggregatedOnlyTransactions += 1;
+    const txId = retainDetailedEvent
+      ? Number(insertTx.get(hashBlob(tx.txid), block.height, position, block.time, feeSats, flags).tx_id)
+      : null;
     for (const item of counterpartyUtxoOutputs) {
       const output = tx.vout[item.vout];
       const resolvedOwner = resolvedScriptOwner(output.scriptPubKey);
@@ -830,36 +893,80 @@ function processBlock(block) {
       markCounterpartyUtxoSpent.run(item.entityId, txId, item.inputIndex, block.height);
       totals.counterpartyUtxoSpends += 1;
     }
-    for (const item of allInputs) {
-      if (item.address && item.addressId === undefined) {
+    if (preserveExternalEvents) {
+      const externalByAddress = new Map();
+      for (const item of allInputs) {
+        if (!item.address || item.addressId !== undefined) continue;
+        const aggregate = externalByAddress.get(item.address) ?? {
+          inputRows: 0,
+          outputRows: 0,
+          inputSats: 0,
+          outputSats: 0,
+        };
+        aggregate.inputRows += 1;
+        aggregate.inputSats += item.value;
+        externalByAddress.set(item.address, aggregate);
+      }
+      for (const item of allOutputs) {
+        if (!item.address || item.addressId !== undefined) continue;
+        const aggregate = externalByAddress.get(item.address) ?? {
+          inputRows: 0,
+          outputRows: 0,
+          inputSats: 0,
+          outputSats: 0,
+        };
+        aggregate.outputRows += 1;
+        aggregate.outputSats += item.value;
+        externalByAddress.set(item.address, aggregate);
+      }
+      for (const [address, aggregate] of externalByAddress) {
+        upsertExternalSummary.run(
+          address,
+          aggregate.inputRows,
+          aggregate.outputRows,
+          aggregate.inputSats,
+          aggregate.outputSats,
+          txId,
+          txId,
+        );
+        totals.externalSummaryRows += 1;
+      }
+    }
+    if (preserveExternalEvents) {
+      totals.selectedExternalTransactions += 1;
+      for (const item of allInputs) {
+        if (!item.address || item.addressId !== undefined) continue;
         insertExternalIo.run(externalAddressId(item.address), txId, 0, item.index, item.value);
         totals.externalIoRows += 1;
       }
-    }
-    for (const item of allOutputs) {
-      if (item.addressId === undefined) {
+      for (const item of allOutputs) {
+        if (!item.address || item.addressId !== undefined) continue;
         insertExternalIo.run(externalAddressId(item.address), txId, 1, item.index, item.value);
         totals.externalIoRows += 1;
       }
     }
-    for (const item of [
-      ...unknownInputs.map((value) => ({ ...value, direction: 0 })),
-      ...unknownOutputs.map((value) => ({ ...value, direction: 1 })),
-    ]) {
-      insertUnknownIo.run(
-        txId,
-        item.direction,
-        item.index,
-        item.scriptPubKey.type ?? "unknown",
-        scriptFingerprint(item.scriptPubKey),
-        item.value,
-      );
-      totals.unknownScriptIoRows += 1;
+    if (retainDetailedEvent) {
+      for (const item of [
+        ...unknownInputs.map((value) => ({ ...value, direction: 0 })),
+        ...unknownOutputs.map((value) => ({ ...value, direction: 1 })),
+      ]) {
+        insertUnknownIo.run(
+          txId,
+          item.direction,
+          item.index,
+          item.scriptPubKey.type ?? "unknown",
+          scriptFingerprint(item.scriptPubKey),
+          item.value,
+        );
+        totals.unknownScriptIoRows += 1;
+      }
     }
     const perAddress = new Map();
     for (const item of inputs) {
-      insertIo.run(item.addressId, txId, 0, item.index, item.value);
-      totals.addressIoRows += 1;
+      if (retainDetailedEvent) {
+        insertIo.run(item.addressId, txId, 0, item.index, item.value);
+        totals.addressIoRows += 1;
+      }
       const stats = perAddress.get(item.addressId) ?? { inputTxb: 0, outputTxb: 0, satsIn: 0, satsOut: 0 };
       stats.inputTxb = 1;
       stats.satsOut += item.value;
@@ -871,8 +978,10 @@ function processBlock(block) {
       }
     }
     for (const item of outputs) {
-      insertIo.run(item.addressId, txId, 1, item.index, item.value);
-      totals.addressIoRows += 1;
+      if (retainDetailedEvent) {
+        insertIo.run(item.addressId, txId, 1, item.index, item.value);
+        totals.addressIoRows += 1;
+      }
       const stats = perAddress.get(item.addressId) ?? { inputTxb: 0, outputTxb: 0, satsIn: 0, satsOut: 0 };
       stats.outputTxb = 1;
       stats.satsIn += item.value;
@@ -895,13 +1004,15 @@ function processBlock(block) {
         stats.satsIn,
         stats.satsOut,
       );
+      const date = new Date(Number(block.time) * 1000);
+      const monthStart = Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1) / 1000);
+      upsertMonthlyStats.run(addressId, monthStart, stats.inputTxb, stats.outputTxb, stats.satsIn, stats.satsOut);
     }
     const payerIds = [...new Set(inputs.map((item) => item.addressId))];
-    const hasExternalInput = allInputs.some((item) => item.addressId === undefined) || unknownInputs.length > 0;
     const payeeTotals = new Map();
     for (const output of outputs)
       payeeTotals.set(output.addressId, (payeeTotals.get(output.addressId) ?? 0) + output.value);
-    for (const payerId of payerIds) {
+    for (const payerId of retainDetailedEvent ? payerIds : []) {
       for (const [payeeId, value] of payeeTotals) {
         const attributionFlags =
           (payerIds.length > 1 ? FLOW_MULTI_PAYER : 0) |
@@ -912,7 +1023,7 @@ function processBlock(block) {
       }
     }
     if (isCounterparty && feeSats !== null) {
-      insertFee.run(hashBlob(tx.txid), block.height, feeSats);
+      insertFee.run(hashBlob(counterpartyHash), block.height, feeSats);
       totals.feeMatches += 1;
     }
   }
