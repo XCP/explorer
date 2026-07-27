@@ -26,6 +26,27 @@ export interface AssetSales {
   last_sale_time: number | null; // unix seconds of that sale
 }
 
+/** Lifetime volume separated by evidence class; aggregate exchange claims are not transaction rows. */
+export interface AssetMarketVolume {
+  total_usd: number;
+  onchain_usd: number;
+  exchange_usd: number;
+  exchange_first_day: string | null;
+  exchange_last_day: string | null;
+}
+
+/** A deliberately conservative current valuation. Absent when recent independent market evidence is insufficient. */
+export interface AssetValuation {
+  market_cap_usd: number;
+  price_usd: number;
+  price_as_of: number;
+  method: "external_aggregate" | "median_daily_trades_90d";
+  trade_count: number | null;
+  trade_days: number | null;
+  buyer_count: number | null;
+  volume_usd: number | null;
+}
+
 /** Per-feed record counts on AssetDetail (feed_counts) — one count per detail-page feed tab, each
  *  computed with the SAME filter as that tab's list endpoint so the numbers match the tables. */
 export interface AssetFeedCounts {
@@ -79,6 +100,8 @@ export interface AssetDetail {
   activity_outlook?: AssetActivityOutlook | null;
   tags?: string[];
   sales?: AssetSales;
+  market_volume?: AssetMarketVolume;
+  valuation?: AssetValuation | null;
   collection?: string | null; // collection tag (pepe.wtf source='collection' or tokenscan), e.g. "rare-pepe" // absent on the native XCP/BTC reduced path
   collection_site?: string | null; // project site when the collection came from the tokenscan directory (its meta.site)
   collection_series?: number | null; // pepe.wtf series number within the collection (e.g. Rare Pepe Series 1–36)

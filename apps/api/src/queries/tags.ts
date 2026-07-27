@@ -28,7 +28,7 @@ const AGG = (convExpr: string, whereTag: boolean) => `
     SELECT m.tag, rating.rating,
       (CASE WHEN s.low_quality=1 THEN 0 ELSE (${convExpr}) END) conv,
       s.avg_holder_dex holder_dex, s.pct_creator_holders creator_pct,
-      s.low_quality, s.max_realized_usd, s.holders
+      s.low_quality, s.clean_realized_usd realized_usd, s.holders
     FROM mem m
     JOIN asset_dictionary d ON m.entity_type='asset' AND d.asset=m.entity_key
     JOIN asset_signals s ON s.asset_id=d.asset_id
@@ -46,7 +46,7 @@ const AGG = (convExpr: string, whereTag: boolean) => `
     SELECT tag, COUNT(*) n_assets, ROUND(AVG(rating), 1) mean_rating,
       ROUND(AVG(conv), 2) avg_conviction, ROUND(AVG(holder_dex), 1) avg_holder_dex, ROUND(AVG(creator_pct)) avg_creator_pct,
       ROUND(100.0*SUM(low_quality)/COUNT(*), 1) pct_low_quality,
-      ROUND(SUM(COALESCE(max_realized_usd, 0)), 2) total_realized_usd, SUM(COALESCE(holders, 0)) total_holders
+      ROUND(SUM(COALESCE(realized_usd, 0)), 2) total_realized_usd, SUM(COALESCE(holders, 0)) total_holders
     FROM asset_mem GROUP BY tag
   ),
   cnt AS (
@@ -94,7 +94,7 @@ export function listTagAssetMembers(
      )
      SELECT s.asset, s.asset_longname, s.holders,
             (COALESCE(s.distinct_traders,0)+COALESCE(s.distinct_dispense_buyers,0)) buyers,
-            ROUND(COALESCE(s.max_realized_usd,0), 2) max_realized_usd,ROUND(s.rating,1) rating,
+            ROUND(COALESCE(s.clean_realized_usd,0), 2) max_realized_usd,ROUND(s.rating,1) rating,
             COALESCE(s.low_quality,0) low_quality
      FROM s ORDER BY s.rating DESC,s.asset LIMIT ? OFFSET ?`,
     tag,

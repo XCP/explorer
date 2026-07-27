@@ -121,6 +121,54 @@ export default function UsdMethodologyPage() {
         </div>
       </section>
 
+      <section id="market-cap" className="scroll-mt-24">
+        <h2 className="text-xl font-semibold text-zinc-100">Estimated market capitalization</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+          Market cap is estimated as circulating supply multiplied by a current reference price. It is a notional
+          valuation, not the amount holders could liquidate: selling the whole supply into a thin market would move the
+          price substantially. We therefore publish no estimate when the price evidence is too sparse.
+        </p>
+        <div className="mt-5 divide-y divide-[var(--border2)] border-y border-[var(--border2)]">
+          {[
+            ["Circulating supply", "Issued supply less provably burned units; escrowed units remain circulating."],
+            ["XCP reference", "The latest reviewed external aggregate USD observation, no more than three days old."],
+            [
+              "Other assets",
+              "The median of daily volume-weighted execution prices over 90 days, using clean direct-sale classes.",
+            ],
+            [
+              "Evidence floor",
+              "At least three distinct trade days, three distinct buyers, and $100 of admitted USD volume.",
+            ],
+            [
+              "Missing estimate",
+              "Low-quality assets, stale markets, bundles, self-trades, and thin markets remain null—not zero.",
+            ],
+          ].map(([title, body]) => (
+            <div key={title} className="grid gap-2 py-4 sm:grid-cols-[11rem_1fr]">
+              <div className="font-medium text-zinc-200">{title}</div>
+              <p className="text-sm leading-6 text-zinc-400">{body}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 max-w-3xl text-sm leading-6 text-zinc-500">
+          In the July 21, 2026 evaluation, only 19 ordinary assets passed these rules; XCP qualified separately. A naive
+          latest-trade rule produced plainly implausible results—for example, one $0.13 trade implied a $130.8B value
+          for a thin trillion-unit asset—so recency alone was rejected. We do not put this estimate in asset tables yet:
+          sparse coverage would create a misleading ranking.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="text-xl font-semibold text-zinc-100">Lifetime market volume</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+          Asset pages add two evidence classes: identifiable completed on-chain sales and historical exchange volume.
+          Exchange volume is a non-overlapping daily series: CoinMarketCap&apos;s reported aggregate is used when
+          present, and reconstructed CEX executions fill uncovered days. The asset page preserves both subtotals because
+          an aggregate provider claim is not an individual transaction and should not be presented as one.
+        </p>
+      </section>
+
       <section>
         <h2 className="text-xl font-semibold text-zinc-100">Why gaps remain</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
@@ -164,6 +212,16 @@ export default function UsdMethodologyPage() {
           <li>
             <a href="https://arxiv.org/abs/2311.18717" target="_blank" rel="noreferrer">
               Falk, Tsoukalas &amp; Zhang — NFT Wash Trading ↗
+            </a>
+          </li>
+          <li>
+            <a href="https://www.nber.org/papers/w30783" target="_blank" rel="noreferrer">
+              Cong et al. — Crypto Wash Trading ↗
+            </a>
+          </li>
+          <li>
+            <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4183105" target="_blank" rel="noreferrer">
+              Ante — Liquidity Shocks, Token Returns and Market Capitalization ↗
             </a>
           </li>
           <li>

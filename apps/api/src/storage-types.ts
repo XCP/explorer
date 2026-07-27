@@ -56,7 +56,7 @@ export interface AssetSignalsRow {
   max_dispense_btc: number; // migration 0017 (realized value; permanent)
   max_trade_xcp: number; // migration 0017
   supply: number; // migration 0019 (normalized supply for circulating-scarcity)
-  max_realized_usd: number; // migration 0023 (largest single trade's USD value, all venues)
+  max_realized_usd: number; // largest non-self trade's USD value, all venues (not lifetime realized volume)
   distinct_dispense_buyers: number; // migration 0023 (distinct non-self dispense destinations)
   max_dispense_btc_clean: number; // migration 0023 (largest non-self dispense BTC — clean max_dispense_btc)
   emblem_trades: number; // migration 0023 (count of Emblem-vault sales attributed to the asset)

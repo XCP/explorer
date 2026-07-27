@@ -454,6 +454,59 @@ export function coreAssetSales(db: D1Database, asset: string): Promise<AssetSale
   );
 }
 
+export interface AssetReferencePrice {
+  price_usd: number;
+  price_as_of: number;
+  method: "external_aggregate" | "median_daily_trades_90d";
+  trade_count: number | null;
+  trade_days: number | null;
+  buyer_count: number | null;
+  volume_usd: number | null;
+}
+
+/**
+ * A current mark suitable for capitalization, which is intentionally stricter than Last price.
+ * XCP uses the current external aggregate. Other assets require 3 independent buyers on 3 days and
+ * $100 of clean executions inside 90 days; the mark is the median of daily volume-weighted prices.
+ */
+export function coreAssetReferencePrice(db: D1Database, asset: string): Promise<AssetReferencePrice | null> {
+  return one<AssetReferencePrice>(
+    db,
+    `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+      clean AS (
+        SELECT date(t.block_time,'unixepoch') day,t.buyer_id,t.usd_value,t.quantity,t.block_time
+        FROM trades t JOIN asset_signals signal ON signal.asset_id=t.asset_id
+        WHERE t.asset_id=(SELECT asset_id FROM identity) AND signal.low_quality=0
+          AND t.block_time>=unixepoch('now','-90 days') AND t.usd_value>0 AND t.quantity>0 AND t.total>0
+          AND t.buyer_id IS NOT NULL AND t.seller_id IS NOT NULL AND t.buyer_id<>t.seller_id
+          AND (t.venue='dex' OR (t.venue='dispense' AND t.sale_class='single')
+            OR (t.venue='otc' AND t.sale_class IN ('likely','corroborated'))
+            OR (t.venue='emblem' AND t.sale_class='real'))
+      ), evidence AS (
+        SELECT COUNT(*) trade_count,COUNT(DISTINCT day) trade_days,COUNT(DISTINCT buyer_id) buyer_count,
+          SUM(usd_value) volume_usd,MAX(block_time) price_as_of FROM clean
+      ), daily AS (
+        SELECT day,SUM(usd_value)/SUM(quantity) daily_price FROM clean GROUP BY day
+      ), ranked AS (
+        SELECT daily_price,ROW_NUMBER() OVER(ORDER BY daily_price) rn,COUNT(*) OVER() n FROM daily
+      ), trade_mark AS (
+        SELECT AVG(daily_price) price_usd FROM ranked WHERE rn IN ((n+1)/2,(n+2)/2)
+      ), external_mark AS (
+        SELECT usd price_usd,CAST(strftime('%s',day) AS INTEGER) price_as_of
+        FROM prices WHERE currency=?1 AND day>=date('now','-3 days') ORDER BY day DESC LIMIT 1
+      )
+      SELECT price_usd,price_as_of,'external_aggregate' method,
+        NULL trade_count,NULL trade_days,NULL buyer_count,NULL volume_usd FROM external_mark WHERE ?1='XCP'
+      UNION ALL
+      SELECT mark.price_usd,e.price_as_of,'median_daily_trades_90d' method,
+        e.trade_count,e.trade_days,e.buyer_count,e.volume_usd
+      FROM trade_mark mark CROSS JOIN evidence e
+      WHERE ?1<>'XCP' AND e.trade_days>=3 AND e.buyer_count>=3 AND e.volume_usd>=100
+      LIMIT 1`,
+    asset,
+  );
+}
+
 export function coreAssetFeedCounts(
   db: D1Database,
   asset: string,

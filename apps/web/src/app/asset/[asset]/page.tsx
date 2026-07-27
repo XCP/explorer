@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Route } from "next";
 import Link from "next/link";
 import { Trophy, CalendarDays, LockOpen } from "lucide-react";
 import type { AssetDetail, AssetMarket } from "@xcp/shared/assets";
-import type { TagDetail } from "@xcp/shared/tags";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import {
   SectionHeader,
@@ -23,18 +23,20 @@ import { HolderMakeup } from "@/features/assets/components/holder-makeup";
 import { PendingActions } from "@/components/pending-actions";
 import { amount, collectionLabel, commas, compact, short, timeAgo, usdCompact } from "@/lib/format";
 
-// Server-fetch the asset once; generateMetadata + the page both call this (Next dedupes the fetch).
+// Server-fetch the asset once; service-binding calls are not Next's global fetch, so React cache
+// memoizes the shared generateMetadata + page lookup for this render pass.
 // Returns null on 404 — only the PAGE calls notFound() (notFound() inside generateMetadata renders
 // the error boundary instead of the 404 route under OpenNext); metadata degrades to a plain title.
-async function loadAsset(asset: string): Promise<AssetDetail | null> {
+const loadAsset = cache(async (asset: string): Promise<AssetDetail | null> => {
+  const path = `/v2/assets/${encodeURIComponent(asset)}`;
   try {
-    const env = await getJson<Envelope<AssetDetail>>(`/v2/assets/${encodeURIComponent(asset)}`, { revalidate: 30 });
+    const env = await getJson<Envelope<AssetDetail>>(path, { revalidate: 30 });
     return env.result ?? null;
   } catch (e) {
     if (e instanceof NotFoundError) return null;
     throw e;
   }
-}
+});
 
 export async function generateMetadata({ params }: { params: Promise<{ asset: string }> }): Promise<Metadata> {
   const { asset } = await params;
@@ -81,6 +83,17 @@ function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[
   stats.push({ label: "Holders", value: commas(item.holder_count) });
   const issued = monthYear(item.first_issuance_block_time);
   if (issued) stats.push({ label: "Issued", value: issued });
+  if (item.valuation?.market_cap_usd != null) {
+    stats.push({
+      label: "Est. market cap",
+      value: usdCompact(item.valuation.market_cap_usd),
+      detail:
+        item.valuation.method === "external_aggregate"
+          ? `aggregate price · ${timeAgo(item.valuation.price_as_of)}`
+          : `90d median · ${item.valuation.trade_days} days`,
+      href: "/usd-methodology#market-cap",
+    });
+  }
   if (market?.floor_usd != null) {
     stats.push({
       label: "Floor price",
@@ -97,8 +110,14 @@ function assetStats(item: AssetDetail, market: AssetMarket | null): SectionStat[
       hideOnMobile: true,
     });
   }
-  if (item.sales?.realized_usd != null) {
-    stats.push({ label: "Volume", value: usdCompact(item.sales.realized_usd), detail: "lifetime", hideOnMobile: true });
+  const lifetimeVolume = item.market_volume?.total_usd ?? item.sales?.realized_usd;
+  if (lifetimeVolume != null) {
+    stats.push({
+      label: "Volume",
+      value: usdCompact(lifetimeVolume),
+      detail: item.market_volume?.exchange_usd ? "on-chain + exchange" : "lifetime",
+      hideOnMobile: true,
+    });
   }
   if (item.rating)
     stats.push({
@@ -127,18 +146,14 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
   if (!item) notFound();
 
   const collection = item.collection ?? null;
-  // The collection-tag aggregate (green band member count) needs item.collection, so it follows the detail;
-  // market was already in flight above.
-  const [marketEnv, tagEnv] = await Promise.all([
+  // Floor/DEX context is optional. Never let its service dependency hold the primary asset identity
+  // beyond 800ms; the page remains useful without it. Collection counts are available on the collection
+  // page and no longer add a blocking aggregate to every asset render.
+  const marketEnv = await Promise.race([
     marketReq,
-    collection
-      ? getJson<Envelope<TagDetail>>(`/v2/tags/${encodeURIComponent(collection)}?limit=1`, { revalidate: 300 }).catch(
-          () => null,
-        )
-      : Promise.resolve(null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
   ]);
   const market = marketEnv?.result ?? null;
-  const collectionAssets = tagEnv?.result?.n_assets ?? null;
 
   // The genesis year — early issuance is prestige on Counterparty (2014 = protocol dawn), so the band
   // wears the vintage as a chip instead of a graph-trust badge.
@@ -328,13 +343,31 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
                     </span>
                   </div>
                 )}
-                {item.sales?.realized_usd != null && (
+                {(item.market_volume?.total_usd ?? item.sales?.realized_usd) != null && (
                   <div className="row">
                     <span className="k">Volume</span>
                     <span className="amt mono">
-                      {usdCompact(item.sales.realized_usd)} <span className="time">lifetime</span>
+                      {usdCompact(item.market_volume?.total_usd ?? item.sales?.realized_usd)}{" "}
+                      <span className="time">known lifetime</span>
                     </span>
                   </div>
+                )}
+                {item.market_volume && item.market_volume.exchange_usd > 0 && (
+                  <>
+                    <div className="row">
+                      <span className="k">On-chain sales</span>
+                      <span className="amt mono">{usdCompact(item.market_volume.onchain_usd)}</span>
+                    </div>
+                    <div className="row">
+                      <span className="k">Exchange volume</span>
+                      <span className="amt mono">
+                        {usdCompact(item.market_volume.exchange_usd)}{" "}
+                        <span className="time">
+                          {item.market_volume.exchange_first_day}–{item.market_volume.exchange_last_day}
+                        </span>
+                      </span>
+                    </div>
+                  </>
                 )}
                 {item.activity && item.activity.active_months > 0 && (
                   <div className="row">
@@ -389,6 +422,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
               className="icon"
               src={`https://cdn.xcp.io/img/icon/${encodeURIComponent(item.asset)}`}
               alt=""
+              loading="lazy"
               style={item.tags?.includes("stamp") ? { imageRendering: "pixelated" } : undefined}
             />
           }
@@ -429,7 +463,7 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
         feedCounts={item.feed_counts ?? null}
         inBand
         overview={overview}
-        banner={<ContextBand detail={item} collectionAssets={collectionAssets} />}
+        banner={<ContextBand detail={item} />}
       />
     </>
   );

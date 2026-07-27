@@ -123,3 +123,13 @@ export function combinedMarketAssets(db: D1Database) {
      FROM combined GROUP BY asset ORDER BY usd_volume DESC`,
   );
 }
+
+/** The same non-overlapping exchange series, scoped for an asset detail page. */
+export function combinedMarketAsset(db: D1Database, asset: string) {
+  return one<{ usd_volume: number; first_day: string; last_day: string }>(
+    db,
+    `${COMBINED_MARKET} SELECT SUM(usd_volume) usd_volume,MIN(day) first_day,MAX(day) last_day
+     FROM combined WHERE asset=?`,
+    asset,
+  );
+}

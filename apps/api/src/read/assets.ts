@@ -17,6 +17,7 @@ import {
   coreRatingsOverview,
   coreAssetTags,
   coreAssetSales,
+  coreAssetReferencePrice,
   coreAssetFeedCounts,
   coreXcpSupply,
   coreAssetCollection,
@@ -40,6 +41,7 @@ import {
   coreAssetActiveUsers,
 } from "#api/queries/core-assets";
 import { listAssetOrders } from "#api/queries/core-orders";
+import { combinedMarketAsset } from "#api/queries/exchanges";
 
 export const assets = router();
 
@@ -86,12 +88,14 @@ assets.get("/v2/assets/:asset", async (c) => {
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
     const A = a.toUpperCase();
     if (A === "XCP" || A === "BTC") {
-      const [sup, holder_count, feed_counts, signals, sales, tags] = await Promise.all([
+      const [sup, holder_count, feed_counts, signals, sales, referencePrice, exchangeVolume, tags] = await Promise.all([
         A === "XCP" ? coreXcpSupply(c.env.CORE_DB) : Promise.resolve(null),
         coreAssetAccounting(c.env.CORE_DB, A).then((accounting) => accounting?.holder_count ?? 0),
         coreAssetFeedCounts(c.env.CORE_DB, A, null).catch(() => null),
         coreAssetSignals(c.env.CORE_DB, A).catch(() => null),
         coreAssetSales(c.env.CORE_DB, A).catch(() => null),
+        coreAssetReferencePrice(c.env.CORE_DB, A).catch(() => null),
+        combinedMarketAsset(c.env.CORE_DB, A).catch(() => null),
         coreAssetTags(c.env.CORE_DB, A).catch((): string[] => []),
       ]);
       const supply_normalized = A === "XCP" ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8) : null;
@@ -113,6 +117,17 @@ assets.get("/v2/assets/:asset", async (c) => {
           : null,
         tags,
         sales: sales ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
+        market_volume: {
+          onchain_usd: sales?.realized_usd ?? 0,
+          exchange_usd: exchangeVolume?.usd_volume ?? 0,
+          total_usd: (sales?.realized_usd ?? 0) + (exchangeVolume?.usd_volume ?? 0),
+          exchange_first_day: exchangeVolume?.first_day ?? null,
+          exchange_last_day: exchangeVolume?.last_day ?? null,
+        },
+        valuation:
+          referencePrice && supply_normalized != null
+            ? { ...referencePrice, market_cap_usd: referencePrice.price_usd * Number(supply_normalized) }
+            : null,
       };
       return J(c, { result: body }, 300); // native token — near-static
     }
@@ -125,13 +140,25 @@ assets.get("/v2/assets/:asset", async (c) => {
   }
   // These reads are independent — run them concurrently (wall-time = slowest, not the sum;
   // the sequential version was the classic multiple-round-trips D1 anti-pattern).
-  const [accounting, sigRes, tagsRes, salesRes, collectionRes, artistRes, feedCountsRes] = await Promise.all([
+  const [
+    accounting,
+    sigRes,
+    tagsRes,
+    salesRes,
+    referencePriceRes,
+    exchangeVolumeRes,
+    collectionRes,
+    artistRes,
+    feedCountsRes,
+  ] = await Promise.all([
     // Supply stays exact TEXT across SQLite/JS; holders, supply, burned, and escrow share one trip.
     coreAssetAccounting(c.env.CORE_DB, r.asset),
     coreAssetSignals(c.env.CORE_DB, r.asset).catch(() => null),
     coreAssetTags(c.env.CORE_DB, r.asset).catch((): string[] => []),
     // money stats from the unified trades ledger — the header's Realized / Last sale strip entries
     coreAssetSales(c.env.CORE_DB, r.asset).catch(() => null),
+    coreAssetReferencePrice(c.env.CORE_DB, r.asset).catch(() => null),
+    combinedMarketAsset(c.env.CORE_DB, r.asset).catch(() => null),
     coreAssetCollection(c.env.CORE_DB, r.asset).catch(() => null),
     coreAssetArtist(c.env.CORE_DB, r.asset).catch(() => null),
     // per-feed tab counts (the detail page's tab bar) — same filters as the feed list endpoints
@@ -176,6 +203,16 @@ assets.get("/v2/assets/:asset", async (c) => {
     activity_outlook: assetActivityOutlook(sig),
     tags,
     sales: salesRes ?? { realized_usd: null, last_price_usd: null, last_sale_time: null },
+    market_volume: {
+      onchain_usd: salesRes?.realized_usd ?? 0,
+      exchange_usd: exchangeVolumeRes?.usd_volume ?? 0,
+      total_usd: (salesRes?.realized_usd ?? 0) + (exchangeVolumeRes?.usd_volume ?? 0),
+      exchange_first_day: exchangeVolumeRes?.first_day ?? null,
+      exchange_last_day: exchangeVolumeRes?.last_day ?? null,
+    },
+    valuation: referencePriceRes
+      ? { ...referencePriceRes, market_cap_usd: referencePriceRes.price_usd * Number(norm(circRaw)) }
+      : null,
     collection: collectionRes?.tag ?? null,
     collection_site: collectionRes?.site ?? null,
     collection_series: collectionRes?.series ?? null,

@@ -34,7 +34,7 @@ test("compact tags restore polymorphic identities and deterministic asset member
     CREATE TABLE tags(entity_id INTEGER,tag TEXT,source TEXT,value REAL,meta TEXT,PRIMARY KEY(entity_id,tag));
     CREATE TABLE asset_signals(
       asset_id INTEGER PRIMARY KEY,holders INTEGER,distinct_traders INTEGER,distinct_dispense_buyers INTEGER,
-      max_realized_usd REAL,trades INTEGER,dispenses INTEGER,low_quality INTEGER,avg_holder_dex REAL,
+      clean_realized_usd REAL,trades INTEGER,dispenses INTEGER,low_quality INTEGER,avg_holder_dex REAL,
       pct_creator_holders REAL,supply REAL
     );
     CREATE TABLE asset_ratings(asset_id INTEGER PRIMARY KEY,rating REAL);
