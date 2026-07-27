@@ -22,6 +22,7 @@ const VENUES = [
   { key: "emblem", label: "Emblem" },
   { key: "telegram", label: "Telegram auctions" },
   { key: "tokenly_swapbot", label: "Tokenly Swapbot" },
+  { key: "otc", label: "On-chain OTC" },
 ] as const;
 
 // The v19 .venue pill (ported classes — dex / disp / emblem).
@@ -32,6 +33,7 @@ const VENUE_LABEL: Record<string, string> = {
   emblem: "EMBLEM",
   telegram: "TELEGRAM",
   tokenly_swapbot: "SWAPBOT",
+  otc: "OTC",
 };
 const venueChip = (v: string) => (
   <span className={`venue ${VENUE_CLASS[v] ?? "dex"}`}>{VENUE_LABEL[v] ?? v.toUpperCase()}</span>

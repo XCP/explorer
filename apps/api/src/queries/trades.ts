@@ -29,7 +29,9 @@ const SELECT = `SELECT trade.venue,asset.asset,trade.block_time,trade.block_inde
   CASE WHEN trade.sale_class='bundle' THEN
     (SELECT COUNT(*) FROM trade_legs leg WHERE leg.venue=trade.venue AND leg.trade_ref=trade.ref)
     ELSE CASE WHEN trade.asset_id IS NULL THEN 0 ELSE 1 END END leg_count,
-  COALESCE(telegram_sale.chat_name,swapbot.bot_slug) source_name,
+  COALESCE(telegram_sale.chat_name,swapbot.bot_slug,
+    CASE WHEN trade.venue='otc' AND trade.sale_class='corroborated' THEN 'Corroborated on-chain OTC'
+         WHEN trade.venue='otc' THEN 'Likely on-chain OTC' END) source_name,
   COALESCE(telegram_import.chat_url,swapbot.evidence_url) source_url
   FROM trades trade
   LEFT JOIN asset_dictionary asset ON asset.asset_id=trade.asset_id
