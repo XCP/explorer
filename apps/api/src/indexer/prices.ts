@@ -173,10 +173,43 @@ export async function crawlMarketQuotes(env: Env): Promise<Record<string, unknow
 export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>> {
   const now = Math.floor(Date.now() / 1_000);
   try {
-    const [btcUsd, xcp] = await Promise.all([fetchCoinbaseSpot("BTC-USD"), fetchDexTradeMarket("XCPBTC")]);
-    const spot = { BTC: btcUsd, XCP: xcp.price * btcUsd };
+    // BTC/USD is the independent base quote needed by every same-day BTC trade. Do not couple its
+    // persistence to a thinner XCP/BTC venue: a Dex-Trade outage previously discarded a successful
+    // Coinbase quote and left all of today's BTC dispenses without USD values.
+    const btcUsd = await fetchCoinbaseSpot("BTC-USD");
     const day = isoDay(now);
-    await upsertDexTradeObservation(env.CORE_DB, xcp);
+    const rows: PriceWrite[] = [
+      {
+        day,
+        currency: "BTC",
+        usd: btcUsd,
+        source: "coinbase_spot",
+        observedDay: day,
+        fidelity: 2,
+        priceKind: "direct",
+        derivationDepth: 0,
+        selectionReason: "same_day_spot_fallback",
+      },
+    ];
+    let xcp: DexTradeObservation | null = null;
+    let xcpError: string | null = null;
+    try {
+      xcp = await fetchDexTradeMarket("XCPBTC");
+      await upsertDexTradeObservation(env.CORE_DB, xcp);
+      rows.push({
+        day,
+        currency: "XCP",
+        usd: xcp.price * btcUsd,
+        source: "dextrade_xcpbtc_spot",
+        observedDay: day,
+        fidelity: 2,
+        priceKind: "derived",
+        derivationDepth: 1,
+        selectionReason: "same_day_spot_fallback",
+      });
+    } catch (error) {
+      xcpError = error instanceof Error ? error.message : String(error);
+    }
     let pepecash: DexTradeObservation | null = null;
     try {
       pepecash = await fetchDexTradeMarket("PEPECASHBTC");
@@ -184,20 +217,7 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
     } catch {
       // PEPECASH is thin; lack of a fresh execution must not block BTC/XCP maintenance.
     }
-    await upsertPrices(
-      env.CORE_DB,
-      Object.entries(spot).map(([currency, usd]) => ({
-        day,
-        currency,
-        usd,
-        source: currency === "BTC" ? "coinbase_spot" : "dextrade_xcpbtc_spot",
-        observedDay: day,
-        fidelity: 2,
-        priceKind: currency === "BTC" ? "direct" : "derived",
-        derivationDepth: currency === "BTC" ? 0 : 1,
-        selectionReason: "same_day_spot_fallback",
-      })),
-    );
+    await upsertPrices(env.CORE_DB, rows);
     const applied = await env.CORE_DB.prepare(
       `UPDATE trades SET usd_value=total*(
          SELECT price.usd FROM prices price
@@ -210,9 +230,10 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       .run();
     return {
       day,
-      BTC: spot.BTC,
-      XCP: spot.XCP,
-      dextrade_observations: pepecash ? [xcp.pair, pepecash.pair] : [xcp.pair],
+      BTC: btcUsd,
+      XCP: xcp ? xcp.price * btcUsd : null,
+      xcp_error: xcpError,
+      dextrade_observations: [xcp?.pair, pepecash?.pair].filter(Boolean),
       priced_rows: applied.meta.rows_written ?? 0,
     };
   } catch (error) {
