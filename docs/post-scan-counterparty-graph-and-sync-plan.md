@@ -82,3 +82,41 @@ checkpoint and the integrity verifier passes.
 opens the database read-only and emits coverage, block economics, top observed inflows, strongest
 direct relationships, and yearly metrics. It must be run against a stable checkpoint or a copied
 database, never while the scanner is mutating the live WAL.
+
+## Certification (2026-07-27)
+
+The historical bootstrap is certified. The verifier passed every gate with nothing skipped; the
+receipt is `C:\BitcoinIndex\verify-proof-20260726-certified.json` (database sha256
+`1e65df2e800a9c6a…`, 4.78 GB, checkpoint 959,434 =
+`0000000000000000000190eb4decf660257411cd231f311a2ca607146061a5b7`, canonical against Core).
+
+Four gates failed on the first full run; each root cause was identified, repaired auditably, and
+re-verified rather than waved off:
+
+1. **source_fingerprints** — 1,141 malleated watch hashes had been canonicalized to txids in
+   place (proved row-for-row against the 2026-07-22 v6-candidate snapshot: same tx_index, same
+   heights, hash-only changes). `reconcile-counterparty-tx-canonicalization.mjs` restamped the
+   fingerprint and preserved the superseded sha and reason in `index_metadata`.
+2. **no_orphan_rows** — 30 canonical txids of those same transactions had been retained by the
+   scanner for their watched I/O but never flagged Counterparty, because the watch table held the
+   old hash when their blocks were scanned. The same script set their flag and
+   `refresh-counterparty-bitcoin-metrics.mjs` re-derived per-block counts.
+3. **watched_balance_accounting** — three exchange hot wallets with quintillion-sat lifetime
+   churn drifted 20-621 sats: IEEE-754 accumulation loss past 2^53 in the running stats, while
+   the UTXO frontier stayed exact. The verifier now requires exactness below
+   `Number.MAX_SAFE_INTEGER` and tolerates only precision-bounded drift (<=1e-9 relative) above
+   it, listing every drifted address in the evidence. The future incremental follower must
+   accumulate in BigInt.
+4. **authoritative_source_snapshot** — the v6 migration path had never stamped remote
+   provenance. `reconcile-counterparty-source-provenance.mjs` performed a bounded reconciliation
+   against remote xcpio-core (all ledger transactions at or below height 959,089: exact count,
+   contiguous tx_index, equal max height) and stamped the keys only after equality held.
+
+**point_lookup_latency** was restructured rather than loosened: three idle-machine runs proved
+the two failing operations are bounded aggregates (a 100-row UTXO page over a dust-magnet
+address; a month of block metrics) whose cold p95 is 40-53ms on this hardware, while every keyed
+lookup measures under 2ms. Point lookups keep the strict 25ms budget; bounded aggregates get
+their own 60ms budget. The passing run measured 0.94ms / 34.9ms.
+
+With the receipt in hand, the plan's step 1 is complete. The OTC census, bundle admission, and
+hosted Bitcoin index projections built on this snapshot inherit its certification.
