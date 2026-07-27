@@ -192,6 +192,54 @@ sellers, 2,017.49544056 BTC, and $5,596,344.20 across 5,311 USD-priced rows. Pos
 found zero trade/evidence orphans, duplicate delivery events, duplicate BTC-payment assignments, or
 payment-total disagreements.
 
+## Bundle admission, version 4 (2026-07-27)
+
+Method `bundle_btc_payment` admits one BTC payment paired with several asset deliveries between
+the same buyer and seller. Consideration attaches to the bundle: the canonical row is
+`trades(venue='otc', sale_class='bundle')` with `asset_id` NULL, one `trade_legs` row per
+delivered asset, one evidence row, and one payment leg. No per-asset price is ever invented, and
+bundle rows never feed per-asset volume, unit-price lanes, or reference prices.
+
+Screens, each validated by a reviewed case before adoption:
+
+1. Infrastructure endpoints (exchange, deposit, burn, vault, service) are excluded.
+2. Repeated reciprocal BTC flow between the pair rejects custodial shuttles and service orbits.
+   The screen ignores legacy Counterparty send-dust below 10,000 sats: old-style sends carry
+   5,430-sat outputs to the recipient, which are protocol mechanics rather than payments. This
+   screen alone quarantined a 91 BTC "payment" between two unlabeled custodial wallets with more
+   than 5,500 mutual transfers — a $7.96M distortion had it been admitted.
+3. A payment above 100x the summed 180-day market medians of the priceable legs is rejected as a
+   coincidental mispair (a 0.5 BTC payment "for" 420 PEPECASH measured 5,900x). Real collectible
+   lots routinely clear 2x-40x over thin dispenser medians and are deliberately not rejected: a
+   reviewed 14-card rare-pepe lot at 23x ($196,608) is genuine, as is a reviewed artist sale at
+   39x. The ratio is a mispair detector, not a market-price validator. A repeat-price bundle lane
+   overrides the mispair rejection: the same seller shipping the same asset composition to at
+   least three bundles across at least two independent buyers within a 25% payment spread is the
+   two-match-lane evidence class, and the stable realized price outranks a thin median (five
+   independent buyers paid ~$490 each for NEWPEPEDESU bundles whose median claimed $2).
+4. Buyer forwarding bundle assets into registered Emblem vaults shortly after delivery upgrades
+   confidence to `corroborated`. The founding case is the 7.3055 BTC GODANUBIS/GODDESSISIS pair:
+   an exchange withdrawal funded the buyer wallet in the delivery block, the tagged-merchant
+   seller had restocked both cards from the series artist 140 blocks earlier, and each card was
+   wrapped into its own registered Emblem vault within 20 blocks of payment.
+
+`build-local-otc-bundles.mjs` is the single reproducible process: it materializes bundles from
+the census, classifies every one with an audited verdict row (admitted or not), and emits
+idempotent D1 upserts for the admitted set.
+
+## Escrowed payment lane (designed, not yet built)
+
+Third-party escrow can restore buyer identity for cohorts rejected earlier. The detectable shape
+is the two-hop path: buyer pays escrow, escrow pays seller, delivery falls between the legs.
+Qualifying tests: amount conservation minus a consistent fee; the escrow address recurring across
+disjoint buyer/seller pairs (multi-tenancy distinguishes an agent from someone's second wallet);
+no Counterparty persona on the escrow address; and dwell time between deposit and release
+conditioned on the delivery confirming. The previously rejected third-party-payer cohort becomes
+admissible exactly when the payer received a matching amount from the asset recipient shortly
+before paying the seller. Behaviorally discovered escrow agents surface as review candidates and,
+once reviewed, become curated `escrow` tags like the vault tags that corroborated the god-card
+case.
+
 ## Whole-address sweep purchase survey
 
 A separate ledger-only hypothesis test evaluated whether a buyer paid BTC to an address owner and

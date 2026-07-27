@@ -16,3 +16,16 @@ Current result:
 The fresh strict pass itself contributed 4,444 rows; the union adds 25 genuinely new rows to the prior admitted set and deduplicates the overlap. This is why the authoritative number is larger than the fresh strict lane alone.
 
 The production trades page may differ by a small amount until this dated ledger is imported; that is a deployment difference, not a second methodology.
+
+## Addendum 2026-07-26: production state after the final-window rebuild
+
+Measured directly against production `xcpio-core` after the Bitcoin scan reached its final
+watermark (959,434) and the final-window census scripts ran:
+
+- **5,555** OTC trades with venue `otc`, **$5,669,791.96** known execution-day USD;
+- exactly 5,555 evidence rows and 5,555 payment legs — no orphans in either direction.
+
+Production is now ahead of this document's 2026-07-24 ledger (5,444 admitted) because the
+final-window rebuild (`build-local-otc-final.mjs`, `analyze-local-otc-final-gaps.mjs`) extended
+coverage beyond the 855,207 fresh-scan boundary. The dated SQLite ledger remains the audit
+input; production totals are the deployed result of the same single methodology.
