@@ -67,7 +67,11 @@ assets.get("/v2/assets", async (c) => {
     sort: c.req.query("sort"),
     dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined,
   } as const;
-  const rows = await listCoreAssets(c.env.CORE_DB, filter);
+  // Discovery must reflect a just-committed issuance. Prefer the primary D1 session here because the
+  // root router's unconstrained replica can legitimately lag the canonical issuance projection.
+  const session = c.env.CORE_DB as unknown as { withSession?: (mode?: string) => D1Database };
+  const primary = typeof session.withSession === "function" ? session.withSession("first-primary") : c.env.CORE_DB;
+  const rows = await listCoreAssets(primary, filter);
   return J(c, { result: rows, next_offset: rows.length === lim(c) ? off(c) + lim(c) : null });
 });
 
@@ -82,7 +86,9 @@ assets.get("/v2/featured", async (c) => {
 
 assets.get("/v2/assets/:asset", async (c) => {
   const a = c.req.param("asset");
-  let r = await getCoreAsset(c.env.CORE_DB, a);
+  const session = c.env.CORE_DB as unknown as { withSession?: (mode?: string) => D1Database };
+  const primary = typeof session.withSession === "function" ? session.withSession("first-primary") : c.env.CORE_DB;
+  let r = await getCoreAsset(primary, a);
   if (!r) {
     // XCP and BTC are native assets with no issuance row. XCP supply = proof-of-burn minus all XCP
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.

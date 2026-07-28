@@ -77,7 +77,7 @@ export function NetworkStats() {
         <Stat
           label="BTC fees paid"
           value={
-            s?.btc_fees_complete && s.btc_fees != null ? (
+            s?.btc_fees != null ? (
               <>
                 {s.btc_fees.toFixed(2)} <span className="hidden sm:inline">BTC</span>
               </>

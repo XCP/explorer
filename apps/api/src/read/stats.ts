@@ -65,7 +65,10 @@ stats.get("/v2/metrics", async (c) => {
 
 /* ---------- network stats panel: all model counts + lifetime BTC fees / XCP destroyed (cached) ---------- */
 stats.get("/v2/stats", async (c) => {
-  return cached(c, "stats:all-chain:v1", { ttl: 86400, edge: 120, swr: 604800 }, async () => {
+  // Network counts are materialized by the canonical maintenance lane. A 24-hour cache made newly
+  // issued assets appear absent from /stats even while /assets was current; keep the edge short and
+  // let stale-while-revalidate absorb the occasional D1 refresh without hiding a whole day's work.
+  return cached(c, "stats:all-chain:v2", { ttl: 300, edge: 120, swr: 1800 }, async () => {
     const counts = await coreNetworkCounts(c.env.CORE_DB);
     const totals = await coreNetworkTotals(c.env.CORE_DB);
     return { result: { ...counts, ...totals } };
