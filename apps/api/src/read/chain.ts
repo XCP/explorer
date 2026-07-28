@@ -260,6 +260,23 @@ chain.get("/v2/transactions/:hash", async (c) => {
 // A confirmed tx's raw Counterparty events, proxied from the node (the tx page's Events tab). The
 // mirror stores PROCESSED tables, not raw events, so this is a read-through — best-effort ([] on any
 // node hiccup), 5-min edge cache (confirmed events never change).
+//
+// Verbose params inline each touched asset's full description; stamp assets carry multi-MB blobs
+// (a 7.86 MB hex PNG in one case), which would make this endpoint ship that blob to every visitor
+// once per event. The tab is evidence, not an image host: oversized strings truncate with an
+// explicit marker, and the node has the full value for anyone who needs it.
+const EVENT_PARAM_STRING_CAP = 16_384;
+function capEventParam(value: unknown): unknown {
+  if (typeof value === "string" && value.length > EVENT_PARAM_STRING_CAP) {
+    return `${value.slice(0, EVENT_PARAM_STRING_CAP)}…[truncated ${value.length - EVENT_PARAM_STRING_CAP} more characters]`;
+  }
+  if (Array.isArray(value)) return value.map(capEventParam);
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, capEventParam(item)]));
+  }
+  return value;
+}
+
 chain.get("/v2/transactions/:hash/events", async (c) => {
   const hash = c.req.param("hash");
   try {
@@ -273,7 +290,7 @@ chain.get("/v2/transactions/:hash/events", async (c) => {
     const events: TxEvent[] = (j.result ?? []).map((e) => ({
       event: String(e.event ?? ""),
       event_index: e.event_index ?? null,
-      params: e.params ?? null,
+      params: e.params ? (capEventParam(e.params) as Record<string, unknown>) : null,
     }));
     return J(c, { result: events }, 300);
   } catch {
