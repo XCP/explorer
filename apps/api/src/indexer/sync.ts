@@ -61,15 +61,38 @@ async function tipEventIndex(api: string): Promise<number> {
   const d = await counterpartyJson<{ result_count?: number }>(api, `/events?limit=1`);
   return (d.result_count ?? 0) - 1;
 }
-/** ascending chunk [from, from+CHUNK): request cursor=from+CHUNK-1 desc, reverse. */
-async function fetchAsc(api: string, from: number): Promise<Ev[]> {
+/** ascending chunk [from, from+chunk): request cursor=from+chunk-1 desc, reverse.
+ *  chunk must never overshoot the tip: a cursor past the tip makes the API fill the page descending
+ *  FROM the tip, re-downloading already-applied events. Verbose events inline each touched asset's
+ *  full description (stamp assets carry multi-MB blobs), so an overshot page can exceed Worker memory. */
+async function fetchAsc(api: string, from: number, chunk: number): Promise<Ev[]> {
   const d = await counterpartyJson<{ result?: Ev[] }>(
     api,
-    `/events?cursor=${from + CHUNK - 1}&limit=${CHUNK}&verbose=true`,
+    `/events?cursor=${from + chunk - 1}&limit=${chunk}&verbose=true`,
+    { malformedRetries: 0 }, // oversize/parse failures are deterministic; the caller shrinks chunk instead
   );
   const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from);
   rows.sort((a, b) => a.event_index - b.event_index);
   return rows;
+}
+/** Fetch the next ascending chunk, shrinking the page size whenever the verbose payload is too large
+ *  to buffer (Workers throws "Memory limit would be exceeded before EOF"). Returns the surviving chunk
+ *  size so the rest of the run stays below the discovered ceiling. */
+async function fetchAscAdaptive(
+  api: string,
+  from: number,
+  remaining: number,
+  chunk: number,
+): Promise<{ events: Ev[]; chunk: number }> {
+  for (;;) {
+    const size = Math.max(1, Math.min(chunk, remaining));
+    try {
+      return { events: await fetchAsc(api, from, size), chunk };
+    } catch (error) {
+      if (size <= 1) throw error;
+      chunk = Math.ceil(size / 4);
+    }
+  }
 }
 async function blockHash(api: string, n: number): Promise<string | null> {
   try {
@@ -135,8 +158,11 @@ export async function syncCoreEvents(
     }
     const cap = Math.min(opts.maxEvents ?? MAX_EVENTS_PER_RUN, MAX_EVENTS_PER_RUN);
     let applied = 0;
+    let chunk = CHUNK;
     while (lastIndex < tip && applied < cap) {
-      const events = await fetchAsc(env.COUNTERPARTY_API_BASE, lastIndex + 1);
+      const page = await fetchAscAdaptive(env.COUNTERPARTY_API_BASE, lastIndex + 1, tip - lastIndex, chunk);
+      chunk = page.chunk;
+      const events = page.events;
       if (events.length === 0) break;
       const ctx: Ctx = {
         stmts: [],
@@ -168,6 +194,7 @@ export async function syncCoreEvents(
     }
     return {
       applied,
+      chunk,
       last_event_index: lastIndex,
       last_block: lastBlock,
       source_tip_block: sourceTipBlock,
@@ -179,11 +206,12 @@ export async function syncCoreEvents(
   }
 }
 
-/** Find the final event at or before a rollback block using Counterparty's descending cursor pages. */
+/** Find the final event at or before a rollback block using Counterparty's descending cursor pages.
+ *  Non-verbose on purpose: only event_index/block_index are read, and verbose pages can be huge. */
 async function eventCursorBeforeBlock(api: string, cursor: number, block: number): Promise<number> {
   let probe = cursor;
   for (;;) {
-    const page = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${probe}&limit=${CHUNK}&verbose=true`);
+    const page = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${probe}&limit=${CHUNK}`);
     const rows = page.result ?? [];
     const retained = rows.find((event) => event.block_index <= block);
     if (retained) return retained.event_index;

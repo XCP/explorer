@@ -1236,6 +1236,7 @@ test("replay advances its durable cursor", async () => {
     );
     assert.deepEqual(result, {
       applied: 1,
+      chunk: 1000,
       last_event_index: 1,
       last_block: 101,
       source_tip_block: 101,
@@ -1267,6 +1268,67 @@ test("replay advances its durable cursor", async () => {
     last_event_index: "1",
     last_block_index: "101",
   });
+});
+
+test("replay clamps the events page to the pending window and shrinks it when a page is unreadable", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`
+    INSERT INTO core_state(key,value) VALUES
+      ('last_event_index','0'),
+      ('last_block_index','100');
+  `);
+  const eventRequests: string[] = [];
+  const transactionEvent = (index: number, hash: string) => ({
+    event: "NEW_TRANSACTION",
+    event_index: index,
+    block_index: 100 + index,
+    tx_hash: hash,
+    params: { tx_index: index, tx_hash: hash, block_index: 100 + index, source: "alice" },
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) {
+      return new Response(JSON.stringify({ result_count: 3 }), { status: 200 });
+    }
+    if (url.endsWith("/blocks/last")) {
+      return new Response(JSON.stringify({ result: { block_index: 102 } }), { status: 200 });
+    }
+    if (url.includes("/events?cursor=")) {
+      eventRequests.push(new URL(url).search);
+      // The first page (both pending events at once) stands in for a verbose payload too large to
+      // buffer; the replay must shrink the page instead of failing the run.
+      if (eventRequests.length === 1) return new Response("memory limit stand-in", { status: 200 });
+      if (url.includes("cursor=1&")) {
+        return new Response(JSON.stringify({ result: [transactionEvent(1, "d2".repeat(32))] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ result: [transactionEvent(2, "d3".repeat(32))] }), { status: 200 });
+    }
+    throw new Error(`unexpected Counterparty request: ${url}`);
+  };
+  try {
+    const result = await syncCoreEvents(
+      { CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" },
+      { maxEvents: 10 },
+    );
+    assert.deepEqual(eventRequests, [
+      "?cursor=2&limit=2&verbose=true", // clamped to the 2 pending events, not the 1000-event default
+      "?cursor=1&limit=1&verbose=true", // shrunk after the unreadable page
+      "?cursor=2&limit=1&verbose=true",
+    ]);
+    assert.deepEqual(result, {
+      applied: 2,
+      chunk: 1,
+      last_event_index: 2,
+      last_block: 102,
+      source_tip_block: 102,
+      tip: 2,
+      caught_up: true,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("compact replay rolls back a mismatched checkpoint before accepting the replacement branch", async () => {
