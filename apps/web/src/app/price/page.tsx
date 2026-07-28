@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { Route } from "next";
 import Link from "next/link";
-import type { PricePage } from "@xcp/shared/prices";
+import type { PriceCandles, PricePage } from "@xcp/shared/prices";
 import { getJson, type Envelope } from "@/lib/api/server";
 import {
   SectionHeader,
@@ -11,6 +11,8 @@ import {
   type SectionStat,
 } from "@/components/section-header";
 import { PriceHistoryChart } from "@/features/price/components/price-history-chart";
+import { TradingViewPriceChart } from "@/features/price/components/tradingview-price-chart";
+import { PriceCandlesChart } from "@/features/price/components/price-candles-chart";
 import { commas } from "@/lib/format";
 
 // The XCP price, explained — the asset-page anatomy applied to a number: the plate is the
@@ -56,9 +58,14 @@ const SOURCE_STORY: Record<string, { name: string; note: string }> = {
 };
 
 export default async function PricePageRoute() {
-  const env = await getJson<Envelope<PricePage>>(`/v2/price`, { revalidate: 300 });
+  const [env, ohlcEnv] = await Promise.all([
+    getJson<Envelope<PricePage>>(`/v2/price`, { revalidate: 300 }),
+    // The tape is additive — a failed fetch hides the section rather than failing the page.
+    getJson<Envelope<PriceCandles>>(`/v2/price/ohlc`, { revalidate: 3600 }).catch(() => null),
+  ]);
   const page = env.result;
   if (!page?.xcp) throw new Error("price unavailable");
+  const candles = ohlcEnv?.result?.candles ?? [];
   const sats = page.sats ? Math.round(page.sats.price_btc * 1e8) : null;
 
   const stats: SectionStat[] = [
@@ -86,6 +93,24 @@ export default async function PricePageRoute() {
           <span>{commas(page.history.length)} days</span>
         </div>
       </div>
+      <section className="mt-8">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-400">Interactive chart</h2>
+        <div className="plate">
+          <div className="bg-[#0e1218] p-2">
+            <TradingViewPriceChart history={page.history} />
+          </div>
+          <div className="cap">
+            <span>
+              <b>TradingView</b> · xcp.io daily closes
+            </span>
+            <span>drag to pan · scroll to zoom</span>
+          </div>
+        </div>
+        <p className="mt-3 max-w-[70ch] text-xs leading-relaxed text-zinc-500">
+          Powered by TradingView Lightweight Charts. This uses the explorer&apos;s provenance-backed XCP series—not a
+          discontinued exchange pair. Bars show attributable executed XCP volume on days where venue data exists.
+        </p>
+      </section>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="card factcard">
           <h2>How this number is made</h2>
@@ -165,6 +190,34 @@ export default async function PricePageRoute() {
       </SectionHeader>
 
       {overview}
+
+      {candles.length > 1 && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-400">The on-chain tape</h2>
+          <div className="plate">
+            <div className="bg-[#0e1218] p-3">
+              <PriceCandlesChart candles={candles} />
+            </div>
+            <div className="cap">
+              <span>
+                <b>XCP/BTC</b> · candles from on-chain executions only — DEX matches + dispenser fills, self-fills
+                excluded
+              </span>
+              <span>
+                {commas(candles.reduce((sum, candle) => sum + candle.fills, 0))} fills · {commas(candles.length)} traded
+                days
+              </span>
+            </div>
+          </div>
+          <p className="mt-4 max-w-[70ch] text-sm leading-relaxed text-zinc-400">
+            Every candle is built from real executions on Bitcoin — no exchange feed. The close is that day&apos;s
+            volume-weighted median, the same edge the calendar consumes; the wicks span the volume-weighted 5–95% of
+            fill prices, so a single mispriced dispenser triggering for dust reads as dispersion, not as a fantasy high.
+            This market is thin — read the volume row before reading the candles. Days with no executions are gaps,
+            honestly.
+          </p>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-400">Source eras</h2>

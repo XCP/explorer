@@ -5,13 +5,14 @@
  * calendar that values every trade on the site — the header number IS the site's number.
  */
 import type { Envelope } from "@xcp/shared/envelope";
-import type { PricePage, PriceTicker } from "@xcp/shared/prices";
+import type { PriceCandles, PricePage, PriceTicker } from "@xcp/shared/prices";
 import { router, J, cached } from "#api/read/respond";
 import {
   latestMarketEdge,
   latestPrice,
   onChainVenueEvidence,
   priceBefore,
+  xcpDailyCandles,
   xcpHistory,
   xcpSourceEras,
 } from "#api/queries/prices";
@@ -37,6 +38,14 @@ prices.get("/v2/price/ticker", async (c) => {
   };
   return J(c, body, 60);
 });
+
+// The /price page's candle tape: daily on-chain XCP/BTC OHLC over raw fills. New fills land at
+// most a few times a day, so an hour-long TTL with a day of stale-while-revalidate is generous.
+prices.get("/v2/price/ohlc", (c) =>
+  cached(c, "price:ohlc:2", { ttl: 3600, edge: 600, swr: 86_400 }, async (): Promise<Envelope<PriceCandles>> => ({
+    result: { as_of: Math.floor(Date.now() / 1000), candles: await xcpDailyCandles(c.env.CORE_DB) },
+  })),
+);
 
 prices.get("/v2/price", (c) =>
   cached(c, "price:page:4", { ttl: 600, edge: 300, swr: 3600 }, async (): Promise<Envelope<PricePage>> => {

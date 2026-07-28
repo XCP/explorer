@@ -24,6 +24,7 @@ import {
   REFRESH_PRICING_HEALTH_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
+import { XCP_DAILY_CANDLES_SQL } from "#api/queries/prices";
 
 test("the selected-price policy is named and resolves equal-fidelity sources deterministically", () => {
   assert.equal(PRICE_SELECTION_POLICY, "usd-payment-v1");
@@ -276,6 +277,35 @@ test("dispense executions carry the on-chain price when the order book is silent
   db.exec(`DELETE FROM dispenses`);
   db.exec(PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM market_price_observations WHERE venue='dispense'`).get()?.n, 0);
+  db.close();
+});
+
+test("daily candles keep error prints out of the wicks and dust-only days off the tape", () => {
+  const db = fixture();
+  // The 2026-01-01 fixture fills: 100 XCP @ 0.001, 100 XCP @ 0.002, and 1 XCP @ 1.0 — a fill 500×
+  // off market that must not become the high. 2026-01-08 has two arm's-length dispenses @ 0.003
+  // plus a self-fill that must not count. 2026-01-09 splits its volume evenly between an honest
+  // fill and a 50× error print — volume share alone can't save the wick there; the ±10×-of-median
+  // sanity band must. 2026-01-10 is a dust-only day (0.005 XCP) that must not chart at all.
+  db.exec(`INSERT INTO dispenses VALUES
+    (1,'100000000','300000',strftime('%s','2026-01-08'),10,20),
+    (1,'100000000','300000',strftime('%s','2026-01-08'),11,21),
+    (1,'100000000','99900000',strftime('%s','2026-01-08'),12,12)`);
+  db.exec(`INSERT INTO order_matches VALUES
+    (1,'10000000000',2,'10000000',strftime('%s','2026-01-09'),'completed'),
+    (1,'10000000000',2,'500000000',strftime('%s','2026-01-09'),'completed'),
+    (1,'500000',2,'650000',strftime('%s','2026-01-10'),'completed')`);
+  assert.deepEqual(
+    db
+      .prepare(XCP_DAILY_CANDLES_SQL)
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      { day: "2026-01-01", low: 0.001, close: 0.002, high: 0.002, volume: 201, fills: 3, btc: 100000 },
+      { day: "2026-01-08", low: 0.003, close: 0.003, high: 0.003, volume: 2, fills: 2, btc: 110000 },
+      { day: "2026-01-09", low: 0.001, close: 0.001, high: 0.001, volume: 200, fills: 2, btc: 120000 },
+    ],
+  );
   db.close();
 });
 

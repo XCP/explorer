@@ -31,6 +31,29 @@ export interface PriceHistoryPoint {
   vol?: number | null;
 }
 
+/** One daily candle of the on-chain XCP/BTC tape, every price in BTC per XCP. The close is the
+ *  day's volume-weighted median — the same edge the USD calendar consumes. The wick ends are
+ *  volume-weighted 5th/95th percentile prices over the fills within 10× of that median, so a
+ *  mispriced dispenser print reads as dispersion, never as a fantasy extreme. Volume and fills
+ *  count the WHOLE day. The open is the previous candle's close, drawn client-side. */
+export interface PriceCandlePoint {
+  day: string;
+  low: number;
+  close: number;
+  high: number;
+  /** Executed XCP volume behind this candle. */
+  volume: number;
+  fills: number;
+  /** Same-day BTC/USD from the calendar — lets clients draw the USD denomination. */
+  btc: number | null;
+}
+
+/** GET /v2/price/ohlc — the /price page's TradingView-style tape, on-chain executions only. */
+export interface PriceCandles {
+  as_of: number;
+  candles: PriceCandlePoint[];
+}
+
 export interface PriceSourceEra {
   source: string;
   days: number;
