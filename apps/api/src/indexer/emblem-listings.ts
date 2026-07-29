@@ -3,7 +3,11 @@ import type { Env } from "#api/env";
 import { fetchSequenceListingsPage, SequenceUnregisteredCollection } from "#api/integrations/sequence";
 import { getCoreStateInt, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
 
-const MAX_PAGES_PER_CONTRACT = 5;
+// 40 pages × 100 = a 4,000-listing ceiling per contract. Five pages proved real-world short: the
+// curated-fakes contract (0x7e6027…, ~1,700 vaults) carries 500+ live OpenSea listings, and the cap
+// throw stalled the whole rotation at its cursor for a day. A page is one subrequest; forty stays
+// trivial inside the invocation budget.
+const MAX_PAGES_PER_CONTRACT = 40;
 const CONTRACTS_PER_RUN = 6;
 const MAP_CHUNK = 90;
 
