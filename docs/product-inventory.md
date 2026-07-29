@@ -142,8 +142,16 @@ Each bet is falsifiable against our data. Status: `untested` / `testing` / `conf
   address page's persona colours). Owner review pending; the normalcy half of the composite (H4) is still
   unbuilt.
 - **H4 — Market normalcy is definable.** Per-class baselines (price/volume/holder-churn) exist stably enough to
-  flag deviations beyond cohesion. → *Status: untested.* Test: compute baselines for one collection tier, see
-  if outliers are interpretable.
+  flag deviations beyond cohesion. → *Status: reframed 2026-07-28 — baselines refuted, breadth axis confirmed.*
+  Probe (six collections, 180d eligible direct-sale window): the on-chain market is too THIN for windowed
+  per-class baselines — punk-frens and stampunks had zero assets with ≥3 eligible trades, all of rare-pepe
+  traded ~$22k. But abnormality is still definable and interpretable at even 3 trades via **breadth vs value**:
+  PAGGAGECLAIM did $16.7k in 3 trades to 3 buyers — 72% of fake-rare's entire half-year volume — with holder
+  cohesion 1.15, completely invisible to the existing detector (chip gates ≥9). Cohesion catches insular
+  holder BASES (BOBOCASH, 11.13, ~$22 traded); breadth-vs-value catches concentrated MONEY. The normalcy
+  readout for H3's composite should therefore be: buyers-per-dollar / top-buyer share / share-of-collection
+  volume — computable from the same eligible-trade evidence, no baseline model needed. Next: decide the
+  surface (a market-breadth chip beside the insular chip, or a line in the H3 collection card).
 - **H5 — Cutting the science projects (Graph page, Candidates from nav) and half the Emblem stack loses no
   legibility.** → *Status: untested.* Test: pull them, watch nothing break.
 
