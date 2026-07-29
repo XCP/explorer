@@ -10,6 +10,7 @@ import { assetActivityOutlook } from "#api/reputation/activity-outlook";
 import { assetRating } from "#api/reputation/rating";
 import { featuredAssets, holderTiers, holderArchetypes, assetTop1Pct, latestUsdRate } from "#api/queries/assets";
 import {
+  assetHolderHistory,
   listCoreAssets,
   getCoreAsset,
   coreAssetAccounting,
@@ -268,6 +269,15 @@ assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
     },
     300,
   );
+});
+
+// Holders-over-time (the holders tab header sparkline). Reconstructed from the ledger on demand;
+// six-hour cache absorbs the ~3s worst case and holder bases drift slowly.
+assets.get("/v2/assets/:asset/holder-history", (c) => {
+  const asset = c.req.param("asset").toUpperCase();
+  return cached(c, `asset:holder-history:1:${asset}`, { ttl: 21600, edge: 600, swr: 86400 }, async () => ({
+    result: await assetHolderHistory(c.env.CORE_DB, asset),
+  }));
 });
 
 assets.get("/v2/assets/:asset/balances", async (c) => {

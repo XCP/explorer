@@ -589,12 +589,13 @@ export function listAssetBalances(db: D1Database, asset: string, limit: number, 
                  ELSE lower(hex(balance.utxo_tx_hash))||':'||balance.utxo_vout END holder,
             balance.holder_type,balance.quantity,balance.quantity_normalized,
             CASE WHEN signal.is_burn=1 THEN 'burn' WHEN signal.is_exchange=1 THEN 'exchange'
-                 WHEN signal.is_emblem_vault=1 THEN 'vault' WHEN signal.is_deposit=1 THEN 'deposit'
-                 WHEN signal.survived_assets>=20 THEN 'creator'
-                 WHEN signal.assets_held>=500 THEN 'whale' WHEN signal.assets_held>=100 THEN 'collector' END role
+                 WHEN signal.is_emblem_vault=1 THEN 'vault'
+                 WHEN balance.address_id=state.issuer_id THEN 'issuer'
+                 WHEN balance.address_id=state.owner_id THEN 'owner' END role
        FROM balances balance
        LEFT JOIN address_dictionary address ON address.address_id=balance.address_id
        LEFT JOIN address_signals signal ON signal.address_id=balance.address_id
+       LEFT JOIN assets state ON state.asset_id=balance.asset_id
       WHERE balance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
         AND CAST(balance.quantity AS INTEGER)>0
       ORDER BY CAST(balance.quantity AS INTEGER) DESC LIMIT ? OFFSET ?`,
@@ -824,5 +825,34 @@ export function coreAssetDisplayFacts(db: D1Database, assets: string[]): Promise
        LEFT JOIN assets details ON details.asset_id=dictionary.asset_id
       WHERE dictionary.asset IN (${symbols.map(() => "?").join(",")})`,
     ...symbols,
+  );
+}
+
+/** Daily holder-count series reconstructed from the 1:1 credit/debit ledger: per (address, day) net
+ *  deltas, running per-address balances, then the day the address enters (0→positive) or leaves
+ *  (positive→0) the holder set. ~3s on the heaviest asset (1.2M ledger rows) — served from a
+ *  six-hour cache. UTXO-attached balances carry no address and sit outside the series. */
+export function assetHolderHistory(db: D1Database, asset: string): Promise<{ day: number; holders: number }[]> {
+  return q<{ day: number; holders: number }>(
+    db,
+    `WITH daily AS (
+       SELECT ledger.address_id, blocks.block_time/86400 day,
+         SUM(CASE WHEN ledger.direction=1 THEN CAST(ledger.quantity AS INTEGER)
+                  ELSE -CAST(ledger.quantity AS INTEGER) END) delta
+       FROM ledger_events ledger
+       JOIN blocks ON blocks.block_index=ledger.block_index
+       WHERE ledger.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
+         AND ledger.address_id IS NOT NULL
+       GROUP BY ledger.address_id, day
+     ), runs AS (
+       SELECT day,
+         SUM(delta) OVER (PARTITION BY address_id ORDER BY day) cum,
+         SUM(delta) OVER (PARTITION BY address_id ORDER BY day) - delta prev
+       FROM daily
+     ), transitions AS (
+       SELECT day, SUM((cum>0) - (prev>0)) net FROM runs GROUP BY day
+     )
+     SELECT day, SUM(net) OVER (ORDER BY day) holders FROM transitions ORDER BY day`,
+    asset,
   );
 }

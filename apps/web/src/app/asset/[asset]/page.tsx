@@ -478,6 +478,13 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
         collection={collection}
         holderCount={item.holder_count}
         supply={item.supply_normalized != null ? Number(item.supply_normalized) : null}
+        divisible={item.divisible === 1}
+        unitPriceUsd={
+          // the site's own conservative unit price: valuation cap ÷ supply, else the last USD sale
+          item.valuation?.market_cap_usd != null && Number(item.supply_normalized) > 0
+            ? item.valuation.market_cap_usd / Number(item.supply_normalized)
+            : (item.sales?.last_price_usd ?? null)
+        }
         feedCounts={item.feed_counts ?? null}
         inBand
         overview={overview}

@@ -13,7 +13,8 @@ import { trackEvent } from "@/lib/fathom";
 /** A tab is either a record feed (path + columns + optional mono count) or a self-contained panel
  *  (e.g. the asset Related tab) that mounts only while selected. */
 export type TabDef =
-  { label: string; path: string; cols: Col[]; count?: number | null } | { label: string; panel: ReactNode };
+  | { label: string; path: string; cols: Col[]; count?: number | null; header?: ReactNode }
+  | { label: string; panel: ReactNode };
 
 // SSR renders client components too; useLayoutEffect on the server is a dev warning, so fall back.
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -217,22 +218,25 @@ export function DetailTabs({
   // context travels with the current offset so rank columns can count from it; the chain tip feeds
   // lifetime cells (order Expires) — same SWR key as the footer heartbeat, so it's deduped.
   const feedPanel = feed && (
-    <AsyncContent
-      isLoading={isLoading}
-      empty={rows.length === 0}
-      emptyWhat={feed.label.toLowerCase()}
-      loading={<Skeleton />}
-    >
-      <RecordTable cols={feed.cols} rows={rows} context={{ ...context, tip: tip ?? undefined, offset }} />
-      <div className="flex gap-2">
-        <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>
-          Prev
-        </SecondaryButton>
-        <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
-          Next
-        </SecondaryButton>
-      </div>
-    </AsyncContent>
+    <>
+      {feed.header ?? null}
+      <AsyncContent
+        isLoading={isLoading}
+        empty={rows.length === 0}
+        emptyWhat={feed.label.toLowerCase()}
+        loading={<Skeleton />}
+      >
+        <RecordTable cols={feed.cols} rows={rows} context={{ ...context, tip: tip ?? undefined, offset }} />
+        <div className="flex gap-2">
+          <SecondaryButton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>
+            Prev
+          </SecondaryButton>
+          <SecondaryButton disabled={nextOffset == null} onClick={() => setOffset(nextOffset!)}>
+            Next
+          </SecondaryButton>
+        </div>
+      </AsyncContent>
+    </>
   );
   const panelBody = current === null ? overview : "panel" in current ? current.panel : feedPanel;
 

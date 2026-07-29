@@ -226,7 +226,8 @@ export interface AssetListRow {
 
 /** The single most-specific classification of an asset holder, for the holders-table badge. Custody
  *  labels win over behavior; behavior buckets are mutually exclusive by threshold. Absent = plain holder. */
-export type HolderRole = "burn" | "exchange" | "vault" | "deposit" | "service" | "creator" | "whale" | "collector";
+export type HolderRole =
+  "burn" | "exchange" | "vault" | "deposit" | "service" | "creator" | "whale" | "collector" | "issuer" | "owner";
 
 /** Balance rows. Two read shapes share this:
  *   - GET /v2/addresses/:a/balances → asset/quantity + divisible/asset_longname/stamp

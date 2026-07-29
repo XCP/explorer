@@ -2,7 +2,18 @@
 import type { ReactNode } from "react";
 import type { Route } from "next";
 import Link from "next/link";
-import { Flame, Landmark, Vault, ArrowDownToLine, Server, Fish, Layers, Hammer, type LucideIcon } from "lucide-react";
+import {
+  Flame,
+  Landmark,
+  Vault,
+  ArrowDownToLine,
+  Server,
+  Fish,
+  Layers,
+  Hammer,
+  KeyRound,
+  type LucideIcon,
+} from "lucide-react";
 import type { AssetFeedCounts, BalanceRow, HolderRole } from "@xcp/shared/assets";
 import { DetailTabs, type TabDef } from "@/components/detail-tabs";
 import { RelatedTab } from "@/features/assets/components/related-tab";
@@ -19,7 +30,8 @@ import {
   REGISTRY,
 } from "@/features/records/registry";
 import { TRADE_COLS } from "@/components/trades";
-import { commas, short } from "@/lib/format";
+import { commas, short, usdCompact } from "@/lib/format";
+import { HoldersHeader } from "@/features/assets/components/holders-header";
 
 // One badge per holder, keyed off the wire `role` — the SAME taxonomy the holder-makeup card buckets
 // by, so "whale"/"collector" read identically in the aggregate and on the individual row. Custody
@@ -33,7 +45,14 @@ const ROLE_BADGE: Record<HolderRole, { label: string; Icon: LucideIcon; classNam
   creator: { label: "creator", Icon: Hammer, className: "bg-amber-500/10 text-amber-300 ring-amber-500/20" },
   whale: { label: "whale", Icon: Fish, className: "bg-teal-500/10 text-teal-300 ring-teal-500/20" },
   collector: { label: "collector", Icon: Layers, className: "bg-indigo-500/10 text-indigo-300 ring-indigo-500/20" },
+  issuer: { label: "issuer", Icon: Hammer, className: "bg-amber-500/10 text-amber-300 ring-amber-500/20" },
+  owner: { label: "owner", Icon: KeyRound, className: "bg-sky-500/10 text-sky-300 ring-sky-500/20" },
 };
+
+// The holders table shows identity badges, not behaviour scores: custody (burn/exchange/vault) plus
+// the asset's own issuer and current owner. Whale/collector/deposit/service read as noise here —
+// the holder-makeup card above the table already aggregates behaviour (owner call, 2026-07-29).
+const HOLDER_TABLE_ROLES = new Set<HolderRole>(["burn", "exchange", "vault", "issuer", "owner"]);
 
 function RoleBadge({ role }: { role: HolderRole }) {
   const badge = ROLE_BADGE[role];
@@ -50,7 +69,17 @@ function RoleBadge({ role }: { role: HolderRole }) {
 // v19 holders-table cells (.ht-*): rank counts from the page offset; % of supply answers the
 // concentration question every cap-table reader is asking (the denominator is already on the page —
 // audit #7).
-const holderCols = (supply: number | null): Col<BalanceRow>[] => [
+// Divisibility-aware amount: indivisible assets are whole numbers; divisible ones drop the
+// artificial eight-zero tail (0.5, not 0.50000000) — the numeric column stays right-aligned.
+const holderAmount = (normalized: string | null, divisible: boolean): string => {
+  if (normalized == null) return "—";
+  if (!divisible) return commas(normalized.split(".")[0]);
+  const trimmed = normalized.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const [whole, frac] = trimmed.split(".");
+  return frac ? `${commas(whole)}.${frac}` : commas(whole);
+};
+
+const holderCols = (supply: number | null, divisible: boolean, unitPriceUsd: number | null): Col<BalanceRow>[] => [
   {
     label: "#",
     priority: 2,
@@ -69,17 +98,31 @@ const holderCols = (supply: number | null): Col<BalanceRow>[] => [
             {short(r.holder)}
           </Link>
         )}
-        {r.role ? <RoleBadge role={r.role} /> : null}
+        {r.role && HOLDER_TABLE_ROLES.has(r.role) ? <RoleBadge role={r.role} /> : null}
       </span>
     ),
   },
   {
-    label: "Quantity",
+    label: "Amount",
     numeric: true,
     priority: 1,
     w: "150px",
-    cell: (r) => <span className="ht-qty">{commas(r.quantity_normalized)}</span>,
+    cell: (r) => <span className="ht-qty">{holderAmount(r.quantity_normalized, divisible)}</span>,
   },
+  ...(unitPriceUsd != null
+    ? [
+        {
+          label: "Value",
+          numeric: true,
+          priority: 2,
+          w: "110px",
+          cell: (r) => {
+            const qty = Number(r.quantity_normalized);
+            return Number.isFinite(qty) ? <span className="ht-qty">{usdCompact(qty * unitPriceUsd)}</span> : "—";
+          },
+        } satisfies Col<BalanceRow>,
+      ]
+    : []),
   {
     label: "% of supply",
     numeric: true,
@@ -111,6 +154,8 @@ export function AssetTabs({
   collection = null,
   holderCount,
   supply = null,
+  divisible = false,
+  unitPriceUsd = null,
   feedCounts,
   inBand = false,
   overview,
@@ -120,6 +165,8 @@ export function AssetTabs({
   collection?: string | null;
   holderCount?: number | null;
   supply?: number | null;
+  divisible?: boolean;
+  unitPriceUsd?: number | null;
   feedCounts?: AssetFeedCounts | null;
   inBand?: boolean;
   overview?: ReactNode;
@@ -129,7 +176,13 @@ export function AssetTabs({
   // Order: Holders leads the activity, the rest follow, then Trades sits second-to-last and Related is
   // pinned to the very end (Related is a panel with no count, so it always earns the final slot).
   const tabs: TabDef[] = [
-    { label: "Holders", path: `${base}/balances`, count: holderCount, cols: holderCols(supply) },
+    {
+      label: "Holders",
+      path: `${base}/balances`,
+      count: holderCount,
+      cols: holderCols(supply, divisible, unitPriceUsd),
+      header: <HoldersHeader asset={asset} supply={supply} holderCount={holderCount ?? null} />,
+    },
     { label: "Activity", panel: <AssetActivity asset={asset} /> },
     { label: "Issuances", path: `${base}/issuances`, count: feedCounts?.issuances, cols: REGISTRY.issuances!.cols },
     { label: "Dispensers", path: `${base}/dispensers`, cols: DISPENSER_COLS, count: feedCounts?.dispensers },
