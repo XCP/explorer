@@ -9,6 +9,7 @@ import { AssetIcon } from "@/components/ui/badges";
 import { AreaChart } from "@/components/ui/charts";
 import { Board } from "@/components/board";
 import { commas, usdCompact } from "@/lib/format";
+import { assetHref } from "@/lib/asset-link";
 
 // Human labels for the per-sale verdict (trades.sale_class). Honest about what each means — especially
 // that non_counterparty value lives on another chain and isn't a Counterparty sale at all.
@@ -32,7 +33,7 @@ export function Vaults() {
     </Link>
   );
   const Asset = (asset: string, longname?: string | null) => (
-    <Link href={`/asset/${asset}`} className="flex items-center gap-2 flex-1 min-w-0">
+    <Link href={assetHref(asset, longname)} className="flex items-center gap-2 flex-1 min-w-0">
       <AssetIcon asset={asset} size={16} />
       <span className="truncate">{longname || asset}</span>
     </Link>

@@ -11,6 +11,7 @@ import { AssetArt } from "@/features/assets/components/asset-art";
 import { RecordTable } from "@/features/records/components/record-table";
 import { assetCell } from "@/features/records/cells";
 import { commas } from "@/lib/format";
+import { assetHref } from "@/lib/asset-link";
 
 // Holdings as a visual collection (the owner's #1 want) — a wall of the actual card art, sorted by
 // quantity, with a table toggle. This is the "lead with art, not a spreadsheet" upgrade.
@@ -47,7 +48,7 @@ export function Holdings({ address }: { address: string }) {
             {rows.map((b) => (
               <Link
                 key={b.asset}
-                href={`/asset/${b.asset}`}
+                href={assetHref(b.asset, b.asset_longname)}
                 className="group relative overflow-hidden rounded-lg border border-zinc-800 hover:border-(--color-accent) transition-colors"
               >
                 <AssetArt

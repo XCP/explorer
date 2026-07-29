@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { SearchBox } from "@/components/chrome/search-box";
 import { commas, short, timeAgo, usdCompact } from "@/lib/format";
+import { assetHref } from "@/lib/asset-link";
 
 type Scalar = string | number | null | undefined;
 type LeaderboardRow = Record<string, Scalar>;
@@ -55,7 +56,7 @@ const questions = [
 
 function AssetName({ asset, longname }: { asset: string; longname?: string | null }) {
   return (
-    <Link href={`/asset/${asset}`} className="flex min-w-0 items-center gap-2">
+    <Link href={assetHref(asset, longname)} className="flex min-w-0 items-center gap-2">
       <AssetIcon asset={asset} size={24} />
       <span className="truncate">{longname || asset}</span>
     </Link>
@@ -142,7 +143,7 @@ export function HomeDashboard() {
             {featured.map((a) => (
               <Link
                 key={a.asset}
-                href={`/asset/${a.asset}`}
+                href={assetHref(a.asset, a.asset_longname)}
                 title={a.asset_longname || a.asset}
                 className="group min-w-0"
               >

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { commas, short, ts, timeAgo } from "@/lib/format";
 import { AssetIcon } from "@/components/ui/badges";
+import { assetHref } from "@/lib/asset-link";
 
 /** The page subject a record table renders under — drives contextual column suppression (R4:
  *  never render the column the page already answers) and perspective signing of quantities.
@@ -79,7 +80,7 @@ export const assetCell = (a?: string | null, display?: string | null) =>
   a ? (
     <span className="asset">
       <AssetIcon asset={a} size={22} className="aicon" />
-      <Link className="aname" href={`/asset/${a}`}>
+      <Link className="aname" href={assetHref(a, display)}>
         {display || a}
       </Link>
     </span>
@@ -90,7 +91,7 @@ export const assetCell = (a?: string | null, display?: string | null) =>
  *  asset named inside prose (the tx-page story sentences). `display` overrides for longnames. */
 export const assetChip = (a?: string | null, display?: string | null) =>
   a ? (
-    <Link href={`/asset/${a}`} className="inline-flex items-center gap-1.5 align-middle">
+    <Link href={assetHref(a, display)} className="inline-flex items-center gap-1.5 align-middle">
       <AssetIcon asset={a} size={16} />
       {display || a}
     </Link>

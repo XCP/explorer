@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cache } from "react";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import type { Route } from "next";
 import Link from "next/link";
 import { Trophy, CalendarDays, LockOpen } from "lucide-react";
@@ -38,6 +38,19 @@ const loadAsset = cache(async (asset: string): Promise<AssetDetail | null> => {
   }
 });
 
+// Subassets canonicalize to their longname slug: /asset/A95… → /asset/PARENT.child. The API resolves
+// either form (registered name uppercased, longname byte-exact), so compare the DECODED route param —
+// Next hands us the raw percent-encoded segment — against the stored longname and hop permanently
+// when they differ. Longnames are case-sensitive; never fold before comparing. Streaming makes this
+// a client-side hop (Next 15 streams metadata and body alike); crawlers get the canonical alternate
+// from generateMetadata instead of an HTTP 308.
+function canonicalizeSubasset(routeParam: string, item: AssetDetail): void {
+  if (!item.asset_longname) return;
+  if (decodeURIComponent(routeParam) !== item.asset_longname) {
+    permanentRedirect(`/asset/${encodeURIComponent(item.asset_longname)}`);
+  }
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ asset: string }> }): Promise<Metadata> {
   const { asset } = await params;
   const item = await loadAsset(asset);
@@ -55,6 +68,9 @@ export async function generateMetadata({ params }: { params: Promise<{ asset: st
   return {
     title: name,
     description,
+    // Subassets canonicalize to the longname slug for crawlers; the page body performs the visible
+    // hop (Next 15 streams metadata, so a redirect here cannot become an HTTP 308 under OpenNext).
+    alternates: { canonical: `/asset/${encodeURIComponent(name)}` },
     openGraph: { title: `${name} | XCP.io`, description, images: [{ url: image }] },
     twitter: { card: "summary", title: `${name} | XCP.io`, description, images: [image] },
   };
@@ -144,6 +160,8 @@ export default async function AssetPage({ params }: { params: Promise<{ asset: s
   }).catch(() => null);
   const item = await loadAsset(asset);
   if (!item) notFound();
+
+  canonicalizeSubasset(asset, item);
 
   const collection = item.collection ?? null;
   // Floor/DEX context is optional. Never let its service dependency hold the primary asset identity

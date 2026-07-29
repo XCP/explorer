@@ -6,6 +6,7 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { AssetIcon } from "@/components/ui/badges";
 import { Board } from "@/components/board";
 import { commas } from "@/lib/format";
+import { assetHref } from "@/lib/asset-link";
 
 type LeaderboardScalar = string | number | null | undefined;
 type LeaderboardRow = Record<string, LeaderboardScalar>;
@@ -32,7 +33,10 @@ export function Leaderboards() {
   const Asset = (value: LeaderboardScalar, longname?: LeaderboardScalar) => {
     const asset = String(value ?? "");
     return (
-      <Link href={`/asset/${asset}`} className="flex items-center gap-2 flex-1 min-w-0">
+      <Link
+        href={assetHref(asset, typeof longname === "string" ? longname : null)}
+        className="flex items-center gap-2 flex-1 min-w-0"
+      >
         <AssetIcon asset={asset} size={16} />
         <span className="truncate">{longname || asset}</span>
       </Link>

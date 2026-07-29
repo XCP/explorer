@@ -7,11 +7,12 @@ import { apiUrl, type Envelope } from "@/lib/api/url";
 import { collectionLabel, commas } from "@/lib/format";
 import { AssetArt } from "@/features/assets/components/asset-art";
 import { ART_WIDTH } from "@/lib/art";
+import { assetHref } from "@/lib/asset-link";
 
 // One v19 gallery card: full art on top, mono name, one-line "why it's here".
 function GalleryCard({ asset, name, why }: { asset: string; name: string; why: ReactNode }) {
   return (
-    <Link className="g-card" href={`/asset/${encodeURIComponent(asset)}`}>
+    <Link className="g-card" href={assetHref(asset, name !== asset ? name : null)}>
       <div className="g-art">
         <AssetArt asset={asset} w={ART_WIDTH.card} className="size-full" />
       </div>

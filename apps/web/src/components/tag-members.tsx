@@ -13,6 +13,7 @@ import { AssetArt } from "@/features/assets/components/asset-art";
 import { ART_WIDTH } from "@/lib/art";
 import { commas, compact } from "@/lib/format";
 import { trackEvent } from "@/lib/fathom";
+import { assetHref } from "@/lib/asset-link";
 
 // A tag's asset members — table AND card views over the same sorted set. One 1000-row page covers
 // every collection whole (memorychain 152, rare-pepe 1,037), so sorting reorders the full
@@ -116,7 +117,7 @@ export function TagMembers({ tag }: { tag: string }) {
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               {rows.map((r) => (
-                <Link key={r.asset} className="g-card" href={`/asset/${encodeURIComponent(r.asset)}` as Route}>
+                <Link key={r.asset} className="g-card" href={assetHref(r.asset, r.asset_longname)}>
                   <div className="g-art">
                     <AssetArt asset={r.asset} w={ART_WIDTH.card} className="size-full" />
                   </div>

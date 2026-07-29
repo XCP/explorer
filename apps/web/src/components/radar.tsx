@@ -16,6 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { commas, usdCompact } from "@/lib/format";
+import { assetHref } from "@/lib/asset-link";
 
 type View = "emerging" | "fresh" | "established" | "available";
 const isAvailable = (row: RadarAsset | AvailableAsset): row is AvailableAsset => "venue" in row;
@@ -25,11 +26,11 @@ function EmergenceRow({ row, rank }: { row: EmergenceEvidence | EmergingAsset; r
   return (
     <li className="flex items-center gap-3 border-b border-zinc-900 py-2.5 last:border-0">
       <span className="w-5 shrink-0 text-right font-mono text-xs tabular-nums text-zinc-600">{rank ?? "·"}</span>
-      <Link href={`/asset/${row.asset}`} className="shrink-0" aria-hidden="true" tabIndex={-1}>
+      <Link href={assetHref(row.asset, row.asset_longname)} className="shrink-0" aria-hidden="true" tabIndex={-1}>
         <AssetIcon asset={row.asset} size={30} />
       </Link>
       <div className="min-w-0 flex-1">
-        <Link href={`/asset/${row.asset}`} className="block truncate font-medium text-zinc-200">
+        <Link href={assetHref(row.asset, row.asset_longname)} className="block truncate font-medium text-zinc-200">
           {row.asset_longname || row.asset}
         </Link>
         <div className="mt-1 text-xs text-zinc-500">
@@ -55,11 +56,11 @@ function EstablishedRow({ row, rank }: { row: RadarAsset | AvailableAsset; rank:
   return (
     <li className="flex items-center gap-3 border-b border-zinc-900 py-2.5 last:border-0">
       <span className="w-5 shrink-0 text-right font-mono text-xs text-zinc-600">{rank}</span>
-      <Link href={`/asset/${row.asset}`} className="shrink-0" aria-hidden="true" tabIndex={-1}>
+      <Link href={assetHref(row.asset, row.asset_longname)} className="shrink-0" aria-hidden="true" tabIndex={-1}>
         <AssetIcon asset={row.asset} size={30} />
       </Link>
       <div className="min-w-0 flex-1">
-        <Link href={`/asset/${row.asset}`} className="block truncate font-medium text-zinc-200">
+        <Link href={assetHref(row.asset, row.asset_longname)} className="block truncate font-medium text-zinc-200">
           {row.asset_longname || row.asset}
         </Link>
         <div className="mt-1 text-xs text-zinc-500">

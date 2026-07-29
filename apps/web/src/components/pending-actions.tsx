@@ -17,7 +17,7 @@ const COLS: Col<MempoolActionRow>[] = [
     weight: "primary",
     priority: 1,
     w: "minmax(0,1.2fr)",
-    cell: (r) => assetCell(r.asset ?? undefined),
+    cell: (r) => assetCell(r.asset ?? undefined, r.asset_longname),
   },
   {
     label: "Quantity",
