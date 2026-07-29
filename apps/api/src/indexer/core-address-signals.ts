@@ -187,19 +187,21 @@ export async function enqueueCoreAddressSignals(db: D1Database, addresses: Itera
 export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, force = false) {
   const queue = await queuedIds(db);
   if (queue.length > 0) {
-    const todo = queue.slice(0, limit),
-      placeholders = todo.map(() => "?").join(",");
-    const rows = await db
-      .prepare(`SELECT address FROM address_dictionary WHERE address_id IN (${placeholders})`)
-      .bind(...todo)
-      .all<{ address: string }>();
-    await rebuildCoreAddressSignals(
-      db,
-      rows.results.map((row) => row.address),
-    );
+    const todo = queue.slice(0, limit);
+    // D1 caps a statement near 100 bound variables — resolve the ids in slices.
+    const addresses: string[] = [];
+    for (let index = 0; index < todo.length; index += 90) {
+      const chunk = todo.slice(index, index + 90);
+      const rows = await db
+        .prepare(`SELECT address FROM address_dictionary WHERE address_id IN (${chunk.map(() => "?").join(",")})`)
+        .bind(...chunk)
+        .all<{ address: string }>();
+      addresses.push(...rows.results.map((row) => row.address));
+    }
+    await rebuildCoreAddressSignals(db, addresses);
     await setCoreState(db, "address_signals_queue", JSON.stringify(queue.slice(todo.length)));
     return {
-      processed: rows.results.length,
+      processed: addresses.length,
       queueRemaining: Math.max(0, queue.length - todo.length),
       cycleComplete: false,
     };
