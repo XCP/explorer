@@ -137,14 +137,13 @@ export async function rebuildCoreAddressSignals(db: D1Database, addresses: Itera
       .bind(address)
       .first<{ address_id: number }>();
     if (!identity) continue;
-    const activity = [] as { first_block: number | null; last_block: number | null }[];
-    for (const query of ACTIVITY_QUERIES) {
-      const bounds = await db
-        .prepare(query)
-        .bind(identity.address_id)
-        .first<{ first_block: number | null; last_block: number | null }>();
-      if (bounds) activity.push(bounds);
-    }
+    // One batch = one Worker subrequest for all six activity reads. The sequential form cost ~8
+    // subrequests per address, which capped a drain step near 110 addresses before hitting the
+    // 1,000-subrequest invocation limit (and killed the whole maintenance lane when exceeded).
+    const bounds = await db.batch<{ first_block: number | null; last_block: number | null }>(
+      ACTIVITY_QUERIES.map((query) => db.prepare(query).bind(identity.address_id)),
+    );
+    const activity = bounds.flatMap((result) => result.results ?? []);
     const firstBlocks = activity.flatMap((row) => (row.first_block === null ? [] : [row.first_block]));
     const lastBlocks = activity.flatMap((row) => (row.last_block === null ? [] : [row.last_block]));
     const firstBlock = firstBlocks.length > 0 ? Math.min(...firstBlocks) : null;

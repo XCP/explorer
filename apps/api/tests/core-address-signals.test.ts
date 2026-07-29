@@ -33,8 +33,10 @@ const d1 = (db: DatabaseSync) =>
   ({
     prepare: (sql: string) => new Statement(db, sql),
     async batch(items: Statement[]) {
-      for (const item of items) await item.run();
-      return [];
+      // Mirror real D1: each statement's rows come back on `results` (the signals rebuild reads them).
+      const results = [];
+      for (const item of items) results.push(await item.all());
+      return results;
     },
   }) as unknown as D1Database;
 
