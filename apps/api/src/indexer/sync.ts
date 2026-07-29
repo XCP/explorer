@@ -62,18 +62,58 @@ async function tipEventIndex(api: string): Promise<number> {
   return (d.result_count ?? 0) - 1;
 }
 /** ascending chunk [from, from+chunk): request cursor=from+chunk-1 desc, reverse.
- *  chunk must never overshoot the tip: a cursor past the tip makes the API fill the page descending
- *  FROM the tip, re-downloading already-applied events. Verbose events inline each touched asset's
- *  full description (stamp assets carry multi-MB blobs), so an overshot page can exceed Worker memory. */
+ *  Non-verbose on purpose: verbose enrichment inlines each touched asset's full description (stamp
+ *  assets carry multi-MB blobs — one page measured 142 MB, over Worker memory). Everything verbose
+ *  added is derived locally instead: divisibility from our own asset rows (chunkAssetDivisibility),
+ *  normalized quantities via normalize(), block_time tracked from NEW_BLOCK (dispatch).
+ *  chunk still must never overshoot the tip: a cursor past the tip makes the API fill the page
+ *  descending FROM the tip, re-downloading already-applied events. */
 async function fetchAsc(api: string, from: number, chunk: number): Promise<Ev[]> {
-  const d = await counterpartyJson<{ result?: Ev[] }>(
-    api,
-    `/events?cursor=${from + chunk - 1}&limit=${chunk}&verbose=true`,
-    { malformedRetries: 0 }, // oversize/parse failures are deterministic; the caller shrinks chunk instead
-  );
+  const d = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${from + chunk - 1}&limit=${chunk}`, {
+    malformedRetries: 0, // oversize/parse failures are deterministic; the caller shrinks chunk instead
+  });
   const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from);
   rows.sort((a, b) => a.event_index - b.event_index);
   return rows;
+}
+/** The chunk's asset→divisible map. Issuance events inside the chunk state divisibility themselves
+ *  (and always precede the chunk's uses of a brand-new asset — Counterparty emits ASSET_ISSUANCE
+ *  before the asset's first CREDIT); every other referenced asset resolves from the mirror's own
+ *  rows. A reset-reissuance changing divisibility mid-chunk resolves to the chunk's final state —
+ *  acceptable because a reset zeroes supply and balances in the same breath. */
+async function chunkAssetDivisibility(db: D1Database, events: Ev[]): Promise<Map<string, boolean>> {
+  const known = new Map<string, boolean>();
+  const wanted = new Set<string>();
+  for (const event of events) {
+    const p = (event.params ?? {}) as Record<string, unknown>;
+    if (
+      (event.event === "ASSET_ISSUANCE" || event.event === "ASSET_CREATION") &&
+      typeof p.asset === "string" &&
+      p.divisible != null
+    ) {
+      known.set(p.asset, Boolean(p.divisible));
+    }
+  }
+  for (const event of events) {
+    const p = (event.params ?? {}) as Record<string, unknown>;
+    for (const name of [p.asset, p.dividend_asset]) {
+      if (typeof name === "string" && name && name !== "XCP" && name !== "BTC" && !known.has(name)) wanted.add(name);
+    }
+  }
+  const names = [...wanted];
+  for (let i = 0; i < names.length; i += DB_BATCH) {
+    const slice = names.slice(i, i + DB_BATCH);
+    const rows = await db
+      .prepare(
+        `SELECT d.asset, COALESCE(a.divisible,0) divisible
+           FROM asset_dictionary d LEFT JOIN assets a ON a.asset_id=d.asset_id
+          WHERE d.asset IN (${slice.map(() => "?").join(",")})`,
+      )
+      .bind(...slice)
+      .all<{ asset: string; divisible: number }>();
+    for (const row of rows.results) known.set(row.asset, row.divisible === 1);
+  }
+  return known;
 }
 /** Fetch the next ascending chunk, shrinking the page size whenever the verbose payload is too large
  *  to buffer (Workers throws "Memory limit would be exceeded before EOF"). Returns the surviving chunk
@@ -159,6 +199,16 @@ export async function syncCoreEvents(
     const cap = Math.min(opts.maxEvents ?? MAX_EVENTS_PER_RUN, MAX_EVENTS_PER_RUN);
     let applied = 0;
     let chunk = CHUNK;
+    // Events between the chunk start and its first NEW_BLOCK belong to the cursor block; its time
+    // is already in our own blocks row. From there dispatch tracks NEW_BLOCK as the stream walks.
+    let blockTime =
+      lastBlock > 0
+        ? ((
+            await env.CORE_DB.prepare(`SELECT block_time FROM blocks WHERE block_index=?`)
+              .bind(lastBlock)
+              .first<{ block_time: number | null }>()
+          )?.block_time ?? null)
+        : null;
     while (lastIndex < tip && applied < cap) {
       const page = await fetchAscAdaptive(env.COUNTERPARTY_API_BASE, lastIndex + 1, tip - lastIndex, chunk);
       chunk = page.chunk;
@@ -170,6 +220,8 @@ export async function syncCoreEvents(
         balDelta: new Map(),
         maxBlock: lastBlock,
         supplyDirty: new Set(),
+        assetDivisibility: await chunkAssetDivisibility(env.CORE_DB, events),
+        blockTime,
       };
       for (const event of events) dispatch(event, ctx);
       await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
@@ -179,6 +231,7 @@ export async function syncCoreEvents(
       await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
       lastIndex = events[events.length - 1].event_index;
       lastBlock = Math.max(lastBlock, ctx.maxBlock);
+      blockTime = ctx.blockTime;
       applied += events.length;
       await env.CORE_DB.batch([
         setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),

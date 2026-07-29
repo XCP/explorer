@@ -45,7 +45,8 @@ const open: Handler = ({ p, b, bt, div }, ctx) => {
         str(p.give_remaining),
         p.give_remaining_normalized ?? normalize(p.give_remaining, div),
         str(p.satoshirate),
-        p.satoshirate_normalized ?? null,
+        p.satoshirate_normalized ?? normalize(p.satoshirate, true), // satoshis per dispense — BTC scale
+
         p.status ?? 0,
         p.oracle_address ?? null,
         p.dispense_count ?? 0,
@@ -53,7 +54,7 @@ const open: Handler = ({ p, b, bt, div }, ctx) => {
       ),
   );
 };
-const update: Handler = ({ p, b }, ctx) => {
+const update: Handler = ({ p, b, div }, ctx) => {
   if (p.tx_hash) {
     ctx.stmts.push((db) =>
       db
@@ -67,7 +68,7 @@ const update: Handler = ({ p, b }, ctx) => {
         .bind(
           p.status ?? null,
           p.give_remaining != null ? String(p.give_remaining) : null,
-          p.give_remaining_normalized ?? null,
+          p.give_remaining_normalized ?? (p.give_remaining != null ? normalize(p.give_remaining, div) : null),
           p.dispense_count ?? null,
           hashToBytes(p.last_status_tx_hash),
           p.close_block_index ?? null,

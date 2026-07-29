@@ -1,7 +1,8 @@
 /** ASSET_DIVIDEND — pays holders of `asset` a per-unit amount of `dividend_asset`. Per-holder credits +
  *  the source debit + the XCP fee all emit CREDIT/DEBIT (balance.ts); the fee is also part of deterministic
  *  XCP supply. Here we record the dividend declaration. */
-import { type Handler, str } from "#api/indexer/events/context";
+import { type Handler, assetDivisible, str } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
 import { hashToBytes } from "#api/indexer/identities";
 const dividend: Handler = ({ p, b, bt }, ctx) => {
   if (p.source) ctx.identities.addresses.add(String(p.source));
@@ -33,7 +34,8 @@ const dividend: Handler = ({ p, b, bt }, ctx) => {
         p.asset ?? null,
         p.dividend_asset ?? null,
         str(p.quantity_per_unit),
-        p.quantity_per_unit_normalized ?? null,
+        // per-unit is denominated in the PAID asset, so it normalizes by dividend_asset's divisibility
+        p.quantity_per_unit_normalized ?? normalize(p.quantity_per_unit, assetDivisible(ctx, p.dividend_asset)),
         str(p.fee_paid),
         p.status ?? "valid",
       ),

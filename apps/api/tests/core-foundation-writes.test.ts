@@ -55,6 +55,8 @@ function context(): Ctx {
     balDelta: new Map(),
     maxBlock: 0,
     supplyDirty: new Set(),
+    assetDivisibility: new Map(),
+    blockTime: null,
   };
 }
 
@@ -1313,9 +1315,9 @@ test("replay clamps the events page to the pending window and shrinks it when a 
       { maxEvents: 10 },
     );
     assert.deepEqual(eventRequests, [
-      "?cursor=2&limit=2&verbose=true", // clamped to the 2 pending events, not the 1000-event default
-      "?cursor=1&limit=1&verbose=true", // shrunk after the unreadable page
-      "?cursor=2&limit=1&verbose=true",
+      "?cursor=2&limit=2", // clamped to the 2 pending events, not the 1000-event default
+      "?cursor=1&limit=1", // shrunk after the unreadable page
+      "?cursor=2&limit=1",
     ]);
     assert.deepEqual(result, {
       applied: 2,

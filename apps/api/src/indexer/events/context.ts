@@ -7,7 +7,7 @@
  */
 // A statement is a thunk so it can be bound against the live DB inside the batcher.
 export type Stmt = (db: D1Database) => D1PreparedStatement;
-// One Counterparty event from the verbose event stream.
+// One Counterparty event from the event stream.
 export interface Ev {
   event_index: number;
   event: string;
@@ -20,12 +20,17 @@ export interface Ev {
 }
 // Per-chunk accumulator the engine flushes: row statements, netted balance deltas, the high-water block,
 // and the set of assets whose supply changed (recomputed deterministically — see asset-supply.ts).
+// The engine also threads two pieces of replay state through here: the chunk's asset→divisible map
+// (pre-scanned issuances + a D1 lookup — see sync.ts) and the running block_time, tracked from
+// NEW_BLOCK as the chronological stream walks (the non-verbose stream carries block_time only there).
 export interface Ctx {
   stmts: Stmt[];
   identities: {
     addresses: Set<string>;
     assets: Set<string>;
   };
+  assetDivisibility: Map<string, boolean>;
+  blockTime: number | null;
   balDelta: Map<
     string,
     {
@@ -56,9 +61,16 @@ export interface Msg {
   p: any; // ev.params
   b: number; // block_index
   bt: number | null; // block_time
-  div: boolean; // asset_info.divisible (for normalizing this event's quantities)
+  div: boolean; // the event's primary asset's divisibility (for normalizing this event's quantities)
 }
 export type Handler = (m: Msg, ctx: Ctx) => void;
+// Resolve an asset's divisibility from the chunk map. XCP and BTC are natively divisible and have no
+// issuance row; anything unknown is indivisible, matching the storage-side COALESCE(divisible,0).
+export function assetDivisible(ctx: Ctx, asset: unknown): boolean {
+  if (typeof asset !== "string" || !asset) return false;
+  if (asset === "XCP" || asset === "BTC") return true;
+  return ctx.assetDivisibility.get(asset) ?? false;
+}
 // Tag for SQL template literals. Identity at runtime (composes the string for db.prepare), but lets
 // prettier-plugin-sql pretty-print the embedded SQL and editors syntax-highlight it.
 export const sql = (strings: TemplateStringsArray, ...values: unknown[]): string =>

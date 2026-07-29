@@ -3,7 +3,7 @@
  * This is the single place to see exactly which events we mirror — `HANDLED_EVENTS` is the source of truth
  * for the fetch filter, so coverage can't silently drift from the handlers.
  */
-import type { Ev, Ctx, Handler } from "#api/indexer/events/context";
+import { type Ev, type Ctx, type Handler, assetDivisible } from "#api/indexer/events/context";
 import { block } from "#api/indexer/events/block";
 import { transaction } from "#api/indexer/events/transaction";
 import { balance } from "#api/indexer/events/balance";
@@ -42,8 +42,11 @@ export function dispatch(ev: Ev, ctx: Ctx): void {
   const p = ev.params || {};
   const b = ev.block_index ?? p.block_index;
   if (b > ctx.maxBlock) ctx.maxBlock = b;
+  // The chronological stream states block_time once per block (NEW_BLOCK); every later event in the
+  // block inherits it. Divisibility comes from the chunk's local map, never from verbose enrichment.
+  if (ev.event === "NEW_BLOCK" && p.block_time != null) ctx.blockTime = p.block_time;
   const h = HANDLERS[ev.event];
-  if (h) h({ ev, p, b, bt: p.block_time ?? null, div: !!(p.asset_info && p.asset_info.divisible) }, ctx);
+  if (h) h({ ev, p, b, bt: p.block_time ?? ctx.blockTime, div: assetDivisible(ctx, p.asset) }, ctx);
 }
 // Every event name we have a handler for — used to build the stream fetch filter (single source of truth).
 export const HANDLED_EVENTS = Object.keys(HANDLERS);

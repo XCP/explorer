@@ -3,6 +3,7 @@
  *  fields, so they UPDATE — never re-INSERT (which would wipe the row). Escrow/settlement balances flow
  *  through CREDIT/DEBIT (balance.ts). */
 import { type Handler, str } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
 import { hashToBytes, parseMatchId } from "#api/indexer/identities";
 function matchId(p: Record<string, unknown>): string {
   return String(p.order_match_id ?? p.id ?? `${p.tx0_hash}_${p.tx1_hash}`);
@@ -240,7 +241,7 @@ const btcpay: Handler = ({ ev, p, b, bt }, ctx) => {
         tx0Hash,
         tx1Hash,
         str(p.btc_amount),
-        p.btc_amount_normalized ?? null,
+        p.btc_amount_normalized ?? normalize(p.btc_amount, true), // BTC — always divisible
         p.status ?? "valid",
       ),
   );

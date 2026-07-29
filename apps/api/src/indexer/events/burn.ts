@@ -1,6 +1,7 @@
 /** BURN — BTC burned to create XCP (genesis-era mechanic). `earned` is the XCP minted; it's the
  *  positive term in the deterministic XCP supply (see asset-supply.ts). */
 import { type Handler, str } from "#api/indexer/events/context";
+import { normalize } from "#api/indexer/codec";
 import { hashToBytes } from "#api/indexer/identities";
 const burn: Handler = ({ p, b, bt }, ctx) => {
   if (p.source) ctx.identities.addresses.add(String(p.source));
@@ -22,9 +23,9 @@ const burn: Handler = ({ p, b, bt }, ctx) => {
         bt,
         p.source ?? null,
         str(p.burned),
-        p.burned_normalized ?? null,
+        p.burned_normalized ?? normalize(p.burned, true), // burned is BTC — always divisible
         str(p.earned),
-        p.earned_normalized ?? null,
+        p.earned_normalized ?? normalize(p.earned, true), // earned is XCP — always divisible
         p.status ?? "valid",
       ),
   );
