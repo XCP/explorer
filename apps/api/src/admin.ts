@@ -5,7 +5,7 @@
 import { Hono } from "hono";
 import type { Env } from "#api/env";
 import { syncCoreEvents } from "#api/indexer/sync";
-import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
+import { rebuildCoreAddressSignals, runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
@@ -154,6 +154,25 @@ admin.post("/admin/refresh-signals", async (c) => {
 // Address projection is intentionally isolated from the larger asset batch because D1 applies a compound-statement
 // budget across one Worker invocation. This route is also the operator control for advancing an initial rebuild.
 admin.post("/admin/refresh-address-signals", async (c) => {
+  // Explicit-ids mode: rebuild exactly these dictionary ids, independent of the shared queue —
+  // disjoint slices can then drain in PARALLEL invocations (the queue path can't: concurrent calls
+  // all chew the same head). Capped at 250 ≈ 750 subrequests, inside the invocation budget.
+  const body = await c.req.json<{ address_ids?: number[] }>().catch(() => null);
+  if (body?.address_ids?.length) {
+    const ids = body.address_ids.filter((id) => Number.isSafeInteger(id) && id > 0).slice(0, 250);
+    const addresses: string[] = [];
+    for (let index = 0; index < ids.length; index += 90) {
+      const chunk = ids.slice(index, index + 90);
+      const rows = await c.env.CORE_DB.prepare(
+        `SELECT address FROM address_dictionary WHERE address_id IN (${chunk.map(() => "?").join(",")})`,
+      )
+        .bind(...chunk)
+        .all<{ address: string }>();
+      addresses.push(...rows.results.map((row) => row.address));
+    }
+    const processed = await rebuildCoreAddressSignals(c.env.CORE_DB, addresses);
+    return c.json({ processed, mode: "explicit" });
+  }
   const limit = boundedInteger(c.req.query("limit"), { defaultValue: 60, min: 1, max: 1000 });
   return c.json(await runCoreAddressSignalsStep(c.env.CORE_DB, limit, true));
 });
