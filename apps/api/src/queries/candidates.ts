@@ -40,7 +40,8 @@ export interface CandidateSeedRow {
 }
 
 /** Stage 1: untagged assets ranked by raw collector-persona holders (airdrops still inflate this —
- *  stage 2 deflates them). */
+ *  stage 2 deflates them). Low-quality assets never seed: both the computed signal and the curated
+ *  lowq set (the owner's standing verdicts, which also feed the signal on its next rebuild). */
 export function collectorCandidateSeeds(db: D1Database, limit = 150): Promise<CandidateSeedRow[]> {
   return q<CandidateSeedRow>(
     db,
@@ -55,6 +56,8 @@ export function collectorCandidateSeeds(db: D1Database, limit = 150): Promise<Ca
      LEFT JOIN address_dictionary issuer_address ON issuer_address.address_id=a.issuer_id
      LEFT JOIN asset_signals sig ON sig.asset_id=b.asset_id
      WHERE CAST(b.quantity AS INTEGER) > 0 AND d.asset NOT IN ('XCP','BTC')
+       AND COALESCE(sig.low_quality,0)=0
+       AND d.asset NOT IN (SELECT key FROM curated WHERE kind='lowq')
        AND NOT EXISTS (
          SELECT 1 FROM collection_membership_evidence evidence
          JOIN entity_dictionary entity ON entity.entity_id=evidence.entity_id
