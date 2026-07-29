@@ -13,7 +13,7 @@ export interface AlchemyNftSale {
 
 export interface AlchemyNftSalesPage {
   nftSales: AlchemyNftSale[];
-  pageKey?: string;
+  pageKey?: string | null;
 }
 
 export function parseAlchemyNftSalesPage(value: unknown): AlchemyNftSalesPage {
@@ -21,7 +21,9 @@ export function parseAlchemyNftSalesPage(value: unknown): AlchemyNftSalesPage {
     throw new Error("Alchemy sales must be an object");
   const page = value as Record<string, unknown>;
   if (!Array.isArray(page.nftSales)) throw new Error("Alchemy sales must contain an nftSales array");
-  if (page.pageKey !== undefined && typeof page.pageKey !== "string")
+  // Alchemy emits pageKey:null on the terminal page (a 2026-07 change from omitting the field);
+  // null means "no more pages" exactly like absence, and the crawler's `?? ""` already treats it so.
+  if (page.pageKey != null && typeof page.pageKey !== "string")
     throw new Error("Alchemy sales pageKey must be a string");
   for (const [index, sale] of page.nftSales.entries()) {
     if (typeof sale !== "object" || sale === null || Array.isArray(sale))

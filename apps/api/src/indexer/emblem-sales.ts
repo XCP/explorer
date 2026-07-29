@@ -132,7 +132,7 @@ export async function crawlEmblemSales(env: Env): Promise<Record<string, unknown
     pages: 0,
   };
   for (; out.pages < MAX_PAGES_PER_RUN; out.pages++) {
-    let page: { nftSales?: NftSale[]; pageKey?: string };
+    let page: { nftSales?: NftSale[]; pageKey?: string | null };
     try {
       page = await fetchAlchemyNftSales(env.ALCHEMY_KEY, contract, cursor);
     } catch (error) {
