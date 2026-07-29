@@ -136,13 +136,17 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
   const derivedDue = Number.parseInt((await getCoreState(db, "asset_derived_tip")) ?? "-1", 10) < tip;
   const queue = await numberQueue(db);
   const todo = queue.slice(0, DIRTY_PER_RUN);
-  if (todo.length > 0) {
-    const placeholders = todo.map(() => "?").join(",");
+  // D1 caps a statement at ~100 bound variables; an issuance wave can push the dirty queue far past
+  // that, so the IN list goes in bounded slices (one oversized statement threw every run, freezing
+  // the queue AND the derived recompute below while the queue kept growing).
+  for (let index = 0; index < todo.length; index += 90) {
+    const chunk = todo.slice(index, index + 90);
+    const placeholders = chunk.map(() => "?").join(",");
     await db
       .prepare(`UPDATE assets SET supply=${SUPPLY_EXPR} WHERE asset_id IN (${placeholders})`)
-      .bind(...todo)
+      .bind(...chunk)
       .run();
-    await normalizeAssets(db, `asset_id IN (${placeholders})`, todo);
+    await normalizeAssets(db, `asset_id IN (${placeholders})`, chunk);
   }
   await setCoreState(db, "asset_supply_queue", JSON.stringify(queue.slice(DIRTY_PER_RUN)));
   if (derivedDue) {
