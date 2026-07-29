@@ -8,7 +8,7 @@ import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { router, J, lim, off, cached } from "#api/read/respond";
 import { rawSqlExpr, CONVICTION_FACTORS, convictionScore } from "#api/reputation/score";
 import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "#api/queries/tags";
-import { getCollectionProfile, listCollectionProfiles } from "#api/queries/collections";
+import { collectionHolderMakeup, getCollectionProfile, listCollectionProfiles } from "#api/queries/collections";
 
 export const tags = router();
 
@@ -26,6 +26,16 @@ tags.get("/v2/collection-profiles/:tag", async (c) => {
   const tag = c.req.param("tag");
   const result = await getCollectionProfile(c.env.CORE_DB, tag);
   return result ? J(c, { result }, 300) : c.json({ error: "Collection not found" }, 404);
+});
+
+// Who HOLDS the collection, by global persona — the H3 persona-mix lens. The classification walks every
+// holder of every member (~1.3s cold on the largest collection), and a holder base drifts slowly, so a
+// 6-hour D1 cache with a day of stale-while-revalidate keeps the page instant without a builder table.
+tags.get("/v2/collection-profiles/:tag/holder-makeup", async (c) => {
+  const tag = c.req.param("tag");
+  return cached(c, `collections:holder-makeup:v1:${tag}`, { ttl: 21600, edge: 600, swr: 86400 }, async () => ({
+    result: await collectionHolderMakeup(c.env.CORE_DB, tag),
+  }));
 });
 
 function enrich(r: TagStatsBase): TagStatsRow {

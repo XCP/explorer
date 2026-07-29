@@ -136,9 +136,11 @@ Each bet is falsifiable against our data. Status: `untested` / `testing` / `conf
   stampunks 37% creator / 5% collector (minter-dominated); rare-pepe 8.8% collector across 56,852 holders
   with 37.5% in exchange/service custody (diluted canon, thin elite over passive base); dank-directory
   6.8% merchant (3× any other — the dealer scene). Bonus signal found: exchange-custody share spans
-  1.5%→44.5% across collections — a legibility axis nothing surfaces today. Remaining test: the UI
-  prototype (persona-mix band + normalcy readout on one collection page vs the board row) — a design
-  slice for the owner's screenshot-gated loop.
+  1.5%→44.5% across collections — a legibility axis nothing surfaces today. Prototype live 2026-07-28:
+  the "Who holds it" band ships on every /tag/:tag collection page (endpoint
+  /v2/collection-profiles/:tag/holder-makeup, 6h cache; band in the rating-distribution idiom with the
+  address page's persona colours). Owner review pending; the normalcy half of the composite (H4) is still
+  unbuilt.
 - **H4 — Market normalcy is definable.** Per-class baselines (price/volume/holder-churn) exist stably enough to
   flag deviations beyond cohesion. → *Status: untested.* Test: compute baselines for one collection tier, see
   if outliers are interpretable.

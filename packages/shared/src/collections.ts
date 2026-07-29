@@ -45,3 +45,15 @@ export interface CollectionProfile {
   integrity_assets: number;
   integrity_pct: number;
 }
+
+/** One persona bucket of a collection's holder base (holder-makeup `personas[]`). */
+export type CollectionPersonaRow = { persona: string; holders: number };
+
+/** GET /v2/collection-profiles/:tag/holder-makeup — every current holder of every member asset,
+ *  classified by global address persona (the same classifier the address reputation header uses).
+ *  `light` = holds but clears no persona floor; `service` = exchange/deposit/vault/burn custody. */
+export interface CollectionHolderMakeup {
+  tag: string;
+  holders: number;
+  personas: CollectionPersonaRow[];
+}

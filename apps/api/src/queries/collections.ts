@@ -1,4 +1,5 @@
-import type { CollectionProfile } from "@xcp/shared/collections";
+import type { CollectionHolderMakeup, CollectionPersonaRow, CollectionProfile } from "@xcp/shared/collections";
+import { PERSONA } from "#api/reputation/config";
 import { one, q } from "#api/db";
 
 const SOURCES = "'manual','issuer','discovered','collection','digirare','tokenscan'";
@@ -69,4 +70,55 @@ export function listCollectionProfiles(db: D1Database): Promise<CollectionProfil
 
 export function getCollectionProfile(db: D1Database, tag: string): Promise<CollectionProfile | null> {
   return one<CollectionProfile>(db, profileSql(true), tag, tag, tag);
+}
+
+/** Every current holder of every member asset, classified by the SAME persona rules the address header
+ *  uses (reputation/persona.ts, thresholds from reputation/config.ts — interpolated here so the two
+ *  surfaces cannot drift apart on tuning). "light" holds but clears no floor; custody flags win first. */
+export async function collectionHolderMakeup(db: D1Database, tag: string): Promise<CollectionHolderMakeup> {
+  const P = PERSONA;
+  const personas = await q<CollectionPersonaRow>(
+    db,
+    `WITH member_assets AS (
+       SELECT DISTINCT asset.asset_id
+       FROM collection_membership_evidence evidence
+       JOIN entity_dictionary entity ON entity.entity_id=evidence.entity_id AND entity.entity_type='asset'
+       JOIN asset_dictionary asset ON asset.asset=entity.entity_key
+       WHERE evidence.tag=?1 AND evidence.source IN (${SOURCES})
+     ), holders AS (
+       SELECT DISTINCT balance.address_id
+       FROM member_assets JOIN balances balance ON balance.asset_id=member_assets.asset_id
+       WHERE balance.address_id IS NOT NULL AND CAST(balance.quantity AS INTEGER) > 0
+     ), classified AS (
+       SELECT CASE
+         WHEN signal.is_exchange=1 OR signal.is_deposit=1 OR signal.is_emblem_vault=1 OR signal.is_burn=1
+           THEN 'service'
+         WHEN signal.vault_scams+signal.shell_scams+signal.dump_scams > 0 THEN 'integrity'
+         WHEN reputation.reputation IS NULL THEN 'light'
+         ELSE (
+           WITH role(k, i, ok, w) AS (
+             SELECT 'creator',
+               ln(1+signal.assets_issued+signal.stamps_created+2*signal.src20_deploys)/ln(1+${P.creatorCap}),
+               signal.assets_issued+signal.stamps_created+2*signal.src20_deploys >= ${P.creatorFloor}, 4
+             UNION ALL SELECT 'merchant', ln(1+signal.dispenses)/ln(1+${P.merchantCap}),
+               signal.dispenses >= ${P.merchantFloor}, 3
+             UNION ALL SELECT 'trader', ln(1+signal.dex_trades)/ln(1+${P.traderCap}),
+               signal.dex_trades >= ${P.traderFloor}, 2
+             UNION ALL SELECT 'collector',
+               ln(1+signal.assets_held+0.5*signal.assets_received)/ln(1+${P.collectorCap}),
+               signal.assets_held >= ${P.collectorFloor}, 1
+           )
+           SELECT COALESCE(
+             (SELECT k FROM role WHERE ok ORDER BY MIN(i,1.0) DESC, w DESC LIMIT 1),
+             'light')
+         )
+       END persona
+       FROM holders
+       JOIN address_signals signal ON signal.address_id=holders.address_id
+       LEFT JOIN address_reputations reputation ON reputation.address_id=holders.address_id
+     )
+     SELECT persona, COUNT(*) holders FROM classified GROUP BY persona ORDER BY holders DESC`,
+    tag,
+  );
+  return { tag, holders: personas.reduce((sum, row) => sum + row.holders, 0), personas };
 }

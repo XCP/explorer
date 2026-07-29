@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { TagDetail } from "@xcp/shared/tags";
-import type { CollectionProfile } from "@xcp/shared/collections";
+import type { CollectionHolderMakeup, CollectionProfile } from "@xcp/shared/collections";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { Stat } from "@/components/ui/card";
 import { TagMembers } from "@/components/tag-members";
@@ -25,6 +25,28 @@ const loadCollection = cache(async (tag: string): Promise<CollectionProfile | nu
   return envelope?.result ?? null;
 });
 
+// Additive: a failed makeup fetch hides the persona band rather than failing the page.
+const loadHolderMakeup = cache(async (tag: string): Promise<CollectionHolderMakeup | null> => {
+  const envelope = await getJson<Envelope<CollectionHolderMakeup>>(
+    `/v2/collection-profiles/${encodeURIComponent(tag)}/holder-makeup`,
+    { revalidate: 3600 },
+  ).catch(() => null);
+  return envelope?.result ?? null;
+});
+
+// The same persona identities (and colours) the address reputation header uses, so an address that
+// reads "Merchant" and a collection band segment mean the same thing. `light` and custody buckets
+// stay muted — the band leads with the players.
+const PERSONA_BAND: { key: string; label: string; color: string }[] = [
+  { key: "creator", label: "Creators", color: "bg-fuchsia-400" },
+  { key: "collector", label: "Collectors", color: "bg-sky-400" },
+  { key: "trader", label: "Traders", color: "bg-emerald-400" },
+  { key: "merchant", label: "Merchants", color: "bg-amber-400" },
+  { key: "light", label: "Light holders", color: "bg-zinc-600" },
+  { key: "service", label: "Exchange / custody", color: "bg-violet-900" },
+  { key: "integrity", label: "Flagged", color: "bg-red-900" },
+];
+
 const usd = (value: number) => (value > 0 ? `$${compact(value)}` : "—");
 
 export async function generateMetadata({ params }: { params: Promise<{ tag: string }> }): Promise<Metadata> {
@@ -40,9 +62,11 @@ export async function generateMetadata({ params }: { params: Promise<{ tag: stri
 
 export default async function TagPage({ params }: { params: Promise<{ tag: string }> }) {
   const { tag } = await params;
-  const [detail, collection] = await Promise.all([loadTag(tag), loadCollection(tag)]);
+  const [detail, collection, makeup] = await Promise.all([loadTag(tag), loadCollection(tag), loadHolderMakeup(tag)]);
   if (!detail) notFound();
   const isAsset = detail.entity_type === "asset";
+  const personaCount = (key: string) => makeup?.personas.find((row) => row.persona === key)?.holders ?? 0;
+  const playerCount = ["creator", "collector", "trader", "merchant"].reduce((sum, k) => sum + personaCount(k), 0);
 
   return (
     <>
@@ -116,6 +140,42 @@ export default async function TagPage({ params }: { params: Promise<{ tag: strin
               Realized value and market activity use the same eligible direct-sale evidence as Asset Rating.
             </p>
           </div>
+          {makeup && makeup.holders > 0 ? (
+            <div className="rounded-lg border border-[var(--border2)] bg-[var(--surface)] p-5">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="text-sm font-medium text-zinc-200">Who holds it</div>
+                <div className="font-mono text-xs text-zinc-500">
+                  {commas(playerCount)} players · {commas(makeup.holders)} holders
+                </div>
+              </div>
+              <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-zinc-900" aria-label="Holder persona mix">
+                {PERSONA_BAND.map(({ key, color }) =>
+                  personaCount(key) > 0 ? (
+                    <div
+                      key={key}
+                      className={color}
+                      style={{ width: `${(100 * personaCount(key)) / makeup.holders}%` }}
+                    />
+                  ) : null,
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-zinc-500">
+                {PERSONA_BAND.map(({ key, label, color }) =>
+                  personaCount(key) > 0 ? (
+                    <span key={key} className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${color}`} />
+                      {label} {commas(personaCount(key))}
+                    </span>
+                  ) : null,
+                )}
+              </div>
+              <p className="mt-4 text-xs leading-5 text-zinc-500">
+                Every current holder of every member asset, classified by the same persona the address reputation header
+                shows: the dominant on-chain role. Light holders hold but do nothing else at scale; exchange / custody
+                counts balances sitting on infrastructure, not with people.
+              </p>
+            </div>
+          ) : null}
         </>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
