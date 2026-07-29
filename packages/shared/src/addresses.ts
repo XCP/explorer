@@ -299,3 +299,25 @@ export interface ExchangesPayload {
     last_day: string;
   }>;
 }
+
+/** One Bitcoin address family in the census (GET /v2/addresses/census `kinds[]`). */
+export interface AddressKindRow {
+  kind: "p2pkh" | "p2sh" | "p2wpkh" | "p2wsh" | "taproot";
+  total: number;
+  active: number; // has any Counterparty activity (last_block > 0)
+  ranked: number; // carries a reputation score
+  first_seen_block: number | null; // the family's first appearance in Counterparty history
+}
+
+/** GET /v2/addresses/census — the population-level view of every address the mirror knows:
+ *  Bitcoin families, global personas (active population), identified infrastructure, the
+ *  Ethereum shadow of the vault market, utxo-bound holdings, and arrival waves by year. */
+export interface AddressCensus {
+  as_of_block: number;
+  kinds: AddressKindRow[];
+  personas: { persona: string; addresses: number }[];
+  infrastructure: { exchanges: number; deposits: number; vaults: number; burns: number };
+  ethereum: number;
+  utxo_holdings: number;
+  arrivals: { year: string; addresses: number }[];
+}

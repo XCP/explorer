@@ -19,8 +19,11 @@ import type {
   AddressLedgerRow,
   ReputationDistribution,
   ReputationTopRow,
+  AddressCensus,
+  AddressKindRow,
 } from "@xcp/shared/addresses";
 import type { AddressSignalsRow } from "#api/storage-types";
+import { PERSONA } from "#api/reputation/config";
 import { q, one } from "#api/db";
 import { ADDRESS_LEDGER_SQL } from "#api/queries/ledger";
 
@@ -335,4 +338,109 @@ export function reputationTierMembers(
     limit,
     offset,
   );
+}
+
+/** Population census — the /addresses knowledge page. Three bounded scans composed into one
+ *  payload; the route caches it for a day (the population moves by tens of addresses per block).
+ *  Persona thresholds interpolate from reputation/config.ts, the same source the address header
+ *  and collection holder-makeup use. */
+export async function addressCensus(db: D1Database): Promise<AddressCensus> {
+  const P = PERSONA;
+  const [kindRows, personaRows, arrivalRows, tipRow] = [
+    await q<
+      AddressKindRow & {
+        infra_exchanges: number;
+        infra_deposits: number;
+        infra_vaults: number;
+        infra_burns: number;
+        ethereum: number;
+        utxo: number;
+      }
+    >(
+      db,
+      `SELECT
+         CASE WHEN d.address LIKE '1%' THEN 'p2pkh' WHEN d.address LIKE '3%' THEN 'p2sh'
+              WHEN d.address LIKE 'bc1q%' AND LENGTH(d.address)=42 THEN 'p2wpkh'
+              WHEN d.address LIKE 'bc1q%' THEN 'p2wsh' WHEN d.address LIKE 'bc1p%' THEN 'taproot'
+              WHEN d.address LIKE '0x%' THEN 'ethereum' ELSE 'utxo' END kind,
+         COUNT(*) total,
+         SUM(CASE WHEN s.last_block>0 THEN 1 ELSE 0 END) active,
+         SUM(CASE WHEN r.reputation IS NOT NULL THEN 1 ELSE 0 END) ranked,
+         MIN(CASE WHEN s.first_block>0 THEN s.first_block END) first_seen_block,
+         SUM(COALESCE(s.is_exchange,0)) infra_exchanges,
+         SUM(COALESCE(s.is_deposit,0)) infra_deposits,
+         SUM(COALESCE(s.is_emblem_vault,0)) infra_vaults,
+         SUM(COALESCE(s.is_burn,0)) infra_burns
+       FROM address_dictionary d
+       LEFT JOIN address_signals s ON s.address_id=d.address_id
+       LEFT JOIN address_reputations r ON r.address_id=d.address_id
+       GROUP BY kind`,
+    ),
+    await q<{ persona: string; addresses: number }>(
+      db,
+      `WITH classified AS (
+         SELECT CASE
+           WHEN s.is_exchange=1 OR s.is_deposit=1 OR s.is_emblem_vault=1 OR s.is_burn=1 THEN 'service'
+           WHEN s.vault_scams+s.shell_scams+s.dump_scams > 0 THEN 'integrity'
+           WHEN r.reputation IS NULL THEN 'unrated'
+           ELSE (
+             WITH role(k, i, ok, w) AS (
+               SELECT 'creator',
+                 ln(1+s.assets_issued+s.stamps_created+2*s.src20_deploys)/ln(1+${P.creatorCap}),
+                 s.assets_issued+s.stamps_created+2*s.src20_deploys >= ${P.creatorFloor}, 4
+               UNION ALL SELECT 'merchant', ln(1+s.dispenses)/ln(1+${P.merchantCap}), s.dispenses >= ${P.merchantFloor}, 3
+               UNION ALL SELECT 'trader', ln(1+s.dex_trades)/ln(1+${P.traderCap}), s.dex_trades >= ${P.traderFloor}, 2
+               UNION ALL SELECT 'collector',
+                 ln(1+s.assets_held+0.5*s.assets_received)/ln(1+${P.collectorCap}), s.assets_held >= ${P.collectorFloor}, 1
+             )
+             SELECT COALESCE(
+               (SELECT k FROM role WHERE ok ORDER BY MIN(i,1.0) DESC, w DESC LIMIT 1),
+               CASE WHEN s.assets_held > 0 THEN 'light' ELSE 'dormant' END)
+           )
+         END persona
+         FROM address_signals s
+         LEFT JOIN address_reputations r ON r.address_id=s.address_id
+         WHERE s.last_block > 0
+       )
+       SELECT persona, COUNT(*) addresses FROM classified GROUP BY persona ORDER BY addresses DESC`,
+    ),
+    await q<{ year: string; addresses: number }>(
+      db,
+      `SELECT strftime('%Y', b.block_time, 'unixepoch') year, COUNT(*) addresses
+       FROM address_signals s JOIN blocks b ON b.block_index=s.first_block
+       WHERE s.first_block>0 GROUP BY year ORDER BY year`,
+    ),
+    await one<{ tip: number }>(db, `SELECT MAX(block_index) tip FROM blocks`),
+  ];
+  const infrastructure = { exchanges: 0, deposits: 0, vaults: 0, burns: 0 };
+  const kinds: AddressKindRow[] = [];
+  let ethereum = 0;
+  let utxoHoldings = 0;
+  for (const row of kindRows) {
+    infrastructure.exchanges += row.infra_exchanges;
+    infrastructure.deposits += row.infra_deposits;
+    infrastructure.vaults += row.infra_vaults;
+    infrastructure.burns += row.infra_burns;
+    if (row.kind === ("ethereum" as string)) ethereum = row.total;
+    else if (row.kind === ("utxo" as string)) utxoHoldings = row.total;
+    else {
+      kinds.push({
+        kind: row.kind,
+        total: row.total,
+        active: row.active,
+        ranked: row.ranked,
+        first_seen_block: row.first_seen_block,
+      });
+    }
+  }
+  kinds.sort((a, b) => b.total - a.total);
+  return {
+    as_of_block: tipRow?.tip ?? 0,
+    kinds,
+    personas: personaRows,
+    infrastructure,
+    ethereum,
+    utxo_holdings: utxoHoldings,
+    arrivals: arrivalRows,
+  };
 }

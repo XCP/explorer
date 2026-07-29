@@ -1,5 +1,5 @@
 /** Canonical chain reads. Dictionary joins restore the public string identities. */
-import type { BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
+import type { BlockCensus, BlockCensusYear, BlockDetail, BlockRow, BlockTxSummary, TxDetail } from "@xcp/shared/chain";
 import { q, one } from "#api/db";
 
 export const BLOCK_PAGE_SQL = `SELECT block_index,LOWER(HEX(block_hash)) block_hash,block_time,transaction_count,bitcoin_transaction_count
@@ -46,4 +46,44 @@ export async function blockTip(db: D1Database): Promise<number> {
     `SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1`,
   );
   return Number(row?.block_index) || 0;
+}
+
+/** Population census for /blocks — twelve years of "how much of Bitcoin is Counterparty" plus a
+ *  fresh strip of the latest blocks. Three bounded reads; the route caches the payload hourly. */
+export async function blockCensus(db: D1Database): Promise<BlockCensus> {
+  const totals = await one<{
+    blocks_indexed: number;
+    blocks_with_counterparty: number;
+    counterparty_transactions: number;
+    bitcoin_transactions: number;
+    as_of_block: number;
+  }>(
+    db,
+    `SELECT COUNT(*) blocks_indexed,
+            SUM(CASE WHEN transaction_count>0 THEN 1 ELSE 0 END) blocks_with_counterparty,
+            COALESCE(SUM(transaction_count),0) counterparty_transactions,
+            COALESCE(SUM(bitcoin_transaction_count),0) bitcoin_transactions,
+            MAX(block_index) as_of_block
+     FROM blocks`,
+  );
+  const years = await q<BlockCensusYear>(
+    db,
+    `SELECT strftime('%Y', day*86400, 'unixepoch') year,
+            COALESCE(SUM(transactions),0) counterparty_txs,
+            COALESCE(SUM(bitcoin_transactions),0) bitcoin_txs,
+            ROUND(100.0*SUM(transactions)/NULLIF(SUM(bitcoin_transactions),0), 2) share_pct,
+            ROUND(COALESCE(SUM(btc_fees),0), 4) fees_btc
+     FROM daily_metrics GROUP BY year ORDER BY year`,
+  );
+  const recent = await listBlocks(db, 10, 0);
+  return {
+    as_of_block: totals?.as_of_block ?? 0,
+    blocks_indexed: totals?.blocks_indexed ?? 0,
+    blocks_with_counterparty: totals?.blocks_with_counterparty ?? 0,
+    counterparty_transactions: totals?.counterparty_transactions ?? 0,
+    bitcoin_transactions: totals?.bitcoin_transactions ?? 0,
+    fees_btc: Math.round(years.reduce((sum, row) => sum + row.fees_btc, 0) * 10000) / 10000,
+    years,
+    recent,
+  };
 }

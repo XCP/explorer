@@ -188,3 +188,25 @@ export interface TxView extends Partial<TxDetail> {
    *  validity status (e.g. a dispense) or the tx is unclassified/pending. */
   protocol: { valid: boolean; status: string | null } | null;
 }
+
+/** One era row of the block census (GET /v2/blocks/census `years[]`). */
+export interface BlockCensusYear {
+  year: string;
+  counterparty_txs: number;
+  bitcoin_txs: number;
+  share_pct: number | null; // Counterparty share of ALL Bitcoin transactions that year
+  fees_btc: number; // miner fees paid by Counterparty transactions that year
+}
+
+/** GET /v2/blocks/census — the population-level view of twelve years of blocks: how much of
+ *  Bitcoin is Counterparty, by era, plus the freshest blocks as a small live strip. */
+export interface BlockCensus {
+  as_of_block: number;
+  blocks_indexed: number;
+  blocks_with_counterparty: number;
+  counterparty_transactions: number;
+  bitcoin_transactions: number;
+  fees_btc: number;
+  years: BlockCensusYear[];
+  recent: BlockRow[];
+}

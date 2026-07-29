@@ -3,8 +3,8 @@
 import { RECORD_KINDS, type RecordKind } from "@xcp/shared/records";
 import type { BitcoinTxIo, BitcoinTxSummary, TxAction, TxEvent, TxView } from "@xcp/shared/chain";
 import { counterpartyJson } from "#api/integrations/counterparty";
-import { router, J, lim, off, type Ctx } from "#api/read/respond";
-import { listBlocks, getBlock, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
+import { router, J, lim, off, cached, type Ctx } from "#api/read/respond";
+import { listBlocks, getBlock, blockCensus, blockTransactions, getTransaction, blockTip } from "#api/queries/chain";
 import {
   listTransactions,
   listSends,
@@ -47,6 +47,14 @@ import { listOrderMatches, listOrders, matchesOfOrderIndex, orderByTxIndex } fro
 export const chain = router();
 
 /* ---------- blocks ---------- */
+// Population census — the /blocks knowledge page. Registered before /v2/blocks/:n so the literal
+// segment cannot be captured as a block number. Hourly D1 cache: the totals scan is a few seconds.
+chain.get("/v2/blocks/census", (c) =>
+  cached(c, "blocks:census:1", { ttl: 3600, edge: 300, swr: 86400 }, async () => ({
+    result: await blockCensus(c.env.CORE_DB),
+  })),
+);
+
 chain.get("/v2/blocks", async (c) => {
   const l = lim(c),
     o = off(c);

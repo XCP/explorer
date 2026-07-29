@@ -30,6 +30,7 @@ import {
   reputationTierMembers,
   reputationFunnel,
   reputationHistogram,
+  addressCensus,
 } from "#api/queries/addresses";
 
 export const addresses = router();
@@ -41,6 +42,14 @@ export const addresses = router();
 // historyless we wouldn't have a row for it. So the gate is "not infrastructure AND has any on-chain
 // footprint": a comprehensive first_block (any appearance — see signals.ts addr_*_seen builders), send
 // peers, BTC spent, a holding, or any earned signal. This collapses the old "no history" bucket to ~0.
+
+// Population census — the /addresses knowledge page. Registered before the :address routes so the
+// literal segment cannot be captured as an address. One D1-cached payload, refreshed daily.
+addresses.get("/v2/addresses/census", (c) =>
+  cached(c, "addresses:census:1", { ttl: 86400, edge: 600, swr: 86400 }, async () => ({
+    result: await addressCensus(c.env.CORE_DB),
+  })),
+);
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
   const page = { limit: lim(c), offset: off(c) };
