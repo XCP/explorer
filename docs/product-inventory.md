@@ -130,8 +130,15 @@ Each bet is falsifiable against our data. Status: `untested` / `testing` / `conf
   (elevate persona in boards/leaderboards), not a data question.
 - **H3 — Collection legibility is a composite of persona-mix × market-normalcy, not a single score.** A
   collection page that reads its holder persona-mix and trade-normalcy serves all audiences better than one
-  ranked list. → *Status: untested.* Test: prototype one collection page with a persona-mix band + a
-  normal/abnormal market readout; compare to the current board row.
+  ranked list. → *Status: testing — data premise confirmed 2026-07-28.* Persona-mix per collection
+  (holders × the H2 classifier, six culturally distinct collections) differentiates dramatically and reads
+  like the cultures: punk-frens 43% collector / 35% creator over 214 holders (tight community);
+  stampunks 37% creator / 5% collector (minter-dominated); rare-pepe 8.8% collector across 56,852 holders
+  with 37.5% in exchange/service custody (diluted canon, thin elite over passive base); dank-directory
+  6.8% merchant (3× any other — the dealer scene). Bonus signal found: exchange-custody share spans
+  1.5%→44.5% across collections — a legibility axis nothing surfaces today. Remaining test: the UI
+  prototype (persona-mix band + normalcy readout on one collection page vs the board row) — a design
+  slice for the owner's screenshot-gated loop.
 - **H4 — Market normalcy is definable.** Per-class baselines (price/volume/holder-churn) exist stably enough to
   flag deviations beyond cohesion. → *Status: untested.* Test: compute baselines for one collection tier, see
   if outliers are interpretable.
