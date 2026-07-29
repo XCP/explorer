@@ -69,14 +69,13 @@ function RoleBadge({ role }: { role: HolderRole }) {
 // v19 holders-table cells (.ht-*): rank counts from the page offset; % of supply answers the
 // concentration question every cap-table reader is asking (the denominator is already on the page —
 // audit #7).
-// Divisibility-aware amount: indivisible assets are whole numbers; divisible ones drop the
-// artificial eight-zero tail (0.5, not 0.50000000) — the numeric column stays right-aligned.
+// Divisibility-aware amount: indivisible assets are whole numbers; divisible ones show ALL eight
+// decimals — always eight, zeros included — so every row's fraction lines up column-exact.
 const holderAmount = (normalized: string | null, divisible: boolean): string => {
   if (normalized == null) return "—";
-  if (!divisible) return commas(normalized.split(".")[0]);
-  const trimmed = normalized.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
-  const [whole, frac] = trimmed.split(".");
-  return frac ? `${commas(whole)}.${frac}` : commas(whole);
+  const [whole, frac = ""] = normalized.split(".");
+  if (!divisible) return commas(whole);
+  return `${commas(whole)}.${frac.padEnd(8, "0").slice(0, 8)}`;
 };
 
 const holderCols = (supply: number | null, divisible: boolean, unitPriceUsd: number | null): Col<BalanceRow>[] => [
@@ -106,7 +105,7 @@ const holderCols = (supply: number | null, divisible: boolean, unitPriceUsd: num
     label: "Amount",
     numeric: true,
     priority: 1,
-    w: "150px",
+    w: "200px",
     cell: (r) => <span className="ht-qty">{holderAmount(r.quantity_normalized, divisible)}</span>,
   },
   ...(unitPriceUsd != null

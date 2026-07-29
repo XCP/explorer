@@ -181,7 +181,11 @@ export async function enqueueCoreAddressSignals(db: D1Database, addresses: Itera
   );
 }
 
-export async function runCoreAddressSignalsStep(db: D1Database, limit = 60, force = false) {
+// 150/step: the queue is the repair lane (the 2026-07-29 fork-gap repair queued 54k receive-only
+// addresses that had never been swept in the canonical era) — at 60/step a full-population cycle
+// took ~18 days, which is how the gap stayed invisible. ~9 sequential D1 reads per address keeps
+// 150 well inside a maintenance tick.
+export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, force = false) {
   const queue = await queuedIds(db);
   if (queue.length > 0) {
     const todo = queue.slice(0, limit),
