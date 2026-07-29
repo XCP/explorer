@@ -164,6 +164,27 @@ Each bet is falsifiable against our data. Status: `untested` / `testing` / `conf
 
 ---
 
+- **H6 — Supply can be matched to demand: there are measurable optimal-supply bands.** Probed 2026-07-29
+  (yearly active HUMAN senders × locked-supply asset outcomes from `asset_signals`). → *Status: testing —
+  first probes strongly supportive, with one reframe.*
+  - **Demand side:** active humans (infrastructure-filtered senders) run 12–62k/year — ~1–5k monthly at
+    peaks (2017: 28.7k/yr; 2023: 62.2k/yr; 2025–26: ~5k/yr). This is the whole addressable market.
+  - **Holders scale as ~√supply, not supply.** Fill rate (holders/supply) decays monotonically:
+    0.30 at supply ≤50 → 0.16 at 300 → 0.01 at 10k+. Doubling an edition does not double its community.
+  - **The NFT sweet spot exists: 51–300 units** — best all-time sell-through (52–54% ever achieve a paid
+    sale) vs 36% at 301–1k and 3% at 2–10. That's ~2–10% of the monthly active population.
+  - **Deliberate rarity trades frequency for magnitude:** 2–10 editions almost never sell (3%) but average
+    $11.3k when they do — ~7× the 51–300 band's $1.7–2.8k. 1/1s (56.6k assets, mostly stamps): 11% ever
+    sell, $243 avg — the long tail.
+  - **Reframe — crowding beats ratio:** in 2014–17 (854 assets at 301–1k supply) that band sold 78%; in
+    2021–26 (2,488 assets competing) it collapsed to 20% and prices fell ~10×. Assets-per-buyer (0.12
+    art assets per yearly human then, 0.36 now) predicts outcomes better than supply-per-buyer alone.
+  - **Meme coins have their own band: 1M–100M units** — most holders (~600 avg ≈ 1–3% of yearly actives)
+    and all the big winners ($359k avg top sale, PEPECASH-class). 10B+ is a dead zone ($563 avg).
+  - Next: turn the bands into an issuance-guidance surface (e.g. a line on /assets or the year pages:
+    "editions of 50–300 have historically sold best"), and test H6 predictively — do 2025–26 issuances
+    in-band outperform out-of-band peers issued the same month?
+
 ## Open decisions (owner)
 - Collections: stay a board metric for now (chosen 2026-07). Revisit if H3 confirms the composite lens.
 - Naming for the composite lens if it graduates ("Standing" / "Canon" / "Collectability" — undecided).
