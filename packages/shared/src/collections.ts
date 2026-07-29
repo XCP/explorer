@@ -1,16 +1,16 @@
 /** Collection discovery — surfaces that help find and curate collections beyond the tagged directories. */
 
-/** A collection CANDIDATE (GET /v2/collections/candidates): an issuer whose cluster of media assets looks
- *  like a project we haven't tagged yet — judged by who holds it, not by any directory. */
+/** A collection CANDIDATE (GET /v2/collections/candidates): an untagged asset the collector base has
+ *  already chosen — ranked by collector-persona holders who acquired it by CHOICE (a trade, a
+ *  dispense, or a send from anyone but the asset's dominant distributor), so an airdrop blast cannot
+ *  manufacture its way onto the board. */
 export interface CollectionCandidate {
-  issuer: string; // the issuer address the cluster shares
-  assets: number; // count of the issuer's uncollected media assets
-  avg_holders: number; // mean holders across the cluster
-  holder_dex: number; // mean holder DEX-trade sophistication (are real collectors holding it?)
-  creator_pct: number; // mean % of holders who are proven creators (peer validation)
-  realized_usd: number; // Σ realized value across the cluster (0 = minted-but-never-sold, still interesting)
-  score: number; // composite discovery score: holder sophistication × cluster size × creator-heaviness
-  samples: string[]; // a few representative member assets (most-held first), for recognition
+  asset: string;
+  asset_longname: string | null;
+  issuer: string | null; // for recognition and grouping by eye
+  chosen_collectors: number; // collector-persona holders with a chosen acquisition path — the rank
+  collector_holders: number; // all collector-persona holders (airdrops inflate this; the gap is the tell)
+  holders: number | null; // the whole holder base
 }
 
 export interface CollectionCandidatesPayload {
