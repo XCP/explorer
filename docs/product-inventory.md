@@ -153,7 +153,14 @@ Each bet is falsifiable against our data. Status: `untested` / `testing` / `conf
   volume — computable from the same eligible-trade evidence, no baseline model needed. Next: decide the
   surface (a market-breadth chip beside the insular chip, or a line in the H3 collection card).
 - **H5 — Cutting the science projects (Graph page, Candidates from nav) and half the Emblem stack loses no
-  legibility.** → *Status: untested.* Test: pull them, watch nothing break.
+  legibility.** → *Status: largely confirmed 2026-07-28.* The Graph page and both nav entries were already
+  cut in a prior pass — /graph 404s on prod and nothing broke. The last public leak (the "Discover untagged
+  candidates →" link on /collections) is now removed; the /collections/candidates route stays reachable as
+  the owner's curation tool. The Emblem-stack audit softened the "dead half" fear: seven of eight builders
+  are load-bearing (registry+stats, meta, sales, transfers, scam→reputation integrity flags, vault-contents,
+  scarce-sales — the last two verified live today). Exactly ONE is dead — `emblem-listings`, whose sole
+  consumer is Radar's empty venue and whose Sequence source 400s — and its retirement is the same decision
+  as Radar's fix-or-kill (OpenSea key or delete), already on the open-decisions list. No blind deletion.
 
 ---
 

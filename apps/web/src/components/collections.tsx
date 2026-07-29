@@ -158,10 +158,7 @@ export function Collections() {
         <p>
           Counterparty projects described by Rating coverage, typical Rating, holder overlap, concentration, market
           activity, realized value, and integrity evidence. No collection score: every observed axis stays visible.
-          Ranked by rated-member coverage; click a column to re-sort.{" "}
-          <Link href="/collections/candidates" className="underline underline-offset-2">
-            Discover untagged candidates →
-          </Link>
+          Ranked by rated-member coverage; click a column to re-sort.
         </p>
       </div>
       <Card>
