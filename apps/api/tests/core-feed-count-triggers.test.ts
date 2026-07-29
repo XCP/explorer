@@ -60,3 +60,32 @@ test("canonical inserts and rollback deletes maintain feed counts exactly once",
   assert.equal(count(1, "sales"), 0);
   assert.equal(count(1, "subassets"), 0);
 });
+
+test("re-attributing a trade moves its feed count instead of leaking it", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE asset_feed_counts(asset_id INTEGER PRIMARY KEY,sales INTEGER DEFAULT 0,updated_at INTEGER);
+    CREATE TABLE trades(id INTEGER PRIMARY KEY,asset_id INTEGER);
+  `);
+  // only the trades triggers from 0011 apply to this minimal schema
+  const triggers = migration
+    .split("CREATE TRIGGER")
+    .filter((part) => part.includes(" ON trades") || part.includes("ON trades "))
+    .map((part) => "CREATE TRIGGER" + part.slice(0, part.indexOf("END;") + 4))
+    .join(";");
+  db.exec(triggers);
+  db.exec(readFileSync("migrations-core/0081_trade_feed_count_reattribution.sql", "utf8"));
+  const sales = (assetId: number) =>
+    Number(
+      (db.prepare(`SELECT sales FROM asset_feed_counts WHERE asset_id=?`).get(assetId) as { sales: number } | undefined)
+        ?.sales ?? 0,
+    );
+  db.prepare(`INSERT INTO trades(asset_id) VALUES(?)`).run(901);
+  assert.equal(sales(901), 1);
+  // The builders' upsert path: DO UPDATE SET asset_id=excluded.asset_id (lot re-resolution).
+  db.prepare(`UPDATE trades SET asset_id=?`).run(902);
+  assert.equal(sales(901), 0);
+  assert.equal(sales(902), 1);
+  db.prepare(`DELETE FROM trades`).run();
+  assert.equal(sales(902), 0);
+});
