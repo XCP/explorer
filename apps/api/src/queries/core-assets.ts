@@ -804,3 +804,25 @@ export function listAssetFairmints(
     offset,
   );
 }
+
+/** Longname + divisibility for a small set of asset symbols — what the mempool flattener needs to
+ *  render rows without verbose enrichment. Symbols the mirror has never seen (e.g. an asset whose
+ *  own issuance is still unconfirmed) are simply absent. Capped to one D1 statement's bind budget;
+ *  a live mempool never approaches that many distinct assets. */
+export interface AssetDisplayFacts {
+  asset: string;
+  asset_longname: string | null;
+  divisible: number;
+}
+export function coreAssetDisplayFacts(db: D1Database, assets: string[]): Promise<AssetDisplayFacts[]> {
+  const symbols = assets.slice(0, 90);
+  if (symbols.length === 0) return Promise.resolve([]);
+  return q<AssetDisplayFacts>(
+    db,
+    `SELECT dictionary.asset, details.asset_longname, COALESCE(details.divisible,0) divisible
+       FROM asset_dictionary dictionary
+       LEFT JOIN assets details ON details.asset_id=dictionary.asset_id
+      WHERE dictionary.asset IN (${symbols.map(() => "?").join(",")})`,
+    ...symbols,
+  );
+}

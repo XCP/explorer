@@ -1,9 +1,13 @@
 /**
- * Mempool read surfaces — a best-effort read-through to the Counterparty node's mempool. Nothing here
- * touches D1: the mempool is volatile and per-entity, so it is never mirrored. Every handler fetches raw
- * mempool EVENTS from the node, keeps the ACTION events (dropping ledger plumbing + status echoes), and
- * flattens each into a MempoolActionRow. Caching is edge-only and short (10s) — this is the live "now"
- * view, and its per-entity cardinality makes the D1 response cache a poor fit.
+ * Mempool read surfaces — a best-effort read-through to the Counterparty node's mempool. The mempool
+ * itself is volatile and per-entity, so it is never mirrored into D1. Every handler fetches raw
+ * mempool EVENTS from the node (non-verbose — verbose enrichment inlines each touched asset's full
+ * description, and stamp assets carry multi-MB blobs), keeps the ACTION events (dropping ledger
+ * plumbing + status echoes), and flattens each into a MempoolActionRow. The two display derivations
+ * verbose used to provide come from our own data instead: asset longname + divisibility resolve from
+ * the mirror's asset rows, and quantities normalize with the same string math the replay uses.
+ * Caching is edge-only and short (10s) — this is the live "now" view, and its per-entity cardinality
+ * makes the D1 response cache a poor fit.
  *
  *   GET /v2/mempool                          protocol-wide pending actions (?event= filters one event kind)
  *   GET /v2/addresses/:address/mempool          pending actions touching one address
@@ -14,12 +18,15 @@
 import type { Envelope } from "@xcp/shared/envelope";
 import type { MempoolActionRow } from "@xcp/shared/mempool";
 import { counterpartyJson } from "#api/integrations/counterparty";
+import { normalize } from "#api/indexer/codec";
+import { coreAssetDisplayFacts } from "#api/queries/core-assets";
 import { router, J, type Ctx } from "#api/read/respond";
 
 // The subset of a raw Counterparty mempool event we read. `params` is an open bag of protocol fields;
-// we pick only the ones that flatten into a display row — the field NAMES vary by message type (an order
-// carries give_asset/get_asset, a send carries asset, a dispense carries dispense_quantity_normalized),
-// so normalizeRow coalesces across the known aliases.
+// we pick only the ones that flatten into a display row — the field NAMES vary by message type (an
+// order carries give_asset/give_quantity, a send carries asset/quantity, a dispense carries
+// dispense_quantity), so the flattener coalesces across the known aliases. Issuance-style events
+// state divisible/asset_longname themselves — the only case where the asset may be unknown to D1.
 interface MempoolEventParams {
   source?: string | null;
   origin?: string | null;
@@ -28,11 +35,10 @@ interface MempoolEventParams {
   asset?: string | null;
   give_asset?: string | null;
   asset_longname?: string | null;
-  asset_info?: { asset_longname?: string | null } | null;
-  give_asset_info?: { asset_longname?: string | null } | null;
-  quantity_normalized?: string | null;
-  dispense_quantity_normalized?: string | null;
-  give_quantity_normalized?: string | null;
+  divisible?: boolean | number | null;
+  quantity?: string | number | null;
+  dispense_quantity?: string | number | null;
+  give_quantity?: string | number | null;
   dispenser_tx_hash?: string | null;
 }
 interface MempoolEvent {
@@ -79,16 +85,45 @@ const ACTION_EVENTS = new Set<string>([
   "DETACH",
 ]);
 
-function normalizeRow(e: MempoolEvent): MempoolActionRow {
+interface AssetDisplay {
+  asset_longname: string | null;
+  divisible: boolean | null;
+}
+
+// One D1 round trip for every asset the kept events touch. XCP/BTC are natively divisible with no
+// row of their own; an asset the mirror has never seen (its issuance is itself still unconfirmed)
+// resolves to divisibility-unknown, and its quantity stays null rather than guessing a scale.
+async function assetDisplayByName(c: Ctx, events: MempoolEvent[]): Promise<Map<string, AssetDisplay>> {
+  const display = new Map<string, AssetDisplay>([
+    ["XCP", { asset_longname: null, divisible: true }],
+    ["BTC", { asset_longname: null, divisible: true }],
+  ]);
+  const wanted = new Set<string>();
+  for (const e of events) {
+    const asset = e.params?.asset ?? e.params?.give_asset;
+    if (typeof asset === "string" && asset && !display.has(asset)) wanted.add(asset);
+  }
+  for (const fact of await coreAssetDisplayFacts(c.env.CORE_DB, [...wanted])) {
+    display.set(fact.asset, { asset_longname: fact.asset_longname, divisible: fact.divisible === 1 });
+  }
+  return display;
+}
+
+function actionRow(e: MempoolEvent, display: Map<string, AssetDisplay>): MempoolActionRow {
   const p = e.params ?? {};
+  const asset = p.asset ?? p.give_asset ?? null;
+  const facts = asset ? display.get(asset) : undefined;
+  // The event's own divisible (issuances) beats the mirror's; unknown divisibility leaves quantity null.
+  const divisible = p.divisible != null ? Boolean(p.divisible) : (facts?.divisible ?? null);
+  const quantity = p.quantity ?? p.dispense_quantity ?? p.give_quantity ?? null;
   return {
     tx_hash: e.tx_hash,
     event: e.event,
     source: p.source ?? p.origin ?? p.address ?? null,
     destination: p.destination ?? null,
-    asset: p.asset ?? p.give_asset ?? null,
-    asset_longname: p.asset_longname ?? p.asset_info?.asset_longname ?? p.give_asset_info?.asset_longname ?? null,
-    quantity_normalized: p.quantity_normalized ?? p.dispense_quantity_normalized ?? p.give_quantity_normalized ?? null,
+    asset,
+    asset_longname: p.asset_longname ?? facts?.asset_longname ?? null,
+    quantity_normalized: quantity != null && divisible != null ? normalize(quantity, divisible) : null,
     dispenser_tx_hash: p.dispenser_tx_hash ?? null,
     timestamp: e.timestamp,
   };
@@ -104,9 +139,9 @@ async function fetchActions(c: Ctx, path: string): Promise<MempoolActionRow[]> {
       maxRetries: 0,
       malformedRetries: 0,
     });
-    const rows: MempoolActionRow[] = [];
-    for (const e of j.result ?? []) if (ACTION_EVENTS.has(e.event)) rows.push(normalizeRow(e));
-    return rows;
+    const kept = (j.result ?? []).filter((e) => ACTION_EVENTS.has(e.event));
+    const display = await assetDisplayByName(c, kept);
+    return kept.map((e) => actionRow(e, display));
   } catch {
     return [];
   }
@@ -118,14 +153,14 @@ export const mempool = router();
 
 // Protocol-wide feed. ?event=OPEN_ORDER narrows to one event kind (exact, case-sensitive event name).
 mempool.get("/v2/mempool", async (c) => {
-  const rows = await fetchActions(c, `/mempool/events?verbose=true&limit=200`);
+  const rows = await fetchActions(c, `/mempool/events?limit=200`);
   const ev = c.req.query("event");
   return J(c, envelope(ev ? rows.filter((r) => r.event === ev) : rows), 10);
 });
 
 mempool.get("/v2/addresses/:address/mempool", async (c) => {
   const address = c.req.param("address");
-  const rows = await fetchActions(c, `/addresses/mempool?addresses=${encodeURIComponent(address)}&verbose=true`);
+  const rows = await fetchActions(c, `/addresses/mempool?addresses=${encodeURIComponent(address)}`);
   return J(c, envelope(rows), 10);
 });
 
@@ -133,7 +168,7 @@ mempool.get("/v2/addresses/:address/mempool", async (c) => {
 // asset symbol or its longname, both matched against the upper-cased path segment).
 mempool.get("/v2/assets/:asset/mempool", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const rows = await fetchActions(c, `/mempool/events?verbose=true&limit=500`);
+  const rows = await fetchActions(c, `/mempool/events?limit=500`);
   const hit = rows.filter(
     (r) => (r.asset ?? "").toUpperCase() === asset || (r.asset_longname ?? "").toUpperCase() === asset,
   );
@@ -143,7 +178,7 @@ mempool.get("/v2/assets/:asset/mempool", async (c) => {
 // Pending purchases against one dispenser — DISPENSE rows whose dispenser_tx_hash matches the path.
 mempool.get("/v2/dispensers/:tx_hash/mempool", async (c) => {
   const dispenser = c.req.param("tx_hash");
-  const rows = await fetchActions(c, `/mempool/events?verbose=true&limit=500`);
+  const rows = await fetchActions(c, `/mempool/events?limit=500`);
   const hit = rows.filter((r) => r.event === "DISPENSE" && r.dispenser_tx_hash === dispenser);
   return J(c, envelope(hit), 10);
 });
@@ -151,7 +186,7 @@ mempool.get("/v2/dispensers/:tx_hash/mempool", async (c) => {
 /** One tx's pending mempool actions ([] when the node has none) — also consumed by the composed
  *  transaction view in read/chain.ts (a function import, not a route). */
 export function mempoolTxActions(c: Ctx, hash: string): Promise<MempoolActionRow[]> {
-  return fetchActions(c, `/mempool/transactions/${encodeURIComponent(hash)}/events?verbose=true`);
+  return fetchActions(c, `/mempool/transactions/${encodeURIComponent(hash)}/events`);
 }
 
 // One specific pending tx. 404 (same { error } shape as the other read 404s) when the node has no events
