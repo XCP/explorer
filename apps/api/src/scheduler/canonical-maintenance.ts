@@ -37,26 +37,31 @@ const maybeCrawlCollections = (env: Env) =>
 const maybeCrawlTokenscan = (env: Env) =>
   runCoreBlockGated(env.CORE_DB, "tokenscan_synced_blk", 1008, () => crawlTokenscanCollections(env));
 
+// Returns the provider's result so runScheduledJob can log its progress — including the soft-failure
+// err/failed/skipped strings that keep the cursor from advancing. Swallowing the result here made the
+// Emblem sales crawl fail invisibly for two weeks: every run logged a bare "success".
 async function blockGatedProviderJob(
   env: Env,
   stateKey: string,
   interval: number,
   run: () => Promise<{ err?: unknown; failed?: unknown; skipped?: unknown }>,
-): Promise<void> {
+): Promise<Record<string, unknown> | undefined> {
   const tip =
     Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
   const last = Number(
     (await env.CORE_DB.prepare(`SELECT value FROM core_state WHERE key=?`).bind(stateKey).first<{ value: string }>())
       ?.value ?? 0,
   );
-  if (tip - last < interval) return;
+  if (tip - last < interval) return undefined; // fresh — the quiet, normal case
   const result = await run();
-  if (result.err !== undefined || result.failed !== undefined || result.skipped !== undefined) return;
-  await env.CORE_DB.prepare(
-    `INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-  )
-    .bind(stateKey, String(tip))
-    .run();
+  if (result.err === undefined && result.failed === undefined && result.skipped === undefined) {
+    await env.CORE_DB.prepare(
+      `INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    )
+      .bind(stateKey, String(tip))
+      .run();
+  }
+  return result as Record<string, unknown>;
 }
 
 const maybeCrawlEmblemSales = (env: Env) =>

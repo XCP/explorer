@@ -3,18 +3,26 @@ export interface ScheduledJobEvent {
   job: string;
   outcome: "success" | "error";
   duration_ms: number;
-  progress?: Record<string, number | boolean | null>;
+  progress?: Record<string, number | boolean | string | null>;
   error?: { name: string; message: string };
 }
 
-/** Retain only bounded scalar progress. Provider payloads, hashes, and arbitrary strings never enter logs. */
-function progressDetails(value: unknown): Record<string, number | boolean | null> | undefined {
+// The crawlers report soft failures as short strings on these keys instead of throwing (so one
+// provider hiccup doesn't abort the whole maintenance pass). They are the operational counterpart
+// of error.message — which IS logged — and dropping them made a two-week Emblem sales outage
+// invisible: every run logged outcome "success" with no detail.
+const OUTCOME_STRING_KEYS = new Set(["err", "error", "failed", "skipped"]);
+
+/** Retain only bounded scalar progress plus short outcome strings. Provider payloads, hashes, and
+ *  other arbitrary strings never enter logs. */
+function progressDetails(value: unknown): Record<string, number | boolean | string | null> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const progress: Record<string, number | boolean | null> = {};
+  const progress: Record<string, number | boolean | string | null> = {};
   for (const [key, item] of Object.entries(value)) {
     if (typeof item === "number" && Number.isFinite(item)) progress[key] = item;
     else if (typeof item === "boolean" || item === null) progress[key] = item;
     else if (Array.isArray(item)) progress[`${key}_count`] = item.length;
+    else if (typeof item === "string" && OUTCOME_STRING_KEYS.has(key)) progress[key] = item.slice(0, 120);
   }
   return Object.keys(progress).length ? progress : undefined;
 }
