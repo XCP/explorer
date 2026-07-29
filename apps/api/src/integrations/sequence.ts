@@ -84,6 +84,15 @@ export function requireSequenceListingsPage(value: unknown): SequenceListingsPag
   return page;
 }
 
+/** The contract is not registered in the Sequence project — a permanent, per-contract condition
+ *  (their marketplace API only serves collections added in the builder console), distinct from a
+ *  provider failure. Callers treat it as an honestly empty observation. */
+export class SequenceUnregisteredCollection extends Error {
+  constructor(contract: string) {
+    super(`Sequence project does not include ${contract}`);
+  }
+}
+
 export async function fetchSequenceListingsPage(
   accessKey: string,
   contract: string,
@@ -99,6 +108,12 @@ export async function fetchSequenceListingsPage(
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`Sequence listings request failed: ${response.status}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    if (response.status === 400 && /collection not found/i.test(body)) {
+      throw new SequenceUnregisteredCollection(contract);
+    }
+    throw new Error(`Sequence listings request failed: ${response.status}`);
+  }
   return requireSequenceListingsPage(await response.json());
 }

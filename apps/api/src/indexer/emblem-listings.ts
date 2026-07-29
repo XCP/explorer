@@ -1,6 +1,6 @@
 /** Live asks for Ethereum NFTs that wrap Counterparty assets, sourced from Sequence Marketplace. */
 import type { Env } from "#api/env";
-import { fetchSequenceListingsPage } from "#api/integrations/sequence";
+import { fetchSequenceListingsPage, SequenceUnregisteredCollection } from "#api/integrations/sequence";
 import { getCoreStateInt, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
 
 const MAX_PAGES_PER_CONTRACT = 5;
@@ -138,6 +138,7 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
   if (cursor < 0 || cursor >= contracts.length) cursor = 0;
   let live = 0;
   let upserts = 0;
+  let unregistered = 0;
   const processed: string[] = [];
 
   for (let count = 0; count < CONTRACTS_PER_RUN && cursor < contracts.length; count++) {
@@ -146,7 +147,16 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
     try {
       asks = await sweepContract(env.SEQUENCE_ACCESS_KEY, contract);
     } catch (error) {
-      return { generation, processed: processed.length, failed: contract, error: String(error).slice(0, 120) };
+      // A contract the Sequence project doesn't include is a complete, honestly-empty observation —
+      // most vault contracts are unregistered, and aborting on the first one wedged the venue at
+      // generation zero while the registered contracts carried real (OpenSea-sourced) listings.
+      // Anything else is a provider failure: abort so an incomplete generation never publishes.
+      if (error instanceof SequenceUnregisteredCollection) {
+        asks = [];
+        unregistered++;
+      } else {
+        return { generation, processed: processed.length, failed: contract, error: String(error).slice(0, 120) };
+      }
     }
     const observedAt = Date.now();
     const rows = await resolveAssets(env.CORE_DB, contract, asks);
@@ -171,5 +181,12 @@ export async function crawlEmblemListings(env: Env): Promise<Record<string, unkn
       env.CORE_DB.prepare(`DELETE FROM emblem_listings WHERE generation<?`).bind(generation),
     ]);
   }
-  return { generation, published: cursor >= contracts.length, processed: processed.length, live, upserts };
+  return {
+    generation,
+    published: cursor >= contracts.length,
+    processed: processed.length,
+    unregistered,
+    live,
+    upserts,
+  };
 }
