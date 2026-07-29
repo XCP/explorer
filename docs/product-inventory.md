@@ -22,9 +22,9 @@ We built a lot of scoring machinery. It resolves into a small structure:
   Our best-designed surface: band + tags + evidence, never a black-box number.
 
 **Two derived axes (latent in the data, not yet named as products):**
-- **WHO — address persona.** `address_signals` already carries every signal needed to type an address by its
-  dominant behavior. We type holders *per asset* (`holderArchetypes`) but have **no global persona per
-  address**. This is the biggest unclaimed value in the system.
+- **WHO — address persona.** Built: `reputation/persona.ts` classifies every ranked address by dominant
+  behavior (creator/collector/merchant/trader, intensity-weighted with an honest secondary), served on the
+  address reputation endpoint. Globally validated 2026-07-28 — see H2.
 - **HOW NORMALLY it trades — market state.** Pieces exist (price, `realized_usd`, holder cohesion / wash,
   floor) but there is **no explicit "normal vs abnormal" baseline** per asset class or collection. Cohesion
   is one deviation detector; there is no general one.
@@ -117,8 +117,17 @@ Each bet is falsifiable against our data. Status: `untested` / `testing` / `conf
 - **H1 — Personas are real and separable.** Address behavior clusters into creator/collector/merchant/
   speculator, not mush. → *Status: confirmed* (probe above: clean, human-scale segments).
 - **H2 — A global address persona is more useful than a bare reputation score.** Showing "Collector · high
-  reputation" beats a lone number for the "who are the players" job. → *Status: untested.* Test: build the
-  persona classifier (derive from `address_signals`), eyeball face-validity on known addresses.
+  reputation" beats a lone number for the "who are the players" job. → *Status: confirmed (classifier
+  validated globally 2026-07-28).* The shipped classifier (`reputation/persona.ts`) mirrored in SQL over all
+  358k active addresses: creator 17,044 · collector 12,909 · trader 3,896 · merchant 3,118 (= 36,967
+  "players", matching the ~32k thesis) against 171,715 light collectors + 77,922 dormant + 53,810 infra.
+  Face-validity: top exemplars are self-announcing — `1FairPY…` (100,003 issuances) leads creators,
+  `1BigDeaL…` (1,989 dispenses) leads merchants, top collectors hold 1,700–2,500 assets with little else,
+  top traders run 1,400–4,000 DEX trades. One open wrinkle → the top creator tier is industrial-scale
+  minting (mint mills behaving like services); persona reads honestly ("issues assets") but an owner call
+  is pending on whether `likely_service` should overlay the headline for them. Remaining half of the bet —
+  whether the persona headline beats a lone number *for users* — is now a product-surface question
+  (elevate persona in boards/leaderboards), not a data question.
 - **H3 — Collection legibility is a composite of persona-mix × market-normalcy, not a single score.** A
   collection page that reads its holder persona-mix and trade-normalcy serves all audiences better than one
   ranked list. → *Status: untested.* Test: prototype one collection page with a persona-mix band + a
