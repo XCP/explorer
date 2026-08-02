@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import type { Env } from "#api/env";
 import {
+  RECOVERY_REVERIFY_INTERVAL_SECONDS,
   RECOVERY_VERIFICATION_QUEUE_SQL,
   verificationRetryDelay,
   verificationRetryQuota,
@@ -23,7 +24,7 @@ class Statement {
   }
   all<T>() {
     if (this.sql.includes("GROUP BY o.txid")) {
-      const limit = Number(this.values[1]);
+      const limit = Number(this.values[4]);
       return Promise.resolve({
         results: [...new Set(this.db.outputs.filter((o) => o.chain_checked_at == null).map((o) => o.txid))]
           .slice(0, limit)
@@ -106,10 +107,13 @@ test("verification retry delay is exponential and bounded", () => {
   assert.equal(verificationRetryDelay(100), 21_600);
 });
 
-test("verification queue reserves bounded capacity for due retries without starving fresh work", () => {
+const txid = (value: number) => value.toString(16).padStart(64, "0");
+
+function queueDatabase(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec(`
-    CREATE TABLE recovery_outputs(txid TEXT NOT NULL,vout INTEGER NOT NULL,chain_checked_at INTEGER,PRIMARY KEY(txid,vout));
+    CREATE TABLE recovery_outputs(txid TEXT NOT NULL,vout INTEGER NOT NULL,classification TEXT NOT NULL DEFAULT 'recoverable',
+      chain_checked_at INTEGER,PRIMARY KEY(txid,vout));
     CREATE INDEX recovery_outputs_verification ON recovery_outputs(chain_checked_at,txid,vout);
     CREATE TABLE recovery_verification_failures(
       txid TEXT PRIMARY KEY,attempts INTEGER NOT NULL,first_failed_at INTEGER NOT NULL,last_failed_at INTEGER NOT NULL,
@@ -117,31 +121,60 @@ test("verification queue reserves bounded capacity for due retries without starv
     ) WITHOUT ROWID;
     CREATE INDEX recovery_verification_failures_retry ON recovery_verification_failures(next_retry_at,txid);
   `);
-  const addOutput = db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,NULL)`);
+  return db;
+}
+
+function queueRows(db: DatabaseSync, now: number, limit: number): string[] {
+  const staleBefore = now - RECOVERY_REVERIFY_INTERVAL_SECONDS;
+  return (
+    db
+      .prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
+      .all(now, staleBefore, verificationRetryQuota(limit), staleBefore, limit, limit) as { txid: string }[]
+  ).map((row) => row.txid);
+}
+
+test("verification queue reserves bounded capacity for due retries without starving fresh work", () => {
+  const db = queueDatabase();
+  const addOutput = db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,'recoverable',NULL)`);
   const addFailure = db.prepare(`INSERT INTO recovery_verification_failures VALUES (?,1,1,1,?, '429')`);
-  const txid = (value: number) => value.toString(16).padStart(64, "0");
   for (let value = 1; value <= 30; value++) addOutput.run(txid(value));
   addFailure.run(txid(1), 50);
   addFailure.run(txid(2), 60);
   addFailure.run(txid(3), 200);
 
   const limit = 20;
-  const rows = db.prepare(RECOVERY_VERIFICATION_QUEUE_SQL).all(100, verificationRetryQuota(limit), limit, limit) as {
-    txid: string;
-  }[];
+  const rows = queueRows(db, 100, limit);
   assert.equal(verificationRetryQuota(limit), 2);
   assert.equal(rows.length, limit);
-  assert.deepEqual(
-    rows.slice(0, 2).map((row) => row.txid),
-    [txid(1), txid(2)],
-  );
+  assert.deepEqual(rows.slice(0, 2), [txid(1), txid(2)]);
+  assert.equal(rows.includes(txid(3)), false, "a retry before its due time must remain excluded");
   assert.equal(
-    rows.some((row) => row.txid === txid(3)),
-    false,
-    "a retry before its due time must remain excluded",
-  );
-  assert.equal(
-    rows.slice(2).every((row) => Number.parseInt(row.txid, 16) >= 4),
+    rows.slice(2).every((row) => Number.parseInt(row, 16) >= 4),
     true,
   );
+});
+
+test("a recoverable output is re-verified once its verdict goes stale", () => {
+  const db = queueDatabase();
+  const now = 10 * RECOVERY_REVERIFY_INTERVAL_SECONDS;
+  const add = db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,?)`);
+  add.run(txid(1), "recoverable", now - RECOVERY_REVERIFY_INTERVAL_SECONDS - 1);
+  add.run(txid(2), "recoverable", now - 60);
+
+  const rows = queueRows(db, now, 10);
+  assert.deepEqual(rows, [txid(1)], "only the stale verdict is re-checked");
+});
+
+test("a spent output is never re-verified and never displaces fresh work", () => {
+  const db = queueDatabase();
+  const now = 10 * RECOVERY_REVERIFY_INTERVAL_SECONDS;
+  const stale = now - RECOVERY_REVERIFY_INTERVAL_SECONDS - 1;
+  const add = db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,?)`);
+  add.run(txid(1), "spent", stale);
+  add.run(txid(2), "recoverable", stale);
+  add.run(txid(9), "recoverable", null);
+
+  const rows = queueRows(db, now, 10);
+  assert.equal(rows.includes(txid(1)), false, "a settled spend needs no further chain reads");
+  assert.deepEqual(rows, [txid(9), txid(2)], "never-checked transactions always precede re-checks");
 });

@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import {
+  ELECTRS_SEQUENTIAL_CONCURRENCY,
   fetchTipHeight,
   fetchTransactionOutspends,
   fetchTransactionStatus,
@@ -28,7 +29,31 @@ const DEFAULT_PROVIDERS: AttemptProviders = {
   transactionStatus: fetchTransactionStatus,
   transactionOutspends: fetchTransactionOutspends,
 };
-const PROVIDER_CONCURRENCY = 1;
+const PROVIDER_CONCURRENCY = ELECTRS_SEQUENTIAL_CONCURRENCY;
+/**
+ * Confirmations required before a recovery's spend is written durably into recovery_outputs. The read
+ * path withholds an attempt's inputs from the moment it is reported, so waiting costs the owner nothing
+ * — but a `spent` verdict is never revisited, so settling at a single confirmation would let a reorg
+ * strand an output permanently.
+ */
+export const RECOVERY_SPEND_CONFIRMATIONS = 6;
+
+/**
+ * Attempts are re-read from the chain until they are confirmed deeply enough to settle *and* every
+ * output they consumed is settled. That last clause is what lets already-confirmed attempts recorded
+ * before spend settlement existed heal themselves, and what makes this query stop selecting an attempt
+ * for good once its work is genuinely done.
+ */
+export const RECOVERY_ATTEMPT_QUEUE_SQL = `
+  SELECT a.txid FROM recovery_attempts a
+   WHERE a.status<>'confirmed'
+      OR a.confirmations<?
+      OR EXISTS (
+        SELECT 1 FROM recovery_attempt_inputs i
+          JOIN recovery_outputs o ON o.txid=i.input_txid AND o.vout=i.input_vout
+         WHERE i.recovery_txid=a.txid AND o.classification='recoverable'
+      )
+   ORDER BY a.chain_checked_at,a.reported_at,a.txid LIMIT ?`;
 
 export interface AttemptEvidence {
   status: "pending" | "confirmed" | "replaced" | "failed";
@@ -103,10 +128,8 @@ export async function reconcileRecoveryAttempts(
   limit: number,
   providers: AttemptProviders = DEFAULT_PROVIDERS,
 ): Promise<{ checked: number; failed: number }> {
-  const attempts = await env.RECOVERY_DB.prepare(
-    `SELECT txid FROM recovery_attempts ORDER BY chain_checked_at,reported_at,txid LIMIT ?`,
-  )
-    .bind(limit)
+  const attempts = await env.RECOVERY_DB.prepare(RECOVERY_ATTEMPT_QUEUE_SQL)
+    .bind(RECOVERY_SPEND_CONFIRMATIONS, limit)
     .all<AttemptRow>();
   if (attempts.results.length === 0) return { checked: 0, failed: 0 };
 
@@ -124,7 +147,7 @@ export async function reconcileRecoveryAttempts(
     const transaction = await providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid);
     if (transaction) {
       const evidence = classifyAttemptEvidence(attempt.txid, transaction, [], tipHeight);
-      return recoveryAttemptUpdate(env.RECOVERY_DB, attempt.txid, evidence, now);
+      return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now);
     }
     const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
     const parentOutspends = [] as ElectrsOutspend[][];
@@ -142,17 +165,60 @@ export async function reconcileRecoveryAttempts(
       }),
       tipHeight,
     );
-    return recoveryAttemptUpdate(env.RECOVERY_DB, attempt.txid, evidence, now);
+    return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now);
   };
-  const settled: PromiseSettledResult<D1PreparedStatement>[] = [];
+  const settled: PromiseSettledResult<D1PreparedStatement[]>[] = [];
   for (let index = 0; index < attempts.results.length; index += PROVIDER_CONCURRENCY) {
     settled.push(
       ...(await Promise.allSettled(attempts.results.slice(index, index + PROVIDER_CONCURRENCY).map(reconcileAttempt))),
     );
   }
-  const updates = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  const checked = settled.filter((result) => result.status === "fulfilled").length;
+  const updates = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   if (updates.length > 0) await env.RECOVERY_DB.batch(updates);
-  return { checked: updates.length, failed: settled.length - updates.length };
+  return { checked, failed: settled.length - checked };
+}
+
+/**
+ * The transaction that durably consumed an attempt's inputs, once the chain is deep enough to trust.
+ *
+ * A replacement is deliberately never settled here. Its own depth is unknown — `classifyAttemptEvidence`
+ * reports a replacement without a block — and the read path already withholds the inputs of any reported
+ * attempt, so nothing is handed back out while the verification sweep resolves it from the chain.
+ */
+export function settledSpendTxid(txid: string, evidence: AttemptEvidence): string | null {
+  const trustworthy = evidence.status === "confirmed" && evidence.confirmations >= RECOVERY_SPEND_CONFIRMATIONS;
+  return trustworthy ? txid : null;
+}
+
+/**
+ * Settle the outputs an attempt consumed, reading its input list straight from the row-value join so
+ * one statement covers all 420. `classification='recoverable'` makes it both idempotent — every later
+ * reconcile pass is a no-op — and safe, since it never overwrites a richer verdict.
+ */
+export const RECOVERY_MARK_SPENT_SQL = `
+  UPDATE recovery_outputs SET classification='spent',reason=?,spent_by_txid=?,spent_height=?,chain_checked_at=?
+   WHERE classification='recoverable'
+     AND (txid,vout) IN (SELECT input_txid,input_vout FROM recovery_attempt_inputs WHERE recovery_txid=?)`;
+
+/**
+ * An attempt is the one place that knows, for free and for certain, which tracked outputs a recovery
+ * consumed. Writing that through to recovery_outputs is what keeps a completed recovery from being
+ * offered back to the owner on their next page load.
+ */
+export function recoveryAttemptStatements(
+  db: D1Database,
+  txid: string,
+  evidence: AttemptEvidence,
+  now: number,
+): D1PreparedStatement[] {
+  const statements = [recoveryAttemptUpdate(db, txid, evidence, now)];
+  const spentBy = settledSpendTxid(txid, evidence);
+  if (!spentBy) return statements;
+  statements.push(
+    db.prepare(RECOVERY_MARK_SPENT_SQL).bind("spent-by-confirmed-recovery", spentBy, evidence.blockHeight, now, txid),
+  );
+  return statements;
 }
 
 function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEvidence, now: number) {

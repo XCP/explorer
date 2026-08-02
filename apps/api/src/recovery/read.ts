@@ -4,6 +4,8 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import type { Env } from "#api/env";
 import { boundedInteger } from "#api/http/numbers";
 import { parseRecoveryTransaction } from "#api/recovery/raw-transaction";
+import { requestAddressReverification } from "#api/recovery/verify";
+import type { Context } from "hono";
 
 interface RecoveryOutputRow {
   txid: string;
@@ -18,6 +20,37 @@ interface RecoveryOutputRow {
 }
 
 const check = base58check(sha256);
+
+/**
+ * Outputs a single recovery transaction may consume. A wallet spending 420 bare-multisig inputs is
+ * already near Bitcoin's standard transaction size limit, so this is a protocol bound rather than a
+ * tuning knob, and it is reported on every page so clients need not carry their own copy of it.
+ */
+export const RECOVERY_MAX_OUTPUTS_PER_PAGE = 420;
+
+/**
+ * Never hand back an output some reported recovery already consumed. Keying this on a *pending*
+ * attempt was backwards: it hid inputs while the spend was uncertain and released them the moment it
+ * became certain, so every completed recovery was re-offered to its owner and failed to broadcast with
+ * bad-txns-inputs-missingorspent. Every terminal attempt status means the inputs were consumed
+ * (`confirmed` by the attempt, `replaced` by its replacement, `failed` by several conflicting spends),
+ * so attempt membership alone is the right test. `recovery_attempt_inputs_output` indexes it directly.
+ */
+export const CONSUMED_BY_ATTEMPT_FILTER = `AND NOT EXISTS (SELECT 1 FROM recovery_attempt_inputs i
+    WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout)`;
+
+/**
+ * Run work after the response without ever letting it affect the response. Tests and any non-Worker
+ * host reach this without an execution context, where awaiting inline would be wrong and throwing
+ * would be worse, so the work is simply dropped.
+ */
+function scheduleBackgroundWork(c: Context<{ Bindings: Env }>, work: () => Promise<void>): void {
+  try {
+    c.executionCtx.waitUntil(work());
+  } catch {
+    /* no execution context: verification still happens on the maintenance lane */
+  }
+}
 
 function isP2pkhAddress(address: string): boolean {
   try {
@@ -95,7 +128,11 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
   const address = c.req.param("address");
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
   const page = boundedInteger(c.req.query("page"), { defaultValue: 1, min: 1 });
-  const limit = boundedInteger(c.req.query("limit"), { defaultValue: 420, min: 1, max: 420 });
+  const limit = boundedInteger(c.req.query("limit"), {
+    defaultValue: RECOVERY_MAX_OUTPUTS_PER_PAGE,
+    min: 1,
+    max: RECOVERY_MAX_OUTPUTS_PER_PAGE,
+  });
   const includeProtectedStamps = c.req.query("include_protected_stamps") === "true";
   const offset = (page - 1) * limit;
   if (!Number.isSafeInteger(offset)) return c.json({ error: "page is too large" }, 400);
@@ -112,10 +149,7 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
         `SELECT COUNT(*) output_count, COALESCE(SUM(value_sats),0) value_sats FROM recovery_outputs
         WHERE recovery_address=? AND classification='recoverable'
           ${protectionFilter}
-          AND NOT EXISTS (
-            SELECT 1 FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
-             WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout AND a.status='pending'
-          )`,
+          ${CONSUMED_BY_ATTEMPT_FILTER}`,
       )
       .bind(address)
       .first<{ output_count: number; value_sats: number }>(),
@@ -125,10 +159,7 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
               classification,block_height,verified_at
          FROM recovery_outputs WHERE recovery_address=? AND classification='recoverable'
           ${protectionFilter}
-          AND NOT EXISTS (
-            SELECT 1 FROM recovery_attempt_inputs i JOIN recovery_attempts a ON a.txid=i.recovery_txid
-             WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout AND a.status='pending'
-          )
+          ${CONSUMED_BY_ATTEMPT_FILTER}
         ORDER BY value_sats DESC,txid,vout LIMIT ? OFFSET ?`,
       )
       .bind(address, limit, offset)
@@ -159,6 +190,11 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
   const totalValue = Number(totals?.value_sats ?? 0);
   const threshold = Number(c.env.RECOVERY_FEE_EXEMPTION_SATS || 10_000);
 
+  // Somebody is about to spend these outputs, which makes this the moment their chain state matters
+  // most. Ask for a re-check behind the response rather than inside it; the request is self-limiting,
+  // so a reader refreshing the page cannot turn this into load.
+  scheduleBackgroundWork(c, () => requestAddressReverification(c.env, address, limit));
+
   c.header("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
   return c.json({
     address,
@@ -168,6 +204,9 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
       pages: Math.ceil(totalOutputs / limit),
       current_page: page,
       outputs_on_page: outputResult.results.length,
+      // Clients batch by this rather than hardcoding their own copy, which would silently break
+      // pagination the day the two numbers disagree.
+      max_outputs_per_page: RECOVERY_MAX_OUTPUTS_PER_PAGE,
     },
     fee: {
       address: deterministicFeeAddress(address, c.env.RECOVERY_FEE_ADDRESSES || ""),
@@ -228,8 +267,8 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
   } catch {
     return c.json({ error: "invalid recovery transaction" }, 400);
   }
-  if (transaction.inputs.length === 0 || transaction.inputs.length > 420)
-    return c.json({ error: "recovery must contain 1 to 420 inputs" }, 400);
+  if (transaction.inputs.length === 0 || transaction.inputs.length > RECOVERY_MAX_OUTPUTS_PER_PAGE)
+    return c.json({ error: `recovery must contain 1 to ${RECOVERY_MAX_OUTPUTS_PER_PAGE} inputs` }, 400);
   const uniqueInputs = new Set(transaction.inputs.map((input) => `${input.txid}:${input.vout}`));
   if (uniqueInputs.size !== transaction.inputs.length)
     return c.json({ error: "recovery contains duplicate inputs" }, 400);

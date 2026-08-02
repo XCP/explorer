@@ -34,24 +34,33 @@ export async function batchRecoveryStatements(
     await db.batch(statements.slice(offset, offset + 100));
 }
 
+// A re-import carries creation facts only; the scanner walks where outputs were made and knows nothing
+// about spends, so its rows always say classification='recoverable', spent_by_txid=NULL. Preserve a
+// settled spend rather than letting a cursor rewind resurrect an output its owner already recovered.
+// An importer that does supply spend evidence still wins, which only the explicit import path does.
+const SPEND_ALREADY_SETTLED = `recovery_outputs.classification='spent' AND excluded.spent_by_txid IS NULL`;
+const keepSpend = (column: string) =>
+  `${column}=CASE WHEN ${SPEND_ALREADY_SETTLED} THEN recovery_outputs.${column} ELSE excluded.${column} END`;
+
+export const RECOVERY_OUTPUT_UPSERT_SQL = `
+  INSERT INTO recovery_outputs
+    (txid,vout,value_sats,script_pubkey_hex,layout,recovery_key_hex,recovery_key_position,recovery_address,
+     classification,reason,block_height,block_time,spent_by_txid,spent_height,verified_at,classifier_version,chain_checked_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+  ON CONFLICT(txid,vout) DO UPDATE SET
+    value_sats=excluded.value_sats,script_pubkey_hex=excluded.script_pubkey_hex,layout=excluded.layout,
+    recovery_key_hex=excluded.recovery_key_hex,recovery_key_position=excluded.recovery_key_position,
+    recovery_address=excluded.recovery_address,${keepSpend("classification")},${keepSpend("reason")},
+    block_height=excluded.block_height,block_time=excluded.block_time,${keepSpend("spent_by_txid")},
+    ${keepSpend("spent_height")},verified_at=excluded.verified_at,classifier_version=excluded.classifier_version,
+    ${keepSpend("chain_checked_at")}`;
+
 export async function importRecoveryTransactions(env: Env, rows: RecoveryImportTransaction[]): Promise<number> {
   if (rows.length === 0 || rows.length > 100) throw new Error("expected 1 to 100 transactions");
   const now = Math.floor(Date.now() / 1000);
   const statements: D1PreparedStatement[] = [];
   const blobs: Promise<unknown>[] = [];
-  const upsert = env.RECOVERY_DB.prepare(
-    `INSERT INTO recovery_outputs
-       (txid,vout,value_sats,script_pubkey_hex,layout,recovery_key_hex,recovery_key_position,recovery_address,
-        classification,reason,block_height,block_time,spent_by_txid,spent_height,verified_at,classifier_version,chain_checked_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
-     ON CONFLICT(txid,vout) DO UPDATE SET
-       value_sats=excluded.value_sats,script_pubkey_hex=excluded.script_pubkey_hex,layout=excluded.layout,
-       recovery_key_hex=excluded.recovery_key_hex,recovery_key_position=excluded.recovery_key_position,
-       recovery_address=excluded.recovery_address,classification=excluded.classification,reason=excluded.reason,
-       block_height=excluded.block_height,block_time=excluded.block_time,spent_by_txid=excluded.spent_by_txid,
-       spent_height=excluded.spent_height,verified_at=excluded.verified_at,classifier_version=excluded.classifier_version,
-       chain_checked_at=NULL`,
-  );
+  const upsert = env.RECOVERY_DB.prepare(RECOVERY_OUTPUT_UPSERT_SQL);
 
   for (const row of rows) {
     const expectedTxid = row.txid.toLowerCase();

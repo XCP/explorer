@@ -14,6 +14,22 @@ export interface ElectrsTransactionStatus {
 const ELECTRS_RETRIES = 2;
 const ELECTRS_MAX_RETRY_MS = 2_000;
 
+/**
+ * The provider's shared rate budget, and the ceiling on every chain-reading job in the recovery lane.
+ *
+ * The public allowance replenishes at roughly four requests a second. Bursts of ten still produced
+ * occasional 429s even when followed by a three-second pause, so requests are smoothed as well as
+ * rate-limited: send at most ELECTRS_REQUEST_BATCH_SIZE concurrently, then wait out the interval.
+ *
+ * This is what caps verification throughput, and the reason spend settlement is driven from confirmed
+ * attempt records instead — that path derives everything from data already in the database and spends
+ * none of this budget. Anything built on polling here is a backstop, not a primary mechanism.
+ */
+export const ELECTRS_REQUEST_BATCH_SIZE = 3;
+export const ELECTRS_REQUEST_BATCH_INTERVAL_MS = 1_000;
+/** Sequential per-item provider work stays at one in flight; it shares the same budget. */
+export const ELECTRS_SEQUENTIAL_CONCURRENCY = 1;
+
 async function electrsFetch(url: string): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });

@@ -3,6 +3,7 @@ import { runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
 import { maybeRefreshAddressReputations } from "#api/indexer/address-reputation";
 import { maybeBuildGraph } from "#api/indexer/graph";
 import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
+import { reclassifyRecoveryOutputs } from "#api/recovery/reclassify";
 import { scanRecoveryTransactions } from "#api/recovery/scanner";
 import { refreshRecoveryStats } from "#api/recovery/stats";
 import { verifyRecoveryTransactions } from "#api/recovery/verify";
@@ -18,6 +19,9 @@ export async function runRecoveryMaintenance(env: Env): Promise<void> {
   // durable cursor only after the complete page succeeds. Use a larger page while catching up so a restart
   // does not leave the recovery index days behind the canonical transaction mirror.
   await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 100));
+  // Re-deciding an already-indexed transaction reads only R2, so it can run alongside the chain-bound
+  // jobs without competing for the Electrs budget that caps everything else on this lane.
+  await runScheduledJob("reclassifyRecoveryOutputs", () => reclassifyRecoveryOutputs(env, 25));
   await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
   await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
   await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));

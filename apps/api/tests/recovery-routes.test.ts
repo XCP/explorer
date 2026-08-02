@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Hono } from "hono";
 import type { Env } from "#api/env";
 import { recoveryAdmin } from "#api/recovery/admin";
-import { recoveryRead } from "#api/recovery/read";
+import { RECOVERY_MAX_OUTPUTS_PER_PAGE, recoveryRead } from "#api/recovery/read";
 
 type Row = Record<string, unknown>;
 
@@ -287,6 +287,8 @@ test("recovery output pagination supports direct navigation to the final page", 
     pages: 3,
     current_page: 3,
     outputs_on_page: 1,
+    // Reported so a client never has to carry its own copy of the batch bound.
+    max_outputs_per_page: RECOVERY_MAX_OUTPUTS_PER_PAGE,
   });
   assert.equal(body.outputs[0].value_sats, 100);
   assert.equal(Object.keys(body.transactions).length, 1);

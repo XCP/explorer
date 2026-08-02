@@ -3,6 +3,8 @@ import type { Env } from "#api/env";
 import { verifyRecoveryTransactions } from "#api/recovery/verify";
 import { boundedInteger } from "#api/http/numbers";
 import { reconcileRecoveryAttempts } from "#api/recovery/attempts";
+import { recoveryHealth } from "#api/recovery/health";
+import { reclassifyRecoveryOutputs } from "#api/recovery/reclassify";
 import { auditRecoveryR2Page, recoveryR2AuditManifest, type RecoveryR2AuditManifest } from "#api/recovery/r2-audit";
 import { scanRecoveryTransactions } from "#api/recovery/scanner";
 import { refreshRecoveryStats } from "#api/recovery/stats";
@@ -45,6 +47,11 @@ recoveryAdmin.post("/admin/recovery/reconcile-attempts", async (c) => {
   return c.json(await reconcileRecoveryAttempts(c.env, limit));
 });
 
+recoveryAdmin.post("/admin/recovery/reclassify", async (c) => {
+  const limit = boundedInteger(c.req.query("transactions"), { defaultValue: 25, min: 1, max: 100 });
+  return c.json(await reclassifyRecoveryOutputs(c.env, limit));
+});
+
 recoveryAdmin.post("/admin/recovery/scan", async (c) => {
   const limit = boundedInteger(c.req.query("transactions"), { defaultValue: 200, min: 1, max: 250 });
   return c.json(await scanRecoveryTransactions(c.env, limit));
@@ -53,7 +60,7 @@ recoveryAdmin.post("/admin/recovery/scan", async (c) => {
 recoveryAdmin.post("/admin/recovery/stats/refresh", async (c) => c.json(await refreshRecoveryStats(c.env, true)));
 
 recoveryAdmin.get("/admin/recovery/live-status", async (c) => {
-  const [state, queue, attempts, stats] = await Promise.all([
+  const [state, queue, attempts, stats, health] = await Promise.all([
     c.env.RECOVERY_DB.prepare(
       `SELECT key,value,updated_at FROM recovery_state WHERE key IN ('recovery_scan_tx_index','read_ready') ORDER BY key`,
     ).all(),
@@ -62,9 +69,13 @@ recoveryAdmin.get("/admin/recovery/live-status", async (c) => {
     ).first(),
     c.env.RECOVERY_DB.prepare(`SELECT COUNT(*) attempts FROM recovery_attempts WHERE status='pending'`).first(),
     c.env.RECOVERY_DB.prepare(`SELECT * FROM recovery_stats_snapshot WHERE singleton=1`).first(),
+    recoveryHealth(c.env),
   ]);
-  return c.json({ state: state.results, verification_queue: queue, pending_attempts: attempts, stats });
+  return c.json({ state: state.results, verification_queue: queue, pending_attempts: attempts, stats, health });
 });
+
+/** Alert surface: `health.unsettled.outputs` above zero means recovered coins are being re-offered. */
+recoveryAdmin.get("/admin/recovery/health", async (c) => c.json(await recoveryHealth(c.env)));
 
 recoveryAdmin.get("/admin/recovery/audit/transactions", async (c) => {
   const cursor = c.req.query("cursor") ?? "";

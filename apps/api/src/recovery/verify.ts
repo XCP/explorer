@@ -1,5 +1,9 @@
 import type { Env } from "#api/env";
-import { fetchTransactionOutspends } from "#api/integrations/electrs";
+import {
+  ELECTRS_REQUEST_BATCH_INTERVAL_MS,
+  ELECTRS_REQUEST_BATCH_SIZE,
+  fetchTransactionOutspends,
+} from "#api/integrations/electrs";
 
 interface RecoveryOutputIdentity {
   txid: string;
@@ -8,15 +12,33 @@ interface RecoveryOutputIdentity {
 }
 
 type FetchOutspends = typeof fetchTransactionOutspends;
-// Smooth requests as well as limiting their average rate. Bursts of ten still
-// produced occasional 429s even when followed by a three-second pause.
-const ELECTRS_BATCH_SIZE = 3;
-// The public Electrs allowance replenishes at roughly four requests/second.
-// Stay below that sustained rate so a long reconciliation does not create a
-// growing 429 retry queue after its initial burst allowance is consumed.
-const ELECTRS_BATCH_INTERVAL_MS = 1_000;
 const RETRY_SHARE = 0.1;
+/**
+ * How long a `recoverable` verdict is trusted before the output is checked again. Verification used
+ * to be strictly one-shot — an output checked once while unspent could never re-enter the queue — so
+ * an output spent after that check stayed `recoverable` forever. Recoveries this service performs are
+ * marked spent directly from their attempt record; this sweep is the backstop for spends it did not
+ * cause, so it runs slowly and always yields to never-checked work.
+ */
+export const RECOVERY_REVERIFY_INTERVAL_SECONDS = 30 * 86_400;
 
+/**
+ * How recently a reader must have verified an address before another page view stops asking again.
+ * A reader is the sharpest signal the index has: the page someone is about to spend from is the page
+ * that must be right, and a blind monthly sweep will not reach it in time.
+ */
+export const RECOVERY_READ_REVERIFY_SECONDS = 3_600;
+
+/**
+ * `chain_checked_at` sentinel marking an output a reader asked us to re-check. It outranks the rolling
+ * backstop without displacing never-checked imports, which stay strictly first at -1.
+ */
+const REVERIFY_REQUESTED = 0;
+
+/**
+ * Priority order: never-checked imports, then reader requests, then the rolling backstop oldest-first.
+ * No backlog can starve new work no matter how large the tracked set grows.
+ */
 export const RECOVERY_VERIFICATION_QUEUE_SQL = `
   WITH due_retries AS (
     SELECT f.txid,f.next_retry_at
@@ -24,26 +46,51 @@ export const RECOVERY_VERIFICATION_QUEUE_SQL = `
      WHERE f.next_retry_at<=?
        AND EXISTS (
          SELECT 1 FROM recovery_outputs o
-          WHERE o.txid=f.txid AND o.chain_checked_at IS NULL
+          WHERE o.txid=f.txid
+            AND (o.chain_checked_at IS NULL OR (o.classification='recoverable' AND o.chain_checked_at<=?))
        )
      ORDER BY f.next_retry_at,f.txid
      LIMIT ?
   ), fresh AS (
-    SELECT o.txid
+    SELECT o.txid,MIN(COALESCE(o.chain_checked_at,-1)) checked_at
       FROM recovery_outputs o
       LEFT JOIN recovery_verification_failures f ON f.txid=o.txid
-     WHERE o.chain_checked_at IS NULL AND f.txid IS NULL
+     WHERE f.txid IS NULL
+       AND (o.chain_checked_at IS NULL OR (o.classification='recoverable' AND o.chain_checked_at<=?))
      GROUP BY o.txid
-     ORDER BY o.txid
+     ORDER BY checked_at,o.txid
      LIMIT ?
   )
   SELECT txid FROM (
     SELECT txid,0 AS pool_order,next_retry_at AS sort_at FROM due_retries
     UNION ALL
-    SELECT txid,1 AS pool_order,0 AS sort_at FROM fresh
+    SELECT txid,1 AS pool_order,checked_at AS sort_at FROM fresh
   )
   ORDER BY pool_order,sort_at,txid
   LIMIT ?`;
+
+/**
+ * Ask for the outputs a reader is about to act on to be re-checked, highest value first. Rate limiting
+ * is inherent rather than bookkept: a row already requested sits at the sentinel and a freshly verified
+ * one is inside the window, so both fall outside this predicate and a refresh loop writes nothing.
+ */
+export const RECOVERY_REQUEST_REVERIFY_SQL = `
+  UPDATE recovery_outputs SET chain_checked_at=${REVERIFY_REQUESTED}
+   WHERE (txid,vout) IN (
+     SELECT txid,vout FROM recovery_outputs
+      WHERE recovery_address=? AND classification='recoverable'
+        AND chain_checked_at>=1 AND chain_checked_at<=?
+      ORDER BY value_sats DESC,txid,vout LIMIT ?)`;
+
+/** Fire-and-forget: a verification request must never fail or delay the page that triggered it. */
+export async function requestAddressReverification(env: Env, address: string, limit: number): Promise<void> {
+  const staleBefore = Math.floor(Date.now() / 1000) - RECOVERY_READ_REVERIFY_SECONDS;
+  try {
+    await env.RECOVERY_DB.prepare(RECOVERY_REQUEST_REVERIFY_SQL).bind(address, staleBefore, limit).run();
+  } catch (error) {
+    console.error("recovery re-verification request failed", error);
+  }
+}
 
 export function verificationRetryQuota(limit: number): number {
   return Math.max(1, Math.floor(limit * RETRY_SHARE));
@@ -67,9 +114,10 @@ export async function verifyRecoveryTransactions(
   const limit = Math.min(100, Math.max(1, Math.trunc(transactionLimit)));
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const fetchOutspends = options.fetchOutspends ?? fetchTransactionOutspends;
-  const batchIntervalMs = options.batchIntervalMs ?? ELECTRS_BATCH_INTERVAL_MS;
+  const batchIntervalMs = options.batchIntervalMs ?? ELECTRS_REQUEST_BATCH_INTERVAL_MS;
+  const staleBefore = now - RECOVERY_REVERIFY_INTERVAL_SECONDS;
   const transactionRows = await env.RECOVERY_DB.prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
-    .bind(now, verificationRetryQuota(limit), limit, limit)
+    .bind(now, staleBefore, verificationRetryQuota(limit), staleBefore, limit, limit)
     .all<{ txid: string }>();
   if (transactionRows.results.length === 0) return { transactions: 0, outputs: 0, spent: 0, failed: 0 };
 
@@ -82,15 +130,15 @@ export async function verifyRecoveryTransactions(
   ).flatMap((result) => result.results as unknown as RecoveryOutputIdentity[]);
   const outspendsByTxid = new Map<string, Awaited<ReturnType<typeof fetchTransactionOutspends>>>();
   const failures = new Map<string, string>();
-  for (let offset = 0; offset < transactionRows.results.length; offset += ELECTRS_BATCH_SIZE) {
-    const batch = transactionRows.results.slice(offset, offset + ELECTRS_BATCH_SIZE);
+  for (let offset = 0; offset < transactionRows.results.length; offset += ELECTRS_REQUEST_BATCH_SIZE) {
+    const batch = transactionRows.results.slice(offset, offset + ELECTRS_REQUEST_BATCH_SIZE);
     const results = await Promise.allSettled(batch.map((row) => fetchOutspends(env.ELECTRS_API_BASE, row.txid)));
     batch.forEach((row, index) => {
       const result = results[index];
       if (result.status === "fulfilled") outspendsByTxid.set(row.txid, result.value);
       else failures.set(row.txid, result.reason instanceof Error ? result.reason.message : "Electrs lookup failed");
     });
-    if (offset + ELECTRS_BATCH_SIZE < transactionRows.results.length && batchIntervalMs > 0) {
+    if (offset + ELECTRS_REQUEST_BATCH_SIZE < transactionRows.results.length && batchIntervalMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
     }
   }
