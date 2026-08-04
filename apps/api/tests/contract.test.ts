@@ -422,7 +422,19 @@ test("contract: GET /v2/collections/candidates — compact discovery projection"
   if (skipUnlessLive(t)) return;
   const j = await getJson(`/v2/collections/candidates?contract=${Date.now()}`);
   assert.ok(Array.isArray(j.result?.candidates) && j.result.candidates.length > 0, "candidates must not be empty");
-  assert.ok(Array.isArray(j.result.candidates[0].samples), "candidate samples must be an array");
+  // CollectionCandidate (packages/shared/src/collections.ts)
+  assertRows(
+    j.result.candidates,
+    {
+      asset: "string",
+      asset_longname: "string|null",
+      issuer: "string|null",
+      chosen_collectors: "number",
+      collector_holders: "number",
+      holders: "number|null",
+    },
+    "candidates",
+  );
 });
 
 test("contract: GET /v2/collections — descriptive collection profiles", async (t) => {

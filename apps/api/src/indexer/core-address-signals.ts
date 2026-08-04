@@ -168,16 +168,17 @@ async function queuedIds(db: D1Database): Promise<number[]> {
 export async function enqueueCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<void> {
   const names = [...new Set(addresses)].filter(Boolean);
   if (names.length === 0) return;
-  const placeholders = names.map(() => "?").join(",");
-  const rows = await db
-    .prepare(`SELECT address_id FROM address_dictionary WHERE address IN (${placeholders})`)
-    .bind(...names)
-    .all<{ address_id: number }>();
-  await setCoreState(
-    db,
-    "address_signals_queue",
-    JSON.stringify([...new Set([...(await queuedIds(db)), ...rows.results.map((row) => row.address_id)])]),
-  );
+  // D1 caps a statement near 100 bound variables — resolve the ids in slices.
+  const ids: number[] = [];
+  for (let index = 0; index < names.length; index += 90) {
+    const chunk = names.slice(index, index + 90);
+    const rows = await db
+      .prepare(`SELECT address_id FROM address_dictionary WHERE address IN (${chunk.map(() => "?").join(",")})`)
+      .bind(...chunk)
+      .all<{ address_id: number }>();
+    ids.push(...rows.results.map((row) => row.address_id));
+  }
+  await setCoreState(db, "address_signals_queue", JSON.stringify([...new Set([...(await queuedIds(db)), ...ids])]));
 }
 
 // 150/step: the queue is the repair lane (the 2026-07-29 fork-gap repair queued 54k receive-only
