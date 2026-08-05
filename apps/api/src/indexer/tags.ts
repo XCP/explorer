@@ -102,7 +102,7 @@ async function reconcileRule(db: D1Database, rule: Rule, keys?: string[]): Promi
     .prepare(
       `INSERT INTO tags(entity_id,tag,source)
       SELECT entity_id,?,'computed' FROM (${current}) WHERE 1
-      ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source WHERE tags.source='computed'`,
+      ON CONFLICT(entity_id,tag) DO NOTHING`,
     )
     .bind(rule.tag, ...(keys ? [rule.scope, ...keys] : []))
     .run();
@@ -130,7 +130,8 @@ export async function buildTags(env: Env): Promise<Record<string, unknown>> {
       `INSERT INTO tags(entity_id,tag,source)
     SELECT entity.entity_id,'grail','curated' FROM curated item
     JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=item.key
-    WHERE item.kind='grail' ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source`,
+    WHERE item.kind='grail'
+    ON CONFLICT(entity_id,tag) DO UPDATE SET source=excluded.source WHERE tags.source<>'curated'`,
     )
     .run();
   await db
