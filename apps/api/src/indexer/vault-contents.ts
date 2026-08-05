@@ -236,11 +236,16 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
     const c = classify(r.btc_address);
     out[c.vault_kind] = (out[c.vault_kind] as number) + 1;
     if (c.cracked_at != null) out.cracked = (out.cracked as number) + 1;
+    // The WHERE tail skips the write entirely when the classification is unchanged — this sweep
+    // recycles the full vault population, and rows almost never change between passes.
     return env.CORE_DB.prepare(
       `UPDATE emblem_vaults SET
-         contents_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?),contents_qty=?,vault_kind=?,
-         funded=?,cracked_at=?,cracker_address_id=(SELECT address_id FROM address_dictionary WHERE address=?),
-         classified=1 WHERE contract_id=? AND token_id=?`,
+         contents_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1),contents_qty=?2,vault_kind=?3,
+         funded=?4,cracked_at=?5,cracker_address_id=(SELECT address_id FROM address_dictionary WHERE address=?6),
+         classified=1 WHERE contract_id=?7 AND token_id=?8 AND (classified=0
+           OR contents_asset_id IS NOT (SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+           OR contents_qty IS NOT ?2 OR vault_kind IS NOT ?3 OR funded IS NOT ?4 OR cracked_at IS NOT ?5
+           OR cracker_address_id IS NOT (SELECT address_id FROM address_dictionary WHERE address=?6))`,
     ).bind(
       c.contents_asset,
       c.contents_qty,

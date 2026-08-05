@@ -49,10 +49,10 @@ export interface AssetSignalsRow {
   burned_pct: number;
   distinct_traders: number; // migration 0015
   distinct_dispensers: number; // migration 0015
-  age_blocks: number; // migration 0015 (tip − first issuance)
+  age_blocks: number; // migration 0015 — written at insert only; reads derive tip − first issuance live
   avg_holder_dex: number; // migration 0015
   recent_events: number; // migration 0016
-  recency_blocks: number; // migration 0016
+  recency_blocks: number; // migration 0016 — written at insert only; reads derive tip − last trade live
   max_dispense_btc: number; // migration 0017 (realized value; permanent)
   max_trade_xcp: number; // migration 0017
   supply: number; // migration 0019 (normalized supply for circulating-scarcity)

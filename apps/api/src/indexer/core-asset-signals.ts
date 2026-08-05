@@ -2,6 +2,10 @@ import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 const FULL_REPAIR_INTERVAL = 1_008;
 
+// The DO UPDATE carries a WHERE guard so the full-population repair sweep skips rows whose signals are
+// unchanged (the common case — the sweep recycles ~267k assets continuously). age_blocks/recency_blocks
+// are tip-relative and would defeat the guard by drifting every block; they are written once at insert and
+// never refreshed — the read layer (queries/core-assets.ts) derives both live from the tip.
 const UPSERT = `INSERT INTO asset_signals(
   asset_id,issuer_id,divisible,locked,holders,top1_pct,burned_pct,holder_breadth,
   pct_creator_holders,avg_holder_dex,trades,self_trade_pct,low_quality,
@@ -117,15 +121,40 @@ ON CONFLICT(asset_id) DO UPDATE SET
   first_trade_blk=excluded.first_trade_blk,last_trade_blk=excluded.last_trade_blk,
   dispenses=excluded.dispenses,dispense_btc=excluded.dispense_btc,
   distinct_traders=excluded.distinct_traders,distinct_dispensers=excluded.distinct_dispensers,
-  age_blocks=excluded.age_blocks,recent_events=excluded.recent_events,
-  recency_blocks=excluded.recency_blocks,max_dispense_btc=excluded.max_dispense_btc,
+  recent_events=excluded.recent_events,max_dispense_btc=excluded.max_dispense_btc,
   max_trade_xcp=excluded.max_trade_xcp,supply=excluded.supply,
   max_realized_usd=excluded.max_realized_usd,
   distinct_dispense_buyers=excluded.distinct_dispense_buyers,
   max_dispense_btc_clean=excluded.max_dispense_btc_clean,emblem_trades=excluded.emblem_trades,
   active_trade_months=excluded.active_trade_months,last_trade_time=excluded.last_trade_time,
   clean_realized_usd=excluded.clean_realized_usd,distinct_paid_buyers=excluded.distinct_paid_buyers,
-  clean_active_trade_months=excluded.clean_active_trade_months,market_venue_count=excluded.market_venue_count`;
+  clean_active_trade_months=excluded.clean_active_trade_months,market_venue_count=excluded.market_venue_count
+WHERE asset_signals.issuer_id IS NOT excluded.issuer_id OR asset_signals.divisible IS NOT excluded.divisible
+  OR asset_signals.locked IS NOT excluded.locked OR asset_signals.holders IS NOT excluded.holders
+  OR asset_signals.top1_pct IS NOT excluded.top1_pct OR asset_signals.burned_pct IS NOT excluded.burned_pct
+  OR asset_signals.holder_breadth IS NOT excluded.holder_breadth
+  OR asset_signals.pct_creator_holders IS NOT excluded.pct_creator_holders
+  OR asset_signals.avg_holder_dex IS NOT excluded.avg_holder_dex
+  OR asset_signals.low_quality IS NOT excluded.low_quality OR asset_signals.trades IS NOT excluded.trades
+  OR asset_signals.self_trade_pct IS NOT excluded.self_trade_pct
+  OR asset_signals.first_trade_blk IS NOT excluded.first_trade_blk
+  OR asset_signals.last_trade_blk IS NOT excluded.last_trade_blk
+  OR asset_signals.dispenses IS NOT excluded.dispenses OR asset_signals.dispense_btc IS NOT excluded.dispense_btc
+  OR asset_signals.distinct_traders IS NOT excluded.distinct_traders
+  OR asset_signals.distinct_dispensers IS NOT excluded.distinct_dispensers
+  OR asset_signals.recent_events IS NOT excluded.recent_events
+  OR asset_signals.max_dispense_btc IS NOT excluded.max_dispense_btc
+  OR asset_signals.max_trade_xcp IS NOT excluded.max_trade_xcp OR asset_signals.supply IS NOT excluded.supply
+  OR asset_signals.max_realized_usd IS NOT excluded.max_realized_usd
+  OR asset_signals.distinct_dispense_buyers IS NOT excluded.distinct_dispense_buyers
+  OR asset_signals.max_dispense_btc_clean IS NOT excluded.max_dispense_btc_clean
+  OR asset_signals.emblem_trades IS NOT excluded.emblem_trades
+  OR asset_signals.active_trade_months IS NOT excluded.active_trade_months
+  OR asset_signals.last_trade_time IS NOT excluded.last_trade_time
+  OR asset_signals.clean_realized_usd IS NOT excluded.clean_realized_usd
+  OR asset_signals.distinct_paid_buyers IS NOT excluded.distinct_paid_buyers
+  OR asset_signals.clean_active_trade_months IS NOT excluded.clean_active_trade_months
+  OR asset_signals.market_venue_count IS NOT excluded.market_venue_count`;
 
 /** Refresh volatile asset features from canonical relations for identities touched by an event batch. */
 export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<string>): Promise<number> {

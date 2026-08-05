@@ -2,6 +2,11 @@ const DAY = 86_400;
 const OBSERVATION_DAYS = 30;
 const RETENTION_DAYS = 90;
 
+// The UPSERT's WHERE guard skips rows whose EVIDENCE is unchanged — the hourly refresh recomputes every
+// candidate in the 90-day retention window, and most see no new trades or mints between runs. As a result
+// observed_through/updated_at advance only when evidence changes (or at finalization); nothing reads them
+// as a liveness clock.
+
 const UPSERT = `INSERT INTO asset_emergence(
     asset_id,issued_at,observation_cutoff,observed_through,finalized,trades,buyers,sellers,
     active_days,late_buyers,late_active_days,market_span_days,venues,fairmints,minters,
@@ -60,7 +65,21 @@ const UPSERT = `INSERT INTO asset_emergence(
     market_span_days=excluded.market_span_days,venues=excluded.venues,fairmints=excluded.fairmints,
     minters=excluded.minters,paid_minters=excluded.paid_minters,
     mint_active_days=excluded.mint_active_days,late_minters=excluded.late_minters,
-    updated_at=excluded.updated_at`;
+    updated_at=excluded.updated_at
+  WHERE asset_emergence.finalized IS NOT excluded.finalized
+    OR asset_emergence.issued_at IS NOT excluded.issued_at
+    OR asset_emergence.observation_cutoff IS NOT excluded.observation_cutoff
+    OR asset_emergence.trades IS NOT excluded.trades OR asset_emergence.buyers IS NOT excluded.buyers
+    OR asset_emergence.sellers IS NOT excluded.sellers
+    OR asset_emergence.active_days IS NOT excluded.active_days
+    OR asset_emergence.late_buyers IS NOT excluded.late_buyers
+    OR asset_emergence.late_active_days IS NOT excluded.late_active_days
+    OR asset_emergence.market_span_days IS NOT excluded.market_span_days
+    OR asset_emergence.venues IS NOT excluded.venues OR asset_emergence.fairmints IS NOT excluded.fairmints
+    OR asset_emergence.minters IS NOT excluded.minters
+    OR asset_emergence.paid_minters IS NOT excluded.paid_minters
+    OR asset_emergence.mint_active_days IS NOT excluded.mint_active_days
+    OR asset_emergence.late_minters IS NOT excluded.late_minters`;
 
 export interface EmergenceRefresh {
   refreshed: number;
