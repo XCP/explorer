@@ -9,6 +9,14 @@ import { recoveryCandidates } from "#api/recovery/scanner";
  * are already durable in R2, so re-deciding costs no chain reads at all — only the R2 read and the
  * upsert. Ordering by txid gives the sweep a deterministic, resumable path through the backlog.
  */
+// The txid-ordered WITHOUT ROWID table gives the queue query its GROUP BY order for free, so the
+// planner full-scans it even when the backlog is empty — which is every tick between classifier
+// bumps (~813k billed rows read per tick for nothing). The probe forces the classifier-version
+// index (migration 0013) for a ~one-row emptiness check; the heavy query runs only on a real backlog.
+export const RECOVERY_RECLASSIFY_PROBE_SQL = `
+  SELECT 1 pending FROM recovery_outputs INDEXED BY recovery_outputs_classifier
+   WHERE classifier_version<? LIMIT 1`;
+
 export const RECOVERY_RECLASSIFY_QUEUE_SQL = `
   SELECT txid,MIN(block_height) block_height,MIN(block_time) block_time
     FROM recovery_outputs WHERE classifier_version<? GROUP BY txid ORDER BY txid LIMIT ?`;
@@ -24,6 +32,10 @@ export async function reclassifyRecoveryOutputs(
   transactionLimit = 25,
 ): Promise<{ transactions: number; outputs: number; missing: number }> {
   const limit = Math.min(100, Math.max(1, Math.trunc(transactionLimit)));
+  const pending = await env.RECOVERY_DB.prepare(RECOVERY_RECLASSIFY_PROBE_SQL)
+    .bind(RECOVERY_CLASSIFIER_VERSION)
+    .first<{ pending: number }>();
+  if (!pending) return { transactions: 0, outputs: 0, missing: 0 };
   const outdated = await env.RECOVERY_DB.prepare(RECOVERY_RECLASSIFY_QUEUE_SQL)
     .bind(RECOVERY_CLASSIFIER_VERSION, limit)
     .all<OutdatedTransactionRow>();
