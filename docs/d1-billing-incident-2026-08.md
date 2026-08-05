@@ -91,6 +91,22 @@ by-design rolling re-verification queue; restructuring it wasn't worth the corre
 | Verify **Google Cloud** usage-based remainder is ~$0; consider budget alerts there too | owner | soon |
 | Click nothing re: alert emails — destination already verified; expect a test/alert only if period spend crosses $25 | owner | n/a |
 
+## Addendum 2026-08-05 (evening) — post-fix meters, first clean hours
+
+The monitoring loop's reading after every fix was live (22:00Z hour):
+
+| Meter | Before fixes | After (22:00Z pace) |
+|---|---|---|
+| xcpio-core writes | 32–86k/hour | **~340/hour** |
+| xcpio-core reads | 76–276M/hour | **~1–3M/hour** |
+| xcpdex writes | ~180k/hour | **~10/hour** (sweep hours add ~10–30k) |
+| xcpdex reads | 100–140M/hour | **~6–17M/hour** |
+| xcpio-btc reads | 39.4M/hour flat | **~0–15M/hour** (verification backstop only) |
+
+Account-wide that is roughly a **99% write and ~97% read reduction** against the pre-fix baseline,
+with zero behavioral change in the served product (verified: /price payload identical, graph reads
+healthy, deal scores still incremental per block, subasset feed crediting proven equivalent).
+
 ## Where the evidence lives
 
 - Analytics queries: GraphQL `d1AnalyticsAdaptiveGroups` (per-database daily/hourly rows written/
