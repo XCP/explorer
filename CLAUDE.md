@@ -26,6 +26,13 @@ and `apps/api/docs/architecture.md` (data architecture) before structural work.
 7. **The Counterparty mirror stays pure.** Indexer event handlers write raw 1:1 capture only.
    Derived data (signals, tags, trades, reputation) lives in its own tables, rebuildable from raw.
 8. **New tables get numbered migrations** (`apps/api/migrations-core/`), not just DDL-in-code.
+9. **D1 bills every row a statement touches — builders write deltas, never sweeps.** The July 2026
+   invoice was $21,760 of full-table rewrites on cron. A no-op `ON CONFLICT DO UPDATE SET x=x` bills
+   a write; `DELETE` bills per row; every index multiplies inserts. Population sweeps carry WHERE
+   guards against stored values; row-carries-no-data upserts use `DO NOTHING`; published floats are
+   quantized so drift can't force rewrites; tip-relative columns are derived at read, never stored.
+   Reads are ~1000× cheaper but not free: no per-request full-table scans (scope CTEs, probe
+   emptiness through an index before a heavy sweep). Budget: <15M rows written/month account-wide.
 
 ## Definition of done (every change)
 
