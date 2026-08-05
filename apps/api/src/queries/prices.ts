@@ -30,26 +30,27 @@ export function priceBefore(db: D1Database, currency: string, day: string): Prom
   );
 }
 
-export function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
+export async function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
   // Supply: XCP only ever mints via burns and destroys via fees/destructions, and every such
   // change is a one-sided row in the 1:1 credit/debit capture — so the running credit−debit sum
   // IS the daily supply curve. Validated against balances (difference = open-order escrow).
-  // MATERIALIZED matters: the correlated carry-forward lookup must hit the ~4.6k-row temp, not
-  // re-scan the multi-million-row ledger per calendar day.
-  return q<PriceHistoryPoint>(
+  // The carry-forward onto price days happens HERE, not as a correlated SQL subquery: the temp
+  // supply CTE carries no index, so per-price-day lookups scanned it quadratically (~21M billed
+  // rows read per call). Two ordered result sets merge in one linear pass instead.
+  const supplyByDay = await q<{ day: string; supply: number }>(
     db,
-    `WITH supply_by_day AS MATERIALIZED (
-       SELECT day, SUM(delta) OVER (ORDER BY day) / 1e8 supply FROM (
-         SELECT date(block.block_time,'unixepoch') day,
-           SUM(CASE WHEN ledger.direction=1 THEN CAST(ledger.quantity AS REAL)
-             ELSE -CAST(ledger.quantity AS REAL) END) delta
-         FROM ledger_events ledger JOIN blocks block ON block.block_index=ledger.block_index
-         WHERE ledger.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
-         GROUP BY day
-       )
-     )
-     SELECT xcp.day, ROUND(xcp.usd, 6) usd, xcp.source, ROUND(btc.usd, 2) btc,
-       ROUND((SELECT s.supply FROM supply_by_day s WHERE s.day<=xcp.day ORDER BY s.day DESC LIMIT 1)) supply,
+    `SELECT day, SUM(delta) OVER (ORDER BY day) / 1e8 supply FROM (
+       SELECT date(block.block_time,'unixepoch') day,
+         SUM(CASE WHEN ledger.direction=1 THEN CAST(ledger.quantity AS REAL)
+           ELSE -CAST(ledger.quantity AS REAL) END) delta
+       FROM ledger_events ledger JOIN blocks block ON block.block_index=ledger.block_index
+       WHERE ledger.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+       GROUP BY day
+     ) ORDER BY day`,
+  );
+  const history = await q<PriceHistoryPoint>(
+    db,
+    `SELECT xcp.day, ROUND(xcp.usd, 6) usd, xcp.source, ROUND(btc.usd, 2) btc,
        /* Total attributable executed volume: on-chain (dex+dispense) + Zaif + Dex-Trade, XCP units. */
        ROUND(COALESCE(market.volume_base,0) + COALESCE(zaif.volume_base,0) + COALESCE(cex.volume_base,0)) vol
      FROM prices xcp
@@ -65,6 +66,13 @@ export function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
        AND cex.base_currency='XCP' AND cex.quote_currency='BTC'
      WHERE xcp.currency='XCP' ORDER BY xcp.day`,
   );
+  let cursor = 0;
+  let running: number | null = null;
+  for (const point of history) {
+    while (cursor < supplyByDay.length && supplyByDay[cursor].day <= point.day) running = supplyByDay[cursor++].supply;
+    point.supply = running === null ? null : Math.round(running);
+  }
+  return history;
 }
 
 export function xcpSourceEras(db: D1Database): Promise<PriceSourceEra[]> {

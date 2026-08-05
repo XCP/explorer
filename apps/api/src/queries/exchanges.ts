@@ -124,12 +124,31 @@ export function combinedMarketAssets(db: D1Database) {
   );
 }
 
-/** The same non-overlapping exchange series, scoped for an asset detail page. */
+/**
+ * The same non-overlapping exchange series, scoped for an asset detail page. The asset filter lives
+ * INSIDE the daily CTEs (not on the combined result) so the base_currency index bounds the scan —
+ * building the all-asset series first billed the full observation table (~73k rows) per asset-page
+ * request, ~1B D1 reads/day.
+ */
 export function combinedMarketAsset(db: D1Database, asset: string) {
   return one<{ usd_volume: number; first_day: string; last_day: string }>(
     db,
-    `${COMBINED_MARKET} SELECT SUM(usd_volume) usd_volume,MIN(day) first_day,MAX(day) last_day
-     FROM combined WHERE asset=?`,
+    `WITH cex_daily AS (
+       SELECT observation.day,SUM(${CEX_USD}) usd_volume
+       FROM market_price_observations observation
+       WHERE observation.venue='cex' AND observation.base_currency=?1
+       GROUP BY observation.day
+     ), cmc_daily AS (
+       SELECT day,MAX(reported_volume_quote) usd_volume
+       FROM market_price_observations WHERE source='coinmarketcap' AND venue='aggregate'
+         AND quote_currency='USD' AND base_currency=?1 AND base_currency<>'BTC'
+         AND reported_volume_quote IS NOT NULL
+       GROUP BY day
+     ), combined AS (
+       SELECT * FROM cmc_daily UNION ALL SELECT cex.* FROM cex_daily cex
+       WHERE NOT EXISTS(SELECT 1 FROM cmc_daily cmc WHERE cmc.day=cex.day)
+     )
+     SELECT SUM(usd_volume) usd_volume,MIN(day) first_day,MAX(day) last_day FROM combined`,
     asset,
   );
 }
