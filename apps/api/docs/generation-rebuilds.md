@@ -9,10 +9,12 @@ must not be expanded or copied without first proving that a generation switch im
 
 ## Graph model
 
-`graph_edges` is directly readable by graph endpoints and holder-cohesion jobs, while `graph_node`,
-`graph_rank`, `graph_seed`, and `graph_inflow` support its calculation. Add a build generation to the graph
-tables, populate a new generation without touching the active one, validate node/edge/rank invariants, then
-switch one active-generation state value. Retire the old generation in bounded cleanup batches afterward.
+`graph_edges` is directly readable by graph endpoints and holder-cohesion jobs; `graph_seed` stages the
+teleport vectors (graph-eval reads it for the held-out split). The power iteration itself runs in Worker
+memory (migration 0082 retired `graph_node`, `graph_rank`, and `graph_inflow` — the SQL passes billed
+~200M D1 row writes per rebuild). Edge rebuilds are generation-isolated: a new generation populates
+without touching the active one, the score pass publishes it by switching `graph_generation`, and the
+next rebuild's reset op retires everything older than the active generation.
 
 ## Computed tags
 

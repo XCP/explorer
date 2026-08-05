@@ -1,48 +1,59 @@
 /**
- * Graph-reputation trait (Phase C) — the bounded, resumable job that builds a STANDALONE Min-k-PPR TrustRank +
- * reverse-graph Anti-TrustRank scorer over the money-flow graph, and writes graph_trust / graph_distrust onto
- * the signals tables. The Env-free math (edge/pass/finalize SQL, k-split, tier) lives in graph-core.ts so the
- * validation harness can import it without the Worker Env. See docs/graph-reputation.md for the basis.
+ * Graph-reputation trait (Phase C) — builds a STANDALONE Min-k-PPR TrustRank + reverse-graph
+ * Anti-TrustRank scorer over the money-flow graph, and writes graph_trust / graph_distrust onto the
+ * signals tables. The Env-free math (edge SQL, the dense in-memory engine, k-split, tier) lives in
+ * graph-core.ts so the validation harness can import it without the Worker Env. See
+ * docs/graph-reputation.md for the basis.
  *
  * This does not enter Address Reputation, Asset Rating, or Conviction. It is served on its own as
  * trusted / distrusted / unscored relationship evidence and supports holder-cohesion analysis.
  *
- * PIPELINE (graph_edges -> graph_node -> graph_rank -> signals):
+ * PIPELINE (graph_edges -> in-memory power iteration -> signals):
  *   EDGES: address->address from sends (source->destination), order_matches (BOTH directions), dispenses
  *          (buyer->creator, origin-aware via COALESCE(dispensers.origin, dispenses.source)); PLUS bipartite
- *          holder<->asset and asset<->issuer (both directions) so a grail (an ASSET seed) reaches its holders ->
- *          their holdings and its issuer, while address-side seeds reach assets. Weight = ln(1+count) for
- *          address pairs, ln(2) for bipartite edges. Curated exchanges + burns are conduits, not endorsers, so
- *          every edge whose SOURCE is an exchange/burn is DROPPED (they may receive trust — sinks — never emit).
- *   SEEDS: trust = grail assets + their issuers + holders of >=2 distinct grails; distrust = low-quality assets
- *          + their issuers. Exchanges/burns never seed. Trust seeds split k=3 ways by seedSubset (FNV-1a).
- *   ITERATE: ~20 degree-normalized PPR passes (damping 0.85) per slot as set-based UPDATE-JOINs; slots 0..K-1
- *          forward (trust subsets), slot K reverse (distrust). trust = MIN over the k subsets; distrust = slot K.
+ *          holder<->asset and asset<->issuer (both directions). Weight = ln(1+count) for address pairs,
+ *          ln(2) for bipartite edges. Curated exchanges + burns are conduits, not endorsers: every edge
+ *          whose SOURCE is an exchange/burn is DROPPED. Edges persist in graph_edges (served by
+ *          holder-cohesion and the graph-extract reads) and fully rebuild every ~8 weeks.
+ *   SEEDS: trust = grail assets + their issuers + curated-collection cards + Established+ rated assets +
+ *          archetype addresses; distrust = low-quality assets + issuers + derived scam actors. Staged in
+ *          graph_seed (graph-eval joins it for the held-out split), split k=3 ways by seedSubset.
+ *   SCORE: weekly, in ONE invocation — read the persisted edges into typed arrays, run the damped
+ *          degree-normalized passes in Worker memory, and write back ONLY the signal rows whose quantized
+ *          value moved. The retired SQL form of these passes billed ~200M D1 row writes per rebuild; the
+ *          in-memory form bills the changed rows.
  */
 import type { Env } from "#api/env";
 import { q } from "#api/db";
 import {
   K,
   DISTRUST_SLOT,
-  PASSES,
   seedSubset,
   ENTITY_IDENTITY_STATEMENTS,
   entityEdgeStatements,
-  entityNodeStatements,
-  entityRankInitStatements,
-  entitySeedApplyStatement,
   entitySeedInsertStatement,
-  entityPassStatements,
-  entityFinalizeStatements,
+  buildDenseGraph,
+  computeGraphScores,
+  quantizeGraphScore,
+  graphPercentileCut,
+  type DenseGraph,
+  type GraphEdgeArrays,
+  type GraphSeed,
 } from "#api/indexer/graph-core";
 
-const DEFAULT_WORK = 8; // work units (build ops OR slot-passes) advanced per admin call
+const DEFAULT_WORK = 8; // build ops advanced per admin call
 
-// indexer_state cursor keys
-const K_PHASE = "graph_phase"; // "build" | "iterate" | "finalize" | "done"
+// core_state cursor keys
+const K_PHASE = "graph_phase"; // "build" | "score" | "done"
 const K_BUILD = "graph_build_i"; // cursor into the build-op list
-const K_PASS = "graph_pass_i"; // cursor 0..(K+1)*PASSES over the interleaved slot-passes
 const K_GENERATION = "graph_build_generation";
+const K_SCORED_BLOCK = "graph_rebuilt_block"; // last completed score pass
+const K_EDGES_BLOCK = "graph_edges_built_block"; // last completed full edge rebuild
+const K_SCORE_LEASE = "graph_score_lease"; // unix seconds; guards the single-invocation score pass
+
+const WEEK_BLOCKS = 1008; // ~7 days — the score cadence (seeds + ranks move weekly)
+const EDGE_REBUILD_BLOCKS = 8064; // ~8 weeks — full edge refresh; the 12-year topology drifts slowly
+const SCORE_LEASE_SECONDS = 600;
 
 const getState = async (db: D1Database, key: string): Promise<string | null> =>
   (await db.prepare(`SELECT value FROM core_state WHERE key=?`).bind(key).first<{ value: string }>())?.value ?? null;
@@ -53,7 +64,6 @@ const setState = async (db: D1Database, key: string, value: string | number): Pr
     .run();
 };
 
-// ---- small state + chunk helpers (same shape as signals.ts) ----
 const chunk = <T>(a: T[], n: number): T[][] => {
   const o: T[][] = [];
   for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
@@ -65,8 +75,8 @@ const int = (v: string | null, d: number): number => {
 };
 
 // ---------------------------------------------------------------------------------------------------
-// SEEDS. Compute the trust/distrust node sets from curated + the mirror, split trust k ways, stage them in
-// graph_seed, then apply. Chunk sizes respect D1's 100-bound-parameters-per-query limit (30 rows x 3 vars).
+// SEEDS. Compute the trust/distrust node sets from curated + the mirror, split trust k ways, and stage
+// them in graph_seed. Chunk sizes respect D1's 100-bound-parameters-per-query limit (20 rows x 4 vars).
 // ---------------------------------------------------------------------------------------------------
 async function distinctIssuers(env: Env, assets: string[]): Promise<string[]> {
   const out = new Set<string>();
@@ -111,12 +121,10 @@ const NOT_INFRA_OR_SCAM = `sig.is_exchange=0 AND sig.is_burn=0 AND sig.is_deposi
 /**
  * Trust the ART by our QUALITY score, trust PEOPLE by our reputation ARCHETYPES — the trust signals we
  * already compute, not a flat cohort. Trust-asset seeds = curated grails + every curated-collection card +
- * algorithmically Established+ assets (the quality score's top tier — fixes the BITCRYSTALS class of legit
- * currencies grail-trust never reached). Trust-ADDRESS seeds = the good-actor archetype tags (collector /
- * creator / prolific_creator / dividend_payer), never infra or a scammer. Seeds are high-precision; the graph
- * propagates from them. Distrust unchanged.
+ * algorithmically Established+ assets (the quality score's top tier). Trust-ADDRESS seeds = the good-actor
+ * archetype tags, never infra or a scammer. Seeds are high-precision; the graph propagates from them.
  */
-async function applySeeds(env: Env, generation: number): Promise<void> {
+async function stageSeeds(env: Env, generation: number): Promise<void> {
   const tagPh = COLLECTION_TAGS.map(() => "?").join(",");
   const archPh = TRUST_ARCHETYPES.map(() => "?").join(",");
   const excluded = new Set(
@@ -163,7 +171,7 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
   const grailIssuers = await distinctIssuers(env, grails); // a grail's creator is an axiom, even if under the creator threshold
   for (const address of [...trustAddrs, ...grailIssuers]) if (!excluded.has(address)) trust.add(address);
 
-  // ---- DISTRUST (unchanged): curated lowq + their issuers + derived scam actors ----
+  // ---- DISTRUST: curated lowq + their issuers + derived scam actors ----
   const lowqs = (await q<{ key: string }>(env.CORE_DB, `SELECT key FROM curated WHERE kind='lowq'`)).map((r) => r.key);
   const distrust = new Set<string>();
   for (const l of lowqs) distrust.add(`asset:${l}`);
@@ -179,7 +187,7 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
   for (const a of scamActors) if (!excluded.has(a)) distrust.add(a);
   for (const n of trust) distrust.delete(n); // trust wins the (rare) collision to keep Σs=1 exact
 
-  // ---- STAGE: split trust k ways (Min-k), distrust into its slot; batch the ~13k inserts (not one-at-a-time) ----
+  // ---- STAGE: split trust k ways (Min-k), distrust into its slot; batch the ~13k inserts ----
   const subsets: string[][] = Array.from({ length: K }, () => []);
   for (const key of trust) subsets[seedSubset(key)].push(key);
   const rows: [string, string, number, number][] = [];
@@ -193,15 +201,186 @@ async function applySeeds(env: Env, generation: number): Promise<void> {
   for (const node of dArr)
     rows.push([node.startsWith("asset:") ? "asset" : "address", node.replace(/^asset:/, ""), DISTRUST_SLOT, ds]);
 
+  // Re-staged in place weekly: graph-eval reads graph_seed at the published generation.
+  await env.CORE_DB.prepare(`DELETE FROM graph_seed WHERE generation=?`).bind(generation).run();
   const stmts = chunk(rows, 20)
     .filter((p) => p.length)
     .map((part) => env.CORE_DB.prepare(entitySeedInsertStatement(generation, part.length)).bind(...part.flat()));
   for (const b of chunk(stmts, 20)) await env.CORE_DB.batch(b);
-  await env.CORE_DB.prepare(entitySeedApplyStatement(generation)).run();
 }
 
-// the ordered build operations (each a bounded unit of work advanced by the cursor). The bipartite flag
-// is captured in indexer_state at reset so every resumed call constructs the SAME deterministic op list.
+// ---------------------------------------------------------------------------------------------------
+// The score pass: persisted edges -> typed arrays -> in-memory iteration -> delta write-back.
+// ---------------------------------------------------------------------------------------------------
+const EDGE_PAGE = 50_000;
+const SIGNAL_PAGE = 50_000;
+const UPDATE_ROWS = 30; // 90 bound parameters per statement, under D1's 100-bind cap
+const UPDATE_STATEMENTS_PER_BATCH = 40;
+
+async function readEdges(env: Env, generation: number): Promise<GraphEdgeArrays> {
+  const total =
+    Number(
+      (
+        await env.CORE_DB.prepare(`SELECT COUNT(*) n FROM graph_edges WHERE generation=?`).bind(generation).first<{
+          n: number;
+        }>()
+      )?.n,
+    ) || 0;
+  const edges: GraphEdgeArrays = {
+    source: new Uint32Array(total),
+    destination: new Uint32Array(total),
+    weight: new Float64Array(total),
+    edgeCount: 0,
+  };
+  let lastSource = -1;
+  let lastDestination = -1;
+  for (;;) {
+    const page = await q<{ s: number; d: number; w: number }>(
+      env.CORE_DB,
+      `SELECT source_entity_id s,destination_entity_id d,weight w FROM graph_edges
+       WHERE generation=?1 AND (source_entity_id>?2 OR (source_entity_id=?2 AND destination_entity_id>?3))
+       ORDER BY source_entity_id,destination_entity_id LIMIT ${EDGE_PAGE}`,
+      generation,
+      lastSource,
+      lastDestination,
+    );
+    for (const row of page) {
+      if (edges.edgeCount >= total) break; // a concurrent insert grew the table mid-read; the extra edge waits a week
+      edges.source[edges.edgeCount] = row.s;
+      edges.destination[edges.edgeCount] = row.d;
+      edges.weight[edges.edgeCount] = row.w;
+      edges.edgeCount++;
+    }
+    if (page.length < EDGE_PAGE) break;
+    lastSource = page[page.length - 1].s;
+    lastDestination = page[page.length - 1].d;
+  }
+  return edges;
+}
+
+interface SignalPublication {
+  updates: number;
+  trustCut: number;
+  distrustCut: number;
+}
+
+/** Diff one signals table against the freshly computed vectors and update only the rows that moved. */
+async function publishSignalScores(
+  env: Env,
+  graph: DenseGraph,
+  trust: Float64Array,
+  distrust: Float64Array,
+  side: "address" | "asset",
+): Promise<SignalPublication> {
+  const scoreOf = (entityId: number | null, vector: Float64Array): number => {
+    if (entityId === null || entityId >= graph.denseOf.length) return 0;
+    const dense = graph.denseOf[entityId];
+    return dense < 0 ? 0 : quantizeGraphScore(vector[dense]);
+  };
+  const pageSql =
+    side === "address"
+      ? `SELECT entity.entity_id eid,signal.address_id tid,signal.graph_trust t,signal.graph_distrust d,0 lowq
+         FROM address_signals signal
+         JOIN address_dictionary address ON address.address_id=signal.address_id
+         LEFT JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=address.address
+         WHERE signal.address_id>? ORDER BY signal.address_id LIMIT ${SIGNAL_PAGE}`
+      : `SELECT entity.entity_id eid,signal.asset_id tid,signal.graph_trust t,signal.graph_distrust d,
+                COALESCE(signal.low_quality,0) lowq
+         FROM asset_signals signal
+         JOIN asset_dictionary asset ON asset.asset_id=signal.asset_id
+         LEFT JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=asset.asset
+         WHERE signal.asset_id>? ORDER BY signal.asset_id LIMIT ${SIGNAL_PAGE}`;
+  const table = side === "address" ? "address_signals" : "asset_signals";
+  const idColumn = side === "address" ? "address_id" : "asset_id";
+
+  const changed: Array<[number, number, number]> = [];
+  const positiveTrust: number[] = [];
+  const positiveDistrust: number[] = [];
+  let cursor = 0;
+  for (;;) {
+    const page = await q<{ eid: number | null; tid: number; t: number; d: number; lowq: number }>(
+      env.CORE_DB,
+      pageSql,
+      cursor,
+    );
+    for (const row of page) {
+      // Low-quality assets never carry trust, even when the walk reaches them.
+      const newTrust = row.lowq === 1 ? 0 : scoreOf(row.eid, trust);
+      const newDistrust = scoreOf(row.eid, distrust);
+      if (newTrust > 0) positiveTrust.push(newTrust);
+      if (newDistrust > 0) positiveDistrust.push(newDistrust);
+      if (newTrust !== row.t || newDistrust !== row.d) changed.push([row.tid, newTrust, newDistrust]);
+    }
+    if (page.length < SIGNAL_PAGE) break;
+    cursor = page[page.length - 1].tid;
+  }
+
+  const statements = chunk(changed, UPDATE_ROWS).map((part) =>
+    env.CORE_DB.prepare(
+      `UPDATE ${table} AS signal SET graph_trust=diff.column2,graph_distrust=diff.column3
+       FROM (VALUES ${part.map(() => "(?,?,?)").join(",")}) diff WHERE signal.${idColumn}=diff.column1`,
+    ).bind(...part.flat()),
+  );
+  for (const batch of chunk(statements, UPDATE_STATEMENTS_PER_BATCH)) await env.CORE_DB.batch(batch);
+
+  return {
+    updates: changed.length,
+    trustCut: graphPercentileCut(positiveTrust, 0.9),
+    distrustCut: graphPercentileCut(positiveDistrust, 0.98),
+  };
+}
+
+interface ScoreSummary {
+  nodes: number;
+  edges: number;
+  addressUpdates: number;
+  assetUpdates: number;
+}
+
+async function runScorePass(env: Env, generation: number): Promise<ScoreSummary> {
+  await stageSeeds(env, generation);
+  const seeds: GraphSeed[] = (
+    await q<{ entity_id: number; slot: number; score: number }>(
+      env.CORE_DB,
+      `SELECT entity_id,slot,score FROM graph_seed WHERE generation=?`,
+      generation,
+    )
+  ).map((row) => ({ entityId: row.entity_id, slot: row.slot, score: row.score }));
+  const maxEntityId =
+    Number((await env.CORE_DB.prepare(`SELECT MAX(entity_id) m FROM entity_dictionary`).first<{ m: number }>())?.m) ||
+    0;
+  const edges = await readEdges(env, generation);
+  const graph = buildDenseGraph(edges, maxEntityId);
+  const { trust, distrust } = computeGraphScores(graph, edges, seeds);
+
+  const address = await publishSignalScores(env, graph, trust, distrust, "address");
+  const asset = await publishSignalScores(env, graph, trust, distrust, "asset");
+  await env.CORE_DB.batch(
+    (
+      [
+        ["graph_cut_addr_trust", address.trustCut],
+        ["graph_cut_addr_distrust", address.distrustCut],
+        ["graph_cut_asset_trust", asset.trustCut],
+        ["graph_cut_asset_distrust", asset.distrustCut],
+        ["graph_generation", generation],
+      ] as Array<[string, number]>
+    ).map(([key, value]) =>
+      env.CORE_DB.prepare(
+        `INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ).bind(key, String(value)),
+    ),
+  );
+  return {
+    nodes: graph.nodeCount,
+    edges: edges.edgeCount,
+    addressUpdates: address.updates,
+    assetUpdates: asset.updates,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The edge build op list (bounded units advanced per tick) and the phase driver.
+// ---------------------------------------------------------------------------------------------------
 function buildOps(generation: number, bipartite: boolean): { name: string; exec: (env: Env) => Promise<void> }[] {
   const runSql = (sql: string) => async (env: Env) => {
     await env.CORE_DB.prepare(sql).run();
@@ -210,30 +389,33 @@ function buildOps(generation: number, bipartite: boolean): { name: string; exec:
     {
       name: "reset",
       exec: async (env) => {
-        for (const table of ["graph_inflow", "graph_seed", "graph_rank", "graph_node", "graph_edges"])
+        // Keep the ACTIVE published generation readable while this one builds; clean everything older,
+        // plus this generation's own rows so a resumed build stays idempotent.
+        const active = int(await getState(env.CORE_DB, "graph_generation"), 0);
+        for (const table of ["graph_seed", "graph_edges"]) {
+          await env.CORE_DB.prepare(`DELETE FROM ${table} WHERE generation<>? AND generation<>?`)
+            .bind(generation, active)
+            .run();
           await env.CORE_DB.prepare(`DELETE FROM ${table} WHERE generation=?`).bind(generation).run();
+        }
       },
     },
   ];
   ENTITY_IDENTITY_STATEMENTS.forEach((sql, i) => ops.push({ name: `identity_${i}`, exec: runSql(sql) }));
   entityEdgeStatements(generation, bipartite).forEach((sql, i) => ops.push({ name: `edges_${i}`, exec: runSql(sql) }));
-  entityNodeStatements(generation).forEach((sql, i) => ops.push({ name: `node_${i}`, exec: runSql(sql) }));
-  entityRankInitStatements(generation).forEach((sql, i) => ops.push({ name: `rank_init_${i}`, exec: runSql(sql) }));
-  ops.push({ name: "seeds", exec: (env) => applySeeds(env, generation) });
   return ops;
 }
 
-// ---------------------------------------------------------------------------------------------------
-// The bounded, resumable job. Phases: build -> iterate -> finalize -> done. Each call advances `work` units
-// within the current phase; when a phase completes it flips the phase cursor and returns (caller loops).
-// ---------------------------------------------------------------------------------------------------
 export interface GraphBuildProgress {
   phase: string;
   done: boolean;
   build?: { at: number; of: number; ran: string[] };
-  iterate?: { step: number; of: number; ran: string[] };
-  finalize?: boolean;
+  score?: ScoreSummary;
   note?: string;
+}
+
+async function graphTip(env: Env): Promise<number> {
+  return Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
 }
 
 export async function buildGraphTrust(
@@ -246,14 +428,13 @@ export async function buildGraphTrust(
     await setState(env.CORE_DB, K_GENERATION, active + 1);
     await setState(env.CORE_DB, K_PHASE, "build");
     await setState(env.CORE_DB, K_BUILD, "0");
-    await setState(env.CORE_DB, K_PASS, "0");
     // captured at reset so every resumed call constructs the same deterministic op list
     await setState(env.CORE_DB, "graph_bipartite", opts.bipartite ? "1" : "0");
   }
   const generation = int(await getState(env.CORE_DB, K_GENERATION), 1);
   const bipartite = (await getState(env.CORE_DB, "graph_bipartite")) === "1";
-  let phase = (await getState(env.CORE_DB, K_PHASE)) || "build";
-  if (!["build", "iterate", "finalize", "done"].includes(phase)) phase = "build";
+  let phase = (await getState(env.CORE_DB, K_PHASE)) || "done";
+  if (!["build", "score", "done"].includes(phase)) phase = "done";
 
   if (phase === "build") {
     const ops = buildOps(generation, bipartite);
@@ -266,70 +447,55 @@ export async function buildGraphTrust(
     }
     await setState(env.CORE_DB, K_BUILD, String(i));
     if (i >= ops.length) {
-      await setState(env.CORE_DB, K_PHASE, "iterate");
-      return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> iterate" };
+      await setState(env.CORE_DB, K_EDGES_BLOCK, String(await graphTip(env)));
+      await setState(env.CORE_DB, K_PHASE, "score");
+      return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> score" };
     }
     return { phase: "build", done: false, build: { at: i, of: ops.length, ran } };
   }
 
-  if (phase === "iterate") {
-    const total = (K + 1) * PASSES;
-    let step = int(await getState(env.CORE_DB, K_PASS), 0);
-    if (step < 0 || step > total) step = 0;
-    const ran: string[] = [];
-    for (let n = 0; n < work && step < total; n++, step++) {
-      const slot = step % (K + 1);
-      for (const sql of entityPassStatements(generation, slot, slot === DISTRUST_SLOT))
-        await env.CORE_DB.prepare(sql).run();
-      ran.push(`slot${slot}#${Math.floor(step / (K + 1))}`);
+  if (phase === "score") {
+    // The pass takes minutes and the cron ticks every two: a coarse lease keeps invocations from stacking.
+    const now = Math.floor(Date.now() / 1000);
+    const lease = int(await getState(env.CORE_DB, K_SCORE_LEASE), 0);
+    if (now - lease < SCORE_LEASE_SECONDS) return { phase: "score", done: false, note: "score pass in progress" };
+    await setState(env.CORE_DB, K_SCORE_LEASE, now);
+    try {
+      const score = await runScorePass(env, generation);
+      await setState(env.CORE_DB, K_PHASE, "done");
+      await setState(env.CORE_DB, K_SCORED_BLOCK, String(await graphTip(env)));
+      return { phase: "score", done: true, score, note: "scores published to signals" };
+    } finally {
+      await setState(env.CORE_DB, K_SCORE_LEASE, 0);
     }
-    await setState(env.CORE_DB, K_PASS, String(step));
-    if (step >= total) {
-      await setState(env.CORE_DB, K_PHASE, "finalize");
-      return {
-        phase: "iterate",
-        done: false,
-        iterate: { step, of: total, ran },
-        note: "iteration complete -> finalize",
-      };
-    }
-    return { phase: "iterate", done: false, iterate: { step, of: total, ran } };
-  }
-
-  if (phase === "finalize") {
-    await env.CORE_DB.batch(entityFinalizeStatements(generation).map((sql) => env.CORE_DB.prepare(sql)));
-    await setState(env.CORE_DB, K_PHASE, "done");
-    return { phase: "finalize", done: true, finalize: true, note: "graph_trust/graph_distrust written to signals" };
   }
 
   return { phase: "done", done: true, note: "already built; POST with reset=1 to rebuild" };
 }
 
-// ~7 days of Counterparty blocks — the auto-rebuild cadence (the graph moves slowly; weekly is ample).
-const WEEK_BLOCKS = 1008;
-async function graphTip(env: Env): Promise<number> {
-  return Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) m FROM blocks`).first<{ m: number }>())?.m) || 0;
-}
-
 /**
- * Cron driver: keeps the graph trait from going stale WITHOUT a heavy per-tick cost. If a rebuild is in
- * progress, advance a couple of work-units (one iterate pass ≈ 20s — safe inside a 2-min tick); if idle,
- * kick a fresh reset once WEEK_BLOCKS have elapsed since the last finalize. So a full Min-k-PPR rebuild
- * (incl. the freshly-seeded scam actors) trickles to completion over a few hours, once a week, on its own.
+ * Cron driver. Weekly, the score pass re-seeds and re-ranks in one invocation over the persisted edges;
+ * every ~8 weeks the edge topology itself rebuilds (bounded ops trickled a few per tick), then scores.
  */
 export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
   const phase = (await getState(env.CORE_DB, K_PHASE)) || "done";
-  if (phase === "done") {
-    const tip = await graphTip(env);
-    const last = int(await getState(env.CORE_DB, "graph_rebuilt_block"), 0);
-    if (last === 0) {
-      await setState(env.CORE_DB, "graph_rebuilt_block", String(tip));
-      return { skipped: "clock started" };
-    }
-    if (tip - last >= WEEK_BLOCKS) return await buildGraphTrust(env, { reset: true });
-    return { skipped: `fresh (${tip - last}/${WEEK_BLOCKS} blocks to next rebuild)` };
+  if (phase === "build") return await buildGraphTrust(env, { work: 4 });
+  if (phase === "score") return await buildGraphTrust(env, {});
+  const tip = await graphTip(env);
+  const edgesBuilt = int(await getState(env.CORE_DB, K_EDGES_BLOCK), 0);
+  const scored = int(await getState(env.CORE_DB, K_SCORED_BLOCK), 0);
+  if (edgesBuilt === 0) {
+    // First run after the in-memory migration: the persisted edges are current, so just start the clock.
+    await setState(env.CORE_DB, K_EDGES_BLOCK, String(tip));
+    return { skipped: "edge clock started" };
   }
-  const r = await buildGraphTrust(env, { work: 4 }); // single-driver (cron owns the rebuild); a few units/tick
-  if (r.done) await setState(env.CORE_DB, "graph_rebuilt_block", String(await graphTip(env)));
-  return r;
+  if (tip - edgesBuilt >= EDGE_REBUILD_BLOCKS) {
+    const bipartite = (await getState(env.CORE_DB, "graph_bipartite")) === "1";
+    return await buildGraphTrust(env, { reset: true, work: 4, bipartite });
+  }
+  if (tip - scored >= WEEK_BLOCKS) {
+    await setState(env.CORE_DB, K_PHASE, "score");
+    return await buildGraphTrust(env, {});
+  }
+  return { skipped: `fresh (${tip - scored}/${WEEK_BLOCKS} blocks to next score)` };
 }

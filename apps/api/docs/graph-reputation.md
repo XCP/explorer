@@ -26,7 +26,9 @@ else we considered is disqualified by proof or measurement.
 - **ACL-style degree normalization** blunts exchange/dispenser hub domination.
 - Cost at our scale is proven, not estimated: a push-variant converged in ~2.5M arithmetic ops on a
   **584k-node / 2.5M-edge graph — nearly identical to our money-flow graph**; ~20 sparse passes
-  (SQL UPDATE-JOIN per pass) suffice for stable ordering; convergence depends on damping, not size.
+  suffice for stable ordering; convergence depends on damping, not size. (The passes originally ran
+  as SQL UPDATE-JOINs; since 2026-08 they run in Worker memory over typed arrays — the SQL form
+  billed ~200M D1 row writes per rebuild.)
 - Precision evidence: with only **1% of nodes labeled**, top Anti-TrustRank buckets were
   **99.9-100% spam**. TrustRank left virtually no spam in top buckets where plain PageRank had
   20-50%.
@@ -79,9 +81,10 @@ does not establish a general trust verdict. The zero-score fraction remains a us
 
 Edges table (address→address from sends/trades/dispenses with origin-aware attribution, plus
 optionally holder↔asset edges), out-degree normalized. k seed subsets from `curated` kinds. ~20
-UPDATE-JOIN passes per seed subset as a weekly `heavyEveryBlocks`-style job (minutes, bounded);
-reverse pass from scam seeds; store `graph_trust`, `graph_distrust`, tier by threshold. All
-rebuildable, Layer-2 rules apply (derived, never contaminates mirrors).
+in-memory passes per seed subset as a weekly single-invocation job (the persisted `graph_edges`
+read into typed arrays; edges themselves fully rebuild every ~8 weeks as bounded SQL ops); reverse
+pass from scam seeds; publish `graph_trust`, `graph_distrust` as quantized delta writes, tier by
+threshold. All rebuildable, Layer-2 rules apply (derived, never contaminates mirrors).
 
 ## H4 verdict (2026-07-06, first prod cycle — experiment closed)
 
