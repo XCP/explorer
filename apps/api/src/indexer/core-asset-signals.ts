@@ -172,10 +172,12 @@ export async function runCoreAssetSignalsStep(
   force = false,
 ): Promise<{ processed: number; cursor: number; cycleComplete: boolean }> {
   const cursor = await getCoreStateInt(db, "asset_signals_cursor");
+  // CROSS JOIN pins the join order: the planner otherwise drove this from asset_dictionary and
+  // scanned all ~533k dictionary rows per tick to probe a usually-empty dirty queue.
   const dirty = await db
     .prepare(
       `SELECT dirty.asset_id,dictionary.asset FROM asset_signal_dirty dirty
-       JOIN asset_dictionary dictionary ON dictionary.asset_id=dirty.asset_id
+       CROSS JOIN asset_dictionary dictionary ON dictionary.asset_id=dirty.asset_id
        ORDER BY dirty.asset_id LIMIT ?`,
     )
     .bind(limit)

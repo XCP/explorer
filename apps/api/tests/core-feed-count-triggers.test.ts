@@ -28,6 +28,9 @@ test("canonical inserts and rollback deletes maintain feed counts exactly once",
     CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,asset_longname TEXT);
   `);
   db.exec(migration);
+  // 0083 replaces the subasset triggers with the indexed-seek form; the assertions below prove the
+  // replacement keeps the exact crediting semantics (including the nested A.ONE.TWO -> A case).
+  db.exec(readFileSync("migrations-core/0083_subasset_trigger_seek.sql", "utf8"));
   db.exec(`
     INSERT INTO sends VALUES(1,1);
     INSERT INTO orders VALUES(1,1,1,'open'),(2,1,2,'open');
