@@ -85,6 +85,10 @@ async function refreshFairminters(db: D1Database): Promise<number> {
         earned_quantity=CAST(COALESCE((SELECT SUM(CAST(m.earn_quantity AS INTEGER)) FROM fairmints m
           WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT),
         paid_quantity=CAST(COALESCE((SELECT SUM(CAST(m.paid_quantity AS INTEGER)) FROM fairmints m
+          WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT)
+      WHERE earned_quantity IS NOT CAST(COALESCE((SELECT SUM(CAST(m.earn_quantity AS INTEGER)) FROM fairmints m
+          WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT)
+        OR paid_quantity IS NOT CAST(COALESCE((SELECT SUM(CAST(m.paid_quantity AS INTEGER)) FROM fairmints m
           WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT)`,
     )
     .run();
@@ -97,7 +101,11 @@ async function refreshPools(db: D1Database): Promise<number> {
       `UPDATE pools SET
         lp_supply=(SELECT asset.supply FROM asset_dictionary dictionary
           JOIN assets asset ON asset.asset_id=dictionary.asset_id WHERE dictionary.asset=pools.lp_asset),
-        price=CASE WHEN CAST(reserve_a AS REAL)>0 THEN CAST(reserve_b AS REAL)/CAST(reserve_a AS REAL) END`,
+        price=CASE WHEN CAST(reserve_a AS REAL)>0 THEN CAST(reserve_b AS REAL)/CAST(reserve_a AS REAL) END
+      WHERE lp_supply IS NOT (SELECT asset.supply FROM asset_dictionary dictionary
+          JOIN assets asset ON asset.asset_id=dictionary.asset_id WHERE dictionary.asset=pools.lp_asset)
+        OR price IS NOT (CASE WHEN CAST(reserve_a AS REAL)>0
+          THEN CAST(reserve_b AS REAL)/CAST(reserve_a AS REAL) END)`,
     )
     .run();
   return result.meta.changes ?? 0;

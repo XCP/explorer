@@ -146,7 +146,10 @@ export async function upsertEmblemVaultIdentities(db: D1Database, rows: EmblemVa
            ON CONFLICT(contract_id,token_id) DO UPDATE SET
              btc_address_id=COALESCE(excluded.btc_address_id,emblem_vaults.btc_address_id),
              resolved=MAX(emblem_vaults.resolved,excluded.resolved),
-             first_seen=COALESCE(emblem_vaults.first_seen,excluded.first_seen)`,
+             first_seen=COALESCE(emblem_vaults.first_seen,excluded.first_seen)
+           WHERE emblem_vaults.btc_address_id IS NOT COALESCE(excluded.btc_address_id,emblem_vaults.btc_address_id)
+             OR emblem_vaults.resolved IS NOT MAX(emblem_vaults.resolved,excluded.resolved)
+             OR emblem_vaults.first_seen IS NOT COALESCE(emblem_vaults.first_seen,excluded.first_seen)`,
           )
           .bind(row.contract, row.tokenId, row.btcAddress, row.resolved, row.firstSeen),
       ),

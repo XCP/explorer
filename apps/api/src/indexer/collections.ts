@@ -64,7 +64,8 @@ export const ARTIST_TAG_UPSERT_SQL = `INSERT INTO tags(entity_id,tag,source,meta
   SELECT entity_id,?2,'artist',?3 FROM entity_dictionary
   WHERE entity_type='asset' AND entity_key=?1
   ON CONFLICT(entity_id,tag) DO UPDATE SET
-    source=excluded.source,value=NULL,meta=excluded.meta`;
+    source=excluded.source,value=NULL,meta=excluded.meta
+  WHERE tags.source IS NOT excluded.source OR tags.value IS NOT NULL OR tags.meta IS NOT excluded.meta`;
 
 async function fetchMembers(slug: string): Promise<Member[]> {
   // NB: the endpoint requires a real user-agent — an unknown/absent one returns []. It's also loose about the

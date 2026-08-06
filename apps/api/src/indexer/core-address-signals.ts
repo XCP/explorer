@@ -18,6 +18,9 @@ const ACTIVITY_QUERIES = [
     WHERE source_id=?1 OR origin_id=?1`,
 ] as const;
 
+// The DO UPDATE carries a WHERE guard so the repair lane skips rows whose signals are unchanged —
+// the weekly full-population cycle recycles ~500k addresses and nearly all are historically inert.
+// Every column here is absolute (block numbers, counts, flags), so unchanged history compares equal.
 const UPSERT = `INSERT INTO address_signals(
   address_id,first_block,last_block,out_peers,in_peers,dispense_btc,dispenses,dividends,
   assets_issued,locked_assets,btc_spent,btc_fees,assets_held,assets_received,
@@ -123,7 +126,32 @@ WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
   is_exchange=excluded.is_exchange,is_deposit=excluded.is_deposit,is_burn=excluded.is_burn,
   assets_burned=excluded.assets_burned,disp_trust=excluded.disp_trust,likely_service=excluded.likely_service,
   dex_trades=excluded.dex_trades,stamps_created=excluded.stamps_created,stamps_collected=excluded.stamps_collected,
-  src20_deploys=excluded.src20_deploys,is_btns_user=excluded.is_btns_user`;
+  src20_deploys=excluded.src20_deploys,is_btns_user=excluded.is_btns_user
+WHERE address_signals.first_block IS NOT excluded.first_block
+  OR address_signals.last_block IS NOT excluded.last_block
+  OR address_signals.out_peers IS NOT excluded.out_peers OR address_signals.in_peers IS NOT excluded.in_peers
+  OR address_signals.dispense_btc IS NOT excluded.dispense_btc OR address_signals.dispenses IS NOT excluded.dispenses
+  OR address_signals.dividends IS NOT excluded.dividends
+  OR address_signals.assets_issued IS NOT excluded.assets_issued
+  OR address_signals.locked_assets IS NOT excluded.locked_assets
+  OR address_signals.btc_spent IS NOT excluded.btc_spent OR address_signals.btc_fees IS NOT excluded.btc_fees
+  OR address_signals.assets_held IS NOT excluded.assets_held
+  OR address_signals.assets_received IS NOT excluded.assets_received
+  OR address_signals.survived_assets IS NOT excluded.survived_assets
+  OR address_signals.assets_distributed IS NOT excluded.assets_distributed
+  OR address_signals.assets_hits IS NOT excluded.assets_hits
+  OR address_signals.clean_dispense_btc IS NOT excluded.clean_dispense_btc
+  OR address_signals.clean_btc_spent IS NOT excluded.clean_btc_spent
+  OR address_signals.is_exchange IS NOT excluded.is_exchange
+  OR address_signals.is_deposit IS NOT excluded.is_deposit OR address_signals.is_burn IS NOT excluded.is_burn
+  OR address_signals.assets_burned IS NOT excluded.assets_burned
+  OR address_signals.disp_trust IS NOT excluded.disp_trust
+  OR address_signals.likely_service IS NOT excluded.likely_service
+  OR address_signals.dex_trades IS NOT excluded.dex_trades
+  OR address_signals.stamps_created IS NOT excluded.stamps_created
+  OR address_signals.stamps_collected IS NOT excluded.stamps_collected
+  OR address_signals.src20_deploys IS NOT excluded.src20_deploys
+  OR address_signals.is_btns_user IS NOT excluded.is_btns_user`;
 
 export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
   // Counterparty also uses txid:vout keys as balance locations. They remain first-class dictionary identities,
