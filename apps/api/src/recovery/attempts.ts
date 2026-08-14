@@ -43,6 +43,14 @@ export const RECOVERY_SPEND_CONFIRMATIONS = 6;
  * output they consumed is settled. That last clause is what lets already-confirmed attempts recorded
  * before spend settlement existed heal themselves, and what makes this query stop selecting an attempt
  * for good once its work is genuinely done.
+ *
+ * CROSS JOIN is load-bearing. With a plain JOIN the planner drove the correlated EXISTS from
+ * recovery_outputs' classification index — a walk of the entire million-row recoverable slice per
+ * attempt row, ~200M row visits per evaluation, which blew D1's CPU budget on every maintenance
+ * tick and took the whole recovery database down with it. CROSS JOIN pins the order SQLite may
+ * not reorder: the attempt's own inputs first (primary-key prefix, at most 420 rows), then one
+ * primary-key probe into recovery_outputs per input. Bounded by construction, like the point
+ * updates below.
  */
 export const RECOVERY_ATTEMPT_QUEUE_SQL = `
   SELECT a.txid FROM recovery_attempts a
@@ -50,8 +58,10 @@ export const RECOVERY_ATTEMPT_QUEUE_SQL = `
       OR a.confirmations<?
       OR EXISTS (
         SELECT 1 FROM recovery_attempt_inputs i
-          JOIN recovery_outputs o ON o.txid=i.input_txid AND o.vout=i.input_vout
-         WHERE i.recovery_txid=a.txid AND o.classification='recoverable'
+        CROSS JOIN recovery_outputs o
+         WHERE i.recovery_txid=a.txid
+           AND o.txid=i.input_txid AND o.vout=i.input_vout
+           AND o.classification='recoverable'
       )
    ORDER BY a.chain_checked_at,a.reported_at,a.txid LIMIT ?`;
 
@@ -223,7 +233,14 @@ export function recoveryAttemptStatements(
   const marker = db.prepare(RECOVERY_MARK_SPENT_SQL);
   for (const input of inputs) {
     statements.push(
-      marker.bind("spent-by-confirmed-recovery", spentBy, evidence.blockHeight, now, input.input_txid, input.input_vout),
+      marker.bind(
+        "spent-by-confirmed-recovery",
+        spentBy,
+        evidence.blockHeight,
+        now,
+        input.input_txid,
+        input.input_vout,
+      ),
     );
   }
   return statements;
