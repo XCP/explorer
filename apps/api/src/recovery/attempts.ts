@@ -147,7 +147,7 @@ export async function reconcileRecoveryAttempts(
     const transaction = await providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid);
     if (transaction) {
       const evidence = classifyAttemptEvidence(attempt.txid, transaction, [], tipHeight);
-      return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now);
+      return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now, attemptInputs);
     }
     const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
     const parentOutspends = [] as ElectrsOutspend[][];
@@ -165,7 +165,7 @@ export async function reconcileRecoveryAttempts(
       }),
       tipHeight,
     );
-    return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now);
+    return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now, attemptInputs);
   };
   const settled: PromiseSettledResult<D1PreparedStatement[]>[] = [];
   for (let index = 0; index < attempts.results.length; index += PROVIDER_CONCURRENCY) {
@@ -192,14 +192,18 @@ export function settledSpendTxid(txid: string, evidence: AttemptEvidence): strin
 }
 
 /**
- * Settle the outputs an attempt consumed, reading its input list straight from the row-value join so
- * one statement covers all 420. `classification='recoverable'` makes it both idempotent — every later
- * reconcile pass is a no-op — and safe, since it never overwrites a richer verdict.
+ * Settle one output an attempt consumed, by primary key. This was a single set-based statement
+ * driven by a row-value subquery, and the planner chose the classification index for it — a walk
+ * of the entire `recoverable` slice of a gigabyte table per attempt, which blew D1's CPU budget
+ * the moment the first large recovery reached settlement depth. The batch rolled back, the queue
+ * re-selected the same attempt, and the maintenance lane re-died every two minutes, taking every
+ * recovery endpoint down with it. The attempt's input list is at most 420 outpoints and already
+ * in hand, so point updates are bounded by construction rather than by the planner's mood.
+ * `classification='recoverable'` keeps each one idempotent and never overwrites a richer verdict.
  */
 export const RECOVERY_MARK_SPENT_SQL = `
   UPDATE recovery_outputs SET classification='spent',reason=?,spent_by_txid=?,spent_height=?,chain_checked_at=?
-   WHERE classification='recoverable'
-     AND (txid,vout) IN (SELECT input_txid,input_vout FROM recovery_attempt_inputs WHERE recovery_txid=?)`;
+   WHERE txid=? AND vout=? AND classification='recoverable'`;
 
 /**
  * An attempt is the one place that knows, for free and for certain, which tracked outputs a recovery
@@ -211,13 +215,17 @@ export function recoveryAttemptStatements(
   txid: string,
   evidence: AttemptEvidence,
   now: number,
+  inputs: readonly { input_txid: string; input_vout: number }[],
 ): D1PreparedStatement[] {
   const statements = [recoveryAttemptUpdate(db, txid, evidence, now)];
   const spentBy = settledSpendTxid(txid, evidence);
   if (!spentBy) return statements;
-  statements.push(
-    db.prepare(RECOVERY_MARK_SPENT_SQL).bind("spent-by-confirmed-recovery", spentBy, evidence.blockHeight, now, txid),
-  );
+  const marker = db.prepare(RECOVERY_MARK_SPENT_SQL);
+  for (const input of inputs) {
+    statements.push(
+      marker.bind("spent-by-confirmed-recovery", spentBy, evidence.blockHeight, now, input.input_txid, input.input_vout),
+    );
+  }
   return statements;
 }
 

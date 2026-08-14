@@ -117,30 +117,43 @@ function evidenceFor(status: AttemptEvidence["status"], overrides: Partial<Attem
   };
 }
 
-test("a deeply confirmed recovery settles every output it consumed in one statement", () => {
+test("a deeply confirmed recovery settles each consumed output by primary key", () => {
   const { db, prepared } = recordingDb();
+  const inputs = [
+    { input_txid: "aa".repeat(32), input_vout: 0 },
+    { input_txid: "bb".repeat(32), input_vout: 2 },
+  ];
   const statements = recoveryAttemptStatements(
     db,
     txid,
     evidenceFor("confirmed", { blockHeight: 960_262, confirmations: RECOVERY_SPEND_CONFIRMATIONS }),
     1_700,
+    inputs,
   );
 
-  assert.equal(statements.length, 2, "the attempt row plus a single set-based spend update");
-  const spend = prepared.find((row) => row.sql.includes("UPDATE recovery_outputs"))!;
-  assert.deepEqual(spend.values, ["spent-by-confirmed-recovery", txid, 960_262, 1_700, txid]);
-  assert.equal(
-    spend.sql.includes("classification='recoverable'"),
-    true,
-    "a richer classification must never be overwritten",
+  // Point updates, not a set-based scan: the planner walked the whole recoverable slice of the
+  // table for the subquery form, and one large attempt at settlement depth took the database down.
+  assert.equal(statements.length, 3, "the attempt row plus one spend update per consumed input");
+  const spends = prepared.filter((row) => row.sql.includes("UPDATE recovery_outputs"));
+  assert.deepEqual(
+    spends.map((row) => row.values),
+    inputs.map((input) => ["spent-by-confirmed-recovery", txid, 960_262, 1_700, input.input_txid, input.input_vout]),
   );
+  for (const spend of spends) {
+    assert.equal(
+      spend.sql.includes("classification='recoverable'"),
+      true,
+      "a richer classification must never be overwritten",
+    );
+    assert.equal(spend.sql.includes("txid=? AND vout=?"), true, "each update is a primary-key point write");
+  }
 });
 
 test("a spend is not settled durably until it is deep enough to survive a reorg", () => {
   const { db, prepared } = recordingDb();
   const shallow = evidenceFor("confirmed", { blockHeight: 960_262, confirmations: RECOVERY_SPEND_CONFIRMATIONS - 1 });
 
-  assert.equal(recoveryAttemptStatements(db, txid, shallow, 1_700).length, 1);
+  assert.equal(recoveryAttemptStatements(db, txid, shallow, 1_700, [{ input_txid: "aa".repeat(32), input_vout: 0 }]).length, 1);
   assert.equal(
     prepared.some((row) => row.sql.includes("UPDATE recovery_outputs")),
     false,
@@ -158,7 +171,7 @@ test("no other attempt outcome writes a spend of its own", () => {
   ];
   for (const evidence of outcomes) {
     const { db, prepared } = recordingDb();
-    const statements = recoveryAttemptStatements(db, txid, evidence, 1_700);
+    const statements = recoveryAttemptStatements(db, txid, evidence, 1_700, [{ input_txid: "aa".repeat(32), input_vout: 0 }]);
     assert.equal(statements.length, 1, `${evidence.status} must not settle a spend`);
     assert.equal(
       prepared.some((row) => row.sql.includes("UPDATE recovery_outputs")),
@@ -182,9 +195,18 @@ test("marking spent settles exactly the attempt's own unspent inputs", () => {
     INSERT INTO recovery_attempt_inputs VALUES ('r1','aa',0),('r1','cc',0),('r2','bb',0);
   `);
 
-  const changes = db
-    .prepare(RECOVERY_MARK_SPENT_SQL)
-    .run("spent-by-confirmed-recovery", "r1", 960_262, 1_700, "r1").changes;
+  // The reconcile pass drives from the attempt's own input list, one point write per outpoint.
+  const r1Inputs = db
+    .prepare(`SELECT input_txid,input_vout FROM recovery_attempt_inputs WHERE recovery_txid='r1'`)
+    .all() as { input_txid: string; input_vout: number }[];
+  let changes = 0;
+  for (const input of r1Inputs) {
+    changes += Number(
+      db
+        .prepare(RECOVERY_MARK_SPENT_SQL)
+        .run("spent-by-confirmed-recovery", "r1", 960_262, 1_700, input.input_txid, input.input_vout).changes,
+    );
+  }
 
   assert.equal(changes, 1, "only the attempt's still-recoverable input is settled");
   const rows = db
@@ -196,8 +218,15 @@ test("marking spent settles exactly the attempt's own unspent inputs", () => {
   );
   assert.equal(rows[3]!.spent_by_txid, "ff", "an existing spend keeps its original attribution");
 
-  const replay = db.prepare(RECOVERY_MARK_SPENT_SQL).run("spent-by-confirmed-recovery", "r1", 960_262, 1_800, "r1");
-  assert.equal(replay.changes, 0, "every later reconcile pass is a no-op");
+  let replayChanges = 0;
+  for (const input of r1Inputs) {
+    replayChanges += Number(
+      db
+        .prepare(RECOVERY_MARK_SPENT_SQL)
+        .run("spent-by-confirmed-recovery", "r1", 960_262, 1_800, input.input_txid, input.input_vout).changes,
+    );
+  }
+  assert.equal(replayChanges, 0, "every later reconcile pass is a no-op");
 });
 
 test("only a deeply confirmed attempt names a settled spending transaction", () => {
