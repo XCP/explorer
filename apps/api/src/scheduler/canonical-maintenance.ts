@@ -24,6 +24,7 @@ import { buildTags } from "#api/indexer/tags";
 import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
 import { buildTrades } from "#api/indexer/trades";
 import { classifyVaults } from "#api/indexer/vault-contents";
+import { evictExpiredCache } from "#api/scheduler/cache-eviction";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 import { runScheduledJob } from "#api/scheduler/job";
 import { withCanonicalMaintenanceLease } from "#api/scheduler/maintenance-lease";
@@ -126,6 +127,9 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
       await runScheduledJob("refreshAssetEmergence", () => maybeRefreshAssetEmergence(env));
       await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
+      // Bounded, oldest-first, and idle once caught up — see cache-eviction.ts for
+      // why it evicts on a grace period rather than on expiry.
+      await runScheduledJob("evictExpiredCache", () => evictExpiredCache(env.CORE_DB));
     },
     15 * 60,
   );
