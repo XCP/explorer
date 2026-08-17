@@ -51,23 +51,49 @@ export const RECOVERY_VERIFICATION_QUEUE_SQL = `
        )
      ORDER BY f.next_retry_at,f.txid
      LIMIT ?
-  ), fresh AS (
-    SELECT o.txid,MIN(COALESCE(o.chain_checked_at,-1)) checked_at
+  ), never AS (
+    SELECT DISTINCT o.txid
       FROM recovery_outputs o
-      LEFT JOIN recovery_verification_failures f ON f.txid=o.txid
-     WHERE f.txid IS NULL
-       AND (o.chain_checked_at IS NULL OR (o.classification='recoverable' AND o.chain_checked_at<=?))
-     GROUP BY o.txid
-     ORDER BY checked_at,o.txid
+     WHERE o.chain_checked_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM recovery_verification_failures f WHERE f.txid=o.txid)
+     LIMIT ?
+  ), backstop AS (
+    SELECT c.txid,MIN(c.chain_checked_at) checked_at FROM (
+      SELECT o.txid,o.chain_checked_at
+        FROM recovery_outputs o
+       WHERE o.classification='recoverable' AND o.chain_checked_at<=?
+         AND NOT EXISTS (SELECT 1 FROM recovery_verification_failures f WHERE f.txid=o.txid)
+       ORDER BY o.chain_checked_at,o.txid
+       LIMIT ?
+    ) c
+     GROUP BY c.txid
+     ORDER BY checked_at,c.txid
      LIMIT ?
   )
   SELECT txid FROM (
     SELECT txid,0 AS pool_order,next_retry_at AS sort_at FROM due_retries
     UNION ALL
-    SELECT txid,1 AS pool_order,checked_at AS sort_at FROM fresh
+    SELECT txid,1 AS pool_order,-1 AS sort_at FROM never
+    UNION ALL
+    SELECT txid,2 AS pool_order,checked_at AS sort_at FROM backstop
   )
   ORDER BY pool_order,sort_at,txid
   LIMIT ?`;
+
+/**
+ * How many OUTPUTS the backstop arm reads to find its page of TXIDS.
+ *
+ * Outputs collapse into transactions, so the window has to overshoot the page
+ * it is filling. 40x covers the observed fan-out with room to spare; a window
+ * too small does not break anything, it just returns a short page and the next
+ * tick continues from the same place.
+ *
+ * This is the whole reason the arm is cheap now: the scan is bounded, so cost
+ * is a function of the page size rather than of how many outputs happen to be
+ * due. It is what keeps a bulk import from making every run read the entire
+ * eligible set.
+ */
+export const VERIFICATION_BACKSTOP_WINDOW = 40;
 
 /**
  * Ask for the outputs a reader is about to act on to be re-checked, highest value first. Rate limiting
@@ -117,7 +143,18 @@ export async function verifyRecoveryTransactions(
   const batchIntervalMs = options.batchIntervalMs ?? ELECTRS_REQUEST_BATCH_INTERVAL_MS;
   const staleBefore = now - RECOVERY_REVERIFY_INTERVAL_SECONDS;
   const transactionRows = await env.RECOVERY_DB.prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
-    .bind(now, staleBefore, verificationRetryQuota(limit), staleBefore, limit, limit)
+    // Order matches the CTEs: due_retries(now, staleBefore, retryQuota),
+    // never(limit), backstop(staleBefore, scanWindow, limit), outer(limit).
+    .bind(
+      now,
+      staleBefore,
+      verificationRetryQuota(limit),
+      limit,
+      staleBefore,
+      limit * VERIFICATION_BACKSTOP_WINDOW,
+      limit,
+      limit,
+    )
     .all<{ txid: string }>();
   if (transactionRows.results.length === 0) return { transactions: 0, outputs: 0, spent: 0, failed: 0 };
 

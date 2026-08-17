@@ -1,0 +1,36 @@
+-- Let the verification queue's backstop arm stop early instead of grouping the
+-- whole eligible set.
+--
+-- The queue picks the next transactions to re-verify in three tiers:
+-- never-checked, then reader-requested, then the rolling 30-day backstop
+-- oldest-first. The backstop arm scanned every eligible output, grouped by
+-- txid and sorted on a computed MIN() -- two temp b-trees -- to return ~25
+-- rows:
+--
+--   SEARCH o USING INDEX recovery_outputs_verification (classification=?)
+--   USE TEMP B-TREE FOR GROUP BY
+--   USE TEMP B-TREE FOR ORDER BY
+--
+-- That is fine while few outputs are due and catastrophic when many are.
+-- RECOVERY_REVERIFY_INTERVAL_SECONDS is 30 days and the tracked set was
+-- imported in bulk, so the whole recoverable population came due at once:
+-- 429,280 outputs eligible, 1,188,275 rows read per run, 716 runs a day.
+-- 850,804,970 rows/day -- 96% of this database and 34% of the entire
+-- Cloudflare account's D1 reads -- and 1.7 hours a day of query time.
+--
+-- This index carries the ORDER BY, so the rewritten arm walks
+-- chain_checked_at ascending inside classification='recoverable' and stops as
+-- soon as its window is full.
+--
+-- Column order follows the rule from the exchange's 0035: index what the query
+-- ORDERS BY when the filtered set is far larger than the page. Here the
+-- filtered set is 429,280 and the page is ~25, so the ordering is what has to
+-- be seekable. An index on classification alone already existed and is exactly
+-- what did not help -- ~99% of rows share the value being searched.
+--
+-- Measured on production, identical results across six parameter combinations:
+--
+--   before   1,108,971 rows read   2,026ms
+--   after       30,199 rows read      12ms    37x
+CREATE INDEX IF NOT EXISTS idx_recovery_outputs_backstop
+  ON recovery_outputs(classification, chain_checked_at, txid);
