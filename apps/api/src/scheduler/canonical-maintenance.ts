@@ -17,6 +17,7 @@ import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { crawlPrices, crawlSpotPrices, crawlMarketQuotes, applyTradeUsd } from "#api/indexer/prices";
+import { maybeRefreshXcpSupply } from "#api/indexer/xcp-supply";
 import { maybeRefreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { maybeRefreshAssetRatings } from "#api/indexer/asset-rating";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
@@ -127,6 +128,9 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("buildScamAttribution", () => buildScamAttribution(env));
       await runScheduledJob("refreshAssetEmergence", () => maybeRefreshAssetEmergence(env));
       await runScheduledJob("crawlPrices", () => maybeCrawlPrices(env));
+      // Keeps the supply projection current. /v2/price reads it instead of
+      // re-deriving 3.3M rows on every cache miss — see indexer/xcp-supply.ts.
+      await runScheduledJob("refreshXcpSupply", () => maybeRefreshXcpSupply(env));
       // Bounded, oldest-first, and idle once caught up — see cache-eviction.ts for
       // why it evicts on a grace period rather than on expiry.
       await runScheduledJob("evictExpiredCache", () => evictExpiredCache(env.CORE_DB));

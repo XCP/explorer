@@ -37,16 +37,16 @@ export async function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
   // The carry-forward onto price days happens HERE, not as a correlated SQL subquery: the temp
   // supply CTE carries no index, so per-price-day lookups scanned it quadratically (~21M billed
   // rows read per call). Two ordered result sets merge in one linear pass instead.
+  //
+  // Read from the projection, not re-derived. Deriving it is a window function
+  // over the whole of ledger_events joined to blocks — 3,313,631 rows read per
+  // call, measured — and this runs on every cache miss of /v2/price, which came
+  // to 271,717,710 rows/day, 11% of the account's entire D1 reads, for ~4,600
+  // rows that change once a day. xcp_supply_daily holds the result of that
+  // exact aggregate; indexer/xcp-supply.ts recomputes and stores it daily.
   const supplyByDay = await q<{ day: string; supply: number }>(
     db,
-    `SELECT day, SUM(delta) OVER (ORDER BY day) / 1e8 supply FROM (
-       SELECT date(block.block_time,'unixepoch') day,
-         SUM(CASE WHEN ledger.direction=1 THEN CAST(ledger.quantity AS REAL)
-           ELSE -CAST(ledger.quantity AS REAL) END) delta
-       FROM ledger_events ledger JOIN blocks block ON block.block_index=ledger.block_index
-       WHERE ledger.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
-       GROUP BY day
-     ) ORDER BY day`,
+    `SELECT day, supply FROM xcp_supply_daily ORDER BY day`,
   );
   const history = await q<PriceHistoryPoint>(
     db,
