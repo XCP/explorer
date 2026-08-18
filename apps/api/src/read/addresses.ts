@@ -226,7 +226,12 @@ addresses.get("/v2/reputation/review", async (c) => {
 
 // Public Reputation overview: fixed bands, methodology metadata, classification census, and histogram.
 addresses.get("/v2/reputation/tiers", (c) =>
-  cached(c, "reputation:tiers:v2", { ttl: 3600, edge: 300, swr: 86400 }, async () => {
+  // ttl matches the data, which refreshes weekly (ADDRESS_REPUTATION_REFRESH_SECONDS).
+  // At ttl 3600 the four reads behind this ran 64 times in 13h and scanned the two
+  // largest tables whole each time -- the histogram alone is a GROUP BY over all
+  // ~677,000 scored rows, and the funnel a full SUM(CASE) over address_signals,
+  // together ~$3.90/mo to recompute a page that could not have changed.
+  cached(c, "reputation:tiers:v2", { ttl: 86_400, edge: 300, swr: 604_800 }, async () => {
     const [d, f, histogram, metadata] = await Promise.all([
       reputationDistribution(c.env.CORE_DB).catch(() => null),
       reputationFunnel(c.env.CORE_DB).catch(() => null),
