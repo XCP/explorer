@@ -140,7 +140,7 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
       `SELECT dictionary.asset,state.asset_longname,signal.trades FROM asset_signals signal
        JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
        LEFT JOIN assets state ON state.asset_id=signal.asset_id
-       WHERE signal.trades>0${lowqF} ORDER BY signal.trades DESC LIMIT 12`,
+       WHERE signal.trades>0${lowqF} ORDER BY signal.trades DESC,signal.asset_id LIMIT 12`,
     ),
     b(
       `SELECT dictionary.asset,state.asset_longname,
@@ -160,7 +160,7 @@ export async function leaderboards(db: D1Database, p: LeaderboardParams): Promis
     b(
       `SELECT dictionary.address,ROUND(signal.disp_trust,1) disp_trust,signal.dispenses
        FROM address_signals signal JOIN address_dictionary dictionary ON dictionary.address_id=signal.address_id
-       WHERE signal.disp_trust>0 AND signal.is_exchange=0 ORDER BY signal.disp_trust DESC LIMIT 12`,
+       WHERE signal.disp_trust>0 AND signal.is_exchange=0 ORDER BY signal.disp_trust DESC,signal.address_id LIMIT 12`,
     ),
     b(
       `SELECT dictionary.address,signal.assets_hits,signal.survived_assets FROM address_signals signal
