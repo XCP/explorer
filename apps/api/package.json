@@ -29,6 +29,7 @@
     "survey:ledger-otc-counterparty": "node ops/survey-ledger-otc-counterparty.mjs",
     "dev": "wrangler dev",
     "test": "node ops/check-sql-conventions.mjs && npm run test:migrations:recovery && node ops/clean-test-build.mjs && tsc -p tsconfig.test.json && node --test \".test-dist/tests/**/*.test.js\"",
+    "check:migration-parity": "node ops/check-migration-parity.mjs",
     "test:migrations:recovery": "node ops/rehearse-recovery-migrations.mjs",
     "test:contract": "tsc -p tsconfig.test.json && node tests/contract-runner.mjs",
     "evaluate:reputation": "node ops/evaluate-reputation-baselines.mjs",

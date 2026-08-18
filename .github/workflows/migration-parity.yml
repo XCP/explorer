@@ -1,0 +1,36 @@
+# Weekly guard against a production database and this repo disagreeing about
+# which migrations exist. Twice now a migration was applied by hand and never
+# committed -- 0084_xcp_supply_daily.sql left a materialized table live in core
+# that nothing read for weeks, and 0014_reverify_index.sql was missing from
+# recovery for long enough that nobody remembered writing it.
+#
+# Not part of ci.yml on purpose: this talks to production D1, so it must not run
+# on every push, and certainly not on pull requests from forks, which cannot see
+# the secret anyway.
+#
+# Needs a CLOUDFLARE_API_TOKEN repo secret with D1 read access, plus
+# CLOUDFLARE_ACCOUNT_ID, since wrangler.toml carries no account_id.
+name: migration-parity
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compare applied migrations against the repo
+        working-directory: apps/api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run check:migration-parity
