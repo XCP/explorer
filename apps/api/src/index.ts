@@ -3,7 +3,6 @@ import { Hono } from "hono";
 import { admin } from "#api/admin";
 import type { Env } from "#api/env";
 export type { Env } from "#api/env";
-import { extensionApi } from "#api/extension-api";
 import { describeHttpError, requestId } from "#api/http/errors";
 import { observePublicReadBudget } from "#api/http/rate-budget";
 import { requestTelemetry } from "#api/http/telemetry";
@@ -53,7 +52,12 @@ app.get("/", (c) => c.text("api.xcp.io ok"));
 app.get("/health", (c) => c.text("ok"));
 app.route("/", read);
 app.route("/", verify);
-app.route("/", extensionApi);
+// The /api/v1 wallet API was retired 2026-08-18. Seven days of zone analytics
+// found 323 requests across 56 distinct /api/v1 paths, and most of those paths
+// were vulnerability probes (/api/v1/env, /api/v1/config, /api/v1/settings) --
+// genuine calls were roughly eleven a day. It reached this worker only through
+// app.xcp.io, whose forwarding now answers 410; see img-cdn. The /img routes on
+// that host are untouched and still serve old installs.
 app.route("/", admin);
 app.route("/", recoveryRead);
 app.route("/", bitcoinRead);
