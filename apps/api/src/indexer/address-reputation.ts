@@ -1,7 +1,21 @@
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
 export const ADDRESS_REPUTATION_MODEL_VERSION = 1;
-export const ADDRESS_REPUTATION_REFRESH_SECONDS = 86_400;
+
+// Weekly, not daily (2026-08-18). Every stored column here is *relative* --
+// PERCENT_RANK, ROW_NUMBER and COUNT(*) OVER() -- so a single newly eligible
+// address shifts percentiles, renumbers the ranks below it and changes
+// `population`, which is the same integer stored once per row. The refresh
+// therefore rewrites the whole table every time: measured at 677,180 rows in
+// one 05:00 UTC hour, ~20.3M rows/month, which at D1's $1.00/M write price was
+// the single largest line on the Cloudflare account.
+//
+// A delta guard is the usual fix and does not work on this shape: `population`
+// and `calculated_at` differ on every run by construction, so every row still
+// qualifies for the update. Fixing that needs the row-invariant columns moved
+// out to core_state, which is a migration; until then cadence is the honest
+// lever, and a track record accumulated over years does not move in a day.
+export const ADDRESS_REPUTATION_REFRESH_SECONDS = 604_800;
 
 export const ADDRESS_REPUTATION_BANDS = [
   { tier: "Exceptional", slug: "exceptional", minimum: 99, meaning: "top 1% — an exceptional observed track record" },
