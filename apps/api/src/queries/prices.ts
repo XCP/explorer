@@ -30,6 +30,20 @@ export function priceBefore(db: D1Database, currency: string, day: string): Prom
   );
 }
 
+/**
+ * The derivation the projection replaces, kept as the fallback for when the
+ * projection is stale. This is deliberately the SAME aggregate the builder
+ * stores, so the two cannot disagree about what supply means.
+ */
+const DERIVE_SUPPLY_SQL = `SELECT day, SUM(delta) OVER (ORDER BY day) / 1e8 supply FROM (
+     SELECT date(block.block_time,'unixepoch') day,
+       SUM(CASE WHEN ledger.direction=1 THEN CAST(ledger.quantity AS REAL)
+         ELSE -CAST(ledger.quantity AS REAL) END) delta
+     FROM ledger_events ledger JOIN blocks block ON block.block_index=ledger.block_index
+     WHERE ledger.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+     GROUP BY day
+   ) ORDER BY day`;
+
 export async function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
   // Supply: XCP only ever mints via burns and destroys via fees/destructions, and every such
   // change is a one-sided row in the 1:1 credit/debit capture — so the running credit−debit sum
@@ -44,10 +58,35 @@ export async function xcpHistory(db: D1Database): Promise<PriceHistoryPoint[]> {
   // to 271,717,710 rows/day, 11% of the account's entire D1 reads, for ~4,600
   // rows that change once a day. xcp_supply_daily holds the result of that
   // exact aggregate; indexer/xcp-supply.ts recomputes and stores it daily.
-  const supplyByDay = await q<{ day: string; supply: number }>(
+  let supplyByDay = await q<{ day: string; supply: number }>(
     db,
     `SELECT day, supply FROM xcp_supply_daily ORDER BY day`,
   );
+  /**
+   * Fall back to deriving when the projection is stale.
+   *
+   * Reading a table instead of deriving traded freshness-BY-CONSTRUCTION for
+   * freshness-by-cron: the old query could not be out of date, and this one
+   * can. Silence is the failure mode that matters — if the refresh stops, every
+   * caller keeps getting a plausible supply curve that quietly stops moving,
+   * and nothing errors.
+   *
+   * So the read path checks. The newest row is free (the list is already
+   * ordered), and if it has fallen behind, this pays the 3.3M-row derivation
+   * rather than serve a number it knows is wrong. Correctness is not the thing
+   * being optimised here; cost is, and only while cost is safe.
+   *
+   * Two days of slack: the builder is gated at ~144 blocks (~24h), so one
+   * missed run is normal operation rather than a fault.
+   */
+  const newestSupplyDay = supplyByDay.at(-1)?.day;
+  const staleCutoff = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+  if (!newestSupplyDay || newestSupplyDay < staleCutoff) {
+    console.error(
+      `xcp_supply_daily stale (newest=${newestSupplyDay ?? "empty"}, cutoff=${staleCutoff}) — deriving instead; check refreshXcpSupply`,
+    );
+    supplyByDay = await q<{ day: string; supply: number }>(db, DERIVE_SUPPLY_SQL);
+  }
   const history = await q<PriceHistoryPoint>(
     db,
     `SELECT xcp.day, ROUND(xcp.usd, 6) usd, xcp.source, ROUND(btc.usd, 2) btc,
