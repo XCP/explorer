@@ -6,6 +6,7 @@ import {
   RECOVERY_REQUEST_REVERIFY_SQL,
   RECOVERY_REVERIFY_INTERVAL_SECONDS,
   RECOVERY_VERIFICATION_QUEUE_SQL,
+  VERIFICATION_BACKSTOP_WINDOW,
   verificationRetryQuota,
 } from "#api/recovery/verify";
 
@@ -90,7 +91,16 @@ test("a requested output outranks the rolling backstop but never a new import", 
   const queued = (
     db
       .prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
-      .all(NOW, staleBefore, verificationRetryQuota(10), staleBefore, 10, 10) as {
+      .all(
+        NOW,
+        staleBefore,
+        verificationRetryQuota(10),
+        10,
+        staleBefore,
+        10 * VERIFICATION_BACKSTOP_WINDOW,
+        10,
+        10,
+      ) as {
       txid: string;
     }[]
   ).map((row) => row.txid);

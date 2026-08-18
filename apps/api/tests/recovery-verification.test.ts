@@ -5,6 +5,7 @@ import type { Env } from "#api/env";
 import {
   RECOVERY_REVERIFY_INTERVAL_SECONDS,
   RECOVERY_VERIFICATION_QUEUE_SQL,
+  VERIFICATION_BACKSTOP_WINDOW,
   verificationRetryDelay,
   verificationRetryQuota,
   verifyRecoveryTransactions,
@@ -23,8 +24,14 @@ class Statement {
     return this;
   }
   all<T>() {
-    if (this.sql.includes("GROUP BY o.txid")) {
-      const limit = Number(this.values[4]);
+    // Matched on the queue's CTE name rather than a fragment of its body: the
+    // previous marker was "GROUP BY o.txid", which the backstop rewrite renamed
+    // to c.txid, so this silently stopped matching and the queue returned
+    // nothing -- the tests failed claiming verification did no work, when what
+    // had actually broken was the mock. The limit is the outer LIMIT, the last
+    // of the eight bindings; it used to be index 4, which is now staleBefore.
+    if (this.sql.includes("due_retries")) {
+      const limit = Number(this.values[this.values.length - 1]);
       return Promise.resolve({
         results: [...new Set(this.db.outputs.filter((o) => o.chain_checked_at == null).map((o) => o.txid))]
           .slice(0, limit)
@@ -129,7 +136,19 @@ function queueRows(db: DatabaseSync, now: number, limit: number): string[] {
   return (
     db
       .prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
-      .all(now, staleBefore, verificationRetryQuota(limit), staleBefore, limit, limit) as { txid: string }[]
+      .all(
+        // Order matches the CTEs, and must track verify.ts exactly:
+        // due_retries(now, staleBefore, retryQuota), never(limit),
+        // backstop(staleBefore, scanWindow, limit), outer(limit).
+        now,
+        staleBefore,
+        verificationRetryQuota(limit),
+        limit,
+        staleBefore,
+        limit * VERIFICATION_BACKSTOP_WINDOW,
+        limit,
+        limit,
+      ) as { txid: string }[]
   ).map((row) => row.txid);
 }
 
