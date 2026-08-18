@@ -26,6 +26,7 @@ import { rebuildCoreAssetSignals } from "#api/indexer/core-asset-signals";
 import { enqueueCoreSupply } from "#api/indexer/asset-supply";
 import { enqueueCoreAddressSignals } from "#api/indexer/core-address-signals";
 import { applyCoreBalanceDeltas } from "#api/indexer/balance-store";
+import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 
 const CHUNK = 1000; // events per API page
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
@@ -241,7 +242,25 @@ export async function syncCoreEvents(
 
     const caughtUp = lastIndex >= tip;
     if (caughtUp) {
-      if (lastBlock > SNAPSHOT_WINDOW) await pruneCoreSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW);
+      // Gated, not every tick. The prune retains the newest snapshot per
+      // holder+asset below the cutoff, and the cutoff trails the tip by
+      // SNAPSHOT_WINDOW (1000 blocks, about a week) -- so nothing new becomes
+      // prunable between two blocks, let alone between two 2-minute ticks.
+      //
+      // It ran on every caught-up tick, and this worker has two cron schedules
+      // (*/2 and 1-59/2), so it fired 1,248 times a day. The table holds only
+      // 41,712 rows but the correlated EXISTS probes one newer row per
+      // candidate, so each run read 74,182 -- 93M rows/day, the largest live
+      // query on this database, to delete what an hour of waiting would have
+      // let it delete in one pass.
+      //
+      // Six blocks is roughly an hour. The table can only grow by an hour of
+      // snapshots between runs, against a window that retains a week of them.
+      if (lastBlock > SNAPSHOT_WINDOW) {
+        await runCoreBlockGated(env.CORE_DB, "balance_snapshot_prune_blk", 6, () =>
+          pruneCoreSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW),
+        );
+      }
       const checkpointHash = lastBlock > 0 ? await blockHash(env.COUNTERPARTY_API_BASE, lastBlock) : null;
       if (checkpointHash) await setCoreStateStmt(env.CORE_DB, "last_block_hash", checkpointHash).run();
     }

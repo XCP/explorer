@@ -527,13 +527,49 @@ const TX_KIND_ORDER: TxRecordKind[] = [
 
 /** Classify a transaction through its canonical integer identity. Every message table stores
  * tx_index, including multi-row sends/dispenses, so this avoids decoding and probing hash text. */
+/** D1 rejects a compound SELECT with more than five terms ("too many terms in
+ *  compound SELECT", SQLITE_ERROR 7500) -- measured against production, and a
+ *  much lower cap than SQLite's own default. Not documented next to the
+ *  100-bound-parameter limit, so it is recorded here. */
+const COMPOUND_LIMIT = 5;
+
+/** Each branch is wrapped in a subquery because SQLite rejects a per-branch
+ *  LIMIT inside a compound SELECT ("LIMIT clause should come after UNION ALL
+ *  not before"). The LIMIT has to stay: without it a branch would count every
+ *  matching row instead of stopping at the first, which is what makes this
+ *  cheap. */
+const CLASSIFY_CHUNKS: string[] = [];
+for (let i = 0; i < TX_KIND_ORDER.length; i += COMPOUND_LIMIT) {
+  CLASSIFY_CHUNKS.push(
+    TX_KIND_ORDER.slice(i, i + COMPOUND_LIMIT)
+      .map((kind) => `SELECT k FROM (SELECT '${kind}' k FROM ${kind} WHERE tx_index=?1 LIMIT 1)`)
+      .join(" UNION ALL "),
+  );
+}
+
 export async function classifyCoreTx(db: D1Database, txIndex: number): Promise<TxRecordKind | null> {
+  // Four statements, not nineteen.
+  //
+  // This probed each kind as its own prepared statement. There are 19 kinds,
+  // so one classification issued 19 statements, and at ~155,000 calls a day
+  // that came to ~2.95M of this database's ~4.8M daily queries -- about 61% of
+  // its entire query volume to answer a single question.
+  //
+  // The rows read are identical: every branch is still an indexed tx_index
+  // probe stopping at the first hit. D1 bills rows, not statements, so this
+  // does not move the bill -- what it removes is 15 statements' worth of
+  // per-statement overhead on every call, and the query-volume headroom that
+  // went with it.
+  //
+  // Semantics unchanged: the chunks together cover every kind, and the caller
+  // still resolves precedence through TX_KIND_ORDER exactly as before.
   const results = await db.batch<{ k: TxRecordKind }>(
-    TX_KIND_ORDER.map((kind) => db.prepare(`SELECT '${kind}' k FROM ${kind} WHERE tx_index=?1 LIMIT 1`).bind(txIndex)),
+    CLASSIFY_CHUNKS.map((sql) => db.prepare(sql).bind(txIndex)),
   );
   const found = new Set(results.flatMap((result) => (result.results ?? []).map((row) => row.k)));
   return TX_KIND_ORDER.find((kind) => found.has(kind)) ?? null;
 }
+
 
 type StatelessTxKind = "sends" | "sweeps" | "broadcasts" | "dividends" | "burns" | "destructions" | "bets" | "rps";
 
