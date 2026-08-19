@@ -29,9 +29,21 @@ import { applyCoreBalanceDeltas } from "#api/indexer/balance-store";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
 
 const CHUNK = 1000; // events per API page
+// A fetched page can contain hundreds of balance and signal writes. Checkpoint
+// it in smaller durable slices so an execution-limit failure cannot make every
+// cron retry the same all-or-nothing 1,000-event page forever. This does not
+// increase Counterparty requests, and tip-following normally remains one slice.
+// Fifty also bounds the aggregate placeholders produced by a dense page.
+// Production showed that 250 could still cross D1's SQL-variable ceiling
+// (`too many SQL variables`); following mode normally has fewer than fifty,
+// so this only adds checkpoints while draining a backlog.
+const APPLY_CHUNK = 50;
 const MAX_EVENTS_PER_RUN = 50_000; // cap per invocation (backfill driven by repeated calls)
 const SNAPSHOT_WINDOW = 1000; // blocks of balance snapshots to retain (reorg restore)
-const LOCK_TTL = 120;
+// Longer than the Worker's 300s CPU allowance. The cron ticks every two
+// minutes, so a 120s lease could be stolen by the next tick while a dense
+// replay was still alive, multiplying the very D1 pressure slowing it down.
+const LOCK_TTL = 15 * 60;
 const DB_BATCH = 90; // D1 max ~100 stmts/batch
 
 /* ---------- state + write helpers ---------- */
@@ -57,9 +69,16 @@ async function batchAll(db: D1Database, stmts: Stmt[]): Promise<void> {
 
 /* ---------- Counterparty stream helpers ---------- */
 
-/** tip event_index = result_count - 1 */
+/** Read the actual newest event index. Counterparty's event indices are
+ * one-based on current nodes, while older fixtures and deployments exposed
+ * count-like semantics; the row itself is authoritative in either case. */
 async function tipEventIndex(api: string): Promise<number> {
-  const d = await counterpartyJson<{ result_count?: number }>(api, `/events?limit=1`);
+  const d = await counterpartyJson<{ result_count?: number; result?: Pick<Ev, "event_index">[] }>(
+    api,
+    `/events?limit=1`,
+  );
+  const newest = d.result?.[0]?.event_index;
+  if (Number.isSafeInteger(newest)) return Number(newest);
   return (d.result_count ?? 0) - 1;
 }
 /** ascending chunk [from, from+chunk): request cursor=from+chunk-1 desc, reverse.
@@ -215,29 +234,32 @@ export async function syncCoreEvents(
       chunk = page.chunk;
       const events = page.events;
       if (events.length === 0) break;
-      const ctx: Ctx = {
-        stmts: [],
-        identities: createIdentitySet(),
-        balDelta: new Map(),
-        maxBlock: lastBlock,
-        supplyDirty: new Set(),
-        assetDivisibility: await chunkAssetDivisibility(env.CORE_DB, events),
-        blockTime,
-      };
-      for (const event of events) dispatch(event, ctx);
-      await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
-      await applyCoreBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
-      await rebuildCoreAssetSignals(env.CORE_DB, ctx.identities.assets);
-      await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses);
-      await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
-      lastIndex = events[events.length - 1].event_index;
-      lastBlock = Math.max(lastBlock, ctx.maxBlock);
-      blockTime = ctx.blockTime;
-      applied += events.length;
-      await env.CORE_DB.batch([
-        setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),
-        setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
-      ]);
+      for (let offset = 0; offset < events.length; offset += APPLY_CHUNK) {
+        const slice = events.slice(offset, offset + APPLY_CHUNK);
+        const ctx: Ctx = {
+          stmts: [],
+          identities: createIdentitySet(),
+          balDelta: new Map(),
+          maxBlock: lastBlock,
+          supplyDirty: new Set(),
+          assetDivisibility: await chunkAssetDivisibility(env.CORE_DB, slice),
+          blockTime,
+        };
+        for (const event of slice) dispatch(event, ctx);
+        await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
+        await applyCoreBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
+        await rebuildCoreAssetSignals(env.CORE_DB, ctx.identities.assets);
+        await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses);
+        await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
+        lastIndex = slice[slice.length - 1].event_index;
+        lastBlock = Math.max(lastBlock, ctx.maxBlock);
+        blockTime = ctx.blockTime;
+        applied += slice.length;
+        await env.CORE_DB.batch([
+          setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),
+          setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+        ]);
+      }
     }
 
     const caughtUp = lastIndex >= tip;

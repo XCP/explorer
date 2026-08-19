@@ -36,12 +36,13 @@ class PreparedStatement {
   }
 }
 
-function d1(database: DatabaseSync): D1Database {
+function d1(database: DatabaseSync, onBatch?: () => void): D1Database {
   return {
     prepare(sql: string) {
       return new PreparedStatement(database, sql);
     },
     async batch(statements: PreparedStatement[]) {
+      onBatch?.();
       for (const statement of statements) await statement.run();
       return [];
     },
@@ -1208,7 +1209,9 @@ test("replay advances its durable cursor", async () => {
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith("/events?limit=1")) {
-      return new Response(JSON.stringify({ result_count: 2 }), { status: 200 });
+      // The event row is authoritative even if a node's result_count uses
+      // different indexing semantics.
+      return new Response(JSON.stringify({ result_count: 999, result: [{ event_index: 1 }] }), { status: 200 });
     }
     if (url.endsWith("/blocks/last")) {
       return new Response(JSON.stringify({ result: { block_index: 101 } }), { status: 200 });
@@ -1270,6 +1273,48 @@ test("replay advances its durable cursor", async () => {
     last_event_index: "1",
     last_block_index: "101",
   });
+});
+
+test("replay checkpoints a dense fetched page in durable slices", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`
+    INSERT INTO core_state(key,value) VALUES
+      ('last_event_index','0'),
+      ('last_block_index','100');
+  `);
+  const events = Array.from({ length: 251 }, (_, i) => ({
+    event: "UNHANDLED_TEST_EVENT",
+    event_index: i + 1,
+    block_index: 100,
+    params: {},
+  }));
+  let batches = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) {
+      return new Response(JSON.stringify({ result_count: 251, result: [{ event_index: 251 }] }));
+    }
+    if (url.endsWith("/blocks/last")) {
+      return new Response(JSON.stringify({ result: { block_index: 100 } }));
+    }
+    if (url.includes("/events?cursor=")) {
+      return new Response(JSON.stringify({ result: [...events].reverse() }));
+    }
+    throw new Error(`unexpected Counterparty request: ${url}`);
+  };
+  try {
+    const result = await syncCoreEvents(
+      { CORE_DB: d1(database, () => batches++), COUNTERPARTY_API_BASE: "https://counterparty.test" },
+      { maxEvents: 1000 },
+    );
+    assert.equal(result.last_event_index, 251);
+    assert.equal(result.applied, 251);
+    assert.ok(batches >= 2, "a 251-event page must checkpoint at least twice");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("replay clamps the events page to the pending window and shrinks it when a page is unreadable", async () => {
