@@ -72,6 +72,19 @@ export function getCollectionProfile(db: D1Database, tag: string): Promise<Colle
   return one<CollectionProfile>(db, profileSql(true), tag, tag, tag);
 }
 
+/** Whether the tag would produce a profile — the same >=3-member floor profileSql applies, answered
+ *  by a seek on the (tag, entity_id) index so an unknown tag can 404 without paying for the profile. */
+export async function collectionProfileExists(db: D1Database, tag: string): Promise<boolean> {
+  const row = await one<{ present: number }>(
+    db,
+    `SELECT 1 present FROM collection_membership_evidence
+      WHERE tag=? AND source IN (${SOURCES})
+      GROUP BY tag HAVING COUNT(DISTINCT entity_id)>=3`,
+    tag,
+  );
+  return row !== null;
+}
+
 /** Every current holder of every member asset, classified by the SAME persona rules the address header
  *  uses (reputation/persona.ts, thresholds from reputation/config.ts — interpolated here so the two
  *  surfaces cannot drift apart on tuning). "light" holds but clears no floor; custody flags win first. */

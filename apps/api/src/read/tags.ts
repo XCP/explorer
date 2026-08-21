@@ -8,7 +8,12 @@ import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { router, J, lim, off, cached } from "#api/read/respond";
 import { rawSqlExpr, CONVICTION_FACTORS, convictionScore } from "#api/reputation/score";
 import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "#api/queries/tags";
-import { collectionHolderMakeup, getCollectionProfile, listCollectionProfiles } from "#api/queries/collections";
+import {
+  collectionHolderMakeup,
+  collectionProfileExists,
+  getCollectionProfile,
+  listCollectionProfiles,
+} from "#api/queries/collections";
 
 export const tags = router();
 
@@ -22,10 +27,17 @@ tags.get("/v2/collections", async (c) =>
   })),
 );
 
+// The scoped profile still joins every member to signals, ratings, and the full holder set —
+// measured at ~78k rows read per run and ~1,500 uncached runs/day, the account's largest reader.
+// Tags are low-cardinality (~73), so a per-tag D1 cache bounds the recompute exactly like
+// holder-makeup below; the indexed existence probe keeps unknown tags a real 404 rather than a
+// cached empty body.
 tags.get("/v2/collection-profiles/:tag", async (c) => {
   const tag = c.req.param("tag");
-  const result = await getCollectionProfile(c.env.CORE_DB, tag);
-  return result ? J(c, { result }, 300) : c.json({ error: "Collection not found" }, 404);
+  if (!(await collectionProfileExists(c.env.CORE_DB, tag))) return c.json({ error: "Collection not found" }, 404);
+  return cached(c, `collections:profile:v1:${tag}`, { ttl: 21600, edge: 600, swr: 86400 }, async () => ({
+    result: await getCollectionProfile(c.env.CORE_DB, tag),
+  }));
 });
 
 // Who HOLDS the collection, by global persona — the H3 persona-mix lens. The classification walks every

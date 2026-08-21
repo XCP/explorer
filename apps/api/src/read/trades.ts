@@ -74,11 +74,13 @@ trades.get("/v2/trades/ring-candidates", (c) =>
 trades.get("/v2/trades/stats", (c) => {
   const includeLowQuality = c.req.query("include_low_quality") === "1";
   return (
-    // Lifetime venue aggregates scan the full ledger; hourly freshness is ample beside the live trade feed.
+    // Lifetime venue aggregates scan the full ledger — measured at 2.7M rows per fill, and the hourly
+    // TTL refilled it ~80 times a day (217M rows/day) for tiles that move imperceptibly. Six hours of
+    // freshness is still ample beside the live trade feed; swr keeps every serve instant.
     cached(
       c,
       `trades:stats:${includeLowQuality ? "all" : "clean"}`,
-      { ttl: 3600, swr: 86400 },
+      { ttl: 21_600, swr: 86_400 },
       async (): Promise<Envelope<TradeVenueStats[]>> => ({
         result: await tradeVenueStats(c.env.CORE_DB, includeLowQuality),
       }),
