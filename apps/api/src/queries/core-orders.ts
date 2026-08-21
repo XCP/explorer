@@ -29,12 +29,31 @@ export function orderByTxIndex(db: D1Database, txIndex: number): Promise<OrderRo
 }
 
 export function listAssetOrders(db: D1Database, asset: string, limit: number, offset: number): Promise<OrderRow[]> {
+  // The natural `give_asset_id=? OR get_asset_id=?` predicate defeats both per-side indexes and
+  // full-scanned all ~566k orders on every call (measured 590k rows read per run). Each side now
+  // walks its block-ordered index (idx_orders_give_block / idx_orders_get_block) and stops at
+  // offset+limit rows — a page costs ~2×(offset+limit) reads regardless of how heavily the asset
+  // trades; only the paged tx_index set joins back into the wide projection.
   return q<OrderRow>(
     db,
-    `${ORDER_SELECT}
-      WHERE order_row.give_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
-         OR order_row.get_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
-      ORDER BY order_row.block_index DESC,order_row.tx_index DESC LIMIT ?2 OFFSET ?3`,
+    `WITH page AS (
+       SELECT tx_index FROM (
+         SELECT * FROM (
+           SELECT order_row.tx_index tx_index,order_row.block_index block_index FROM orders order_row
+            WHERE order_row.give_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+            ORDER BY order_row.block_index DESC,order_row.tx_index DESC LIMIT ?2+?3
+         )
+         UNION
+         SELECT * FROM (
+           SELECT order_row.tx_index tx_index,order_row.block_index block_index FROM orders order_row
+            WHERE order_row.get_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+            ORDER BY order_row.block_index DESC,order_row.tx_index DESC LIMIT ?2+?3
+         )
+       ) ORDER BY block_index DESC,tx_index DESC LIMIT ?2 OFFSET ?3
+     )
+     ${ORDER_SELECT}
+     JOIN page ON page.tx_index=order_row.tx_index
+     ORDER BY order_row.block_index DESC,order_row.tx_index DESC`,
     asset,
     limit,
     offset,
