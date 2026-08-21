@@ -134,21 +134,19 @@ function queueDatabase(): DatabaseSync {
 function queueRows(db: DatabaseSync, now: number, limit: number): string[] {
   const staleBefore = now - RECOVERY_REVERIFY_INTERVAL_SECONDS;
   return (
-    db
-      .prepare(RECOVERY_VERIFICATION_QUEUE_SQL)
-      .all(
-        // Order matches the CTEs, and must track verify.ts exactly:
-        // due_retries(now, staleBefore, retryQuota), never(limit),
-        // backstop(staleBefore, scanWindow, limit), outer(limit).
-        now,
-        staleBefore,
-        verificationRetryQuota(limit),
-        limit,
-        staleBefore,
-        limit * VERIFICATION_BACKSTOP_WINDOW,
-        limit,
-        limit,
-      ) as { txid: string }[]
+    db.prepare(RECOVERY_VERIFICATION_QUEUE_SQL).all(
+      // Order matches the CTEs, and must track verify.ts exactly:
+      // due_retries(now, staleBefore, retryQuota), never(limit),
+      // backstop(staleBefore, scanWindow, limit), outer(limit).
+      now,
+      staleBefore,
+      verificationRetryQuota(limit),
+      limit,
+      staleBefore,
+      limit * VERIFICATION_BACKSTOP_WINDOW,
+      limit,
+      limit,
+    ) as { txid: string }[]
   ).map((row) => row.txid);
 }
 

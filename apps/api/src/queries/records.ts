@@ -563,13 +563,10 @@ export async function classifyCoreTx(db: D1Database, txIndex: number): Promise<T
   //
   // Semantics unchanged: the chunks together cover every kind, and the caller
   // still resolves precedence through TX_KIND_ORDER exactly as before.
-  const results = await db.batch<{ k: TxRecordKind }>(
-    CLASSIFY_CHUNKS.map((sql) => db.prepare(sql).bind(txIndex)),
-  );
+  const results = await db.batch<{ k: TxRecordKind }>(CLASSIFY_CHUNKS.map((sql) => db.prepare(sql).bind(txIndex)));
   const found = new Set(results.flatMap((result) => (result.results ?? []).map((row) => row.k)));
   return TX_KIND_ORDER.find((kind) => found.has(kind)) ?? null;
 }
-
 
 type StatelessTxKind = "sends" | "sweeps" | "broadcasts" | "dividends" | "burns" | "destructions" | "bets" | "rps";
 

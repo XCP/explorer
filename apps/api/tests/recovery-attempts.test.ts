@@ -153,7 +153,10 @@ test("a spend is not settled durably until it is deep enough to survive a reorg"
   const { db, prepared } = recordingDb();
   const shallow = evidenceFor("confirmed", { blockHeight: 960_262, confirmations: RECOVERY_SPEND_CONFIRMATIONS - 1 });
 
-  assert.equal(recoveryAttemptStatements(db, txid, shallow, 1_700, [{ input_txid: "aa".repeat(32), input_vout: 0 }]).length, 1);
+  assert.equal(
+    recoveryAttemptStatements(db, txid, shallow, 1_700, [{ input_txid: "aa".repeat(32), input_vout: 0 }]).length,
+    1,
+  );
   assert.equal(
     prepared.some((row) => row.sql.includes("UPDATE recovery_outputs")),
     false,
@@ -171,7 +174,9 @@ test("no other attempt outcome writes a spend of its own", () => {
   ];
   for (const evidence of outcomes) {
     const { db, prepared } = recordingDb();
-    const statements = recoveryAttemptStatements(db, txid, evidence, 1_700, [{ input_txid: "aa".repeat(32), input_vout: 0 }]);
+    const statements = recoveryAttemptStatements(db, txid, evidence, 1_700, [
+      { input_txid: "aa".repeat(32), input_vout: 0 },
+    ]);
     assert.equal(statements.length, 1, `${evidence.status} must not settle a spend`);
     assert.equal(
       prepared.some((row) => row.sql.includes("UPDATE recovery_outputs")),
