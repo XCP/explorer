@@ -1081,6 +1081,41 @@ test("compact pool swaps keep every fill when one routed order sweeps a pool twi
       { event_index: 72, tx_index: 70, forward_quantity: "16107043441048" },
     ],
   );
+
+  // pool_liquidity is keyed the same way: two legs from one tx must both persist.
+  const legCtx = context();
+  dispatch(event("NEW_TRANSACTION", { tx_index: 71, tx_hash: "95".repeat(32), source: "maker" }, 80), legCtx);
+  for (const eventIndex of [81, 82]) {
+    dispatch(
+      event(
+        "NEW_POOL_DEPOSIT",
+        {
+          tx_index: 71,
+          tx_hash: "95".repeat(32),
+          source: "maker",
+          asset_a: "RARE",
+          asset_b: "XCP",
+          quantity_a: "10",
+          quantity_b: "20",
+          quantity_minted: "14",
+          status: "valid",
+        },
+        eventIndex,
+      ),
+      legCtx,
+    );
+  }
+  await executeCore(database, legCtx);
+  const legs = database
+    .prepare(`SELECT event_index,tx_index FROM pool_liquidity WHERE tx_index=71 ORDER BY event_index`)
+    .all() as Record<string, unknown>[];
+  assert.deepEqual(
+    legs.map((row) => ({ ...row })),
+    [
+      { event_index: 81, tx_index: 71 },
+      { event_index: 82, tx_index: 71 },
+    ],
+  );
 });
 
 test("compact bet and RPS state machines preserve composite match identities", async () => {
