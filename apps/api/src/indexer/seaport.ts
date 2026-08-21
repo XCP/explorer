@@ -1,8 +1,8 @@
 /**
  * Minimal Seaport `OrderFulfilled` log decoder — hand-rolled ABI decoding (the project avoids viem/ethers).
- * Alchemy's getNFTSales stopped indexing Emblem sales after ~April 2024, but getAssetTransfers still sees the
- * transfers; the SALE PRICE lives in the Seaport OrderFulfilled event of the transfer's transaction. This
- * decodes that event to recover price/currency/buyer/seller for a given (contract, tokenId).
+ * Alchemy transfers expose the NFT movement, while the sale price lives in the Seaport OrderFulfilled event
+ * of the transfer's transaction. This decoder recovers price/currency/buyer/seller for a given
+ * (contract, tokenId).
  *
  * Event: OrderFulfilled(bytes32 orderHash, address indexed offerer, address indexed zone, address recipient,
  *   SpentItem[] offer, ReceivedItem[] consideration)
@@ -13,7 +13,7 @@
  * Two shapes: a LISTING fill has the NFT in `offer` (offerer=seller, recipient=buyer, price=Σconsideration);
  * a BID fill has the NFT in `consideration` (offerer=buyer, recipient=seller, price=Σoffer). Payment items are
  * itemType 0/1; their summed amount (incl. marketplace/royalty fees) is the total price — matching the old
- * getNFTSales convention (seller+protocol+royalty fees). Bundles over-count per-NFT but are rare.
+ * legacy sales convention (seller+protocol+royalty fees). Bundles over-count per-NFT but are rare.
  */
 export const ORDER_FULFILLED_TOPIC = "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31";
 const ZERO = "0x0000000000000000000000000000000000000000";

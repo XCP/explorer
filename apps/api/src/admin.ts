@@ -12,7 +12,6 @@ import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { buildTags } from "#api/indexer/tags";
 import { crawlCollections } from "#api/indexer/collections";
 import { buildHolderCohesion } from "#api/indexer/holder-cohesion";
-import { crawlEmblemSales } from "#api/indexer/emblem-sales";
 import { backfillEthereumBlockTimes } from "#api/indexer/ethereum-block-times";
 import { crawlScarceSales } from "#api/indexer/scarce-sales";
 import { classifyVaults } from "#api/indexer/vault-contents";
@@ -274,18 +273,12 @@ admin.post("/admin/cohesion", async (c) => {
   return c.json(await buildHolderCohesion(c.env, body?.after ?? "", limit));
 });
 
-// Index Emblem vault sales (Alchemy getNFTSales) into emblem_sales. Loop until contract_done cycles; the
-// `sample` field returns the raw Alchemy shape on the first run so we can confirm the fields.
-admin.post("/admin/crawl-emblem-sales", async (c) => {
-  return c.json(await crawlEmblemSales(c.env));
-});
-
 admin.post("/admin/backfill-ethereum-block-times", async (c) => {
   return c.json(await backfillEthereumBlockTimes(c.env));
 });
 
-// Recover post-April-2024 Emblem sales that getNFTSales stopped indexing: getAssetTransfers + Seaport decode
-// (emblem-transfers.ts). Loop until it cycles the contracts; canonical sale identity deduplicates overlap.
+// Index Emblem sales with getAssetTransfers + Seaport receipt decoding. Loop until it cycles the contracts;
+// canonical sale identity deduplicates the overlap with preserved historical rows.
 admin.post("/admin/crawl-emblem-transfers", async (c) => {
   return c.json(await crawlEmblemTransfers(c.env));
 });

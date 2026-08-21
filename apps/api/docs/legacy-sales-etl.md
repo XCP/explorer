@@ -27,7 +27,7 @@ died with the droplet.** But most of it is rebuildable from live sources.
 | venue | status | rebuild source | target |
 |---|---|---|---|
 | **Scarce.city** | **rebuildable — API LIVE** ✅ (verified: `scarce.city/api/marketplace/digital/{asset}/sales` returns full history, BTC-priced) | port `ProcessScarceCityTradeHistoryJob`: iterate our assets, pull sales per asset | new staging `scarce_city_sales` → `trades(venue='scarce.city', currency='BTC')`, USD via prices calendar |
-| **Emblem (OpenSea/Reservoir)** | **already ahead** | our own Alchemy `getNFTSales` crawl = 34k sales (more than the old app had) | already in `emblem_sales` → `trades(venue='emblem')` |
+| **Emblem (OpenSea/Reservoir)** | **preserved + maintained** | 34k historical sales remain in D1; supported Alchemy Transfers RPC + Seaport receipt decoding maintains sales from the April 2024 overlap forward | `emblem_sales` → `trades(venue='emblem')` |
 | **CMC historic prices** | partial | XCP done (CSV); other assets (PEPECASH/FLDC/BITCRYSTALS) re-fetchable from CoinMarketCap or the CSV | `prices` (source='legacy-cmc') |
 | **Zaif CEX** | **likely lost** | Zaif is a DEFUNCT exchange; row-level sales only existed in the deleted droplet. Its VALUE was XCP price (covered by CSV/CMC). assets-table aggregates may hold a few last-trade values | accept loss; XCP price already covered |
 

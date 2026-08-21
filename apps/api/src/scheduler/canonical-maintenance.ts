@@ -9,7 +9,6 @@ import { buildCuratedCollections } from "#api/indexer/curated-collections";
 import { reconcileRecentDailyTransactions } from "#api/indexer/daily-metrics";
 import { crawlEmblemListings } from "#api/indexer/emblem-listings";
 import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
-import { crawlEmblemSales } from "#api/indexer/emblem-sales";
 import { buildScamAttribution } from "#api/indexer/emblem-scam";
 import { crawlEmblemTransfers } from "#api/indexer/emblem-transfers";
 import { backfillEthereumBlockTimes } from "#api/indexer/ethereum-block-times";
@@ -66,9 +65,6 @@ async function blockGatedProviderJob(
   return result as Record<string, unknown>;
 }
 
-const maybeCrawlEmblemSales = (env: Env) =>
-  blockGatedProviderJob(env, "emblem_sales_synced_blk", 6, () => crawlEmblemSales(env));
-
 const maybeCrawlEmblemListings = (env: Env) =>
   blockGatedProviderJob(env, "emblem_listings_synced_blk", 6, () => crawlEmblemListings(env));
 
@@ -118,7 +114,6 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
       await runScheduledJob("maybeAnalyze", () => maybeAnalyze(env));
       await runScheduledJob("crawlCollections", () => maybeCrawlCollections(env));
       await runScheduledJob("crawlTokenscan", () => maybeCrawlTokenscan(env));
-      await runScheduledJob("crawlEmblemSales", () => maybeCrawlEmblemSales(env));
       await runScheduledJob("crawlEmblemTransfers", () => crawlEmblemTransfers(env));
       await runScheduledJob("backfillEthereumBlockTimes", () => backfillEthereumBlockTimes(env));
       await runScheduledJob("crawlEmblemListings", () => maybeCrawlEmblemListings(env));

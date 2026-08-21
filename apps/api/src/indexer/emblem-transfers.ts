@@ -1,9 +1,7 @@
 /**
- * Emblem sales via TRANSFERS + Seaport decode — recovers the sales Alchemy's getNFTSales stopped indexing
- * after ~April 2024 (confirmed: getNFTSales returns nothing past the cutoff, but getAssetTransfers still sees
- * the transfers, and the price lives in each transfer tx's Seaport OrderFulfilled event). This crawler walks
- * getAssetTransfers per Emblem contract from the cutoff forward, fetches each tx's receipt, decodes the
- * OrderFulfilled log (seaport.ts), and upserts recovered sales into the canonical emblem_sales table.
+ * Emblem sales via Transfers + Seaport decode. This crawler walks getAssetTransfers per Emblem contract
+ * from the legacy provider cutoff forward, fetches each transaction receipt, decodes its Seaport
+ * OrderFulfilled event (seaport.ts), and upserts the sale into the canonical emblem_sales table.
  * Seaport only for now — Blur/LooksRare use other
  * events (a trickle here; follow-up). Bounded + resumable (per-contract block cursor + pageKey). Cron/admin.
  */
@@ -14,7 +12,9 @@ import { type EmblemSaleRow, upsertEmblemSales } from "#api/indexer/emblem-sales
 import { decodeOrderFulfilled, ORDER_FULFILLED_TOPIC } from "#api/indexer/seaport";
 
 const PAGE = 25; // transfers per step ⇒ ≤25 receipt fetches/run (bounded subrequests)
-const FLOOR = 19_600_000; // ~just before the getNFTSales cutoff (Apr 2024); INSERT OR IGNORE dedupes overlap
+// Historical rows before this April 2024 overlap are already preserved in D1. Starting here avoids replaying
+// years of transfers and receipts while canonical sale identities safely deduplicate the overlap.
+const FLOOR = 19_600_000;
 
 interface Transfer {
   hash: string;

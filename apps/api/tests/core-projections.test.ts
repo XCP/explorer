@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { upsertEmblemVaultIdentities } from "#api/indexer/emblem";
 import { upsertEmblemListingContract } from "#api/indexer/emblem-listings";
-import { priceOf, upsertEmblemSales } from "#api/indexer/emblem-sales";
+import { upsertEmblemSales } from "#api/indexer/emblem-sales";
 
 class PreparedStatement {
   private binds: unknown[] = [];
@@ -129,13 +129,6 @@ test("compact Emblem identity writes converge without erasing resolved fields", 
 
 test("compact Emblem sales preserve exact prices and converge provider corrections", async () => {
   const { compact } = databases();
-  assert.deepEqual(
-    priceOf({
-      sellerFee: { amount: "9007199254740993" },
-      protocolFee: { amount: "7", tokenAddress: "0xTOKEN" },
-    }),
-    { raw: "9007199254741000", token: "0xtoken" },
-  );
   await upsertEmblemSales(d1(compact), [
     {
       transactionHash: "0xabc",
