@@ -1,5 +1,14 @@
 const REQUEST_TIMEOUT_MS = 25_000;
 const PAGE_SIZE = 100;
+const MAX_RETRIES = 4;
+const MAX_BACKOFF_MS = 8_000;
+
+const backoffMs = (attempt: number, retryAfter = 0) => {
+  const requested = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt;
+  const bounded = Math.min(MAX_BACKOFF_MS, requested);
+  // Jitter prevents every scheduled Worker invocation from retrying a recovering provider together.
+  return Math.round(bounded * (0.75 + Math.random() * 0.5));
+};
 
 export interface AlchemyContractNft {
   tokenId: string;
@@ -48,13 +57,22 @@ export async function fetchAlchemyContractNfts(
     limit: String(PAGE_SIZE),
   });
   if (pageKey) query.set("pageKey", pageKey);
-  const response = await fetch(
-    `https://eth-mainnet.g.alchemy.com/nft/v3/${encodeURIComponent(apiKey)}/getNFTsForContract?${query}`,
-    {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
-  if (!response.ok) throw new Error(`Alchemy NFT request failed: ${response.status}`);
-  return parseAlchemyContractNftsPage(await response.json());
+  // Alchemy meters compute units per second, so crawl loops intermittently see 429 — wait and
+  // retry instead of surfacing a one-tick soft failure.
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(
+      `https://eth-mainnet.g.alchemy.com/nft/v3/${encodeURIComponent(apiKey)}/getNFTsForContract?${query}`,
+      {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    );
+    if (response.ok) return parseAlchemyContractNftsPage(await response.json());
+    if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
+      const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt, retryAfter)));
+      continue;
+    }
+    throw new Error(`Alchemy NFT request failed: ${response.status}`);
+  }
 }

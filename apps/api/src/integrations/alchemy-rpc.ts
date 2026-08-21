@@ -1,4 +1,33 @@
 const REQUEST_TIMEOUT_MS = 25_000;
+const MAX_RETRIES = 4;
+const MAX_BACKOFF_MS = 8_000;
+
+const backoffMs = (attempt: number, retryAfter = 0) => {
+  const requested = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt;
+  const bounded = Math.min(MAX_BACKOFF_MS, requested);
+  // Jitter prevents every scheduled Worker invocation from retrying a recovering provider together.
+  return Math.round(bounded * (0.75 + Math.random() * 0.5));
+};
+
+/** POST one JSON-RPC payload with good-citizen backoff. Alchemy meters compute units per second, so
+ *  crawl loops intermittently see 429 — wait and retry instead of surfacing a one-tick soft failure. */
+async function postAlchemy(apiKey: string, body: string, what: string): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(`https://eth-mainnet.g.alchemy.com/v2/${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.ok) return response.json();
+    if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
+      const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt, retryAfter)));
+      continue;
+    }
+    throw new Error(`${what} failed: ${response.status}`);
+  }
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -16,14 +45,8 @@ export function parseAlchemyRpcResult(value: unknown): unknown {
 }
 
 export async function callAlchemyRpc(apiKey: string, method: string, params: unknown[]): Promise<unknown> {
-  const response = await fetch(`https://eth-mainnet.g.alchemy.com/v2/${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`Alchemy RPC request failed: ${response.status}`);
-  return parseAlchemyRpcResult(await response.json());
+  const body = JSON.stringify({ id: 1, jsonrpc: "2.0", method, params });
+  return parseAlchemyRpcResult(await postAlchemy(apiKey, body, "Alchemy RPC request"));
 }
 
 export interface EthereumBlockTime {
@@ -60,19 +83,13 @@ export function parseEthereumBlockTimes(blockNumbers: number[], value: unknown):
 
 export async function fetchEthereumBlockTimes(apiKey: string, blockNumbers: number[]): Promise<EthereumBlockTime[]> {
   if (blockNumbers.length === 0) return [];
-  const response = await fetch(`https://eth-mainnet.g.alchemy.com/v2/${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      blockNumbers.map((blockNumber, index) => ({
-        id: index + 1,
-        jsonrpc: "2.0",
-        method: "eth_getBlockByNumber",
-        params: [`0x${blockNumber.toString(16)}`, false],
-      })),
-    ),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`Alchemy block batch failed: ${response.status}`);
-  return parseEthereumBlockTimes(blockNumbers, await response.json());
+  const body = JSON.stringify(
+    blockNumbers.map((blockNumber, index) => ({
+      id: index + 1,
+      jsonrpc: "2.0",
+      method: "eth_getBlockByNumber",
+      params: [`0x${blockNumber.toString(16)}`, false],
+    })),
+  );
+  return parseEthereumBlockTimes(blockNumbers, await postAlchemy(apiKey, body, "Alchemy block batch"));
 }

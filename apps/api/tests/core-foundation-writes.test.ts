@@ -1031,6 +1031,58 @@ test("compact pool lifecycle preserves pair, swap, and liquidity identities", as
   );
 });
 
+test("compact pool swaps keep every fill when one routed order sweeps a pool twice in one tx", async () => {
+  // Production block 963242: a single order transaction produced two POOL_MATCH events against the
+  // same pool. The fills share tx_hash/tx_index and differ only by event_index and quantities.
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const orderHash = "94".repeat(32);
+  const ctx = context();
+
+  dispatch(event("NEW_TRANSACTION", { tx_index: 70, tx_hash: orderHash, source: "trader" }, 70), ctx);
+  for (const [eventIndex, forward, backward] of [
+    [71, "273012812618887", "10917625682"],
+    [72, "16107043441048", "730187677"],
+  ] as const) {
+    dispatch(
+      event(
+        "POOL_MATCH",
+        {
+          tx_index: 70,
+          tx_hash: orderHash,
+          order_tx_hash: orderHash,
+          source: "trader",
+          asset_a: "RARE",
+          asset_b: "XCP",
+          forward_asset: "RARE",
+          forward_quantity: forward,
+          backward_asset: "XCP",
+          backward_quantity: backward,
+          fee_quantity: "1",
+          fee_bps: 50,
+          status: "valid",
+        },
+        eventIndex,
+      ),
+      ctx,
+    );
+  }
+
+  await executeCore(database, ctx);
+  await executeCore(database, ctx);
+
+  const fills = database
+    .prepare(`SELECT event_index,tx_index,forward_quantity FROM pool_matches ORDER BY event_index`)
+    .all() as Record<string, unknown>[];
+  assert.deepEqual(
+    fills.map((row) => ({ ...row })),
+    [
+      { event_index: 71, tx_index: 70, forward_quantity: "273012812618887" },
+      { event_index: 72, tx_index: 70, forward_quantity: "16107043441048" },
+    ],
+  );
+});
+
 test("compact bet and RPS state machines preserve composite match identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
