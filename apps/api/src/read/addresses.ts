@@ -318,7 +318,9 @@ addresses.get("/v2/addresses/:address/issued", async (c) => {
 // counterparties are KEPT (a real "uses this exchange" signal) and flagged so the UI can badge them.
 addresses.get("/v2/addresses/:address/connections", async (c) => {
   const result = await addressConnections(c.env.CORE_DB, c.req.param("address"), lim(c, 12, 24));
-  return J(c, { result }, 120);
+  // This is a lifetime interaction aggregate. A one-hour edge lifetime keeps active addresses timely
+  // while preventing repeated page and SSR reads from rescanning a large address history every two minutes.
+  return J(c, { result }, 3_600);
 });
 
 // Identity lineage via sweeps — a SWEEP moves all assets+ownership to another address (strongest

@@ -249,7 +249,7 @@ export async function syncCoreEvents(
         await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
         await applyCoreBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
         await rebuildCoreAssetSignals(env.CORE_DB, ctx.identities.assets);
-        await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses);
+        await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses, ctx.identities.assets);
         await enqueueCoreSupply(env.CORE_DB, ctx.supplyDirty);
         lastIndex = slice[slice.length - 1].event_index;
         lastBlock = Math.max(lastBlock, ctx.maxBlock);

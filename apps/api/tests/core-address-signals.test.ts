@@ -189,4 +189,60 @@ test("queued address refreshes enqueue the assets currently held by that address
       .get()?.count,
     1,
   );
+
+  db.exec(`DELETE FROM asset_signal_dirty`);
+  await enqueueCoreAddressSignals(core, ["1holder"]);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).processed, 1);
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count,
+    0,
+    "an unchanged address projection does not create repeated asset work",
+  );
+});
+
+test("address batches coalesce shared asset dependencies until the queue completes", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address) VALUES('1holderA'),('1holderB');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO assets(asset_id,type,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,1 FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT address.address_id,asset.asset_id,'1',1
+      FROM address_dictionary address,asset_dictionary asset
+      WHERE address.address IN ('1holderA','1holderB') AND asset.asset='CARD';
+  `);
+  const core = d1(db);
+  await enqueueCoreAddressSignals(core, ["1holderA", "1holderB"]);
+
+  assert.equal((await runCoreAddressSignalsStep(core, 1)).queueRemaining, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dependency_dirty`).get()?.count, 1);
+
+  assert.equal((await runCoreAddressSignalsStep(core, 1)).queueRemaining, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dependency_dirty`).get()?.count, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 1);
+});
+
+test("a removed holding still repairs its asset after the address projection changes", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address) VALUES('1holder');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO assets(asset_id,type,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,1 FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT address.address_id,asset.asset_id,'1',1
+      FROM address_dictionary address,asset_dictionary asset
+      WHERE address.address='1holder' AND asset.asset='CARD';
+  `);
+  const core = d1(db);
+  await rebuildCoreAddressSignals(core, ["1holder"]);
+  db.exec(`DELETE FROM balances; DELETE FROM asset_signal_dirty`);
+
+  await enqueueCoreAddressSignals(core, ["1holder"], ["CARD"]);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).queueRemaining, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 1);
 });

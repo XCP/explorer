@@ -153,10 +153,19 @@ WHERE address_signals.first_block IS NOT excluded.first_block
   OR address_signals.src20_deploys IS NOT excluded.src20_deploys
   OR address_signals.is_btns_user IS NOT excluded.is_btns_user`;
 
-export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
+interface AddressSignalRebuild {
+  processed: number;
+  changedAddressIds: number[];
+}
+
+async function rebuildCoreAddressSignalsWithChanges(
+  db: D1Database,
+  addresses: Iterable<string>,
+): Promise<AddressSignalRebuild> {
   // Counterparty also uses txid:vout keys as balance locations. They remain first-class dictionary identities,
   // but they are UTXOs rather than addresses and must not receive address reputation projections.
   const unique = [...new Set(addresses)].filter(isBitcoinAddress);
+  const changedAddressIds: number[] = [];
   // Keep the small multi-table activity query separate from the large projection UPSERT. Combining them can
   // exceed D1's compound-SELECT limit, while each address remains independently replay-safe.
   for (const address of unique) {
@@ -176,9 +185,17 @@ export async function rebuildCoreAddressSignals(db: D1Database, addresses: Itera
     const lastBlocks = activity.flatMap((row) => (row.last_block === null ? [] : [row.last_block]));
     const firstBlock = firstBlocks.length > 0 ? Math.min(...firstBlocks) : null;
     const lastBlock = lastBlocks.length > 0 ? Math.max(...lastBlocks) : null;
-    await db.prepare(UPSERT).bind(address, firstBlock, lastBlock).run();
+    const changed = await db
+      .prepare(`${UPSERT} RETURNING address_id`)
+      .bind(address, firstBlock, lastBlock)
+      .first<{ address_id: number }>();
+    if (changed) changedAddressIds.push(changed.address_id);
   }
-  return unique.length;
+  return { processed: unique.length, changedAddressIds };
+}
+
+export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
+  return (await rebuildCoreAddressSignalsWithChanges(db, addresses)).processed;
 }
 
 async function queuedIds(db: D1Database): Promise<number[]> {
@@ -193,12 +210,12 @@ async function queuedIds(db: D1Database): Promise<number[]> {
   }
 }
 
-async function enqueueHeldAssetSignals(db: D1Database, addressIds: number[]): Promise<void> {
+async function stageHeldAssetSignals(db: D1Database, addressIds: number[]): Promise<void> {
   for (let index = 0; index < addressIds.length; index += 90) {
     const chunk = addressIds.slice(index, index + 90);
     await db
       .prepare(
-        `INSERT INTO asset_signal_dirty(asset_id)
+        `INSERT INTO asset_signal_dependency_dirty(asset_id)
          SELECT DISTINCT asset_id FROM balances
          WHERE address_id IN (${chunk.map(() => "?").join(",")}) AND CAST(quantity AS INTEGER)>0
          ON CONFLICT(asset_id) DO NOTHING`,
@@ -208,8 +225,37 @@ async function enqueueHeldAssetSignals(db: D1Database, addressIds: number[]): Pr
   }
 }
 
-export async function enqueueCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<void> {
+async function stageNamedAssetSignals(db: D1Database, assets: Iterable<string>): Promise<void> {
+  const names = [...new Set(assets)].filter(Boolean);
+  for (let index = 0; index < names.length; index += 90) {
+    const chunk = names.slice(index, index + 90);
+    await db
+      .prepare(
+        `INSERT INTO asset_signal_dependency_dirty(asset_id)
+         SELECT asset_id FROM asset_dictionary WHERE asset IN (${chunk.map(() => "?").join(",")})
+         ON CONFLICT(asset_id) DO NOTHING`,
+      )
+      .bind(...chunk)
+      .run();
+  }
+}
+
+async function flushHeldAssetSignals(db: D1Database): Promise<void> {
+  const pending = await db.prepare(`SELECT 1 pending FROM asset_signal_dependency_dirty LIMIT 1`).first();
+  if (!pending) return;
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO asset_signal_dirty(asset_id) SELECT asset_id FROM asset_signal_dependency_dirty`),
+    db.prepare(`DELETE FROM asset_signal_dependency_dirty`),
+  ]);
+}
+
+export async function enqueueCoreAddressSignals(
+  db: D1Database,
+  addresses: Iterable<string>,
+  affectedAssets: Iterable<string> = [],
+): Promise<void> {
   const names = [...new Set(addresses)].filter(Boolean);
+  await stageNamedAssetSignals(db, affectedAssets);
   if (names.length === 0) return;
   // D1 caps a statement near 100 bound variables — resolve the ids in slices.
   const ids: number[] = [];
@@ -242,18 +288,24 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
         .all<{ address: string }>();
       addresses.push(...rows.results.map((row) => row.address));
     }
-    await rebuildCoreAddressSignals(db, addresses);
+    const rebuilt = await rebuildCoreAddressSignalsWithChanges(db, addresses);
     // Asset holder-community fields read address_signals. Propagate a queued address refresh to
-    // the assets it currently holds so those fields converge on the next canonical maintenance tick.
-    await enqueueHeldAssetSignals(db, todo);
-    await setCoreState(db, "address_signals_queue", JSON.stringify(queue.slice(todo.length)));
+    // the assets whose address projection actually changed. Stage dependencies until the address
+    // queue completes so popular assets are inserted into the main work queue only once.
+    await stageHeldAssetSignals(db, rebuilt.changedAddressIds);
+    const remaining = queue.slice(todo.length);
+    await setCoreState(db, "address_signals_queue", JSON.stringify(remaining));
+    if (remaining.length === 0 && (await getCoreStateInt(db, "address_signals_cursor")) === 0)
+      await flushHeldAssetSignals(db);
     return {
-      processed: addresses.length,
-      queueRemaining: Math.max(0, queue.length - todo.length),
+      processed: rebuilt.processed,
+      queueRemaining: remaining.length,
       cycleComplete: false,
     };
   }
   const cursor = await getCoreStateInt(db, "address_signals_cursor");
+  // Recover a staged queue left by a Worker interruption after its address queue committed empty.
+  if (cursor === 0) await flushHeldAssetSignals(db);
   if (cursor === 0 && !force && (await getCoreStateInt(db, "address_signals_cycles")) > 0) {
     const tip =
       Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
@@ -274,13 +326,15 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
     const tip =
       Number((await db.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
     await setCoreState(db, "address_signals_completed_block", tip);
+    await flushHeldAssetSignals(db);
     return { processed: 0, cursor: 0, cycleComplete: true };
   }
-  await rebuildCoreAddressSignals(
+  const rebuilt = await rebuildCoreAddressSignalsWithChanges(
     db,
     rows.results.map((row) => row.address),
   );
+  await stageHeldAssetSignals(db, rebuilt.changedAddressIds);
   const next = rows.results.at(-1)?.address_id ?? cursor;
   await setCoreState(db, "address_signals_cursor", next);
-  return { processed: rows.results.length, cursor: next, cycleComplete: false };
+  return { processed: rebuilt.processed, cursor: next, cycleComplete: false };
 }
