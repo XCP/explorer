@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import {
   ASSET_RATING_MODEL_VERSION,
   ASSET_RATING_REFRESH_SECONDS,
@@ -7,9 +8,29 @@ import {
   ASSET_RATING_UPSERT_SQL,
   assetRatingRefreshDue,
   assetRatingRefreshReady,
+  assetRatingSignalsPending,
 } from "#api/indexer/asset-rating";
 import { assetRating } from "#api/reputation/rating";
 import type { AssetSignalsRow } from "#api/storage-types";
+
+class Statement {
+  private values: unknown[] = [];
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
+}
+
+function d1(db: DatabaseSync): D1Database {
+  return { prepare: (sql: string) => new Statement(db, sql) } as unknown as D1Database;
+}
 
 test("Rating refresh is daily and uses one three-component 0–10 population rank", () => {
   assert.equal(assetRatingRefreshDue(100, 0), true);
@@ -26,6 +47,16 @@ test("Rating refresh is daily and uses one three-component 0–10 population ran
   assert.match(ASSET_RATING_UPSERT_SQL, /COALESCE\(signal\.low_quality,0\)=0/);
   assert.equal(/REPLACE/i.test(ASSET_RATING_UPSERT_SQL), false);
   assert.match(ASSET_RATING_RECONCILE_SQL, /NOT EXISTS/);
+});
+
+test("holder-only repairs do not block a due Rating refresh", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE asset_signal_dirty(asset_id INTEGER PRIMARY KEY);
+    CREATE TABLE asset_holder_signal_dirty(asset_id INTEGER PRIMARY KEY);
+    INSERT INTO asset_holder_signal_dirty VALUES(1);`);
+  assert.equal(await assetRatingSignalsPending(d1(db)), 0);
+  db.exec(`INSERT INTO asset_signal_dirty VALUES(2)`);
+  assert.equal(await assetRatingSignalsPending(d1(db)), 1);
 });
 
 test("public Rating is one literal value and fails closed on integrity or invalid projections", () => {

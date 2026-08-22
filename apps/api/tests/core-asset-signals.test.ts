@@ -79,8 +79,15 @@ test("compact asset signals refresh volatile fields from canonical relations", a
   db.exec(
     `UPDATE asset_signals SET holders=0,top1_pct=0,burned_pct=0 WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`,
   );
+  const projected = await coreAssetSignals(d1(db), "A");
+  assert.equal(projected?.holder_count, 0);
+  assert.equal(projected?.top1_pct, 0);
+  assert.equal(projected?.burned_pct, 0);
+  db.exec(`INSERT INTO asset_holder_signal_dirty(asset_id)
+    SELECT asset_id FROM asset_dictionary WHERE asset='A'`);
+  await runCoreAssetSignalsStep(d1(db), 10);
   const fresh = await coreAssetSignals(d1(db), "A");
-  assert.equal(fresh?.holder_count, 2);
+  assert.equal(fresh?.holder_count, 1);
   assert.equal(fresh?.holders, 1);
   assert.equal(fresh?.top1_pct, 100);
   assert.equal(fresh?.burned_pct, 40);

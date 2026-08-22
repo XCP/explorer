@@ -11,6 +11,11 @@ import { q, one } from "#api/db";
 /** The aggregate stats a query produces; the handler enriches with median_score/median_tier. */
 export type TagStatsBase = Omit<TagStatsRow, "conviction_score">;
 
+/** Cheap existence guard before allocating a persistent cache key for a requested tag. */
+export function tagExists(db: D1Database, tag: string): Promise<boolean> {
+  return one<{ found: number }>(db, `SELECT 1 found FROM tags WHERE tag=? LIMIT 1`, tag).then(Boolean);
+}
+
 // Shared aggregate SQL: `mem` = one row per (tag, entity); `asset_mem` = its asset members joined to
 // signals (drops assets without a signals row so the median rank is over real, scored members only).
 // `whereTag` scopes to one tag (population when false). `expr` = quality raw; `convExpr` = Conviction raw
