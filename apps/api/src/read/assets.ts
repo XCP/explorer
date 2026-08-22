@@ -14,6 +14,7 @@ import {
   listCoreAssets,
   getCoreAsset,
   coreAssetAccounting,
+  coreAssetHolderCount,
   coreAssetSignals,
   coreRatingsOverview,
   coreAssetTags,
@@ -95,9 +96,8 @@ assets.get("/v2/assets/:asset", async (c) => {
     // destroyed (destructions + issuance/sweep/dividend fees). BTC has no Counterparty supply.
     const A = a.toUpperCase();
     if (A === "XCP" || A === "BTC") {
-      const [sup, holder_count, feed_counts, signals, sales, referencePrice, exchangeVolume, tags] = await Promise.all([
+      const [sup, feed_counts, signals, sales, referencePrice, exchangeVolume, tags] = await Promise.all([
         A === "XCP" ? coreXcpSupply(c.env.CORE_DB) : Promise.resolve(null),
-        coreAssetAccounting(c.env.CORE_DB, A).then((accounting) => accounting?.holder_count ?? 0),
         coreAssetFeedCounts(c.env.CORE_DB, A, null).catch(() => null),
         coreAssetSignals(c.env.CORE_DB, A).catch(() => null),
         coreAssetSales(c.env.CORE_DB, A).catch(() => null),
@@ -105,6 +105,7 @@ assets.get("/v2/assets/:asset", async (c) => {
         combinedMarketAsset(c.env.CORE_DB, A).catch(() => null),
         coreAssetTags(c.env.CORE_DB, A).catch((): string[] => []),
       ]);
+      const holder_count = signals?.holder_count ?? (await coreAssetHolderCount(c.env.CORE_DB, A));
       const supply_normalized = A === "XCP" ? (Number(sup?.supply ?? 0) / 1e8).toFixed(8) : null;
       const body: AssetDetail = {
         asset: A,
@@ -171,7 +172,7 @@ assets.get("/v2/assets/:asset", async (c) => {
     // per-feed tab counts (the detail page's tab bar) — same filters as the feed list endpoints
     coreAssetFeedCounts(c.env.CORE_DB, r.asset, r.issuer).catch(() => null),
   ]);
-  const holder_count = accounting?.holder_count ?? 0;
+  const holder_count = sigRes?.holder_count ?? (await coreAssetHolderCount(c.env.CORE_DB, r.asset));
   const raw = BigInt(accounting?.supply ?? 0);
   const burnedRaw = BigInt(accounting?.burned ?? 0);
   const escrowRaw = BigInt(accounting?.escrow ?? 0);

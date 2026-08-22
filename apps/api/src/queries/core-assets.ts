@@ -301,17 +301,31 @@ export function coreAssetActiveUsers(db: D1Database, asset: string, limit: numbe
   );
 }
 
-export function coreAssetAccounting(db: D1Database, asset: string): Promise<AssetAccounting | null> {
-  return one<AssetAccounting>(
+export function coreAssetHolderCount(db: D1Database, asset: string): Promise<number> {
+  return one<{ holder_count: number }>(
+    db,
+    `SELECT COUNT(*) holder_count FROM balances
+      WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+        AND CAST(quantity AS INTEGER)>0`,
+    asset,
+  ).then((row) => row?.holder_count ?? 0);
+}
+
+export function coreAssetAccounting(
+  db: D1Database,
+  asset: string,
+): Promise<Omit<AssetAccounting, "holder_count"> | null> {
+  return one<Omit<AssetAccounting, "holder_count">>(
     db,
     `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1)
      SELECT
-       (SELECT COUNT(*) FROM balances WHERE asset_id=(SELECT asset_id FROM identity)
-          AND CAST(quantity AS INTEGER)>0) holder_count,
-       CAST((SELECT coalesce(SUM(CAST(quantity AS INTEGER)),0) FROM issuances
-              WHERE asset_id=(SELECT asset_id FROM identity) AND status LIKE 'valid%')
-          - (SELECT coalesce(SUM(CAST(quantity AS INTEGER)),0) FROM destructions
-              WHERE asset_id=(SELECT asset_id FROM identity) AND status LIKE 'valid%') AS TEXT) supply,
+       COALESCE(
+         (SELECT supply FROM assets WHERE asset_id=(SELECT asset_id FROM identity)),
+         CAST((SELECT coalesce(SUM(CAST(quantity AS INTEGER)),0) FROM issuances
+                WHERE asset_id=(SELECT asset_id FROM identity) AND status LIKE 'valid%')
+            - (SELECT coalesce(SUM(CAST(quantity AS INTEGER)),0) FROM destructions
+                WHERE asset_id=(SELECT asset_id FROM identity) AND status LIKE 'valid%') AS TEXT)
+       ) supply,
        CAST((SELECT coalesce(SUM(CAST(balance.quantity AS INTEGER)),0)
                FROM address_signals signal INDEXED BY idx_address_signals_burns
                JOIN balances balance INDEXED BY idx_balances_address_asset
@@ -331,7 +345,8 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
     db,
     `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
           holding AS (
-            SELECT count(CASE WHEN coalesce(address.is_burn,0)=0 THEN 1 END) holders,
+            SELECT count(*) holder_count,
+              count(CASE WHEN coalesce(address.is_burn,0)=0 THEN 1 END) holders,
               coalesce(max(CASE WHEN coalesce(address.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END)
                 *100.0/nullif(sum(CASE WHEN coalesce(address.is_burn,0)=0
                   THEN CAST(balance.quantity AS REAL) END),0),0) top1_pct,
@@ -342,7 +357,7 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
               AND CAST(balance.quantity AS INTEGER)>0
           )
      SELECT dictionary.asset,assets.asset_longname,issuer.address issuer,
-            assets.divisible,assets.locked,holding.holders,holding.top1_pct,signal.trades,
+            assets.divisible,assets.locked,holding.holder_count,holding.holders,holding.top1_pct,signal.trades,
             signal.self_trade_pct,signal.first_trade_blk,signal.last_trade_blk,signal.dispenses,
             signal.dispense_btc,signal.low_quality,signal.holder_breadth,signal.pct_creator_holders,
             holding.burned_pct,signal.distinct_traders,signal.distinct_dispensers,

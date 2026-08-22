@@ -35,6 +35,7 @@ export interface AssetSignalsRow {
   issuer: string | null;
   divisible: 0 | 1 | null;
   locked: 0 | 1 | null;
+  holder_count: number;
   holders: number;
   top1_pct: number;
   trades: number;
