@@ -19,7 +19,7 @@ emblem.get("/v2/emblem/stats", async (c) => {
 emblem.get("/v2/emblem/assets", async (c) => {
   const limit = lim(c);
   const offset = off(c);
-  return cached(c, `emblem-assets:${limit}:${offset}`, { ttl: 600, edge: 120, swr: 3600 }, async () => {
+  return cached(c, `emblem-assets:${limit}:${offset}`, { ttl: 600, edge: 120, swr: 86_400 }, async () => {
     const result = await emblemAssets(c.env.CORE_DB, { limit, offset });
     return { result, next_offset: result.length === limit ? offset + limit : null };
   });

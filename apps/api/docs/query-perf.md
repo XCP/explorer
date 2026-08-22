@@ -25,6 +25,11 @@ One-hour production Insights separated the finite repair backlog from public rea
   sends, balances, sweeps, and vault address changes. Touched vaults now repair on the next canonical tick instead
   of waiting up to a five-hour sweep cycle. A 1,000-vault reconciliation batch runs every six Counterparty blocks
   as a self-healing backstop, removing the fixed per-tick rescan without trusting triggers as the only authority.
+- The exact Emblem asset-holdings aggregation read 272,132 rows and used 448ms in a direct production D1 profile;
+  the first request after its one-hour stale window took 3.6 seconds end to end. The classifier's single-asset
+  projection is not equivalent because multi-asset vaults contribute every live balance, so that shortcut was
+  rejected after a production parity comparison. The ten-minute freshness TTL remains, but stale results can now
+  serve for one day while one background refresh recomputes the authoritative balance aggregation.
 
 ## 2026-07-12 production findings
 
