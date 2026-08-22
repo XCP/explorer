@@ -193,6 +193,21 @@ async function queuedIds(db: D1Database): Promise<number[]> {
   }
 }
 
+async function enqueueHeldAssetSignals(db: D1Database, addressIds: number[]): Promise<void> {
+  for (let index = 0; index < addressIds.length; index += 90) {
+    const chunk = addressIds.slice(index, index + 90);
+    await db
+      .prepare(
+        `INSERT INTO asset_signal_dirty(asset_id)
+         SELECT DISTINCT asset_id FROM balances
+         WHERE address_id IN (${chunk.map(() => "?").join(",")}) AND CAST(quantity AS INTEGER)>0
+         ON CONFLICT(asset_id) DO NOTHING`,
+      )
+      .bind(...chunk)
+      .run();
+  }
+}
+
 export async function enqueueCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<void> {
   const names = [...new Set(addresses)].filter(Boolean);
   if (names.length === 0) return;
@@ -228,6 +243,9 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
       addresses.push(...rows.results.map((row) => row.address));
     }
     await rebuildCoreAddressSignals(db, addresses);
+    // Asset holder-community fields read address_signals. Propagate a queued address refresh to
+    // the assets it currently holds so those fields converge on the next canonical maintenance tick.
+    await enqueueHeldAssetSignals(db, todo);
     await setCoreState(db, "address_signals_queue", JSON.stringify(queue.slice(todo.length)));
     return {
       processed: addresses.length,

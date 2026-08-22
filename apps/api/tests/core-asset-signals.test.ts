@@ -150,6 +150,10 @@ test("compact asset signal repair walks every identity and durably completes a c
   assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='asset_signals_cycles'`).get()?.value, "1");
   assert.deepEqual(await runCoreAssetSignalsStep(core, 1), { processed: 0, cursor: 0, cycleComplete: true });
   assert.equal(db.prepare(`SELECT value FROM core_state WHERE key='asset_signals_cycles'`).get()?.value, "1");
+  db.exec(`INSERT INTO blocks(block_index,block_hash,block_time) VALUES(4231,randomblob(32),2)`);
+  assert.deepEqual(await runCoreAssetSignalsStep(core, 1), { processed: 0, cursor: 0, cycleComplete: true });
+  db.exec(`INSERT INTO blocks(block_index,block_hash,block_time) VALUES(4232,randomblob(32),3)`);
+  assert.equal((await runCoreAssetSignalsStep(core, 1)).processed, 1);
   assert.equal((await runCoreAssetSignalsStep(core, 1, true)).processed, 1);
 });
 

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { rebuildCoreAddressSignals, runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
+import {
+  enqueueCoreAddressSignals,
+  rebuildCoreAddressSignals,
+  runCoreAddressSignalsStep,
+} from "#api/indexer/core-address-signals";
 
 const migrations = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -158,4 +162,31 @@ test("address signals exclude polymorphic UTXO balance locations", async () => {
     .all()
     .map((row) => row.address);
   assert.deepEqual(addresses, ["1BitcoinAddress"]);
+});
+
+test("queued address refreshes enqueue the assets currently held by that address", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address) VALUES('1holder');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO assets(asset_id,type,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,1 FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT address.address_id,asset.asset_id,'1',1
+      FROM address_dictionary address,asset_dictionary asset
+      WHERE address.address='1holder' AND asset.asset='CARD';
+  `);
+  const core = d1(db);
+  await enqueueCoreAddressSignals(core, ["1holder"]);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).processed, 1);
+  assert.equal(
+    db
+      .prepare(
+        `SELECT COUNT(*) count FROM asset_signal_dirty dirty
+         JOIN asset_dictionary asset USING(asset_id) WHERE asset.asset='CARD'`,
+      )
+      .get()?.count,
+    1,
+  );
 });

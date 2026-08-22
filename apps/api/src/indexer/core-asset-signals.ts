@@ -1,6 +1,8 @@
 import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 
-const FULL_REPAIR_INTERVAL = 1_008;
+// Dirty queues cover normal event, trade, and address-signal changes. Keep a slower full cycle as
+// corruption/schema-drift insurance without continuously rescanning the complete asset population.
+const FULL_REPAIR_INTERVAL = 4_032;
 
 // The DO UPDATE carries a WHERE guard so the full-population repair sweep skips rows whose signals are
 // unchanged (the common case — the sweep recycles ~267k assets continuously). age_blocks/recency_blocks

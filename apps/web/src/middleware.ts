@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 
+const BLOCKED_COMMERCIAL_CRAWLER = /(?:AhrefsBot|SemrushBot|MJ12bot|DotBot)/i;
+
 /**
- * Legacy-URL tombstone. The PHP-era site lived under locale prefixes (/en/block/954678, …) and
- * crawlers still sweep that inventory years later — previously each hit was an UNCACHEABLE SSR 404
- * (private, no-store), i.e. the most expensive response we serve, repeatable forever. These paths
- * now die here as a cacheable 410 Gone: no render, de-indexes the URL (410 is the strongest removal
- * signal; a 301 would just invite the crawler back). The zone WAF now terminates these locale paths
- * before this Worker; this middleware remains defense-in-depth for workers.dev. The address matcher
- * also cheaply rejects transaction hashes put in the address namespace while passing real routes.
+ * Reject expensive low-value crawlers and retire legacy URL shapes before application rendering.
  */
 export function middleware(request: Request) {
   const { pathname } = new URL(request.url);
+  if (BLOCKED_COMMERCIAL_CRAWLER.test(request.headers.get("user-agent") ?? "")) {
+    return new NextResponse("Forbidden", {
+      status: 403,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-robots-tag": "noindex, nofollow",
+      },
+    });
+  }
   const transactionHashInAddressRoute = /^\/address\/[0-9a-f]{64}$/i.test(pathname);
   const legacyLocaleRoute = /^\/(?:en|es|de|fr|it|ja|ko|nl|pl|pt|ru|tr|uk|zh|cn|jp)(?:\/|$)/.test(pathname);
 
@@ -31,5 +37,5 @@ export function middleware(request: Request) {
 }
 
 export const config = {
-  matcher: ["/:locale((?:en|es|de|fr|it|ja|ko|nl|pl|pt|ru|tr|uk|zh|cn|jp))/:path*", "/address/:candidate"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };
