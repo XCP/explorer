@@ -71,17 +71,19 @@ export async function cached(
     });
   const write = async (): Promise<string> => {
     const body = JSON.stringify(await producer());
-    await cacheDb.prepare(
-      `INSERT INTO cache (key,body,ctype,expires_at,refreshing_until) VALUES (?,?,'application/json',?,0)
+    await cacheDb
+      .prepare(
+        `INSERT INTO cache (key,body,ctype,expires_at,refreshing_until) VALUES (?,?,'application/json',?,0)
        ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype,
          expires_at=excluded.expires_at,refreshing_until=0`,
-    )
+      )
       .bind(key, body, Math.floor(Date.now() / 1000) + ttl)
       .run()
       .catch(() => {});
     return body;
   };
-  const hit = await cacheDb.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
+  const hit = await cacheDb
+    .prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
     .bind(key)
     .first<{ body: string; ctype: string; expires_at: number }>()
     .catch(() => null);
@@ -110,7 +112,8 @@ export async function cached(
     }
   }
   if (staleKey) {
-    const prior = await cacheDb.prepare(`SELECT body, ctype FROM cache WHERE key=?`)
+    const prior = await cacheDb
+      .prepare(`SELECT body, ctype FROM cache WHERE key=?`)
       .bind(staleKey)
       .first<{ body: string; ctype: string }>()
       .catch(() => null);

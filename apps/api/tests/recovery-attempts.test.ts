@@ -271,9 +271,7 @@ test("reconciliation stops re-reading an attempt only once its spends are settle
     INSERT INTO recovery_outputs VALUES ('a',0,'spent'),('b',0,'recoverable'),('c',0,'recoverable'),('d',0,'recoverable');
   `);
 
-  const queued = (
-    db.prepare(RECOVERY_ATTEMPT_QUEUE_SQL).all(10) as { txid: string }[]
-  ).map((row) => row.txid);
+  const queued = (db.prepare(RECOVERY_ATTEMPT_QUEUE_SQL).all(10) as { txid: string }[]).map((row) => row.txid);
 
   assert.equal(queued.includes("settled"), false, "a deep confirmation with no recoverable inputs left is done");
   assert.deepEqual(queued, ["shallow", "stale", "waiting"]);
@@ -293,9 +291,9 @@ test("attempt reconciliation seeks only the partial work queue", () => {
       WHERE status<>'confirmed' OR confirmations<6 OR settlement_pending=1;
   `);
 
-  const details = (
-    db.prepare(`EXPLAIN QUERY PLAN ${RECOVERY_ATTEMPT_QUEUE_SQL}`).all(25) as { detail: string }[]
-  ).map((row) => row.detail);
+  const details = (db.prepare(`EXPLAIN QUERY PLAN ${RECOVERY_ATTEMPT_QUEUE_SQL}`).all(25) as { detail: string }[]).map(
+    (row) => row.detail,
+  );
   assert.equal(
     details.some((detail) => detail.includes("recovery_attempts_work_queue")),
     true,

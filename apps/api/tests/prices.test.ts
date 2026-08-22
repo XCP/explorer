@@ -79,7 +79,10 @@ test("same-day spot reconciliation uses the block-time index and stays inside it
   );
   db.prepare(APPLY_SPOT_TRADE_USD_SQL).run(start, start + 86400);
   assert.deepEqual(
-    db.prepare(`SELECT usd_value FROM trades ORDER BY block_time`).all().map((row) => row.usd_value),
+    db
+      .prepare(`SELECT usd_value FROM trades ORDER BY block_time`)
+      .all()
+      .map((row) => row.usd_value),
     [null, 220000, 6],
   );
   db.close();

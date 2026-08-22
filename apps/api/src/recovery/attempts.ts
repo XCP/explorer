@@ -124,9 +124,7 @@ export async function reconcileRecoveryAttempts(
   limit: number,
   providers: AttemptProviders = DEFAULT_PROVIDERS,
 ): Promise<{ checked: number; failed: number }> {
-  const attempts = await env.RECOVERY_DB.prepare(RECOVERY_ATTEMPT_QUEUE_SQL)
-    .bind(limit)
-    .all<AttemptRow>();
+  const attempts = await env.RECOVERY_DB.prepare(RECOVERY_ATTEMPT_QUEUE_SQL).bind(limit).all<AttemptRow>();
   if (attempts.results.length === 0) return { checked: 0, failed: 0 };
 
   const placeholders = attempts.results.map(() => "?").join(",");
@@ -232,13 +230,7 @@ export function recoveryAttemptStatements(
   return statements;
 }
 
-function recoveryAttemptUpdate(
-  db: D1Database,
-  txid: string,
-  evidence: AttemptEvidence,
-  now: number,
-  settled: boolean,
-) {
+function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEvidence, now: number, settled: boolean) {
   return db
     .prepare(
       `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,

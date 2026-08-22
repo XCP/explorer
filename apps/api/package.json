@@ -91,15 +91,15 @@
     "migrate:recovery:remote": "wrangler d1 migrations apply xcpio-btc --remote"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260702.1",
+    "@cloudflare/workers-types": "5.20260822.1",
     "typescript": "^6.0.3",
-    "wrangler": "^4.107.0"
+    "wrangler": "4.125.0"
   },
   "dependencies": {
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/base": "^2.2.0",
     "@xcp/shared": "*",
-    "hono": "^4.12.28"
+    "hono": "^4.13.3"
   }
 }
