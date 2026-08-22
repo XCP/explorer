@@ -24,11 +24,7 @@ import {
   yearStart,
   yearTopAssets,
 } from "#api/queries/years";
-import {
-  YEARS_INDEX_CACHE_KEY,
-  YEARS_INDEX_STALE_CACHE_KEY,
-  readCachedYearIndex,
-} from "#api/read/years";
+import { YEARS_INDEX_CACHE_KEY, YEARS_INDEX_STALE_CACHE_KEY, readCachedYearIndex } from "#api/read/years";
 
 class Statement {
   private bound: unknown[] = [];
@@ -126,14 +122,12 @@ test("year ledgers bucket activity, newcomers and market by year", async () => {
 test("year pages reuse the current materialized index and fall back to the prior version", async () => {
   const raw = new DatabaseSync(":memory:");
   raw.exec(`CREATE TABLE cache(key TEXT PRIMARY KEY, body TEXT)`);
-  raw.prepare(`INSERT INTO cache VALUES(?,?)`).run(
-    YEARS_INDEX_STALE_CACHE_KEY,
-    JSON.stringify({ result: { as_of: 10, years: [] } }),
-  );
-  raw.prepare(`INSERT INTO cache VALUES(?,?)`).run(
-    YEARS_INDEX_CACHE_KEY,
-    JSON.stringify({ result: { as_of: 11, years: [] } }),
-  );
+  raw
+    .prepare(`INSERT INTO cache VALUES(?,?)`)
+    .run(YEARS_INDEX_STALE_CACHE_KEY, JSON.stringify({ result: { as_of: 10, years: [] } }));
+  raw
+    .prepare(`INSERT INTO cache VALUES(?,?)`)
+    .run(YEARS_INDEX_CACHE_KEY, JSON.stringify({ result: { as_of: 11, years: [] } }));
 
   assert.equal((await readCachedYearIndex(d1(raw)))?.as_of, 11);
   raw.prepare(`DELETE FROM cache WHERE key=?`).run(YEARS_INDEX_CACHE_KEY);
@@ -183,11 +177,14 @@ test("year protocol counts seek events through the exact block-time window", asy
     INSERT INTO issuances VALUES(1,1,0),(2,0,1),(3,1,1);`);
   const db = d1(raw);
 
-  assert.deepEqual({ ...(await yearStatsDetail(db, start, end)) }, {
-    sends: 2,
-    supply_locks: 1,
-    ownership_transfers: 1,
-  });
+  assert.deepEqual(
+    { ...(await yearStatsDetail(db, start, end)) },
+    {
+      sends: 2,
+      supply_locks: 1,
+      ownership_transfers: 1,
+    },
+  );
   const plan = raw
     .prepare(`EXPLAIN QUERY PLAN ${YEAR_STATS_DETAIL_SQL}`)
     .all(start, end)
@@ -195,7 +192,10 @@ test("year protocol counts seek events through the exact block-time window", asy
   assert.ok(plan.some((detail) => detail.includes("idx_blocks_time")));
   assert.ok(plan.some((detail) => detail.includes("idx_sends_block")));
   assert.ok(plan.filter((detail) => detail.includes("idx_issuances_block")).length >= 2);
-  assert.equal(plan.some((detail) => detail.startsWith("SCAN sends") || detail.startsWith("SCAN issuances")), false);
+  assert.equal(
+    plan.some((detail) => detail.startsWith("SCAN sends") || detail.startsWith("SCAN issuances")),
+    false,
+  );
   raw.close();
 });
 

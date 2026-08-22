@@ -18,8 +18,7 @@ class Statement {
   }
 }
 
-const d1 = (db: DatabaseSync) =>
-  ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
+const d1 = (db: DatabaseSync) => ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
 
 function fixture(projected: number | null): DatabaseSync {
   const db = new DatabaseSync(":memory:");
