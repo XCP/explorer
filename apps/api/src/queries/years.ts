@@ -124,13 +124,20 @@ export const toOhlc = (row: { open: number; close: number; high: number; low: nu
 
 /* ---------- per-year detail ---------- */
 
+export const YEAR_STATS_DETAIL_SQL = `WITH year_blocks AS MATERIALIZED (
+  SELECT block_index FROM blocks INDEXED BY idx_blocks_time WHERE block_time>=?1 AND block_time<?2
+)
+SELECT
+  (SELECT COUNT(*) FROM year_blocks JOIN sends INDEXED BY idx_sends_block USING(block_index)) sends,
+  (SELECT COUNT(*) FROM year_blocks JOIN issuances INDEXED BY idx_issuances_block USING(block_index)
+    WHERE locked=1) supply_locks,
+  (SELECT COUNT(*) FROM year_blocks JOIN issuances INDEXED BY idx_issuances_block USING(block_index)
+    WHERE transfer=1) ownership_transfers`;
+
 export function yearStatsDetail(db: D1Database, start: number, end: number) {
   return one<{ sends: number; supply_locks: number; ownership_transfers: number }>(
     db,
-    `SELECT
-       (SELECT COUNT(*) FROM sends WHERE block_time>=?1 AND block_time<?2) sends,
-       (SELECT COUNT(*) FROM issuances WHERE block_time>=?1 AND block_time<?2 AND locked=1) supply_locks,
-       (SELECT COUNT(*) FROM issuances WHERE block_time>=?1 AND block_time<?2 AND transfer=1) ownership_transfers`,
+    YEAR_STATS_DETAIL_SQL,
     start,
     end,
   );

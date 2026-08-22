@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
   FIRST_YEAR,
+  YEAR_STATS_DETAIL_SQL,
   YEARS_CATALOG,
   toOhlc,
   yearActivityLedger,
@@ -19,6 +20,7 @@ import {
   yearRawDexLedger,
   yearSaleOfYear,
   yearSettlement,
+  yearStatsDetail,
   yearStart,
   yearTopAssets,
 } from "#api/queries/years";
@@ -67,6 +69,12 @@ function fixture(): D1Database {
     CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY, entity_type TEXT, entity_key TEXT);
     CREATE TABLE collection_membership_evidence(entity_id INTEGER, tag TEXT, source TEXT);
     CREATE TABLE tags(entity_id INTEGER, tag TEXT, source TEXT, meta TEXT);
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY, block_time INTEGER);
+    CREATE INDEX idx_blocks_time ON blocks(block_time,block_index);
+    CREATE TABLE sends(block_index INTEGER);
+    CREATE INDEX idx_sends_block ON sends(block_index);
+    CREATE TABLE issuances(block_index INTEGER, locked INTEGER, transfer INTEGER);
+    CREATE INDEX idx_issuances_block ON issuances(block_index);
 
     INSERT INTO asset_dictionary VALUES (1,'CARD'), (2,'WASHY'), (3,'PEPECASH');
     INSERT INTO assets VALUES (1, NULL, 10, ${T2017 + 1000}), (2, NULL, 11, ${T2017 + 2000}),
@@ -156,6 +164,39 @@ test("clean year detail excludes flagged assets and prices PEPECASH endpoints", 
   assert.equal(vwap!.first_vwap, 0.03);
   assert.equal(vwap!.last_vwap, 0.06);
   assert.equal(vwap!.change_pct, 100);
+});
+
+test("year protocol counts seek events through the exact block-time window", async () => {
+  const start = yearStart(2017);
+  const end = yearEnd(2017);
+  const raw = new DatabaseSync(":memory:");
+  raw.exec(`
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY,block_time INTEGER);
+    CREATE INDEX idx_blocks_time ON blocks(block_time,block_index);
+    CREATE TABLE sends(block_index INTEGER);
+    CREATE INDEX idx_sends_block ON sends(block_index);
+    CREATE TABLE issuances(block_index INTEGER,locked INTEGER,transfer INTEGER);
+    CREATE INDEX idx_issuances_block ON issuances(block_index);
+  `);
+  raw.prepare(`INSERT INTO blocks VALUES(1,?),(2,?),(3,?)`).run(start, end - 1, end + 1);
+  raw.exec(`INSERT INTO sends VALUES(1),(2),(3);
+    INSERT INTO issuances VALUES(1,1,0),(2,0,1),(3,1,1);`);
+  const db = d1(raw);
+
+  assert.deepEqual({ ...(await yearStatsDetail(db, start, end)) }, {
+    sends: 2,
+    supply_locks: 1,
+    ownership_transfers: 1,
+  });
+  const plan = raw
+    .prepare(`EXPLAIN QUERY PLAN ${YEAR_STATS_DETAIL_SQL}`)
+    .all(start, end)
+    .map((row) => String(row.detail));
+  assert.ok(plan.some((detail) => detail.includes("idx_blocks_time")));
+  assert.ok(plan.some((detail) => detail.includes("idx_sends_block")));
+  assert.ok(plan.filter((detail) => detail.includes("idx_issuances_block")).length >= 2);
+  assert.equal(plan.some((detail) => detail === "SCAN sends" || detail === "SCAN issuances"), false);
+  raw.close();
 });
 
 test("burn totals appear only inside the burn window and currency sale skips collection members", async () => {
