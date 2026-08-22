@@ -251,7 +251,17 @@ async function flushHeldAssetSignals(db: D1Database): Promise<void> {
   const pending = await db.prepare(`SELECT 1 pending FROM asset_signal_dependency_dirty LIMIT 1`).first();
   if (!pending) return;
   await db.batch([
-    db.prepare(`INSERT OR IGNORE INTO asset_signal_dirty(asset_id) SELECT asset_id FROM asset_signal_dependency_dirty`),
+    db.prepare(
+      `INSERT OR IGNORE INTO asset_signal_dirty(asset_id)
+       SELECT dependency.asset_id FROM asset_signal_dependency_dirty dependency
+       LEFT JOIN asset_signals signal ON signal.asset_id=dependency.asset_id
+       WHERE signal.asset_id IS NULL`,
+    ),
+    db.prepare(
+      `INSERT OR IGNORE INTO asset_holder_signal_dirty(asset_id)
+       SELECT dependency.asset_id FROM asset_signal_dependency_dirty dependency
+       JOIN asset_signals signal ON signal.asset_id=dependency.asset_id`,
+    ),
     db.prepare(`DELETE FROM asset_signal_dependency_dirty`),
   ]);
 }

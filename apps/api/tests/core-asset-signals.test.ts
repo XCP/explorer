@@ -159,6 +159,38 @@ test("compact asset signal repair walks every identity and durably completes a c
   assert.equal((await runCoreAssetSignalsStep(core, 1, true)).processed, 1);
 });
 
+test("address-derived holder repair preserves unrelated market signals", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address_id,address) VALUES(20,'1holder');
+    INSERT INTO address_signals(address_id,assets_held,survived_assets,dex_trades) VALUES(20,9,1,6);
+    INSERT INTO asset_dictionary(asset) VALUES('A');
+    INSERT INTO assets(asset_id,type,divisible,locked,supply_normalized,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,'100',100 FROM asset_dictionary WHERE asset='A';
+    INSERT INTO asset_signals(asset_id,trades,dispenses,max_realized_usd,holders,holder_breadth)
+      SELECT asset_id,12,7,99,0,0 FROM asset_dictionary WHERE asset='A';
+    INSERT INTO balances(balance_id,address_id,asset_id,quantity,updated_event_index)
+      SELECT 1,20,asset_id,'10',1 FROM asset_dictionary WHERE asset='A';
+    INSERT INTO asset_holder_signal_dirty(asset_id)
+      SELECT asset_id FROM asset_dictionary WHERE asset='A';
+  `);
+
+  assert.equal((await runCoreAssetSignalsStep(d1(db), 10)).processed, 1);
+  assert.deepEqual(
+    {
+      ...(db
+        .prepare(
+          `SELECT holders,holder_breadth,trades,dispenses,max_realized_usd FROM asset_signals
+           WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='A')`,
+        )
+        .get() as Record<string, number>),
+    },
+    { holders: 1, holder_breadth: 0, trades: 12, dispenses: 7, max_realized_usd: 99 },
+  );
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_holder_signal_dirty`).get()?.count, 0);
+});
+
 test("compact asset signals derive holder community features and propagate issuer quality", async () => {
   const db = new DatabaseSync(":memory:");
   for (const migration of migrations) db.exec(migration);

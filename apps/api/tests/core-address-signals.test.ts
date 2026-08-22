@@ -219,17 +219,21 @@ test("address batches coalesce shared asset dependencies until the queue complet
       SELECT address.address_id,asset.asset_id,'1',1
       FROM address_dictionary address,asset_dictionary asset
       WHERE address.address IN ('1holderA','1holderB') AND asset.asset='CARD';
+    INSERT INTO asset_signals(asset_id)
+      SELECT asset_id FROM asset_dictionary WHERE asset='CARD';
   `);
   const core = d1(db);
   await enqueueCoreAddressSignals(core, ["1holderA", "1holderB"]);
 
   assert.equal((await runCoreAddressSignalsStep(core, 1)).queueRemaining, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_holder_signal_dirty`).get()?.count, 0);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dependency_dirty`).get()?.count, 1);
 
   assert.equal((await runCoreAddressSignalsStep(core, 1)).queueRemaining, 0);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dependency_dirty`).get()?.count, 0);
-  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_holder_signal_dirty`).get()?.count, 1);
 });
 
 test("a removed holding still repairs its asset after the address projection changes", async () => {

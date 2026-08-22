@@ -4,6 +4,18 @@ import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 // corruption/schema-drift insurance without continuously rescanning the complete asset population.
 const FULL_REPAIR_INTERVAL = 4_032;
 
+const HOLDER_PROJECTION = `SELECT count(CASE WHEN coalesce(signal.is_burn,0)=0 THEN 1 END) holders,
+  coalesce(max(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END)
+    *100.0/nullif(sum(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END),0),0) top1_pct,
+  coalesce(sum(CASE WHEN signal.is_burn=1 THEN CAST(balance.quantity AS REAL) ELSE 0 END)
+    *100.0/nullif(sum(CAST(balance.quantity AS REAL)),0),0) burned_pct,
+  CASE WHEN count(*)>=3 THEN avg(coalesce(signal.assets_held,0)) ELSE 0 END holder_breadth,
+  CASE WHEN count(*)>=3 THEN avg(CASE WHEN signal.survived_assets>0 THEN 1.0 ELSE 0 END)*100 ELSE 0 END pct_creator_holders,
+  CASE WHEN count(*)>=3 THEN avg(coalesce(signal.dex_trades,0)) ELSE 0 END avg_holder_dex
+FROM balances balance LEFT JOIN address_signals signal ON signal.address_id=balance.address_id
+WHERE balance.asset_id=(SELECT asset_id FROM identity) AND balance.address_id IS NOT NULL
+  AND CAST(balance.quantity AS INTEGER)>0`;
+
 // The DO UPDATE carries a WHERE guard so the full-population repair sweep skips rows whose signals are
 // unchanged (the common case — the sweep recycles ~267k assets continuously). age_blocks/recency_blocks
 // are tip-relative and would defeat the guard by drifting every block; they are written once at insert and
@@ -19,19 +31,7 @@ const UPSERT = `INSERT INTO asset_signals(
 )
 WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
   tip AS (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1),
-  holding AS (
-    SELECT count(CASE WHEN coalesce(signal.is_burn,0)=0 THEN 1 END) holders,
-      coalesce(max(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END)
-        *100.0/nullif(sum(CASE WHEN coalesce(signal.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END),0),0) top1_pct,
-      coalesce(sum(CASE WHEN signal.is_burn=1 THEN CAST(balance.quantity AS REAL) ELSE 0 END)
-        *100.0/nullif(sum(CAST(balance.quantity AS REAL)),0),0) burned_pct,
-      CASE WHEN count(*)>=3 THEN avg(coalesce(signal.assets_held,0)) ELSE 0 END holder_breadth,
-      CASE WHEN count(*)>=3 THEN avg(CASE WHEN signal.survived_assets>0 THEN 1.0 ELSE 0 END)*100 ELSE 0 END pct_creator_holders,
-      CASE WHEN count(*)>=3 THEN avg(coalesce(signal.dex_trades,0)) ELSE 0 END avg_holder_dex
-    FROM balances balance LEFT JOIN address_signals signal ON signal.address_id=balance.address_id
-    WHERE balance.asset_id=(SELECT asset_id FROM identity) AND balance.address_id IS NOT NULL
-      AND CAST(balance.quantity AS INTEGER)>0
-  ),
+  holding AS (${HOLDER_PROJECTION}),
   matches AS (
     SELECT tx0_address_id a0,tx1_address_id a1,block_index,
       CASE WHEN backward_asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
@@ -158,11 +158,35 @@ WHERE asset_signals.issuer_id IS NOT excluded.issuer_id OR asset_signals.divisib
   OR asset_signals.clean_active_trade_months IS NOT excluded.clean_active_trade_months
   OR asset_signals.market_venue_count IS NOT excluded.market_venue_count`;
 
+const HOLDER_UPDATE = `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
+  holding AS (${HOLDER_PROJECTION})
+UPDATE asset_signals SET
+  holders=holding.holders,top1_pct=holding.top1_pct,burned_pct=holding.burned_pct,
+  holder_breadth=holding.holder_breadth,pct_creator_holders=holding.pct_creator_holders,
+  avg_holder_dex=holding.avg_holder_dex
+FROM holding
+WHERE asset_signals.asset_id=(SELECT asset_id FROM identity)
+  AND (asset_signals.holders IS NOT holding.holders
+    OR asset_signals.top1_pct IS NOT holding.top1_pct
+    OR asset_signals.burned_pct IS NOT holding.burned_pct
+    OR asset_signals.holder_breadth IS NOT holding.holder_breadth
+    OR asset_signals.pct_creator_holders IS NOT holding.pct_creator_holders
+    OR asset_signals.avg_holder_dex IS NOT holding.avg_holder_dex)`;
+
 /** Refresh volatile asset features from canonical relations for identities touched by an event batch. */
 export async function rebuildCoreAssetSignals(db: D1Database, assets: Iterable<string>): Promise<number> {
   const unique = [...new Set(assets)];
   for (let index = 0; index < unique.length; index += 40) {
     await db.batch(unique.slice(index, index + 40).map((asset) => db.prepare(UPSERT).bind(asset)));
+  }
+  return unique.length;
+}
+
+/** Refresh only the fields that depend on holder address projections. */
+export async function rebuildCoreAssetHolderSignals(db: D1Database, assets: Iterable<string>): Promise<number> {
+  const unique = [...new Set(assets)];
+  for (let index = 0; index < unique.length; index += 80) {
+    await db.batch(unique.slice(index, index + 80).map((asset) => db.prepare(HOLDER_UPDATE).bind(asset)));
   }
   return unique.length;
 }
@@ -197,6 +221,28 @@ export async function runCoreAssetSignalsStep(
         .run();
     }
     return { processed: dirty.results.length, cursor, cycleComplete: false };
+  }
+  const holderDirty = await db
+    .prepare(
+      `SELECT dirty.asset_id,dictionary.asset FROM asset_holder_signal_dirty dirty
+       CROSS JOIN asset_dictionary dictionary ON dictionary.asset_id=dirty.asset_id
+       ORDER BY dirty.asset_id LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{ asset_id: number; asset: string }>();
+  if (holderDirty.results.length > 0) {
+    await rebuildCoreAssetHolderSignals(
+      db,
+      holderDirty.results.map((row) => row.asset),
+    );
+    for (let index = 0; index < holderDirty.results.length; index += 90) {
+      const ids = holderDirty.results.slice(index, index + 90).map((row) => row.asset_id);
+      await db
+        .prepare(`DELETE FROM asset_holder_signal_dirty WHERE asset_id IN (${ids.map(() => "?").join(",")})`)
+        .bind(...ids)
+        .run();
+    }
+    return { processed: holderDirty.results.length, cursor, cycleComplete: false };
   }
   if (cursor === 0 && !force && (await getCoreStateInt(db, "asset_signals_cycles")) > 0) {
     const tip =

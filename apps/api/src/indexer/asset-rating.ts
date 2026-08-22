@@ -73,7 +73,14 @@ export async function maybeRefreshAssetRatings(db: D1Database, now = Math.floor(
   const refreshedAt = await getCoreStateInt(db, "asset_ratings_refreshed_at");
   const pendingSignals =
     Number(
-      (await db.prepare(`SELECT COUNT(*) pending FROM asset_signal_dirty`).first<{ pending: number }>())?.pending,
+      (
+        await db
+          .prepare(
+            `SELECT EXISTS(SELECT 1 FROM asset_signal_dirty LIMIT 1)
+              OR EXISTS(SELECT 1 FROM asset_holder_signal_dirty LIMIT 1) pending`,
+          )
+          .first<{ pending: number }>()
+      )?.pending,
     ) || 0;
   if (!assetRatingRefreshReady(now, refreshedAt, pendingSignals)) {
     return { refreshed: false, refreshedAt, pendingSignals };
