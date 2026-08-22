@@ -195,7 +195,7 @@ test("year protocol counts seek events through the exact block-time window", asy
   assert.ok(plan.some((detail) => detail.includes("idx_blocks_time")));
   assert.ok(plan.some((detail) => detail.includes("idx_sends_block")));
   assert.ok(plan.filter((detail) => detail.includes("idx_issuances_block")).length >= 2);
-  assert.equal(plan.some((detail) => detail === "SCAN sends" || detail === "SCAN issuances"), false);
+  assert.equal(plan.some((detail) => detail.startsWith("SCAN sends") || detail.startsWith("SCAN issuances")), false);
   raw.close();
 });
 

@@ -128,10 +128,13 @@ export const YEAR_STATS_DETAIL_SQL = `WITH year_blocks AS MATERIALIZED (
   SELECT block_index FROM blocks INDEXED BY idx_blocks_time WHERE block_time>=?1 AND block_time<?2
 )
 SELECT
-  (SELECT COUNT(*) FROM year_blocks JOIN sends INDEXED BY idx_sends_block USING(block_index)) sends,
-  (SELECT COUNT(*) FROM year_blocks JOIN issuances INDEXED BY idx_issuances_block USING(block_index)
+  (SELECT COUNT(*) FROM year_blocks CROSS JOIN sends INDEXED BY idx_sends_block
+    ON sends.block_index=year_blocks.block_index) sends,
+  (SELECT COUNT(*) FROM year_blocks CROSS JOIN issuances INDEXED BY idx_issuances_block
+    ON issuances.block_index=year_blocks.block_index
     WHERE locked=1) supply_locks,
-  (SELECT COUNT(*) FROM year_blocks JOIN issuances INDEXED BY idx_issuances_block USING(block_index)
+  (SELECT COUNT(*) FROM year_blocks CROSS JOIN issuances INDEXED BY idx_issuances_block
+    ON issuances.block_index=year_blocks.block_index
     WHERE transfer=1) ownership_transfers`;
 
 export function yearStatsDetail(db: D1Database, start: number, end: number) {
