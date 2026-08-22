@@ -35,12 +35,15 @@ test("vault classification derives compact identities, contents, and crack recip
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE blocks(block_index INTEGER PRIMARY KEY);
     CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE emblem_vaults(
       contract_id INTEGER,token_id TEXT,btc_address_id INTEGER,contents_asset_id INTEGER,contents_qty REAL,
       vault_kind TEXT,funded INTEGER DEFAULT 0,cracked_at INTEGER,cracker_address_id INTEGER,
       classified INTEGER DEFAULT 0,PRIMARY KEY(contract_id,token_id));
+    CREATE TABLE emblem_vault_contents_dirty(
+      contract_id INTEGER,token_id TEXT,PRIMARY KEY(contract_id,token_id)) WITHOUT ROWID;
     CREATE TABLE sends(
       event_index INTEGER,source_id INTEGER,destination_id INTEGER,source_address_id INTEGER,
       destination_address_id INTEGER,asset_id INTEGER,quantity TEXT,quantity_normalized TEXT,
@@ -57,6 +60,8 @@ test("vault classification derives compact identities, contents, and crack recip
       (10,'vault-single'),(11,'vault-multi'),(12,'vault-foreign'),(20,'funder'),(30,'cracker'),(40,'contract');
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CARD'),(3,'OTHER');
     INSERT INTO emblem_vaults(contract_id,token_id,btc_address_id) VALUES(40,'1',10),(40,'2',11),(40,'3',12);
+    INSERT INTO emblem_vault_contents_dirty VALUES(40,'1'),(40,'2'),(40,'3');
+    INSERT INTO blocks VALUES(100);
     INSERT INTO sends VALUES
       (1,20,10,NULL,NULL,2,'200000000','2',1,100),
       (2,10,30,NULL,NULL,2,'200000000','2',2,200),
@@ -67,6 +72,11 @@ test("vault classification derives compact identities, contents, and crack recip
   `);
   const result = await classifyVaults({ CORE_DB: d1(sqlite) } as never);
   assert.equal(result.classified, 3);
+  assert.equal(result.source, "dirty");
+  assert.equal(
+    (sqlite.prepare(`SELECT COUNT(*) count FROM emblem_vault_contents_dirty`).get() as { count: number }).count,
+    0,
+  );
   assert.deepEqual(
     sqlite
       .prepare(
@@ -109,5 +119,17 @@ test("vault classification derives compact identities, contents, and crack recip
       },
     ],
   );
+
+  sqlite.prepare(`UPDATE blocks SET block_index=106`).run();
+  const reconcile = await classifyVaults({ CORE_DB: d1(sqlite) } as never);
+  assert.equal(reconcile.source, "reconcile");
+  assert.equal(reconcile.classified, 3);
+  const gated = await classifyVaults({ CORE_DB: d1(sqlite) } as never);
+  assert.equal(gated.idle, true);
+
+  sqlite.prepare(`INSERT INTO emblem_vault_contents_dirty VALUES(40,'1')`).run();
+  const priority = await classifyVaults({ CORE_DB: d1(sqlite) } as never);
+  assert.equal(priority.source, "dirty");
+  assert.equal(priority.classified, 1);
   sqlite.close();
 });

@@ -19,6 +19,12 @@ One-hour production Insights separated the finite repair backlog from public rea
   queue remain the owners of those fields.
 - Rating refresh no longer waits for `asset_holder_signal_dirty`. Rating uses trade evidence and integrity fields
   owned by `asset_signal_dirty`; holder-community repairs cannot change the rating result.
+- Emblem vault classification continuously rescanned 400 of 61,580 vaults per cron step. Its outbound-send query
+  read 235,935 rows and used 8.2 seconds across 105 runs in the next one-hour sample, even though all 55,336
+  resolved vaults were already classified. Migration 0094 adds an event-driven vault-content dirty queue fed by
+  sends, balances, sweeps, and vault address changes. Touched vaults now repair on the next canonical tick instead
+  of waiting up to a five-hour sweep cycle. A 1,000-vault reconciliation batch runs every six Counterparty blocks
+  as a self-healing backstop, removing the fixed per-tick rescan without trusting triggers as the only authority.
 
 ## 2026-07-12 production findings
 
