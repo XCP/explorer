@@ -23,7 +23,7 @@ const ACTIVITY_QUERIES = [
 // Every column here is absolute (block numbers, counts, flags), so unchanged history compares equal.
 const UPSERT = `INSERT INTO address_signals(
   address_id,first_block,last_block,out_peers,in_peers,dispense_btc,dispenses,dividends,
-  assets_issued,locked_assets,btc_spent,btc_fees,assets_held,assets_received,
+  assets_issued,assets_controlled,locked_assets,btc_spent,btc_fees,assets_held,assets_received,
   survived_assets,assets_distributed,assets_hits,clean_dispense_btc,clean_btc_spent,
   is_exchange,is_deposit,is_burn,assets_burned,disp_trust,likely_service,dex_trades,
   stamps_created,stamps_collected,src20_deploys,is_btns_user)
@@ -37,6 +37,10 @@ creator AS (
     sum(CASE WHEN asset.locked=1 AND holders>=2 THEN 1 ELSE 0 END) locked_assets
   FROM assets asset LEFT JOIN asset_signals signal ON signal.asset_id=asset.asset_id
   WHERE asset.issuer_id=(SELECT address_id FROM identity)
+),
+controlled AS (
+  SELECT count(*) assets_controlled FROM assets
+  WHERE issuer_id=(SELECT address_id FROM identity) OR owner_id=(SELECT address_id FROM identity)
 ),
 earned_items AS (
   SELECT item.btc_amount,item.asset_id,item.block_index
@@ -84,7 +88,8 @@ SELECT identity.address_id,?2,coalesce(?3,0),
     WHERE destination_id=identity.address_id OR destination_address_id=identity.address_id),
   earned.btc,earned.dispenses,
   (SELECT count(*) FROM dividends WHERE source_id=identity.address_id),
-  (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id),coalesce(creator.locked_assets,0),
+  (SELECT count(*) FROM issuances WHERE issuer_id=identity.address_id),controlled.assets_controlled,
+  coalesce(creator.locked_assets,0),
   spent.btc,coalesce((SELECT sum(CAST(fee AS REAL))/1e8 FROM transactions WHERE source_id=identity.address_id),0),
   holding.assets_held,(SELECT count(DISTINCT asset_id) FROM sends
     WHERE destination_id=identity.address_id OR destination_address_id=identity.address_id),
@@ -115,11 +120,12 @@ SELECT identity.address_id,?2,coalesce(?3,0),
     +(SELECT count(*) FROM order_matches WHERE tx1_address_id=identity.address_id),
   stamp.created,collected.stamps,stamp.src20,
   EXISTS(SELECT 1 FROM broadcasts WHERE source_id=identity.address_id AND btns=1)
-FROM identity CROSS JOIN holding CROSS JOIN creator CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
+FROM identity CROSS JOIN holding CROSS JOIN creator CROSS JOIN controlled CROSS JOIN earned CROSS JOIN spent CROSS JOIN infra CROSS JOIN stamp CROSS JOIN collected
 WHERE 1 ON CONFLICT(address_id) DO UPDATE SET
   first_block=excluded.first_block,last_block=excluded.last_block,out_peers=excluded.out_peers,in_peers=excluded.in_peers,
   dispense_btc=excluded.dispense_btc,dispenses=excluded.dispenses,dividends=excluded.dividends,
-  assets_issued=excluded.assets_issued,locked_assets=excluded.locked_assets,btc_spent=excluded.btc_spent,
+  assets_issued=excluded.assets_issued,assets_controlled=excluded.assets_controlled,
+  locked_assets=excluded.locked_assets,btc_spent=excluded.btc_spent,
   btc_fees=excluded.btc_fees,assets_held=excluded.assets_held,assets_received=excluded.assets_received,
   survived_assets=excluded.survived_assets,assets_distributed=excluded.assets_distributed,assets_hits=excluded.assets_hits,
   clean_dispense_btc=excluded.clean_dispense_btc,clean_btc_spent=excluded.clean_btc_spent,
@@ -133,6 +139,7 @@ WHERE address_signals.first_block IS NOT excluded.first_block
   OR address_signals.dispense_btc IS NOT excluded.dispense_btc OR address_signals.dispenses IS NOT excluded.dispenses
   OR address_signals.dividends IS NOT excluded.dividends
   OR address_signals.assets_issued IS NOT excluded.assets_issued
+  OR address_signals.assets_controlled IS NOT excluded.assets_controlled
   OR address_signals.locked_assets IS NOT excluded.locked_assets
   OR address_signals.btc_spent IS NOT excluded.btc_spent OR address_signals.btc_fees IS NOT excluded.btc_fees
   OR address_signals.assets_held IS NOT excluded.assets_held

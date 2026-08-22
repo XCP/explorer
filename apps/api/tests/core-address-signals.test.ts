@@ -49,11 +49,16 @@ test("compact address signals recompute touched identities and converge to zero"
   for (const migration of migrations) db.exec(migration);
   db.exec(`
     INSERT INTO address_dictionary(address) VALUES('1trader'),('1peer');
-    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD'),('OWNED');
     INSERT INTO blocks(block_index,block_hash,block_time) VALUES(100,zeroblob(32),1);
     INSERT INTO assets(asset_id,type,issuer_id,divisible,locked,first_issuance_block_index)
       SELECT asset_id,'asset',(SELECT address_id FROM address_dictionary WHERE address='1trader'),0,0,50
       FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO assets(asset_id,type,issuer_id,owner_id,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',
+        (SELECT address_id FROM address_dictionary WHERE address='1peer'),
+        (SELECT address_id FROM address_dictionary WHERE address='1trader'),0,0,50
+      FROM asset_dictionary WHERE asset='OWNED';
     INSERT INTO sends(event_index,tx_index,tx_hash,block_index,source_id,destination_id,source_address_id,destination_address_id,asset_id,quantity,msg_index)
       SELECT 1,1,randomblob(32),100,t.address_id,p.address_id,t.address_id,p.address_id,a.asset_id,'1',0
       FROM address_dictionary t,address_dictionary p,asset_dictionary a WHERE t.address='1trader' AND p.address='1peer' AND a.asset='CARD';
@@ -69,7 +74,7 @@ test("compact address signals recompute touched identities and converge to zero"
   const row = () => ({
     ...db
       .prepare(
-        `SELECT first_block,last_block,out_peers,assets_held,dex_trades,btc_fees FROM address_signals
+        `SELECT first_block,last_block,out_peers,assets_held,assets_controlled,dex_trades,btc_fees FROM address_signals
     WHERE address_id=(SELECT address_id FROM address_dictionary WHERE address='1trader')`,
       )
       .get(),
@@ -79,6 +84,7 @@ test("compact address signals recompute touched identities and converge to zero"
     last_block: 100,
     out_peers: 1,
     assets_held: 1,
+    assets_controlled: 2,
     dex_trades: 1,
     btc_fees: 0.00001,
   });
@@ -89,6 +95,7 @@ test("compact address signals recompute touched identities and converge to zero"
     last_block: 0,
     out_peers: 0,
     assets_held: 0,
+    assets_controlled: 2,
     dex_trades: 0,
     btc_fees: 0,
   });

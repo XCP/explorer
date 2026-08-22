@@ -97,6 +97,7 @@ export interface AddressSignalsRow {
   dispenses: number;
   dividends: number;
   assets_issued: number;
+  assets_controlled: number | null;
   locked_assets: number;
   btc_spent: number;
   btc_fees: number;

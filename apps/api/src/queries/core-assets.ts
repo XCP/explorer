@@ -533,8 +533,12 @@ export function coreAssetFeedCounts(
           issuer AS (SELECT address_id FROM address_dictionary WHERE address=?2)
      SELECT counts.sales,counts.issuances,counts.dispensers,counts.dispenses,counts.orders,counts.sends,
             counts.fairmints,counts.dividends,counts.destructions,counts.pools,counts.subassets,
-            (SELECT COUNT(*) FROM assets
-              WHERE issuer_id=(SELECT address_id FROM issuer) OR owner_id=(SELECT address_id FROM issuer)) from_issuer
+            COALESCE(
+              (SELECT signal.assets_controlled FROM issuer
+                JOIN address_signals signal ON signal.address_id=issuer.address_id),
+              (SELECT COUNT(*) FROM assets
+                WHERE issuer_id=(SELECT address_id FROM issuer) OR owner_id=(SELECT address_id FROM issuer))
+            ) from_issuer
        FROM asset_feed_counts counts WHERE counts.asset_id=(SELECT asset_id FROM identity)`,
     asset,
     issuer,
