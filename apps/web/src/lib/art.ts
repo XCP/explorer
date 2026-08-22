@@ -4,6 +4,7 @@ export const ART_WIDTH = { thumbnail: 320, card: 640 } as const;
 export type ArtWidth = (typeof ART_WIDTH)[keyof typeof ART_WIDTH];
 
 export function artUrl(asset: string, width: ArtWidth, kind: "full" | "icon" = "full"): string {
+  if (kind === "full") return `https://cdn.xcp.io/img/card/${encodeURIComponent(asset)}`;
   return `https://cdn.xcp.io/cdn-cgi/image/format=auto,fit=scale-down,width=${width},quality=82,onerror=redirect/img/${kind}/${encodeURIComponent(asset)}`;
 }
 
