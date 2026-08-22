@@ -25,6 +25,9 @@ function seededDatabase(): DatabaseSync {
 const dirtyCount = (database: DatabaseSync): number =>
   Number((database.prepare(`SELECT COUNT(*) c FROM emblem_trade_dirty`).get() as { c: number }).c);
 
+const contentsDirtyCount = (database: DatabaseSync): number =>
+  Number((database.prepare(`SELECT COUNT(*) c FROM emblem_vault_contents_dirty`).get() as { c: number }).c);
+
 const SALE_UPSERT = `INSERT INTO emblem_sales(
     tx_hash,log_index,contract_id,token_id,price_raw,block_number
   ) VALUES(?,?,?,?,?,?)
@@ -54,4 +57,51 @@ test("re-upserting an ethereum block re-enqueues its sales without aborting", ()
   database.prepare(`DELETE FROM emblem_trade_dirty`).run();
   database.prepare(BLOCK_UPSERT).run(20_000_000, 1_700_000_099);
   assert.equal(dirtyCount(database), 1);
+});
+
+test("vault contents dirty triggers follow send, balance, and sweep upserts without duplicate writes", () => {
+  const database = seededDatabase();
+  database.prepare(`INSERT INTO emblem_vaults(contract_id,token_id,btc_address_id) VALUES(7,'42',10)`).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`DELETE FROM emblem_vault_contents_dirty`).run();
+
+  database.prepare(`INSERT INTO emblem_vaults(contract_id,token_id,btc_address_id) VALUES(8,'43',NULL)`).run();
+  assert.equal(contentsDirtyCount(database), 0);
+  database.prepare(`UPDATE emblem_vaults SET btc_address_id=11 WHERE contract_id=8 AND token_id='43'`).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`UPDATE emblem_vaults SET btc_address_id=NULL WHERE contract_id=8 AND token_id='43'`).run();
+  assert.equal(contentsDirtyCount(database), 0);
+
+  const sendUpsert = `INSERT INTO sends(
+      event_index,tx_index,tx_hash,block_index,source_id,destination_id,asset_id,quantity,msg_index
+    ) VALUES(1,2,zeroblob(32),100,20,10,30,'1',0)
+    ON CONFLICT(event_index) DO UPDATE SET quantity=excluded.quantity`;
+  database.prepare(sendUpsert).run();
+  database.prepare(sendUpsert).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`DELETE FROM emblem_vault_contents_dirty`).run();
+  database.prepare(`UPDATE sends SET quantity='2' WHERE event_index=1`).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`DELETE FROM emblem_vault_contents_dirty`).run();
+
+  const balanceUpsert = `INSERT INTO balances(balance_id,address_id,asset_id,quantity)
+    VALUES(1,10,30,'1')
+    ON CONFLICT(balance_id) DO UPDATE SET quantity=excluded.quantity`;
+  database.prepare(balanceUpsert).run();
+  database.prepare(balanceUpsert).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`DELETE FROM emblem_vault_contents_dirty`).run();
+  database.prepare(`UPDATE balances SET quantity='2' WHERE balance_id=1`).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`DELETE FROM emblem_vault_contents_dirty`).run();
+
+  const sweepUpsert = `INSERT INTO sweeps(tx_index,tx_hash,block_index,source_id,destination_id)
+    VALUES(3,zeroblob(32),101,10,20)
+    ON CONFLICT(tx_index) DO UPDATE SET destination_id=excluded.destination_id`;
+  database.prepare(sweepUpsert).run();
+  database.prepare(sweepUpsert).run();
+  assert.equal(contentsDirtyCount(database), 1);
+  database.prepare(`DELETE FROM emblem_vault_contents_dirty`).run();
+  database.prepare(`UPDATE sweeps SET block_time=200 WHERE tx_index=3`).run();
+  assert.equal(contentsDirtyCount(database), 1);
 });
