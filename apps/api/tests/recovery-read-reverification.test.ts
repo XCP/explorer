@@ -20,6 +20,9 @@ function database(): DatabaseSync {
     CREATE TABLE recovery_outputs(txid TEXT NOT NULL,vout INTEGER NOT NULL,recovery_address TEXT,
       classification TEXT NOT NULL,value_sats INTEGER NOT NULL,chain_checked_at INTEGER,
       PRIMARY KEY(txid,vout)) WITHOUT ROWID;
+    CREATE INDEX recovery_outputs_address
+      ON recovery_outputs(recovery_address,classification,value_sats DESC,txid,vout)
+      WHERE recovery_address IS NOT NULL;
     CREATE TABLE recovery_verification_failures(
       txid TEXT PRIMARY KEY,attempts INTEGER NOT NULL,first_failed_at INTEGER NOT NULL,last_failed_at INTEGER NOT NULL,
       next_retry_at INTEGER NOT NULL,last_error TEXT NOT NULL) WITHOUT ROWID;
@@ -78,6 +81,21 @@ test("requests are bounded to the page and take the highest value outputs first"
 
   assert.equal(request(db, 2), 2);
   assert.deepEqual(checkedAt(db), [1, 0, 0], "the two largest outputs are the ones re-checked");
+});
+
+test("reader requests seek the address index instead of the global stale-output index", () => {
+  const db = database();
+  const details = (
+    db.prepare(`EXPLAIN QUERY PLAN ${RECOVERY_REQUEST_REVERIFY_SQL}`).all(address, NOW, 420) as {
+      detail: string;
+    }[]
+  ).map((row) => row.detail);
+
+  assert.equal(
+    details.some((detail) => detail.includes("recovery_outputs_address")),
+    true,
+    details.join("\n"),
+  );
 });
 
 test("a requested output outranks the rolling backstop but never a new import", () => {

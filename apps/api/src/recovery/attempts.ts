@@ -39,30 +39,16 @@ const PROVIDER_CONCURRENCY = ELECTRS_SEQUENTIAL_CONCURRENCY;
 export const RECOVERY_SPEND_CONFIRMATIONS = 6;
 
 /**
- * Attempts are re-read from the chain until they are confirmed deeply enough to settle *and* every
- * output they consumed is settled. That last clause is what lets already-confirmed attempts recorded
- * before spend settlement existed heal themselves, and what makes this query stop selecting an attempt
- * for good once its work is genuinely done.
- *
- * CROSS JOIN is load-bearing. With a plain JOIN the planner drove the correlated EXISTS from
- * recovery_outputs' classification index — a walk of the entire million-row recoverable slice per
- * attempt row, ~200M row visits per evaluation, which blew D1's CPU budget on every maintenance
- * tick and took the whole recovery database down with it. CROSS JOIN pins the order SQLite may
- * not reorder: the attempt's own inputs first (primary-key prefix, at most 420 rows), then one
- * primary-key probe into recovery_outputs per input. Bounded by construction, like the point
- * updates below.
+ * Attempts stay in a partial work queue until they are confirmed deeply enough and their consumed
+ * outputs have been settled in the same atomic batch. The prior query derived that last condition by
+ * walking every historical attempt's inputs every two minutes. Even with bounded primary-key probes,
+ * completed history made an idle queue read tens of thousands of rows forever.
  */
 export const RECOVERY_ATTEMPT_QUEUE_SQL = `
-  SELECT a.txid FROM recovery_attempts a
+  SELECT a.txid FROM recovery_attempts a INDEXED BY recovery_attempts_work_queue
    WHERE a.status<>'confirmed'
-      OR a.confirmations<?
-      OR EXISTS (
-        SELECT 1 FROM recovery_attempt_inputs i
-        CROSS JOIN recovery_outputs o
-         WHERE i.recovery_txid=a.txid
-           AND o.txid=i.input_txid AND o.vout=i.input_vout
-           AND o.classification='recoverable'
-      )
+      OR a.confirmations<${RECOVERY_SPEND_CONFIRMATIONS}
+      OR a.settlement_pending=1
    ORDER BY a.chain_checked_at,a.reported_at,a.txid LIMIT ?`;
 
 export interface AttemptEvidence {
@@ -139,7 +125,7 @@ export async function reconcileRecoveryAttempts(
   providers: AttemptProviders = DEFAULT_PROVIDERS,
 ): Promise<{ checked: number; failed: number }> {
   const attempts = await env.RECOVERY_DB.prepare(RECOVERY_ATTEMPT_QUEUE_SQL)
-    .bind(RECOVERY_SPEND_CONFIRMATIONS, limit)
+    .bind(limit)
     .all<AttemptRow>();
   if (attempts.results.length === 0) return { checked: 0, failed: 0 };
 
@@ -227,8 +213,8 @@ export function recoveryAttemptStatements(
   now: number,
   inputs: readonly { input_txid: string; input_vout: number }[],
 ): D1PreparedStatement[] {
-  const statements = [recoveryAttemptUpdate(db, txid, evidence, now)];
   const spentBy = settledSpendTxid(txid, evidence);
+  const statements = [recoveryAttemptUpdate(db, txid, evidence, now, spentBy !== null)];
   if (!spentBy) return statements;
   const marker = db.prepare(RECOVERY_MARK_SPENT_SQL);
   for (const input of inputs) {
@@ -246,11 +232,17 @@ export function recoveryAttemptStatements(
   return statements;
 }
 
-function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEvidence, now: number) {
+function recoveryAttemptUpdate(
+  db: D1Database,
+  txid: string,
+  evidence: AttemptEvidence,
+  now: number,
+  settled: boolean,
+) {
   return db
     .prepare(
       `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,
-        confirmations=?,status_reason=?,chain_checked_at=?,updated_at=? WHERE txid=?`,
+        confirmations=?,settlement_pending=?,status_reason=?,chain_checked_at=?,updated_at=? WHERE txid=?`,
     )
     .bind(
       evidence.status,
@@ -259,6 +251,7 @@ function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEv
       evidence.blockHash,
       evidence.blockTime,
       evidence.confirmations,
+      settled ? 0 : 1,
       evidence.reason,
       now,
       now,

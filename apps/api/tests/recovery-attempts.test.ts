@@ -135,6 +135,8 @@ test("a deeply confirmed recovery settles each consumed output by primary key", 
   // table for the subquery form, and one large attempt at settlement depth took the database down.
   assert.equal(statements.length, 3, "the attempt row plus one spend update per consumed input");
   const spends = prepared.filter((row) => row.sql.includes("UPDATE recovery_outputs"));
+  const attempt = prepared.find((row) => row.sql.includes("UPDATE recovery_attempts"));
+  assert.equal(attempt?.values[6], 0, "the atomic batch removes completed settlement work from the queue");
   assert.deepEqual(
     spends.map((row) => row.values),
     inputs.map((input) => ["spent-by-confirmed-recovery", txid, 960_262, 1_700, input.input_txid, input.input_vout]),
@@ -161,6 +163,11 @@ test("a spend is not settled durably until it is deep enough to survive a reorg"
     prepared.some((row) => row.sql.includes("UPDATE recovery_outputs")),
     false,
     "the read path already withholds these inputs, so waiting costs the owner nothing",
+  );
+  assert.equal(
+    prepared.find((row) => row.sql.includes("UPDATE recovery_attempts"))?.values[6],
+    1,
+    "a shallow attempt remains queued for settlement",
   );
 });
 
@@ -247,23 +254,25 @@ test("reconciliation stops re-reading an attempt only once its spends are settle
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE recovery_attempts(txid TEXT PRIMARY KEY,status TEXT NOT NULL,confirmations INTEGER NOT NULL,
-      chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
+      settlement_pending INTEGER NOT NULL,chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
+    CREATE INDEX recovery_attempts_work_queue ON recovery_attempts(chain_checked_at,reported_at,txid)
+      WHERE status<>'confirmed' OR confirmations<6 OR settlement_pending=1;
     CREATE TABLE recovery_attempt_inputs(recovery_txid TEXT NOT NULL,input_txid TEXT NOT NULL,input_vout INTEGER NOT NULL,
       PRIMARY KEY(recovery_txid,input_txid,input_vout)) WITHOUT ROWID;
     CREATE TABLE recovery_outputs(txid TEXT NOT NULL,vout INTEGER NOT NULL,classification TEXT NOT NULL,
       PRIMARY KEY(txid,vout)) WITHOUT ROWID;
     INSERT INTO recovery_attempts VALUES
-      ('settled','confirmed',400,1,1),
-      ('shallow','confirmed',2,2,2),
-      ('stale','confirmed',400,3,3),
-      ('waiting','pending',0,4,4);
+      ('settled','confirmed',400,0,1,1),
+      ('shallow','confirmed',2,1,2,2),
+      ('stale','confirmed',400,1,3,3),
+      ('waiting','pending',0,1,4,4);
     INSERT INTO recovery_attempt_inputs VALUES
       ('settled','a',0),('shallow','b',0),('stale','c',0),('waiting','d',0);
     INSERT INTO recovery_outputs VALUES ('a',0,'spent'),('b',0,'recoverable'),('c',0,'recoverable'),('d',0,'recoverable');
   `);
 
   const queued = (
-    db.prepare(RECOVERY_ATTEMPT_QUEUE_SQL).all(RECOVERY_SPEND_CONFIRMATIONS, 10) as { txid: string }[]
+    db.prepare(RECOVERY_ATTEMPT_QUEUE_SQL).all(10) as { txid: string }[]
   ).map((row) => row.txid);
 
   assert.equal(queued.includes("settled"), false, "a deep confirmation with no recoverable inputs left is done");
@@ -271,7 +280,26 @@ test("reconciliation stops re-reading an attempt only once its spends are settle
   assert.equal(
     queued.includes("stale"),
     true,
-    "an attempt confirmed before spend settlement existed still heals itself",
+    "migration-marked settlement work remains queued until its point updates commit",
+  );
+});
+
+test("attempt reconciliation seeks only the partial work queue", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE recovery_attempts(txid TEXT PRIMARY KEY,status TEXT NOT NULL,confirmations INTEGER NOT NULL,
+      settlement_pending INTEGER NOT NULL,chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
+    CREATE INDEX recovery_attempts_work_queue ON recovery_attempts(chain_checked_at,reported_at,txid)
+      WHERE status<>'confirmed' OR confirmations<6 OR settlement_pending=1;
+  `);
+
+  const details = (
+    db.prepare(`EXPLAIN QUERY PLAN ${RECOVERY_ATTEMPT_QUEUE_SQL}`).all(25) as { detail: string }[]
+  ).map((row) => row.detail);
+  assert.equal(
+    details.some((detail) => detail.includes("recovery_attempts_work_queue")),
+    true,
+    details.join("\n"),
   );
 });
 

@@ -103,7 +103,7 @@ export const VERIFICATION_BACKSTOP_WINDOW = 40;
 export const RECOVERY_REQUEST_REVERIFY_SQL = `
   UPDATE recovery_outputs SET chain_checked_at=${REVERIFY_REQUESTED}
    WHERE (txid,vout) IN (
-     SELECT txid,vout FROM recovery_outputs
+     SELECT txid,vout FROM recovery_outputs INDEXED BY recovery_outputs_address
       WHERE recovery_address=? AND classification='recoverable'
         AND chain_checked_at>=1 AND chain_checked_at<=?
       ORDER BY value_sats DESC,txid,vout LIMIT ?)`;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,12 +9,9 @@ const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(apiRoot, "../..");
 const wrangler = join(repositoryRoot, "node_modules/wrangler/bin/wrangler.js");
 const config = join(apiRoot, "wrangler.toml");
-const migrations = [
-  "0001_recovery.sql",
-  "0002_chain_reconciliation.sql",
-  "0003_import_page_receipts.sql",
-  "0004_attempt_lifecycle.sql",
-];
+const migrations = readdirSync(join(apiRoot, "migrations-recovery"))
+  .filter((name) => /^\d{4}_.+\.sql$/.test(name))
+  .sort();
 
 function execute(database, ...arguments_) {
   return execFileSync(
@@ -60,16 +57,22 @@ function assertFinalSchema(database) {
        (SELECT COUNT(*) FROM pragma_table_info('recovery_outputs') WHERE name='chain_checked_at') output_chain_column,
        (SELECT COUNT(*) FROM pragma_table_info('recovery_attempts')
          WHERE name IN ('confirmations','block_hash','block_time','chain_checked_at','status_reason')) attempt_lifecycle_columns,
+       (SELECT COUNT(*) FROM pragma_table_info('recovery_attempts')
+         WHERE name='settlement_pending') settlement_queue_column,
        (SELECT COUNT(*) FROM sqlite_master
          WHERE type='table' AND name='recovery_import_receipts') receipt_table,
        (SELECT COUNT(*) FROM sqlite_master
-         WHERE type='index' AND name='recovery_attempts_reconciliation') reconciliation_index`,
+         WHERE type='index' AND name='recovery_attempts_reconciliation') reconciliation_index,
+       (SELECT COUNT(*) FROM sqlite_master
+         WHERE type='index' AND name='recovery_attempts_work_queue') settlement_queue_index`,
   )[0][0];
   assert.deepEqual(schema, {
     output_chain_column: 1,
     attempt_lifecycle_columns: 5,
+    settlement_queue_column: 1,
     receipt_table: 1,
     reconciliation_index: 1,
+    settlement_queue_index: 1,
   });
 }
 
