@@ -10,6 +10,16 @@ export const assetRatingRefreshDue = (now: number, refreshedAt: number): boolean
 export const assetRatingRefreshReady = (now: number, refreshedAt: number, pendingSignals: number): boolean =>
   pendingSignals === 0 && assetRatingRefreshDue(now, refreshedAt);
 
+/** Rating inputs are owned by the full asset projection, not the holder-only repair queue. */
+export async function assetRatingSignalsPending(db: D1Database): Promise<number> {
+  return (
+    Number(
+      (await db.prepare(`SELECT EXISTS(SELECT 1 FROM asset_signal_dirty LIMIT 1) pending`).first<{ pending: number }>())
+        ?.pending,
+    ) || 0
+  );
+}
+
 const ELIGIBLE = `${assetRankingEligibleSql("signal")}
   AND signal.clean_active_trade_months>0 AND signal.distinct_paid_buyers>0`;
 
@@ -71,17 +81,7 @@ export async function refreshAssetRatings(db: D1Database, now = Math.floor(Date.
 
 export async function maybeRefreshAssetRatings(db: D1Database, now = Math.floor(Date.now() / 1_000)) {
   const refreshedAt = await getCoreStateInt(db, "asset_ratings_refreshed_at");
-  const pendingSignals =
-    Number(
-      (
-        await db
-          .prepare(
-            `SELECT EXISTS(SELECT 1 FROM asset_signal_dirty LIMIT 1)
-              OR EXISTS(SELECT 1 FROM asset_holder_signal_dirty LIMIT 1) pending`,
-          )
-          .first<{ pending: number }>()
-      )?.pending,
-    ) || 0;
+  const pendingSignals = await assetRatingSignalsPending(db);
   if (!assetRatingRefreshReady(now, refreshedAt, pendingSignals)) {
     return { refreshed: false, refreshedAt, pendingSignals };
   }

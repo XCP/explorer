@@ -343,24 +343,11 @@ export function coreAssetAccounting(
 export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSignalsRow | null> {
   return one<AssetSignalsRow>(
     db,
-    `WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
-          holding AS (
-            SELECT count(*) holder_count,
-              count(CASE WHEN coalesce(address.is_burn,0)=0 THEN 1 END) holders,
-              coalesce(max(CASE WHEN coalesce(address.is_burn,0)=0 THEN CAST(balance.quantity AS REAL) END)
-                *100.0/nullif(sum(CASE WHEN coalesce(address.is_burn,0)=0
-                  THEN CAST(balance.quantity AS REAL) END),0),0) top1_pct,
-              coalesce(sum(CASE WHEN address.is_burn=1 THEN CAST(balance.quantity AS REAL) ELSE 0 END)
-                *100.0/nullif(sum(CAST(balance.quantity AS REAL)),0),0) burned_pct
-            FROM balances balance LEFT JOIN address_signals address ON address.address_id=balance.address_id
-            WHERE balance.asset_id=(SELECT asset_id FROM identity) AND balance.address_id IS NOT NULL
-              AND CAST(balance.quantity AS INTEGER)>0
-          )
-     SELECT dictionary.asset,assets.asset_longname,issuer.address issuer,
-            assets.divisible,assets.locked,holding.holder_count,holding.holders,holding.top1_pct,signal.trades,
+    `SELECT dictionary.asset,assets.asset_longname,issuer.address issuer,
+            assets.divisible,assets.locked,signal.holders holder_count,signal.holders,signal.top1_pct,signal.trades,
             signal.self_trade_pct,signal.first_trade_blk,signal.last_trade_blk,signal.dispenses,
             signal.dispense_btc,signal.low_quality,signal.holder_breadth,signal.pct_creator_holders,
-            holding.burned_pct,signal.distinct_traders,signal.distinct_dispensers,
+            signal.burned_pct,signal.distinct_traders,signal.distinct_dispensers,
             max(0,tip.block_index-coalesce(assets.first_issuance_block_index,tip.block_index)) age_blocks,
             signal.avg_holder_dex,signal.recent_events,
             max(0,tip.block_index-signal.last_trade_blk) recency_blocks,
@@ -385,7 +372,6 @@ export function coreAssetSignals(db: D1Database, asset: string): Promise<AssetSi
        LEFT JOIN asset_ratings rating ON rating.asset_id=signal.asset_id
        LEFT JOIN asset_activity_outlook outlook ON outlook.asset_id=signal.asset_id
        CROSS JOIN (SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1) tip
-       CROSS JOIN holding
       WHERE dictionary.asset=?1`,
     asset,
   );

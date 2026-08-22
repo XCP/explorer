@@ -5,6 +5,21 @@ How the read API stays fast on D1. Three layers, in priority order: **(1) query 
 `wrangler d1 insights xcpio --sort-by reads --sort-type avg` (rows-read is the cost/latency proxy in D1) and
 `EXPLAIN QUERY PLAN` over live data.
 
+## 2026-08-22 follow-up
+
+One-hour production Insights separated the finite repair backlog from public read costs:
+
+- Full asset-signal repair read 352,687 rows and wrote 7,944 rows. This is bounded catch-up work, not the main
+  account cost.
+- Scoped tag aggregation read 3,942,332 rows across 124 runs. The common first-page shapes now use the global D1
+  response cache for six hours. Only limits 50, 100, and 1,000 at offset zero are persisted, keeping the keyspace
+  bounded to three entries per known tag.
+- Asset detail holder aggregation read 1,117,845 rows across 1,065 runs. Detail reads now consume the convergent
+  `asset_signals` projection instead of re-scanning balances. Canonical event maintenance and the holder-only repair
+  queue remain the owners of those fields.
+- Rating refresh no longer waits for `asset_holder_signal_dirty`. Rating uses trade evidence and integrity fields
+  owned by `asset_signal_dirty`; holder-community repairs cannot change the rating result.
+
 ## 2026-07-12 production findings
 
 ## 2026-07-16 follow-up

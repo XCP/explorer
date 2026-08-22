@@ -7,7 +7,7 @@
 import type { TagStatsRow, TagDetail } from "@xcp/shared/tags";
 import { router, J, lim, off, cached } from "#api/read/respond";
 import { rawSqlExpr, CONVICTION_FACTORS, convictionScore } from "#api/reputation/score";
-import { listTagStats, getTagStats, listTagAssetMembers, type TagStatsBase } from "#api/queries/tags";
+import { listTagStats, getTagStats, listTagAssetMembers, tagExists, type TagStatsBase } from "#api/queries/tags";
 import {
   collectionHolderMakeup,
   collectionProfileExists,
@@ -70,13 +70,25 @@ tags.get("/v2/tags", async (c) =>
 // percentile score). Standard envelope with null-terminated next_offset; the aggregate repeats per page.
 tags.get("/v2/tags/:tag", async (c) => {
   const tag = c.req.param("tag");
-  const stats = await getTagStats(c.env.CORE_DB, CONV_RAW, tag);
-  if (!stats) return c.json({ error: "Tag not found" }, 404);
+  if (!(await tagExists(c.env.CORE_DB, tag))) return c.json({ error: "Tag not found" }, 404);
   // Cap 1000: collection pages fetch a whole membership in one page so client-side sorting and the
   // card view operate on the full set, not a 50-row window. Protocol-family tags still paginate.
   const limit = lim(c, 50, 1000),
     offset = off(c);
-  const rows = await listTagAssetMembers(c.env.CORE_DB, tag, limit, offset);
-  const body: TagDetail = { ...enrich(stats), members: rows };
-  return J(c, { result: body, next_offset: rows.length === limit ? offset + limit : null }, 300);
+  const produce = async () => {
+    const [stats, rows] = await Promise.all([
+      getTagStats(c.env.CORE_DB, CONV_RAW, tag),
+      listTagAssetMembers(c.env.CORE_DB, tag, limit, offset),
+    ]);
+    if (!stats) throw new Error(`Tag disappeared while building its cache: ${tag}`);
+    const body: TagDetail = { ...enrich(stats), members: rows };
+    return { result: body, next_offset: rows.length === limit ? offset + limit : null };
+  };
+  // Persist only the common first-page shapes. Caching arbitrary offsets or limits would let a
+  // caller create an unbounded D1 cache keyspace. Tags are a small reviewed vocabulary, so these
+  // three shapes remain bounded while covering the collection UI and default API pagination.
+  if (offset === 0 && (limit === 50 || limit === 100 || limit === 1000)) {
+    return cached(c, `tags:detail:v1:${tag}:${limit}`, { ttl: 21_600, edge: 600, swr: 86_400 }, produce);
+  }
+  return J(c, await produce(), 300);
 });

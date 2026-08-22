@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { getTagStats, listTagAssetMembers } from "#api/queries/tags";
+import { getTagStats, listTagAssetMembers, tagExists } from "#api/queries/tags";
 
 class Statement {
   private values: unknown[] = [];
@@ -48,6 +48,8 @@ test("compact tags restore polymorphic identities and deterministic asset member
   `);
 
   const stats = await getTagStats(d1(db), "holders", "set");
+  assert.equal(await tagExists(d1(db), "set"), true);
+  assert.equal(await tagExists(d1(db), "missing"), false);
   assert.equal(stats?.n, 3);
   assert.equal(stats?.n_assets, 2);
   assert.equal(stats?.n_addresses, 1);

@@ -399,11 +399,15 @@ function dump(database: DatabaseSync): Record<string, unknown[]> {
       Object.fromEntries(
         Object.entries(row).map(([key, value]) => [
           key,
-          value instanceof Uint8Array
-            ? Array.from(value)
-                .map((byte) => byte.toString(16).padStart(2, "0"))
-                .join("")
-            : value,
+          // Trigger-maintained bookkeeping uses unixepoch(). Two equivalent replays can cross a
+          // second boundary, so normalize wall-clock metadata while comparing canonical results.
+          key === "updated_at"
+            ? 0
+            : value instanceof Uint8Array
+              ? Array.from(value)
+                  .map((byte) => byte.toString(16).padStart(2, "0"))
+                  .join("")
+              : value,
         ]),
       ),
     );
