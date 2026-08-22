@@ -305,14 +305,14 @@ export function reputationFunnel(db: D1Database): Promise<{
   );
 }
 
-/** Score histogram over the scored population — integer-binned raw scores (0..cap, the tail lumped at cap)
- *  for the distribution curve on /reputation. `expr`/`notInfra` are the same config-driven fragments the
- *  distribution + tier reads use; `cap` is an interpolated literal (not user input). */
+/** Compact weekly score histogram for the distribution curve on /reputation. */
 export function reputationHistogram(db: D1Database): Promise<{ bin: number; count: number }[]> {
   return q<{ bin: number; count: number }>(
     db,
-    `SELECT MIN(100,CAST(reputation AS INTEGER)) bin,COUNT(*) count
-     FROM address_reputations GROUP BY bin ORDER BY bin`,
+    `SELECT CAST(json_extract(value,'$.bin') AS INTEGER) bin,
+       CAST(json_extract(value,'$.count') AS INTEGER) count
+     FROM address_reputation_histogram,json_each(bins)
+     WHERE singleton=1 ORDER BY bin`,
   );
 }
 

@@ -81,11 +81,32 @@ export const ADDRESS_REPUTATION_RECONCILE_SQL = `DELETE FROM address_reputations
     WHERE signal.address_id=reputation.address_id AND ${ADDRESS_REPUTATION_ELIGIBLE_SQL}
   )`;
 
+/** Rebuild the compact public distribution after the weekly population rank refresh. */
+export async function refreshAddressReputationHistogram(db: D1Database) {
+  const result = await db
+    .prepare(
+      `INSERT INTO address_reputation_histogram(singleton,bins)
+      SELECT 1,json_group_array(json_object('bin',bin,'count',count))
+      FROM (
+        SELECT MIN(100,CAST(reputation AS INTEGER)) bin,COUNT(*) count
+        FROM address_reputations
+        GROUP BY MIN(100,CAST(reputation AS INTEGER))
+        ORDER BY bin
+      )
+      WHERE 1
+      ON CONFLICT(singleton) DO UPDATE SET bins=excluded.bins
+      WHERE address_reputation_histogram.bins IS NOT excluded.bins`,
+    )
+    .run();
+  return { changed: (result.meta.rows_written ?? 0) === 1 };
+}
+
 export async function refreshAddressReputations(db: D1Database, now = Math.floor(Date.now() / 1_000)) {
   const [result] = await db.batch([
     db.prepare(ADDRESS_REPUTATION_UPSERT_SQL).bind(now),
     db.prepare(ADDRESS_REPUTATION_RECONCILE_SQL),
   ]);
+  await refreshAddressReputationHistogram(db);
   await setCoreState(db, "address_reputations_refreshed_at", now);
   return {
     refreshed: true,
