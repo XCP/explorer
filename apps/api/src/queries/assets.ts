@@ -123,54 +123,66 @@ export function featuredAssets(db: D1Database, limit: number): Promise<FeaturedA
 /* ---------- holder makeup ---------- */
 
 /** Chain tip (max block) — substituted into the address-decay term of the reputation expression. */
-/** Holder base bucketed by factual address classification or materialized Reputation band. */
-export function holderTiers(db: D1Database, asset: string): Promise<HolderTierRow[]> {
-  return q<HolderTierRow>(
+interface HolderMakeupRow extends HolderArchetypes {
+  tiers_json: string;
+  top_holder_pct: number | null;
+}
+
+export interface HolderMakeupProjection {
+  tiers: HolderTierRow[];
+  archetypes: HolderArchetypes;
+  top_holder_pct: number | null;
+}
+
+/** Holder tiers, archetypes, and concentration from one holder pass. */
+export async function holderMakeup(db: D1Database, asset: string): Promise<HolderMakeupProjection> {
+  const row = await one<HolderMakeupRow>(
     db,
-    `WITH h AS (
-       SELECT CAST(b.quantity AS REAL) q,sg.is_exchange xch,sg.is_deposit dep,
-         sg.is_emblem_vault vlt,sg.is_burn brn,
-         COALESCE(sg.vault_scams,0)+COALESCE(sg.shell_scams,0)+COALESCE(sg.dump_scams,0) integrity,
+    `WITH holder AS (
+       SELECT CAST(balance.quantity AS REAL) quantity,signal.is_exchange,signal.is_deposit,
+         signal.is_emblem_vault,signal.is_burn,signal.survived_assets,signal.assets_held,
+         COALESCE(signal.vault_scams,0)+COALESCE(signal.shell_scams,0)+COALESCE(signal.dump_scams,0) integrity,
          reputation.reputation
-       FROM balances b JOIN address_signals sg ON sg.address_id=b.address_id
-       LEFT JOIN address_reputations reputation ON reputation.address_id=b.address_id
-       WHERE b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
-         AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0),
-     tot AS (SELECT SUM(q) s FROM h)
-     SELECT CASE WHEN xch=1 THEN 'Exchange' WHEN dep=1 THEN 'Deposit' WHEN vlt=1 THEN 'Vault'
-                 WHEN brn=1 THEN 'Burn' WHEN integrity>0 THEN 'Integrity flag'
-                 WHEN reputation>=99 THEN 'Exceptional' WHEN reputation>=90 THEN 'Strong'
-                 WHEN reputation>=50 THEN 'Established' WHEN reputation IS NOT NULL THEN 'Limited'
-                 ELSE 'Unrated' END tier,
-       COUNT(*) holders, ROUND(100.0*SUM(q)/(SELECT s FROM tot),1) pct_supply
-     FROM h GROUP BY tier`,
+       FROM balances balance JOIN address_signals signal ON signal.address_id=balance.address_id
+       LEFT JOIN address_reputations reputation ON reputation.address_id=balance.address_id
+       WHERE balance.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)
+         AND balance.address_id IS NOT NULL AND CAST(balance.quantity AS INTEGER)>0
+     ), classified AS (
+       SELECT quantity,survived_assets,assets_held,SUM(quantity) OVER () total_quantity,
+         CASE WHEN is_exchange=1 THEN 'Exchange' WHEN is_deposit=1 THEN 'Deposit'
+              WHEN is_emblem_vault=1 THEN 'Vault' WHEN is_burn=1 THEN 'Burn'
+              WHEN integrity>0 THEN 'Integrity flag' WHEN reputation>=99 THEN 'Exceptional'
+              WHEN reputation>=90 THEN 'Strong' WHEN reputation>=50 THEN 'Established'
+              WHEN reputation IS NOT NULL THEN 'Limited' ELSE 'Unrated' END tier
+       FROM holder
+     ), grouped AS (
+       SELECT tier,COUNT(*) holders,ROUND(100.0*SUM(quantity)/MAX(total_quantity),1) pct_supply
+       FROM classified GROUP BY tier
+     ), totals AS (
+       SELECT COALESCE(SUM(CASE WHEN survived_assets>=20 THEN 1 ELSE 0 END),0) creators,
+         COALESCE(SUM(CASE WHEN assets_held>=500 THEN 1 ELSE 0 END),0) whales,
+         COALESCE(SUM(CASE WHEN assets_held>=100 THEN 1 ELSE 0 END),0) collectors,
+         COUNT(*) holders
+       FROM classified
+     )
+     SELECT (SELECT json_group_array(json_object(
+              'tier',tier,'holders',holders,'pct_supply',pct_supply)) FROM grouped) tiers_json,
+       totals.creators,totals.whales,totals.collectors,totals.holders,
+       (SELECT ROUND(signal.top1_pct,1) FROM asset_signals signal
+         WHERE signal.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?1)) top_holder_pct
+     FROM totals`,
     asset,
   );
-}
-
-/** Archetype counts among an asset's holders (creators / whales / collectors) + total. */
-export function holderArchetypes(db: D1Database, asset: string): Promise<HolderArchetypes | null> {
-  return one<HolderArchetypes>(
-    db,
-    `SELECT SUM(CASE WHEN sg.survived_assets>=20 THEN 1 ELSE 0 END) creators,
-            SUM(CASE WHEN sg.assets_held>=500 THEN 1 ELSE 0 END) whales,
-            SUM(CASE WHEN sg.assets_held>=100 THEN 1 ELSE 0 END) collectors,
-            COUNT(*) holders
-     FROM balances b JOIN address_signals sg ON sg.address_id=b.address_id
-     WHERE b.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
-       AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0`,
-    asset,
-  );
-}
-
-/** Top-holder concentration (top1_pct from the precomputed signal). */
-export function assetTop1Pct(db: D1Database, asset: string): Promise<{ t: number } | null> {
-  return one<{ t: number }>(
-    db,
-    `SELECT ROUND(signal.top1_pct,1) t FROM asset_signals signal
-     JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id WHERE dictionary.asset=?`,
-    asset,
-  );
+  return {
+    tiers: row ? (JSON.parse(row.tiers_json) as HolderTierRow[]) : [],
+    archetypes: {
+      creators: row?.creators ?? 0,
+      whales: row?.whales ?? 0,
+      collectors: row?.collectors ?? 0,
+      holders: row?.holders ?? 0,
+    },
+    top_holder_pct: row?.top_holder_pct ?? null,
+  };
 }
 
 /* ---------- per-asset record tabs ---------- */

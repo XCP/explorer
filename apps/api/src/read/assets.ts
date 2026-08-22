@@ -8,7 +8,7 @@ import { router, J, lim, off, round, cached } from "#api/read/respond";
 import { scoreConviction, convictionScore } from "#api/reputation/score";
 import { assetActivityOutlook } from "#api/reputation/activity-outlook";
 import { assetRating } from "#api/reputation/rating";
-import { featuredAssets, holderTiers, holderArchetypes, assetTop1Pct, latestUsdRate } from "#api/queries/assets";
+import { featuredAssets, holderMakeup, latestUsdRate } from "#api/queries/assets";
 import {
   assetHolderHistory,
   listCoreAssets,
@@ -253,19 +253,21 @@ assets.get("/v2/assets/:asset", async (c) => {
 // (Exchange/Deposit/Vault/Burn), never a generic bucket. Rows sort by supply share, high→low.
 assets.get("/v2/assets/:asset/holder-makeup", async (c) => {
   const a = c.req.param("asset").toUpperCase();
-  const rows = await holderTiers(c.env.CORE_DB, a);
-  const arche = await holderArchetypes(c.env.CORE_DB, a);
-  const top1 = await assetTop1Pct(c.env.CORE_DB, a);
-  const tiers = rows.sort((x, y) => y.pct_supply - x.pct_supply);
+  const makeup = await holderMakeup(c.env.CORE_DB, a);
+  const tiers = makeup.tiers.sort((x, y) => y.pct_supply - x.pct_supply);
   return J(
     c,
     {
       result: {
         asset: a,
-        holders: arche?.holders ?? 0,
+        holders: makeup.archetypes.holders,
         tiers,
-        archetypes: { creators: arche?.creators ?? 0, collectors: arche?.collectors ?? 0, whales: arche?.whales ?? 0 },
-        top_holder_pct: top1?.t ?? null,
+        archetypes: {
+          creators: makeup.archetypes.creators,
+          collectors: makeup.archetypes.collectors,
+          whales: makeup.archetypes.whales,
+        },
+        top_holder_pct: makeup.top_holder_pct,
       },
     },
     300,
