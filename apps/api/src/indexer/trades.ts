@@ -333,10 +333,7 @@ export async function reconcileDirtyEmblemTrades(db: D1Database): Promise<{
       )
       .bind(EMBLEM_DIRTY_BATCH),
   ]);
-  const remaining = Number(
-    (await db.prepare(`SELECT COUNT(*) remaining FROM emblem_trade_dirty`).first<{ remaining: number }>())?.remaining ??
-      0,
-  );
+  const remaining = await getCoreStateInt(db, "emblem_trade_dirty_remaining");
   return {
     written: results[0].meta.rows_written ?? 0,
     cleared: results[1].meta.rows_written ?? 0,

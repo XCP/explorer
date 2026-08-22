@@ -25,6 +25,15 @@ function seededDatabase(): DatabaseSync {
 const dirtyCount = (database: DatabaseSync): number =>
   Number((database.prepare(`SELECT COUNT(*) c FROM emblem_trade_dirty`).get() as { c: number }).c);
 
+const dirtyProgress = (database: DatabaseSync): number =>
+  Number(
+    (
+      database.prepare(`SELECT value FROM core_state WHERE key='emblem_trade_dirty_remaining'`).get() as {
+        value: string;
+      }
+    ).value,
+  );
+
 const contentsDirtyCount = (database: DatabaseSync): number =>
   Number((database.prepare(`SELECT COUNT(*) c FROM emblem_vault_contents_dirty`).get() as { c: number }).c);
 
@@ -38,9 +47,14 @@ test("re-upserting a sale enqueues its trade exactly once and does not abort", (
   const database = seededDatabase();
   database.prepare(SALE_UPSERT).run("0xabc", 1, 7, "42", "100", 20_000_000);
   assert.equal(dirtyCount(database), 1);
+  assert.equal(dirtyProgress(database), 1);
   // The prod failure: the DO UPDATE path fired the update trigger with its OR IGNORE stripped.
   database.prepare(SALE_UPSERT).run("0xabc", 1, 7, "42", "200", 20_000_001);
   assert.equal(dirtyCount(database), 1);
+  assert.equal(dirtyProgress(database), 1);
+  database.prepare(`DELETE FROM emblem_trade_dirty WHERE contract_id=7 AND token_id='42'`).run();
+  assert.equal(dirtyCount(database), 0);
+  assert.equal(dirtyProgress(database), 0);
 });
 
 test("re-upserting an ethereum block re-enqueues its sales without aborting", () => {
