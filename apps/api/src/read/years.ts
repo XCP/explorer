@@ -41,6 +41,8 @@ const YEARS_CACHE_VERSION = "v11"; // v11: DOLLARCASH lowq flag
 // The prior version's rows serve during recompute so a bump never cold-starts readers. Move BOTH
 // constants forward together on the next bump (v12/v11, then v13/v12, …).
 const YEARS_CACHE_STALE_VERSION = "v10";
+export const YEARS_INDEX_CACHE_KEY = `years:index:${YEARS_CACHE_VERSION}`;
+export const YEARS_INDEX_STALE_CACHE_KEY = `years:index:${YEARS_CACHE_STALE_VERSION}`;
 
 /** Metrics eligible for the records ledger; partial years cannot hold records. */
 const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_fills_raw", "clean_usd"] as const;
@@ -98,13 +100,30 @@ async function buildIndex(db: D1Database): Promise<YearIndex> {
   return { as_of: Math.floor(Date.now() / 1000), years };
 }
 
+/** Reuse the globally materialized index instead of repeating its seven full-ledger scans per year page. */
+export async function readCachedYearIndex(db: D1Database): Promise<YearIndex | null> {
+  for (const key of [YEARS_INDEX_CACHE_KEY, YEARS_INDEX_STALE_CACHE_KEY]) {
+    const row = await db.prepare(`SELECT body FROM cache WHERE key=?`).bind(key).first<{ body: string }>();
+    if (!row?.body) continue;
+    try {
+      const parsed = JSON.parse(row.body) as { result?: YearIndex };
+      if (parsed.result && Number.isFinite(parsed.result.as_of) && Array.isArray(parsed.result.years)) {
+        return parsed.result;
+      }
+    } catch {
+      // A malformed cache row is not authoritative. Fall through to the next version or rebuild.
+    }
+  }
+  return null;
+}
+
 export const years = router();
 
 years.get("/v2/years", (c) =>
   cached(
     c,
-    `years:index:${YEARS_CACHE_VERSION}`,
-    { ttl: 86_400, edge: 3_600, swr: 604_800, staleKey: `years:index:${YEARS_CACHE_STALE_VERSION}` },
+    YEARS_INDEX_CACHE_KEY,
+    { ttl: 86_400, edge: 3_600, swr: 604_800, staleKey: YEARS_INDEX_STALE_CACHE_KEY },
     async (): Promise<Envelope<YearIndex>> => ({ result: await buildIndex(c.env.CORE_DB) }),
   ),
 );
@@ -145,7 +164,7 @@ years.get("/v2/years/:year", (c) => {
         pepecash,
         zaif,
       ] = await Promise.all([
-        buildIndex(db),
+        readCachedYearIndex(db).then((index) => index ?? buildIndex(db)),
         yearAssetLedger(db),
         yearStatsDetail(db, start, end),
         yearMonthly(db, start, end),

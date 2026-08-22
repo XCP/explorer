@@ -25,6 +25,13 @@ const WINDOWS_PER_CALL = 8; // ~2400 days per currency per admin call → backfi
 
 const isoDay = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10);
 
+export const APPLY_SPOT_TRADE_USD_SQL = `UPDATE trades SET usd_value=total*(
+  SELECT price.usd FROM prices price
+  WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))
+WHERE currency IN ('BTC','XCP') AND block_time>=?1 AND block_time<?2
+  AND usd_value IS NOT total*(SELECT price.usd FROM prices price
+    WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`;
+
 type PriceWrite = {
   day: string;
   currency: string;
@@ -218,15 +225,9 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       // PEPECASH is thin; lack of a fresh execution must not block BTC/XCP maintenance.
     }
     await upsertPrices(env.CORE_DB, rows);
-    const applied = await env.CORE_DB.prepare(
-      `UPDATE trades SET usd_value=total*(
-         SELECT price.usd FROM prices price
-         WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))
-       WHERE currency IN ('BTC','XCP') AND date(block_time,'unixepoch')=?
-         AND usd_value IS NOT total*(SELECT price.usd FROM prices price
-           WHERE price.currency=trades.currency AND price.day=date(trades.block_time,'unixepoch'))`,
-    )
-      .bind(day)
+    const dayStart = now - (now % DAY);
+    const applied = await env.CORE_DB.prepare(APPLY_SPOT_TRADE_USD_SQL)
+      .bind(dayStart, dayStart + DAY)
       .run();
     return {
       day,

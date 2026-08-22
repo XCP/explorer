@@ -22,6 +22,11 @@ import {
   yearStart,
   yearTopAssets,
 } from "#api/queries/years";
+import {
+  YEARS_INDEX_CACHE_KEY,
+  YEARS_INDEX_STALE_CACHE_KEY,
+  readCachedYearIndex,
+} from "#api/read/years";
 
 class Statement {
   private bound: unknown[] = [];
@@ -108,6 +113,26 @@ test("year ledgers bucket activity, newcomers and market by year", async () => {
   const clean = await yearCleanLedger(db);
   // The $900 WASHY fill is excluded by low_quality; everything else counts.
   assert.equal(clean.find((row) => row.y === "2017")?.usd, 500 + 30 + 60 + 9 * 30 + 9 * 60);
+});
+
+test("year pages reuse the current materialized index and fall back to the prior version", async () => {
+  const raw = new DatabaseSync(":memory:");
+  raw.exec(`CREATE TABLE cache(key TEXT PRIMARY KEY, body TEXT)`);
+  raw.prepare(`INSERT INTO cache VALUES(?,?)`).run(
+    YEARS_INDEX_STALE_CACHE_KEY,
+    JSON.stringify({ result: { as_of: 10, years: [] } }),
+  );
+  raw.prepare(`INSERT INTO cache VALUES(?,?)`).run(
+    YEARS_INDEX_CACHE_KEY,
+    JSON.stringify({ result: { as_of: 11, years: [] } }),
+  );
+
+  assert.equal((await readCachedYearIndex(d1(raw)))?.as_of, 11);
+  raw.prepare(`DELETE FROM cache WHERE key=?`).run(YEARS_INDEX_CACHE_KEY);
+  assert.equal((await readCachedYearIndex(d1(raw)))?.as_of, 10);
+  raw.prepare(`UPDATE cache SET body='not-json'`).run();
+  assert.equal(await readCachedYearIndex(d1(raw)), null);
+  raw.close();
 });
 
 test("clean year detail excludes flagged assets and prices PEPECASH endpoints", async () => {

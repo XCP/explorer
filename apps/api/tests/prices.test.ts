@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
+  APPLY_SPOT_TRADE_USD_SQL,
   APPLY_TRADE_USD_SQL,
   BUILD_BURN_PRICE_OBSERVATIONS_SQL,
   BUILD_BURN_XCP_USD_SQL,
@@ -56,6 +57,32 @@ test("USD reconciliation advances new rows without wrapping when caught up", () 
   assert.deepEqual(tradeUsdWindow(10, 300_020), { from: 10, to: 200_010 });
   assert.equal(tradeUsdWindow(20, 20), null);
   assert.equal(tradeUsdWindow(21, 20), null);
+});
+
+test("same-day spot reconciliation uses the block-time index and stays inside its epoch window", () => {
+  const db = fixture();
+  db.exec(`
+    CREATE TABLE trades(block_time INTEGER,currency TEXT,total REAL,usd_value REAL);
+    CREATE INDEX idx_trades_time ON trades(block_time DESC);
+    INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+      VALUES('2026-01-08','XCP',2,'dextrade_xcpbtc_spot','2026-01-08',2);
+    INSERT INTO trades VALUES
+      (strftime('%s','2026-01-08 12:00:00'),'BTC',2,NULL),
+      (strftime('%s','2026-01-08 13:00:00'),'XCP',3,NULL),
+      (strftime('%s','2026-01-07 23:59:59'),'BTC',4,NULL);
+  `);
+  const start = Number(db.prepare(`SELECT unixepoch('2026-01-08') value`).get()?.value);
+  const plan = db.prepare(`EXPLAIN QUERY PLAN ${APPLY_SPOT_TRADE_USD_SQL}`).all(start, start + 86400);
+  assert.ok(
+    plan.some((row) => String(row.detail).includes("idx_trades_time") && String(row.detail).includes("block_time")),
+    JSON.stringify(plan),
+  );
+  db.prepare(APPLY_SPOT_TRADE_USD_SQL).run(start, start + 86400);
+  assert.deepEqual(
+    db.prepare(`SELECT usd_value FROM trades ORDER BY block_time`).all().map((row) => row.usd_value),
+    [null, 220000, 6],
+  );
+  db.close();
 });
 
 function fixture(): DatabaseSync {
