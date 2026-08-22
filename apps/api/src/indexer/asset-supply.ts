@@ -5,6 +5,7 @@ import { getCoreState, setCoreState } from "#api/indexer/core-state";
 
 const BACKFILL_BATCH = 2000;
 const DIRTY_PER_RUN = 400;
+const FAIRMINTER_FULL_REPAIR_INTERVAL = 1_008;
 export const SUPPLY_ID_LOOKUP_BATCH = 90;
 
 async function numberQueue(db: D1Database): Promise<number[]> {
@@ -78,7 +79,9 @@ async function recomputeXcp(db: D1Database): Promise<void> {
   await normalizeAssets(db, `asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`, []);
 }
 
-async function refreshFairminters(db: D1Database): Promise<number> {
+async function refreshFairminters(db: D1Database, assetIds: number[] | null): Promise<number> {
+  if (assetIds?.length === 0) return 0;
+  const scope = assetIds ? `asset_id IN (${assetIds.map(() => "?").join(",")}) AND` : "";
   const result = await db
     .prepare(
       `UPDATE fairminters SET
@@ -86,11 +89,12 @@ async function refreshFairminters(db: D1Database): Promise<number> {
           WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT),
         paid_quantity=CAST(COALESCE((SELECT SUM(CAST(m.paid_quantity AS INTEGER)) FROM fairmints m
           WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT)
-      WHERE earned_quantity IS NOT CAST(COALESCE((SELECT SUM(CAST(m.earn_quantity AS INTEGER)) FROM fairmints m
+      WHERE ${scope} (earned_quantity IS NOT CAST(COALESCE((SELECT SUM(CAST(m.earn_quantity AS INTEGER)) FROM fairmints m
           WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT)
         OR paid_quantity IS NOT CAST(COALESCE((SELECT SUM(CAST(m.paid_quantity AS INTEGER)) FROM fairmints m
-          WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT)`,
+          WHERE m.fairminter_tx_index=fairminters.tx_index AND m.status='valid'),0) AS TEXT))`,
     )
+    .bind(...(assetIds ?? []))
     .run();
   return result.meta.changes ?? 0;
 }
@@ -156,10 +160,17 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
       .run();
     await normalizeAssets(db, `asset_id IN (${placeholders})`, chunk);
   }
+  const fullRepairValue = await getCoreState(db, "fairminters_full_repair_block");
+  const fullRepairBlock = Number.parseInt(fullRepairValue ?? "0", 10);
+  const fairmintersFull =
+    fullRepairValue === null || tip < fullRepairBlock || tip - fullRepairBlock >= FAIRMINTER_FULL_REPAIR_INTERVAL;
+  const fairminters = await refreshFairminters(db, fairmintersFull ? null : todo);
+  if (fairmintersFull) await setCoreState(db, "fairminters_full_repair_block", tip);
+  // Advance only after the asset-scoped dependent projection succeeds. A retry can safely repeat
+  // the supply writes, while advancing first could lose the fairminter update until the weekly sweep.
   await setCoreState(db, "asset_supply_queue", JSON.stringify(queue.slice(DIRTY_PER_RUN)));
   if (derivedDue) {
     await recomputeXcp(db);
-    const fairminters = await refreshFairminters(db);
     const pools = await refreshPools(db);
     await setCoreState(db, "asset_derived_tip", tip);
     return {
@@ -167,7 +178,18 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
       recomputed: todo.length,
       queue_remaining: Math.max(0, queue.length - todo.length),
       fairminters,
+      fairminters_full: fairmintersFull,
       pools,
+    };
+  }
+  if (todo.length > 0 || fairmintersFull) {
+    return {
+      phase: "maintenance",
+      recomputed: todo.length,
+      queue_remaining: Math.max(0, queue.length - todo.length),
+      fairminters,
+      fairminters_full: fairmintersFull,
+      derived: "current",
     };
   }
   return {

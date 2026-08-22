@@ -102,7 +102,7 @@ const newFairmint: Handler = ({ ev, p, b, bt }, ctx) => {
         ),
     );
   }
-  if (p.asset && (p.status ?? "valid") === "valid") ctx.supplyDirty.add(p.asset);
+  if (p.asset) ctx.supplyDirty.add(p.asset);
 };
 const fairminterUpdate: Handler = ({ p }, ctx) => {
   if (p.tx_hash) {

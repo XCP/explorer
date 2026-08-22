@@ -22,6 +22,11 @@ export const J = (c: Ctx, body: unknown, ttl = 30) =>
 
 const CACHE_REFRESH_LEASE_SECONDS = 60;
 
+function primaryCacheDatabase(db: D1Database): D1Database {
+  const session = db as unknown as { withSession?: (mode: string) => D1Database };
+  return typeof session.withSession === "function" ? session.withSession("first-primary") : db;
+}
+
 /** Atomically elect one stale-cache request to refresh while every contender serves the existing body. */
 export async function claimCacheRefresh(db: D1Database, key: string, now: number): Promise<boolean> {
   const result = await db
@@ -54,6 +59,9 @@ export async function cached(
   producer: () => Promise<unknown>,
 ): Promise<Response> {
   const { ttl, edge = Math.min(ttl, 30), swr = ttl, staleKey } = opts;
+  // Public query producers keep using the replica-local database from the route context. Cache rows
+  // and their refresh lease use the primary so every colo observes one global coordination point.
+  const cacheDb = primaryCacheDatabase(c.env.CORE_DB);
   const now = Math.floor(Date.now() / 1000);
   const send = (body: string, ctype = "application/json", maxAge = edge) =>
     c.body(body, 200, {
@@ -63,7 +71,7 @@ export async function cached(
     });
   const write = async (): Promise<string> => {
     const body = JSON.stringify(await producer());
-    await c.env.CORE_DB.prepare(
+    await cacheDb.prepare(
       `INSERT INTO cache (key,body,ctype,expires_at,refreshing_until) VALUES (?,?,'application/json',?,0)
        ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype,
          expires_at=excluded.expires_at,refreshing_until=0`,
@@ -73,7 +81,7 @@ export async function cached(
       .catch(() => {});
     return body;
   };
-  const hit = await c.env.CORE_DB.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
+  const hit = await cacheDb.prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
     .bind(key)
     .first<{ body: string; ctype: string; expires_at: number }>()
     .catch(() => null);
@@ -93,7 +101,7 @@ export async function cached(
         }
       })();
       if (ctx) {
-        const claimed = await claimCacheRefresh(c.env.CORE_DB, key, now).catch(() => false);
+        const claimed = await claimCacheRefresh(cacheDb, key, now).catch(() => false);
         if (claimed) ctx.waitUntil(write().catch(() => {}));
         const response = send(hit.body, hit.ctype);
         response.headers.set("x-d1-cache", "STALE");
@@ -102,7 +110,7 @@ export async function cached(
     }
   }
   if (staleKey) {
-    const prior = await c.env.CORE_DB.prepare(`SELECT body, ctype FROM cache WHERE key=?`)
+    const prior = await cacheDb.prepare(`SELECT body, ctype FROM cache WHERE key=?`)
       .bind(staleKey)
       .first<{ body: string; ctype: string }>()
       .catch(() => null);
@@ -116,7 +124,7 @@ export async function cached(
       })();
       if (ctx) {
         const now2 = Math.floor(Date.now() / 1000);
-        const claimed = await claimCacheRefresh(c.env.CORE_DB, staleKey, now2).catch(() => false);
+        const claimed = await claimCacheRefresh(cacheDb, staleKey, now2).catch(() => false);
         if (claimed) ctx.waitUntil(write().catch(() => {}));
         // max-age=0 keeps the edge middleware from pinning the PRIOR version's body under the
         // CURRENT contract key for the full edge TTL — the recompute must be the first body cached.

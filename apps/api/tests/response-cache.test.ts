@@ -64,6 +64,33 @@ test("a fresh hit is edge-cacheable for the configured window", async () => {
   sqlite.close();
 });
 
+test("cache coordination reads the primary instead of a stale route replica", async () => {
+  const future = Math.floor(Date.now() / 1000) + 1_000;
+  const primary = cacheDatabase([["shared", `{"source":"primary"}`, future]]);
+  const replica = cacheDatabase([]);
+  let routeReads = 0;
+  const routeDb = {
+    prepare(sql: string) {
+      routeReads += 1;
+      return replica.db.prepare(sql);
+    },
+    withSession(mode: string) {
+      assert.equal(mode, "first-primary");
+      return primary.db;
+    },
+  } as unknown as D1Database;
+
+  const response = await cached(fakeContext(routeDb, []), "shared", { ttl: 100 }, async () => {
+    routeDb.prepare(`SELECT 1`);
+    return { source: "producer" };
+  });
+  assert.equal(response.headers.get("x-d1-cache"), "HIT");
+  assert.equal(await response.text(), `{"source":"primary"}`);
+  assert.equal(routeReads, 0);
+  primary.sqlite.close();
+  replica.sqlite.close();
+});
+
 test("a prior-version fallback serves instantly but is never edge-cached", async () => {
   // Version bump: k:v2 is absent, k:v1 holds the old body. The reader must get v1 now, the
   // producer must run in the background, and the response must carry max-age=0 so the edge

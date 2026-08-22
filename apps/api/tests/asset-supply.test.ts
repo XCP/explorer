@@ -69,7 +69,7 @@ test("compact supply maintenance is exact, queued by identity, and updates deriv
     CREATE TABLE burns(earned TEXT,status TEXT);
     CREATE TABLE dividends(fee_paid TEXT,status TEXT);
     CREATE TABLE sweeps(fee_paid TEXT,status TEXT);
-    CREATE TABLE fairminters(tx_index INTEGER PRIMARY KEY,earned_quantity TEXT,paid_quantity TEXT);
+    CREATE TABLE fairminters(tx_index INTEGER PRIMARY KEY,asset_id INTEGER,earned_quantity TEXT,paid_quantity TEXT);
     CREATE TABLE fairmints(fairminter_tx_index INTEGER,earn_quantity TEXT,paid_quantity TEXT,status TEXT);
     CREATE TABLE pools(lp_asset TEXT,reserve_a TEXT,reserve_b TEXT,lp_supply TEXT,price REAL);
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'A');
@@ -80,10 +80,12 @@ test("compact supply maintenance is exact, queued by identity, and updates deriv
     INSERT INTO burns VALUES('1000','valid');
     INSERT INTO dividends VALUES('7','valid');
     INSERT INTO sweeps VALUES('11','valid');
-    INSERT INTO fairminters VALUES(10,NULL,NULL);
-    INSERT INTO fairmints VALUES(10,'5','2','valid'),(10,'7','3','valid'),(10,'99','99','invalid');
+    INSERT INTO fairminters VALUES(10,2,NULL,NULL),(20,3,NULL,NULL);
+    INSERT INTO fairmints VALUES(10,'5','2','valid'),(10,'7','3','valid'),(10,'99','99','invalid'),
+      (20,'4','1','valid');
     INSERT INTO pools VALUES('A','10','30',NULL,NULL);
     INSERT INTO core_state VALUES('asset_supply_done','1');
+    INSERT INTO core_state VALUES('fairminters_full_repair_block','100');
   `);
   const core = d1(sqlite);
   await enqueueCoreSupply(core, ["A", "A", "missing"]);
@@ -95,6 +97,7 @@ test("compact supply maintenance is exact, queued by identity, and updates deriv
     recomputed: 1,
     queue_remaining: 0,
     fairminters: 1,
+    fairminters_full: false,
     pools: 1,
   });
   assert.deepEqual(
@@ -108,11 +111,29 @@ test("compact supply maintenance is exact, queued by identity, and updates deriv
     ],
   );
   assert.deepEqual(
-    { ...sqlite.prepare(`SELECT earned_quantity,paid_quantity FROM fairminters`).get() },
+    { ...sqlite.prepare(`SELECT earned_quantity,paid_quantity FROM fairminters WHERE tx_index=10`).get() },
     {
       earned_quantity: "12",
       paid_quantity: "5",
     },
   );
+  assert.deepEqual(
+    { ...sqlite.prepare(`SELECT earned_quantity,paid_quantity FROM fairminters WHERE tx_index=20`).get() },
+    { earned_quantity: null, paid_quantity: null },
+  );
   assert.deepEqual({ ...sqlite.prepare(`SELECT lp_supply,price FROM pools`).get() }, { lp_supply: "130", price: 3 });
+
+  sqlite.exec(`INSERT INTO blocks VALUES(1108)`);
+  assert.deepEqual(await crawlAssetSupply({ CORE_DB: core } as Env), {
+    phase: "maintenance",
+    recomputed: 0,
+    queue_remaining: 0,
+    fairminters: 1,
+    fairminters_full: true,
+    pools: 0,
+  });
+  assert.deepEqual(
+    { ...sqlite.prepare(`SELECT earned_quantity,paid_quantity FROM fairminters WHERE tx_index=20`).get() },
+    { earned_quantity: "4", paid_quantity: "1" },
+  );
 });
