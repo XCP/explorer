@@ -257,3 +257,56 @@ test("a removed holding still repairs its asset after the address projection cha
   assert.equal((await runCoreAddressSignalsStep(core, 10)).queueRemaining, 0);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dirty`).get()?.count, 1);
 });
+
+test("an economic-only address change does not re-derive the assets that address holds", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address) VALUES('1spender');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO assets(asset_id,type,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,1 FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT address.address_id,asset.asset_id,'1',1
+      FROM address_dictionary address,asset_dictionary asset
+      WHERE address.address='1spender' AND asset.asset='CARD';
+    INSERT INTO asset_signals(asset_id) SELECT asset_id FROM asset_dictionary WHERE asset='CARD';
+    INSERT INTO transactions(tx_index,tx_hash,block_index,block_time,source_id,supported)
+      SELECT 1,zeroblob(32),1,1,address_id,1 FROM address_dictionary WHERE address='1spender';
+  `);
+  const core = d1(db);
+  await enqueueCoreAddressSignals(core, ["1spender"]);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).processed, 1);
+  db.exec(`DELETE FROM asset_holder_signal_dirty; DELETE FROM asset_signal_dirty;`);
+
+  // btc_fees is derived from transactions.fee, and the holder projection never reads it. Filling the
+  // Bitcoin-fee backfill therefore has to leave the asset's holder derivation alone.
+  db.exec(`UPDATE transactions SET fee='50000' WHERE tx_index=1`);
+  await enqueueCoreAddressSignals(core, ["1spender"]);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).processed, 1);
+  assert.equal(
+    db.prepare(`SELECT btc_fees FROM address_signals`).get()?.btc_fees,
+    0.0005,
+    "the address projection itself still records the new fee",
+  );
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM asset_signal_dependency_dirty`).get()?.count, 0);
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) count FROM asset_holder_signal_dirty`).get()?.count,
+    0,
+    "an economic-only change must not fan out to held assets",
+  );
+
+  // dex_trades feeds avg_holder_dex, so moving it must still fan out to the assets still held.
+  db.exec(`
+    INSERT INTO order_matches(tx0_index,tx1_index,tx0_hash,tx1_hash,tx0_address_id,block_index)
+      SELECT 1,2,zeroblob(32),zeroblob(32),address_id,1
+      FROM address_dictionary WHERE address='1spender';
+  `);
+  await enqueueCoreAddressSignals(core, ["1spender"]);
+  assert.equal((await runCoreAddressSignalsStep(core, 10)).processed, 1);
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) count FROM asset_holder_signal_dirty`).get()?.count,
+    1,
+    "dex_trades is a holder-projection input, so its change still fans out",
+  );
+});
