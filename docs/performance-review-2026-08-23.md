@@ -80,6 +80,27 @@ satisfies the ordering and stops at the first row failing the predicate.
 rewritten). They sat at the top of the missing-fee index and consumed the whole budget every tick.
 Resolved from raw block bytes and published; the backfill has been draining ever since.
 
+### Tag threshold predicates reaching their indexes (#12)
+
+Seven tag rules filtered with `col >= N` against partial indexes written `WHERE col > 0`. SQLite
+only uses a partial index when it can prove the query's WHERE implies the index's, and that prover is
+syntactic — it does not deduce `col >= 20` from `col > 0`. All seven planned as a full SCAN of
+442,493 rows with the index unused. Restating the index predicate alongside the threshold fixes it.
+
+| rule column | before | after | note |
+|---|---|---|---|
+| `survived_assets` | 444,727 | 4,468 | ~100x, identical 2,234 rows |
+| `stamps_collected` | 442,493 | 15,826 | ~28x |
+| `assets_held` | 442,493 | 262,968 | ~1.7x — `assets_held > 0` matches 262,968 rows, so the index is barely selective here |
+
+**The only fix in this review with no write side at all** — a predicate, not an index. That is why it
+shipped without the cost arithmetic every other candidate had to survive. The gain tracks the
+selectivity of `col > 0`, which is why the assets_held rules barely move; a `WHERE assets_held >= 100`
+index would fix that properly and was skipped as marginal.
+
+A sweep of the remaining `>= N` predicates against every `> 0` partial index found no other
+instances.
+
 ## Measured and deliberately rejected
 
 Each of these looks like an obvious win until the write side is priced.
