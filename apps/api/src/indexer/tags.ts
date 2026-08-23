@@ -46,18 +46,50 @@ const RULES: Rule[] = [
       JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=dictionary.address
       WHERE send.destination_address_id IS NOT NULL`,
   },
+  // The `col>0 AND` half of the threshold rules below is NOT redundant — do not simplify it away.
+  //
+  // address_signals carries partial indexes written as `WHERE col > 0`. SQLite only uses a partial
+  // index when it can prove the query's WHERE implies the index's, and that prover is syntactic:
+  // it does not deduce `col >= 20` from `col > 0`, even though every integer satisfying the former
+  // satisfies the latter. So `signal.survived_assets>=1` planned as a full SCAN of all 442,493 rows
+  // while the index sat unused — 23,357,464 rows read over 52 runs for the creator rule alone.
+  // Restating the index predicate verbatim lets the index be chosen; the threshold then applies as
+  // a cheap per-row filter over the far smaller matching set.
+  //
+  // Only the rules whose column actually has a `> 0` partial index carry the extra term. dex_trades,
+  // dispenses, assets_burned and dividends have no such index, so adding it there would be noise.
   { tag: "dex_trader", scope: "address", select: addressSelect("signal.dex_trades>=10") },
   { tag: "frequent_dex_trader", scope: "address", select: addressSelect("signal.dex_trades>=100") },
-  { tag: "collector", scope: "address", select: addressSelect("signal.assets_held>=100") },
-  { tag: "prolific_collector", scope: "address", select: addressSelect("signal.assets_held>=500") },
+  { tag: "collector", scope: "address", select: addressSelect("signal.assets_held>0 AND signal.assets_held>=100") },
+  {
+    tag: "prolific_collector",
+    scope: "address",
+    select: addressSelect("signal.assets_held>0 AND signal.assets_held>=500"),
+  },
   { tag: "merchant", scope: "address", select: addressSelect("signal.dispenses>=5") },
-  { tag: "creator", scope: "address", select: addressSelect("signal.survived_assets>=1") },
-  { tag: "prolific_creator", scope: "address", select: addressSelect("signal.survived_assets>=20") },
+  { tag: "creator", scope: "address", select: addressSelect("signal.survived_assets>0 AND signal.survived_assets>=1") },
+  {
+    tag: "prolific_creator",
+    scope: "address",
+    select: addressSelect("signal.survived_assets>0 AND signal.survived_assets>=20"),
+  },
   { tag: "burner", scope: "address", select: addressSelect("signal.assets_burned>=3") },
   { tag: "dividend_payer", scope: "address", select: addressSelect("signal.dividends>=1") },
-  { tag: "stamp_creator", scope: "address", select: addressSelect("signal.stamps_created>=5") },
-  { tag: "stamp_collector", scope: "address", select: addressSelect("signal.stamps_collected>=20") },
-  { tag: "src20_deployer", scope: "address", select: addressSelect("signal.src20_deploys>=1") },
+  {
+    tag: "stamp_creator",
+    scope: "address",
+    select: addressSelect("signal.stamps_created>0 AND signal.stamps_created>=5"),
+  },
+  {
+    tag: "stamp_collector",
+    scope: "address",
+    select: addressSelect("signal.stamps_collected>0 AND signal.stamps_collected>=20"),
+  },
+  {
+    tag: "src20_deployer",
+    scope: "address",
+    select: addressSelect("signal.src20_deploys>0 AND signal.src20_deploys>=1"),
+  },
   { tag: "btns_user", scope: "address", select: addressSelect("signal.is_btns_user=1") },
   { tag: "low_quality", scope: "asset", select: assetSelect("signal.low_quality=1") },
   { tag: "durable", scope: "asset", select: assetSelect("signal.last_trade_blk-signal.first_trade_blk>=43800") },
