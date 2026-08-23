@@ -160,9 +160,37 @@ WHERE address_signals.first_block IS NOT excluded.first_block
   OR address_signals.src20_deploys IS NOT excluded.src20_deploys
   OR address_signals.is_btns_user IS NOT excluded.is_btns_user`;
 
+/**
+ * The only address_signals columns the asset holder projection reads (HOLDER_PROJECTION in
+ * core-asset-signals.ts): is_burn weights burned supply, assets_held gives holder_breadth,
+ * survived_assets gives pct_creator_holders, dex_trades gives avg_holder_dex.
+ *
+ * Staging held assets on ANY address change re-derived every asset a wallet holds whenever an
+ * economic-only column moved — btc_fees alone dirtied ~19 assets per address, each costing a
+ * ~3,900-row holder re-derivation that could not produce a different answer. Narrowing the fan-out
+ * to these four keeps invalidation exact; anything unrecognised still stages, so the failure mode
+ * remains over-invalidation rather than a stale projection.
+ */
+interface HolderDependency {
+  is_burn: number | null;
+  assets_held: number | null;
+  survived_assets: number | null;
+  dex_trades: number | null;
+}
+
+const HOLDER_DEPENDENCY_COLUMNS = "is_burn,assets_held,survived_assets,dex_trades";
+
+const holderDependencyChanged = (before: HolderDependency | null, after: HolderDependency): boolean =>
+  before === null ||
+  before.is_burn !== after.is_burn ||
+  before.assets_held !== after.assets_held ||
+  before.survived_assets !== after.survived_assets ||
+  before.dex_trades !== after.dex_trades;
+
 interface AddressSignalRebuild {
   processed: number;
-  changedAddressIds: number[];
+  /** Addresses whose holder-projection inputs moved — the only ones worth staging held assets for. */
+  holderRelevantAddressIds: number[];
 }
 
 async function rebuildCoreAddressSignalsWithChanges(
@@ -172,14 +200,22 @@ async function rebuildCoreAddressSignalsWithChanges(
   // Counterparty also uses txid:vout keys as balance locations. They remain first-class dictionary identities,
   // but they are UTXOs rather than addresses and must not receive address reputation projections.
   const unique = [...new Set(addresses)].filter(isBitcoinAddress);
-  const changedAddressIds: number[] = [];
+  const holderRelevantAddressIds: number[] = [];
   // Keep the small multi-table activity query separate from the large projection UPSERT. Combining them can
   // exceed D1's compound-SELECT limit, while each address remains independently replay-safe.
   for (const address of unique) {
+    // The holder-dependency columns ride along on the identity lookup the rebuild already performs,
+    // so knowing whether the fan-out is warranted costs no extra round trip.
     const identity = await db
-      .prepare(`SELECT address_id FROM address_dictionary WHERE address=?`)
+      .prepare(
+        `SELECT dictionary.address_id,signal.address_id IS NOT NULL projected,
+                signal.is_burn,signal.assets_held,signal.survived_assets,signal.dex_trades
+         FROM address_dictionary dictionary
+         LEFT JOIN address_signals signal ON signal.address_id=dictionary.address_id
+         WHERE dictionary.address=?`,
+      )
       .bind(address)
-      .first<{ address_id: number }>();
+      .first<HolderDependency & { address_id: number; projected: number }>();
     if (!identity) continue;
     // One batch = one Worker subrequest for all six activity reads. The sequential form cost ~8
     // subrequests per address, which capped a drain step near 110 addresses before hitting the
@@ -192,13 +228,16 @@ async function rebuildCoreAddressSignalsWithChanges(
     const lastBlocks = activity.flatMap((row) => (row.last_block === null ? [] : [row.last_block]));
     const firstBlock = firstBlocks.length > 0 ? Math.min(...firstBlocks) : null;
     const lastBlock = lastBlocks.length > 0 ? Math.max(...lastBlocks) : null;
+    // No RETURNING row means the UPSERT's own change guard rejected the write: nothing moved at all.
     const changed = await db
-      .prepare(`${UPSERT} RETURNING address_id`)
+      .prepare(`${UPSERT} RETURNING address_id,${HOLDER_DEPENDENCY_COLUMNS}`)
       .bind(address, firstBlock, lastBlock)
-      .first<{ address_id: number }>();
-    if (changed) changedAddressIds.push(changed.address_id);
+      .first<HolderDependency & { address_id: number }>();
+    if (!changed) continue;
+    if (holderDependencyChanged(identity.projected ? identity : null, changed))
+      holderRelevantAddressIds.push(changed.address_id);
   }
-  return { processed: unique.length, changedAddressIds };
+  return { processed: unique.length, holderRelevantAddressIds };
 }
 
 export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
@@ -309,7 +348,7 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
     // Asset holder-community fields read address_signals. Propagate a queued address refresh to
     // the assets whose address projection actually changed. Stage dependencies until the address
     // queue completes so popular assets are inserted into the main work queue only once.
-    await stageHeldAssetSignals(db, rebuilt.changedAddressIds);
+    await stageHeldAssetSignals(db, rebuilt.holderRelevantAddressIds);
     const remaining = queue.slice(todo.length);
     await setCoreState(db, "address_signals_queue", JSON.stringify(remaining));
     if (remaining.length === 0 && (await getCoreStateInt(db, "address_signals_cursor")) === 0)
@@ -350,7 +389,7 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
     db,
     rows.results.map((row) => row.address),
   );
-  await stageHeldAssetSignals(db, rebuilt.changedAddressIds);
+  await stageHeldAssetSignals(db, rebuilt.holderRelevantAddressIds);
   const next = rows.results.at(-1)?.address_id ?? cursor;
   await setCoreState(db, "address_signals_cursor", next);
   return { processed: rebuilt.processed, cursor: next, cycleComplete: false };
