@@ -33,10 +33,17 @@ export const RECOVERY_MAX_OUTPUTS_PER_PAGE = 420;
  * attempt was backwards: it hid inputs while the spend was uncertain and released them the moment it
  * became certain, so every completed recovery was re-offered to its owner and failed to broadcast with
  * bad-txns-inputs-missingorspent. Every terminal attempt status means the inputs were consumed
- * (`confirmed` by the attempt, `replaced` by its replacement, `failed` by several conflicting spends),
- * so attempt membership alone is the right test. `recovery_attempt_inputs_output` indexes it directly.
+ * (`confirmed` by the attempt, `replaced` by its replacement, `failed` by several conflicting spends).
+ *
+ * Membership alone was still too broad in one direction. An attempt the network never saw consumed
+ * nothing, and `transaction-not-seen-inputs-unspent` is not terminal, so a wallet that signed without
+ * broadcasting hid its owner's own outputs from them permanently — four July 2026 attempts held 196
+ * outputs that way. `inputs_released` is the attempt's own verdict on whether it consumed anything;
+ * reconciliation sets it when the abandonment window expires. `recovery_attempt_inputs_output` finds
+ * the membership row and the attempt joins by primary key, so the probe stays bounded per output.
  */
 export const CONSUMED_BY_ATTEMPT_FILTER = `AND NOT EXISTS (SELECT 1 FROM recovery_attempt_inputs i
+    JOIN recovery_attempts a ON a.txid=i.recovery_txid AND a.inputs_released=0
     WHERE i.input_txid=recovery_outputs.txid AND i.input_vout=recovery_outputs.vout)`;
 
 /**
