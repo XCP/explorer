@@ -52,6 +52,45 @@ test("the selected-price policy is named and resolves equal-fidelity sources det
   assert.deepEqual(reverse, forward);
 });
 
+test("a liquidity-qualified on-chain edge outranks reported and single-print quotes", () => {
+  const run = (sources: Array<[string, number]>) => {
+    const db = fixture();
+    for (const [source, usd] of sources)
+      db.exec(`INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+        VALUES('2026-02-01','XCP',${usd},'${source}','2026-02-01',2)
+        ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
+          observed_day=excluded.observed_day,fidelity=excluded.fidelity WHERE ${PRICE_SELECTION_PREDICATE}`);
+    const selected = { ...db.prepare(`SELECT usd,source FROM prices WHERE day='2026-02-01'`).get() };
+    db.close();
+    return selected;
+  };
+  // The real 2026-08-25 disagreement: one Dex-Trade execution and CMC's aggregate both said 1.83
+  // while the chain's own 25 dispenser fills said 2.85. The chain wins now, in either arrival order.
+  const chainLast = run([
+    ["dextrade_xcpbtc_spot", 1.83],
+    ["coinmarketcap_aggregate", 1.83],
+    ["market_vwm", 2.85],
+  ]);
+  const chainFirst = run([
+    ["market_vwm", 2.85],
+    ["coinmarketcap_aggregate", 1.83],
+    ["dextrade_xcpbtc_spot", 1.83],
+  ]);
+  assert.deepEqual(chainLast, { usd: 2.85, source: "market_vwm" });
+  assert.deepEqual(chainFirst, chainLast);
+  // ...but a THIN on-chain day still loses to a real quote, which is what makes it safe.
+  assert.deepEqual(
+    run([
+      ["market_vwm_thin", 2.85],
+      ["coinmarketcap_aggregate", 1.83],
+    ]),
+    {
+      usd: 1.83,
+      source: "coinmarketcap_aggregate",
+    },
+  );
+});
+
 test("USD reconciliation advances new rows without wrapping when caught up", () => {
   assert.deepEqual(tradeUsdWindow(10, 20), { from: 10, to: 20 });
   assert.deepEqual(tradeUsdWindow(10, 300_020), { from: 10, to: 200_010 });
@@ -278,6 +317,52 @@ test("a liquidity-qualified market day earns full rank and outranks the thin tie
       { day: "2026-01-08", usd: 440, source: "market_vwm" },
       { day: "2026-01-09", usd: 480, source: "market_vwm" },
     ],
+  );
+  db.close();
+});
+
+test("hourly partitions stop one burst of trading owning the day's price", () => {
+  const db = fixture();
+  // 2026-01-08, five ordinary 20-XCP fills at 0.004 BTC/XCP spread across five hours...
+  for (const hour of [2, 5, 9, 14, 20]) {
+    db.exec(`INSERT INTO order_matches VALUES(1,'2000000000',2,'8000000',
+      strftime('%s','2026-01-08')+${hour * 3600},'completed')`);
+  }
+  // ...and then ONE hour in which somebody pushes eight fills of 25x the size at half the price.
+  // Unpartitioned this owns the day by sheer volume; partitioned it owns one bucket of six.
+  for (let i = 0; i < 8; i += 1) {
+    db.exec(`INSERT INTO order_matches VALUES(1,'50000000000',2,'100000000',
+      strftime('%s','2026-01-08')+${11 * 3600 + i * 300},'completed')`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  const edge = {
+    ...db
+      .prepare(
+        `SELECT price,trades,method FROM market_price_observations
+        WHERE venue='market' AND day='2026-01-08'`,
+      )
+      .get(),
+  };
+  assert.equal(edge.method, "hourly_partitioned_volume_weighted_median");
+  assert.equal(edge.trades, 13);
+  // Five honest buckets at 0.004 and one manipulated bucket at 0.002 average to 0.00366..., not
+  // the 0.002 an unpartitioned volume-weighted median would have returned.
+  const partitioned = Number(edge.price);
+  assert.ok(partitioned > 0.0036 && partitioned < 0.0037, `partitioned edge was ${partitioned}`);
+  db.close();
+});
+
+test("partitioning leaves an ordinary day where it was", () => {
+  const db = fixture();
+  // Same five fills, same price, no burst: the partitioned mean and the whole-day median agree.
+  for (const hour of [2, 5, 9, 14, 20]) {
+    db.exec(`INSERT INTO order_matches VALUES(1,'2000000000',2,'8000000',
+      strftime('%s','2026-01-08')+${hour * 3600},'completed')`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  assert.equal(
+    db.prepare(`SELECT price FROM market_price_observations WHERE venue='market' AND day='2026-01-08'`).get()?.price,
+    0.004,
   );
   db.close();
 });

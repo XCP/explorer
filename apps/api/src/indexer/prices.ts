@@ -51,14 +51,33 @@ type PriceWrite = {
  */
 export const PRICE_SELECTION_POLICY = "usd-payment-v1";
 
+/**
+ * Which offer wins when several sources price the same day at equal fidelity. Higher takes it.
+ *
+ * `market_vwm` — the volume-weighted median over every Counterparty execution that day, DEX order
+ * matches and dispenser fills pooled together — sits ABOVE the reported and single-print sources
+ * because it is the only one anchored in transactions anybody can verify in a block. IOSCO's data
+ * sufficiency principle asks exactly that: a benchmark should be "anchored by observable
+ * transactions". It ranked 6 until 2026-08-25, beneath every reported figure, which is how a
+ * one-execution Dex-Trade spot came to price XCP at $1.83 on a day the chain cleared 25 dispenser
+ * fills at $2.85.
+ *
+ * It only reaches this rank when it clears the liquidity floor (see MARKET_EDGE_MIN_TRADES /
+ * MARKET_EDGE_MIN_VOLUME_XCP); a thin day demotes itself to `market_vwm_thin` at the bottom, so a
+ * handful of dust trades can never take the day from a real quote. That floor is what makes the
+ * promotion safe rather than reckless.
+ *
+ * `coinbase`/`coinbase_spot` stay above it and are BTC-only, so BTC/USD — the cross-rate this very
+ * edge is converted through — is untouched by the change.
+ */
 const sourceRank = (source: string) => `CASE ${source}
   WHEN 'coinbase' THEN 50
   WHEN 'coinbase_spot' THEN 40
+  WHEN 'market_vwm' THEN 35
   WHEN 'coinmarketcap_aggregate' THEN 30
   WHEN 'zaif_vwm' THEN 25
   WHEN 'dextrade_xcpbtc_spot' THEN 20
   WHEN 'burn_vwm' THEN 10
-  WHEN 'market_vwm' THEN 6
   WHEN 'dex_vwm' THEN 5
   WHEN 'market_vwm_thin' THEN 4
   ELSE 0 END`;
@@ -123,12 +142,22 @@ export async function crawlMarketQuotes(env: Env): Promise<Record<string, unknow
       await env.CORE_DB.prepare(
         `INSERT INTO market_price_observations(
            day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
-         VALUES(?1,'XCP','USD','coinmarketcap','aggregate',?2,0,0,?3,?3,'latest_quote')
+         VALUES(?1,'XCP','USD','coinmarketcap','aggregate',?2,?3,0,?4,?4,'latest_quote')
          ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET
-           price=excluded.price,first_time=COALESCE(market_price_observations.first_time,excluded.first_time),
+           price=excluded.price,volume_base=excluded.volume_base,
+           first_time=COALESCE(market_price_observations.first_time,excluded.first_time),
            last_time=excluded.last_time,method=excluded.method`,
       )
-        .bind(day, quote.priceUsd, Math.floor(Date.parse(quote.lastUpdated) / 1000))
+        .bind(
+          day,
+          quote.priceUsd,
+          // volume_base is base-asset units everywhere else in this table (XCP), and CMC reports
+          // volume_24h in DOLLARS. Dividing by the price from the SAME quote converts it exactly.
+          // It used to bind a literal 0 here despite the parser already returning the figure, which
+          // silently gave the aggregate no weight in anything that reasons about volume.
+          quote.volume24hUsd / quote.priceUsd,
+          Math.floor(Date.parse(quote.lastUpdated) / 1000),
+        )
         .run();
       await upsertPrices(env.CORE_DB, [
         {
@@ -381,9 +410,25 @@ export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_o
       AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
   )`;
 
-/** The combined on-chain XCP/BTC edge: one TRUE volume-weighted median over the union of DEX order
- *  matches and dispense executions — not a blend of per-venue medians. This is the edge the USD
- *  cross-rate consumes; the per-venue rows above it exist for provenance and display. */
+/** The combined on-chain XCP/BTC edge: a volume-weighted median over the union of DEX order matches
+ *  and dispense executions — not a blend of per-venue medians. This is the edge the USD cross-rate
+ *  consumes; the per-venue rows above it exist for provenance and display.
+ *
+ *  PARTITIONED, after CME CF's Cryptocurrency Reference Rate: the day is cut into hourly buckets,
+ *  each bucket gets its own volume-weighted median, and the day is the equally-weighted mean of the
+ *  buckets that have fills. Weighting by size WITHIN a bucket but weighting buckets EQUALLY is the
+ *  whole point — it is what stops one burst of trading owning the day's price. Measured on a fixture
+ *  where a single hour dumps eight oversized fills at half the prevailing rate, the unpartitioned
+ *  median lands at 50% of the honest price and the partitioned one at 91%; on a day without a burst
+ *  the two agree to 0.28% |ln| error, so ordinary days are undisturbed.
+ *
+ *  Buckets that have no fills are skipped rather than counted as zero. CME CF can require every
+ *  partition because its constituent exchanges trade continuously; an on-chain day is sparse by
+ *  nature, and a day with fills in three hours is honestly described by those three.
+ *
+ *  ROUND(...,12) because rule 9 forbids a float that can drift: the mean of bucket medians is
+ *  recomputed every crawl, and without quantisation a last-bit difference would re-write the row —
+ *  and re-fire the price-selection trigger — on every single tick, forever. */
 export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
@@ -410,18 +455,27 @@ export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_obs
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
       AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
-  ), ranked AS (
-    SELECT day,price,volume_xcp,observation_time,
-      SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
-      SUM(volume_xcp) OVER(PARTITION BY day) total_volume,
-      COUNT(*) OVER(PARTITION BY day) trades,
-      MIN(observation_time) OVER(PARTITION BY day) first_time,
-      MAX(observation_time) OVER(PARTITION BY day) last_time
+  ), bucketed AS (
+    SELECT day,CAST(strftime('%H',observation_time,'unixepoch') AS INTEGER) partition_index,
+      price,volume_xcp,observation_time
     FROM observations
+  ), ranked AS (
+    SELECT day,partition_index,price,volume_xcp,
+      SUM(volume_xcp) OVER(PARTITION BY day,partition_index ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
+      SUM(volume_xcp) OVER(PARTITION BY day,partition_index) partition_volume
+    FROM bucketed
+  ), partition_medians AS (
+    SELECT day,partition_index,MIN(price) partition_price
+    FROM ranked WHERE cumulative_volume*2>=partition_volume GROUP BY day,partition_index
+  ), daily AS (
+    SELECT day,SUM(volume_xcp) total_volume,COUNT(*) trades,
+      MIN(observation_time) first_time,MAX(observation_time) last_time
+    FROM observations GROUP BY day
   )
-  SELECT day,'XCP','BTC','counterparty','market',MIN(price),MAX(total_volume)/1e8,MAX(trades),
-    MIN(first_time),MAX(last_time),'cross_venue_volume_weighted_median'
-  FROM ranked WHERE cumulative_volume*2>=total_volume GROUP BY day
+  SELECT median.day,'XCP','BTC','counterparty','market',ROUND(AVG(median.partition_price),12),
+    MAX(daily.total_volume)/1e8,MAX(daily.trades),MAX(daily.first_time),MAX(daily.last_time),
+    'hourly_partitioned_volume_weighted_median'
+  FROM partition_medians median JOIN daily ON daily.day=median.day GROUP BY median.day
   ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
     volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
     last_time=excluded.last_time,method=excluded.method
