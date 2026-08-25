@@ -83,6 +83,8 @@
     "snapshot:current-dislocations": "node ops/snapshot-current-dislocations.mjs",
     "evaluate:graph-heldout": "node --max-old-space-size=2048 ops/evaluate-graph-heldout.mjs",
     "audit:tags": "node ops/audit-tags-collections.mjs",
+    "d1:writes": "node ops/d1-writes.mjs",
+    "d1:queries": "node ops/d1-writes.mjs --queries",
     "audit:radar": "node ops/audit-radar-theses.mjs",
     "deploy": "wrangler deploy && npm run test:contract",
     "migrate:local": "wrangler d1 migrations apply xcpio-core --local",
