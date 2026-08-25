@@ -232,16 +232,28 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
     try {
       xcp = await fetchDexTradeMarket("XCPBTC");
       await upsertDexTradeObservation(env.CORE_DB, xcp);
+      // Held to the same evidence bar as the on-chain edge. Until now this
+      // wrote tier 2 on ANY successful fetch — a single execution of any size —
+      // while the chain's own median had to clear ten fills and a hundred XCP to
+      // reach the same tier. The floor was measured against thin ON-CHAIN days
+      // and never asked of an exchange, though a one-print ticker has precisely
+      // the same failure mode: one trade at whatever price someone took.
+      //
+      // Only the volume half can apply; a latest-execution ticker is one trade
+      // by construction, and that is itself the point. Failing the bar demotes
+      // rather than deletes, exactly as a thin on-chain day falls to the thin
+      // tier — no day loses its price, it just stops outranking better evidence.
+      const spotQualified = xcp.latestVolume >= MARKET_EDGE_MIN_VOLUME_XCP;
       rows.push({
         day,
         currency: "XCP",
         usd: xcp.price * btcUsd,
         source: "dextrade_xcpbtc_spot",
         observedDay: day,
-        fidelity: 2,
+        fidelity: spotQualified ? 2 : 1,
         priceKind: "derived",
         derivationDepth: 1,
-        selectionReason: "same_day_spot_fallback",
+        selectionReason: spotQualified ? "same_day_spot_fallback" : "same_day_spot_below_liquidity_floor",
       });
     } catch (error) {
       xcpError = error instanceof Error ? error.message : String(error);
@@ -635,10 +647,29 @@ export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
     WHERE btc.currency='BTC' AND btc.day=prices.day AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
       AND edge.source='counterparty' AND edge.venue='burn')`;
 
+/**
+ * The cross-rate that prices XCP from its own chain: the qualified on-chain edge times BTC/USD.
+ *
+ * Fidelity is 2 on the day the edge was actually observed and 1 once it is being carried forward.
+ * That is the distinction crawlSpotPrices already names when it claims "higher fidelity than a
+ * CARRIED on-chain edge" — and it is true of a carried one. It was being applied to a same-day edge
+ * too, which is what kept a real price off the site: fidelity outranks source in the selection
+ * predicate, so at tier 1 this could never displace anything however it was ranked.
+ *
+ * A same-day dextrade_xcpbtc_spot writes fidelity 2 with priceKind 'derived' and derivationDepth 1 —
+ * the identical shape to this row, XCP/BTC crossed through BTC/USD. The tiers were never separating
+ * direct from derived; they were separating fresh from carried, and this is fresh. The difference
+ * that remains is evidence: one execution on an exchange, against every fill the chain saw that day.
+ *
+ * The liquidity floor is what makes the promotion safe. A day under MARKET_EDGE_MIN_TRADES or
+ * MARKET_EDGE_MIN_VOLUME_XCP never reaches this build at all — it prices through the thin tier, which
+ * stays at fidelity 1 and beneath every source, so dust can still never take a day from a real quote.
+ */
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
     policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
     disagreement_class,selection_reason)
-  SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',
+  SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm',edge.day,
+    CASE WHEN edge.day=btc.day THEN 2 ELSE 1 END,'${PRICE_SELECTION_POLICY}','derived',
     CAST(julianday(btc.day)-julianday(edge.day) AS INTEGER),1,edge.trades,1,edge.volume_base,
     'not_evaluated','fresh_market_cross_rate'
   FROM prices btc
