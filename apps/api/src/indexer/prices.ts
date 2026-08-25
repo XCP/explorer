@@ -427,20 +427,36 @@ export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_o
  *  consumes; the per-venue rows above it exist for provenance and display.
  *
  *  PARTITIONED, after CME CF's Cryptocurrency Reference Rate: the day is cut into hourly buckets,
- *  each bucket gets its own volume-weighted median, and the day is the equally-weighted mean of the
- *  buckets that have fills. Weighting by size WITHIN a bucket but weighting buckets EQUALLY is the
- *  whole point — it is what stops one burst of trading owning the day's price. Measured on a fixture
- *  where a single hour dumps eight oversized fills at half the prevailing rate, the unpartitioned
- *  median lands at 50% of the honest price and the partitioned one at 91%; on a day without a burst
- *  the two agree to 0.28% |ln| error, so ordinary days are undisturbed.
+ *  each bucket gets its own volume-weighted median, and the day is the MEDIAN of those bucket
+ *  medians. Weighting by size WITHIN a bucket but weighting buckets EQUALLY is the point — it is
+ *  what stops one burst of trading owning the day's price. On a fixture where a single hour dumps
+ *  eight oversized fills at half the prevailing rate, the unpartitioned whole-day median lands at
+ *  50% of the honest price and this lands at 100%; on a day without a burst the two agree exactly.
+ *
+ *  MEDIAN of the bucket medians, not the mean, and the difference is not cosmetic. CME CF averages
+ *  its partitions, but CME's partitions are dense — its constituent exchanges trade continuously, so
+ *  a partition median is itself a robust statistic. An on-chain day is sparse: on 2021-08-09 eleven
+ *  buckets held thirteen fills, ten of them holding exactly one, and in a one-fill bucket "the median
+ *  of the bucket" is just that fill with no robustness left in it. One of those fills was a dispenser
+ *  paying 0.03 BTC for a single satoshi of XCP — real, on-chain, and economically meaningless at a
+ *  price of 3,000,000 BTC/XCP. Averaged, it contributed 3000000/11 and priced XCP at $12.6 BILLION
+ *  for the day, which is how it became the site's all-time high. A median outvotes it 10-to-1.
+ *
+ *  The lesson worth keeping: the whole-day volume-weighted median this replaced was ALREADY immune
+ *  to that fill, because one satoshi out of 3e11 never reaches the 50% cumulative-volume point.
+ *  Partitioning bought protection from bursts and, taking the mean, sold back protection from
+ *  outliers. Taking the median buys the first without selling the second.
  *
  *  Buckets that have no fills are skipped rather than counted as zero. CME CF can require every
- *  partition because its constituent exchanges trade continuously; an on-chain day is sparse by
- *  nature, and a day with fills in three hours is honestly described by those three.
+ *  partition because its constituents trade continuously; an on-chain day is sparse by nature, and a
+ *  day with fills in three hours is honestly described by those three.
  *
- *  ROUND(...,12) because rule 9 forbids a float that can drift: the mean of bucket medians is
- *  recomputed every crawl, and without quantisation a last-bit difference would re-write the row —
- *  and re-fire the price-selection trigger — on every single tick, forever. */
+ *  The position IN ((n+1)/2,(n+2)/2) pair is integer division doing a real median: for an odd count
+ *  both terms name the middle row, for an even count they name the middle two and AVG takes them.
+ *
+ *  ROUND(...,12) because rule 9 forbids a float that can drift: this is recomputed every crawl, and
+ *  without quantisation a last-bit difference would re-write the row — and re-fire the price-selection
+ *  trigger — on every single tick, forever. */
 export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
@@ -479,15 +495,23 @@ export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_obs
   ), partition_medians AS (
     SELECT day,partition_index,MIN(price) partition_price
     FROM ranked WHERE cumulative_volume*2>=partition_volume GROUP BY day,partition_index
+  ), ranked_partitions AS (
+    SELECT day,partition_price,
+      ROW_NUMBER() OVER(PARTITION BY day ORDER BY partition_price) position,
+      COUNT(*) OVER(PARTITION BY day) partitions
+    FROM partition_medians
   ), daily AS (
     SELECT day,SUM(volume_xcp) total_volume,COUNT(*) trades,
       MIN(observation_time) first_time,MAX(observation_time) last_time
     FROM observations GROUP BY day
   )
-  SELECT median.day,'XCP','BTC','counterparty','market',ROUND(AVG(median.partition_price),12),
+  SELECT ranked_partitions.day,'XCP','BTC','counterparty','market',
+    ROUND(AVG(ranked_partitions.partition_price),12),
     MAX(daily.total_volume)/1e8,MAX(daily.trades),MAX(daily.first_time),MAX(daily.last_time),
     'hourly_partitioned_volume_weighted_median'
-  FROM partition_medians median JOIN daily ON daily.day=median.day GROUP BY median.day
+  FROM ranked_partitions JOIN daily ON daily.day=ranked_partitions.day
+  WHERE ranked_partitions.position IN ((partitions+1)/2,(partitions+2)/2)
+  GROUP BY ranked_partitions.day
   ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
     volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
     last_time=excluded.last_time,method=excluded.method

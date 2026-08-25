@@ -345,16 +345,45 @@ test("hourly partitions stop one burst of trading owning the day's price", () =>
   };
   assert.equal(edge.method, "hourly_partitioned_volume_weighted_median");
   assert.equal(edge.trades, 13);
-  // Five honest buckets at 0.004 and one manipulated bucket at 0.002 average to 0.00366..., not
-  // the 0.002 an unpartitioned volume-weighted median would have returned.
-  const partitioned = Number(edge.price);
-  assert.ok(partitioned > 0.0036 && partitioned < 0.0037, `partitioned edge was ${partitioned}`);
+  // Five honest buckets at 0.004 against one manipulated bucket at 0.002: taking the MEDIAN of the
+  // bucket medians outvotes the manipulated hour outright, where an unpartitioned volume-weighted
+  // median would have handed the day its 0.002.
+  assert.equal(Number(edge.price), 0.004);
+  db.close();
+});
+
+test("a single absurd fill cannot take the day when it is alone in its hour", () => {
+  const db = fixture();
+  // 2021-08-09 as it actually happened, and as it actually broke. Thirteen fills across eleven
+  // hourly buckets, ten of them holding exactly one fill — so in those ten, "the median of the
+  // bucket" is just that one fill with no robustness left in it.
+  //
+  // Hour 0 is a dispenser that paid 0.03 BTC for ONE satoshi of XCP. Real, on-chain, and
+  // economically meaningless at a price of 3,000,000 BTC/XCP.
+  db.exec(`INSERT INTO dispenses VALUES(1,'1','3000000',strftime('%s','2021-08-09'),10,11)`);
+  for (const hour of [1, 3, 4, 6, 9, 10, 15, 17]) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'1500000000','267000',
+      strftime('%s','2021-08-09')+${hour * 3600},10,11)`);
+  }
+  for (const hour of [7, 18]) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'1000000000','75500',
+      strftime('%s','2021-08-09')+${hour * 3600},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  const price = Number(
+    db.prepare(`SELECT price FROM market_price_observations WHERE venue='market' AND day='2021-08-09'`).get()?.price,
+  );
+  // Averaging the eleven bucket medians gave 3000000/11 = 272727.27, which crossed to USD as
+  // $12.6 BILLION and became the site's published all-time high. A median outvotes it 10-to-1.
+  assert.ok(price < 0.001, `the one-satoshi fill still owns the day at ${price}`);
+  // ...and the honest cluster is what's left, not some other artefact.
+  assert.ok(price > 0.0001, `the honest cluster was discarded too, got ${price}`);
   db.close();
 });
 
 test("partitioning leaves an ordinary day where it was", () => {
   const db = fixture();
-  // Same five fills, same price, no burst: the partitioned mean and the whole-day median agree.
+  // Same five fills, same price, no burst: the partitioned median and the whole-day median agree.
   for (const hour of [2, 5, 9, 14, 20]) {
     db.exec(`INSERT INTO order_matches VALUES(1,'2000000000',2,'8000000',
       strftime('%s','2026-01-08')+${hour * 3600},'completed')`);
