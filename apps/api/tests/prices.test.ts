@@ -740,3 +740,39 @@ test("pricing health materializes coverage, divergence, and latest source withou
   );
   db.close();
 });
+
+test("the liquidity floor admits a small day that is well spread", () => {
+  const db = fixture();
+  // 2026-01-08 in miniature: twelve fills, one an hour, 53 XCP all told. The
+  // old MIN_VOLUME_XCP of 100 rejected this — a day a dozen people traded
+  // across half the clock, thrown out for being small. Small is not manipulated.
+  for (let hour = 0; hour < 12; hour += 1) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'440000000','78320',
+      strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  const row = {
+    ...db.prepare(`SELECT source FROM prices WHERE day='2026-01-08' AND currency='XCP'`).get(),
+  };
+  assert.equal(row.source, "market_vwm", "a well-spread 12-fill day must price at full rank");
+  db.close();
+});
+
+test("dust still cannot anchor a day, however well spread", () => {
+  const db = fixture();
+  // The case the remaining 1 XCP guard exists for: twelve fills across twelve
+  // hours — clearing MIN_TRADES and MIN_PARTITIONS outright — for a few
+  // satoshi in total. Spreading dust over the clock must not buy full rank.
+  for (let hour = 0; hour < 12; hour += 1) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'100','1',
+      strftime('%s','2026-01-09')+${hour * 3600},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  const n = db
+    .prepare(`SELECT COUNT(*) n FROM prices WHERE day='2026-01-09' AND currency='XCP' AND source='market_vwm'`)
+    .get()?.n;
+  assert.equal(n, 0, "a dust-only day must not reach full rank");
+  db.close();
+});

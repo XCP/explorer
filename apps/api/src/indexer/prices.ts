@@ -317,20 +317,34 @@ const DERIVED_FRESH_DAYS = 7;
  * Liquidity floor for the market edge to price a day at full rank. Days below it still price via the
  * THIN tier, which ranks beneath every other source and so only fills days nothing better covers.
  *
- * ORIGINALLY calibrated against the CMC aggregate (2026-07-20 sweep): unfloored the combined edge
- * showed 0.245 mean |ln err| against CMC with a 19.9 worst case; at >=10 fills and >=100 XCP it
- * reached 0.114 / 88% within 25%. That calibration is CIRCULAR and should be read with care — it
- * tuned the on-chain price to agree with CMC, and CMC is the source we later concluded is wrong for
- * XCP, being largely Dex-Trade and Zaif summed and printing ~55% below where XCP actually clears.
- * A day rejected for "error" may have been a day the chain got right.
+ * ORIGINALLY calibrated against the CMC aggregate (2026-07-20 sweep), which was CIRCULAR: it tuned
+ * the on-chain price to agree with CMC, and CMC is the source we later concluded is wrong for XCP,
+ * being largely Dex-Trade and Zaif summed and printing ~55% below where XCP actually clears. A day
+ * rejected for "error" may have been a day the chain got right.
  *
- * RE-VALIDATED 2026-08-25 without reference to CMC at all. DEX order matches and dispenser fills are
+ * RE-DERIVED 2026-08-25 with no reference to CMC at all. DEX order matches and dispenser fills are
  * two independent price-discovery mechanisms on the same chain, so on the 295 days both traded their
- * agreement is evidence with no exchange in it. On that measure the floor holds up: it admits days at
- * 0.110 median |ln(dex/dispense)| and 78.1% within 25%, against 0.117 / 73.9% unfloored. Replacing it
- * with an hours-only rule was tested and is WORSE — the marginal days an hours>=4/5/6 rule adds score
- * 0.123 / 0.149 / 0.185 median, monotonically worse the more it admits. The number was reached by
- * circular means and is still doing real work; both things are true.
+ * agreement is evidence with no exchange in it. Both thresholds were swept against that measure.
+ *
+ * MIN_TRADES stays 10, and the honest reason is weaker than it looks. Median |ln(dex/dispense)| of
+ * admitted days falls monotonically from 0.117 at >=1 trade to 0.108 at >=10 and then flattens; the
+ * trend is real. But bootstrap 95% intervals at every threshold overlap heavily (>=10 gives
+ * [0.0952, 0.1372], >=15 gives [0.0794, 0.1189]), so 10 cannot be distinguished from 12 or 15 on this
+ * evidence and >=15 "looking better" is noise at n=147. 10 is kept because it sits at the end of the
+ * monotone stretch and costs the least coverage, NOT because the data singles it out. Anyone
+ * re-tuning it should know the measurement cannot currently tell these apart.
+ *
+ * MIN_VOLUME_XCP drops from 100 to 1, and that one the data is clear about. In twelve years NOT ONE
+ * day has >=10 trades and under 10 XCP of volume, so any floor at or below 10 is free — the coverage
+ * is identical at 0, 1, 5 and 10. At 100 it starts rejecting, and what it rejects is healthy: 17 days
+ * such as 2022-06-08 (12 trades spread across 12 distinct hours, 53 XCP) or 2022-10-20 (10 trades,
+ * 8 buckets, 13 XCP). Well-populated, well-distributed days thrown out for being SMALL, which is not
+ * the same thing as being manipulated. Removing it recovers those 17 days and improves the validator
+ * slightly (0.110 -> 0.108 median, 78.1% -> 78.2% within 25%).
+ *
+ * The 1 XCP that remains is a dust guard, not a calibrated threshold. It costs zero days by
+ * measurement and exists only to stop a day being anchored by ten satoshi-sized fills, which
+ * MIN_PARTITIONS alone would not prevent — the attacker would just spread the dust over four hours.
  *
  * MIN_PARTITIONS is the piece that survived. Fills and volume cannot see WHEN trading happened, so
  * ten fills inside one minute from one actor clear the floor exactly as ten fills across the day do —
@@ -342,7 +356,7 @@ const DERIVED_FRESH_DAYS = 7;
  * 25% 78.1% -> 78.5%. Every measure improves and none regress.
  */
 const MARKET_EDGE_MIN_TRADES = 10;
-const MARKET_EDGE_MIN_VOLUME_XCP = 100;
+const MARKET_EDGE_MIN_VOLUME_XCP = 1;
 const MARKET_EDGE_MIN_PARTITIONS = 4;
 
 export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
