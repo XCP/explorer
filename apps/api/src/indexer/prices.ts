@@ -650,26 +650,37 @@ export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
 /**
  * The cross-rate that prices XCP from its own chain: the qualified on-chain edge times BTC/USD.
  *
- * Fidelity is 2 on the day the edge was actually observed and 1 once it is being carried forward.
- * That is the distinction crawlSpotPrices already names when it claims "higher fidelity than a
- * CARRIED on-chain edge" — and it is true of a carried one. It was being applied to a same-day edge
- * too, which is what kept a real price off the site: fidelity outranks source in the selection
- * predicate, so at tier 1 this could never displace anything however it was ranked.
+ * Tier 2 whether the edge is same-day or carried, because XCP is priced from its own chain and the
+ * exchanges are the fallback — not the other way round. That inversion is the whole point.
  *
- * A same-day dextrade_xcpbtc_spot writes fidelity 2 with priceKind 'derived' and derivationDepth 1 —
- * the identical shape to this row, XCP/BTC crossed through BTC/USD. The tiers were never separating
- * direct from derived; they were separating fresh from carried, and this is fresh. The difference
- * that remains is evidence: one execution on an exchange, against every fill the chain saw that day.
+ * XCP has almost no exchange presence. What exists is one venue that goes dark unpredictably and one
+ * Japan-only book almost nobody trades; CoinMarketCap's aggregate is largely those same venues added
+ * up. Dispensers and the DEX are where XCP actually changes hands, and they clear consistently around
+ * 55% above what those exchanges print — a persistent gap, not noise.
  *
- * The liquidity floor is what makes the promotion safe. A day under MARKET_EDGE_MIN_TRADES or
- * MARKET_EDGE_MIN_VOLUME_XCP never reaches this build at all — it prices through the thin tier, which
- * stays at fidelity 1 and beneath every source, so dust can still never take a day from a real quote.
+ * So the freshness argument inverts too. crawlSpotPrices claims "higher fidelity than a CARRIED
+ * on-chain edge", and that reads as obvious until you ask what the alternative is: a single Dex-Trade
+ * execution. A real on-chain median from within the last DERIVED_FRESH_DAYS is better evidence than
+ * one print from a thin venue today, so a carried edge holds the tier. Freshness has not been thrown
+ * away — it is recorded in age_days and selection_reason, where it describes the row without
+ * silently handing the day to worse evidence.
+ *
+ * Worth being explicit that the floor which gates this build was calibrated against the CMC aggregate
+ * — the very number in question. Tuning the honest source to agree with the doubtful one and calling
+ * the residue "error" is circular, and it is why the floor still deserves its own re-examination.
+ * What it must never do again is what it did here: reject an on-chain day for thin evidence and hand
+ * that day to a source with less.
+ *
+ * The floor still decides WHICH on-chain day is trustworthy enough to anchor. A day under
+ * MARKET_EDGE_MIN_TRADES or MARKET_EDGE_MIN_VOLUME_XCP never reaches this build; it either carries a
+ * qualified edge forward or falls to market_vwm_thin, which stays at fidelity 1 beneath every source
+ * so dust can never take a day. The change is only that a thin day now reaches for a real price from
+ * last week before it reaches for an exchange.
  */
 export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
     policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
     disagreement_class,selection_reason)
-  SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm',edge.day,
-    CASE WHEN edge.day=btc.day THEN 2 ELSE 1 END,'${PRICE_SELECTION_POLICY}','derived',
+  SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm',edge.day,2,'${PRICE_SELECTION_POLICY}','derived',
     CAST(julianday(btc.day)-julianday(edge.day) AS INTEGER),1,edge.trades,1,edge.volume_base,
     'not_evaluated','fresh_market_cross_rate'
   FROM prices btc
