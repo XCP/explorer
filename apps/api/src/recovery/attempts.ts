@@ -10,6 +10,7 @@ import {
 
 interface AttemptRow {
   txid: string;
+  reported_at: number;
 }
 
 interface AttemptInputRow {
@@ -39,16 +40,32 @@ const PROVIDER_CONCURRENCY = ELECTRS_SEQUENTIAL_CONCURRENCY;
 export const RECOVERY_SPEND_CONFIRMATIONS = 6;
 
 /**
+ * How long a reported recovery that the network has never seen is believed before its inputs are
+ * handed back. Bitcoin Core evicts a transaction from the mempool after 14 days (`mempoolexpiry`), so
+ * past that point a transaction absent from both mempool and chain, whose inputs nothing has spent,
+ * was never going to land. Waiting is not free: the read path withholds an attempt's inputs from the
+ * moment it is reported, so a wallet that signed but never broadcast silently hides its owner's own
+ * outputs from them for as long as this window lasts.
+ */
+export const RECOVERY_ABANDON_AFTER_SECONDS = 14 * 86_400;
+
+/** The reason recorded when {@link RECOVERY_ABANDON_AFTER_SECONDS} elapses with no transaction on the network. */
+export const RECOVERY_ABANDONED_REASON = "abandoned-never-broadcast";
+
+/**
  * Attempts stay in a partial work queue until they are confirmed deeply enough and their consumed
  * outputs have been settled in the same atomic batch. The prior query derived that last condition by
  * walking every historical attempt's inputs every two minutes. Even with bounded primary-key probes,
  * completed history made an idle queue read tens of thousands of rows forever.
+ *
+ * `settlement_pending` alone is the predicate. Spelling it as three disjuncts made an abandoned attempt
+ * impossible to retire — `status<>'confirmed'` and `confirmations<${RECOVERY_SPEND_CONFIRMATIONS}` are
+ * both true of a failed row, so it re-entered the queue every two minutes forever no matter what the
+ * flag said.
  */
 export const RECOVERY_ATTEMPT_QUEUE_SQL = `
-  SELECT a.txid FROM recovery_attempts a INDEXED BY recovery_attempts_work_queue
-   WHERE a.status<>'confirmed'
-      OR a.confirmations<${RECOVERY_SPEND_CONFIRMATIONS}
-      OR a.settlement_pending=1
+  SELECT a.txid,a.reported_at FROM recovery_attempts a INDEXED BY recovery_attempts_work_queue
+   WHERE a.settlement_pending=1
    ORDER BY a.chain_checked_at,a.reported_at,a.txid LIMIT ?`;
 
 export interface AttemptEvidence {
@@ -59,13 +76,24 @@ export interface AttemptEvidence {
   blockTime: number | null;
   confirmations: number;
   reason: string;
+  /**
+   * Whether this outcome hands the attempt's inputs back to their owner. True only for abandonment,
+   * which is the one outcome that proves nothing consumed them; every other terminal status means some
+   * transaction did.
+   */
+  releasesInputs: boolean;
 }
 
+/**
+ * @param unbroadcastFor seconds since the attempt was reported, which is how long the network has had
+ *   to show us the transaction. Only consulted when there is no transaction and no conflicting spend.
+ */
 export function classifyAttemptEvidence(
   txid: string,
   transaction: ElectrsTransactionStatus | null,
   inputOutspends: ElectrsOutspend[],
   tipHeight: number,
+  unbroadcastFor: number,
 ): AttemptEvidence {
   if (transaction) {
     const confirmations =
@@ -80,6 +108,7 @@ export function classifyAttemptEvidence(
       blockTime: transaction.blockTime,
       confirmations,
       reason: transaction.confirmed ? "transaction-confirmed" : "transaction-in-mempool",
+      releasesInputs: false,
     };
   }
 
@@ -95,6 +124,7 @@ export function classifyAttemptEvidence(
       blockTime: null,
       confirmations: 0,
       reason: "input-spent-by-replacement",
+      releasesInputs: false,
     };
   }
   if (conflicts.length > 1) {
@@ -106,16 +136,22 @@ export function classifyAttemptEvidence(
       blockTime: null,
       confirmations: 0,
       reason: "inputs-spent-by-multiple-transactions",
+      releasesInputs: false,
     };
   }
+  // Nothing on the network claims these inputs, and nothing ever did. Before the abandonment window
+  // that is ordinary — a wallet can broadcast slowly, and re-offering the inputs early risks the owner
+  // signing a second spend that conflicts with the first. After it, holding them is the greater harm.
+  const abandoned = unbroadcastFor >= RECOVERY_ABANDON_AFTER_SECONDS;
   return {
-    status: "pending",
+    status: abandoned ? "failed" : "pending",
     replacementTxid: null,
     blockHeight: null,
     blockHash: null,
     blockTime: null,
     confirmations: 0,
-    reason: "transaction-not-seen-inputs-unspent",
+    reason: abandoned ? RECOVERY_ABANDONED_REASON : "transaction-not-seen-inputs-unspent",
+    releasesInputs: abandoned,
   };
 }
 
@@ -138,9 +174,10 @@ export async function reconcileRecoveryAttempts(
   const now = Math.floor(Date.now() / 1000);
   const reconcileAttempt = async (attempt: AttemptRow) => {
     const attemptInputs = inputs.results.filter((input) => input.recovery_txid === attempt.txid);
+    const unbroadcastFor = now - attempt.reported_at;
     const transaction = await providers.transactionStatus(env.ELECTRS_API_BASE, attempt.txid);
     if (transaction) {
-      const evidence = classifyAttemptEvidence(attempt.txid, transaction, [], tipHeight);
+      const evidence = classifyAttemptEvidence(attempt.txid, transaction, [], tipHeight, unbroadcastFor);
       return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now, attemptInputs);
     }
     const parentTxids = [...new Set(attemptInputs.map((row) => row.input_txid))];
@@ -158,6 +195,7 @@ export async function reconcileRecoveryAttempts(
         return output;
       }),
       tipHeight,
+      unbroadcastFor,
     );
     return recoveryAttemptStatements(env.RECOVERY_DB, attempt.txid, evidence, now, attemptInputs);
   };
@@ -230,11 +268,18 @@ export function recoveryAttemptStatements(
   return statements;
 }
 
+/**
+ * Abandonment is terminal alongside settlement: there is no transaction left to watch and no spend to
+ * write, so leaving it queued would re-check a dead attempt every two minutes for the life of the
+ * database. If the owner ever does broadcast that signed transaction, the verification sweep still
+ * settles its outputs from the chain — reader-triggered on the page they load, monthly otherwise.
+ */
 function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEvidence, now: number, settled: boolean) {
   return db
     .prepare(
       `UPDATE recovery_attempts SET status=?,replacement_txid=?,block_height=?,block_hash=?,block_time=?,
-        confirmations=?,settlement_pending=?,status_reason=?,chain_checked_at=?,updated_at=? WHERE txid=?`,
+        confirmations=?,settlement_pending=?,inputs_released=?,status_reason=?,chain_checked_at=?,updated_at=?
+       WHERE txid=?`,
     )
     .bind(
       evidence.status,
@@ -243,7 +288,8 @@ function recoveryAttemptUpdate(db: D1Database, txid: string, evidence: AttemptEv
       evidence.blockHash,
       evidence.blockTime,
       evidence.confirmations,
-      settled ? 0 : 1,
+      settled || evidence.releasesInputs ? 0 : 1,
+      evidence.releasesInputs ? 1 : 0,
       evidence.reason,
       now,
       now,

@@ -9,6 +9,8 @@ import {
   RECOVERY_ATTEMPT_QUEUE_SQL,
   RECOVERY_MARK_SPENT_SQL,
   RECOVERY_SPEND_CONFIRMATIONS,
+  RECOVERY_ABANDON_AFTER_SECONDS,
+  RECOVERY_ABANDONED_REASON,
   type AttemptEvidence,
   type AttemptProviders,
 } from "#api/recovery/attempts";
@@ -23,6 +25,7 @@ test("a confirmed recovery reports confirmations from the current tip", () => {
       { confirmed: true, blockHeight: 900_000, blockHash: "22".repeat(32), blockTime: 1_700_000_000 },
       [unspent],
       900_005,
+      0,
     ),
     {
       status: "confirmed",
@@ -32,6 +35,7 @@ test("a confirmed recovery reports confirmations from the current tip", () => {
       blockTime: 1_700_000_000,
       confirmations: 6,
       reason: "transaction-confirmed",
+      releasesInputs: false,
     },
   );
 });
@@ -43,13 +47,14 @@ test("an observed mempool recovery stays pending", () => {
       { confirmed: false, blockHeight: null, blockHash: null, blockTime: null },
       [unspent],
       900_005,
+      0,
     ).reason,
     "transaction-in-mempool",
   );
 });
 
 test("absence alone never fails a recovery", () => {
-  assert.deepEqual(classifyAttemptEvidence(txid, null, [unspent], 900_005), {
+  assert.deepEqual(classifyAttemptEvidence(txid, null, [unspent], 900_005, 0), {
     status: "pending",
     replacementTxid: null,
     blockHeight: null,
@@ -57,7 +62,54 @@ test("absence alone never fails a recovery", () => {
     blockTime: null,
     confirmations: 0,
     reason: "transaction-not-seen-inputs-unspent",
+    releasesInputs: false,
   });
+});
+
+/**
+ * The bug this guards: four attempts reported in July 2026 were never broadcast, and because
+ * `transaction-not-seen-inputs-unspent` is not terminal they withheld 196 of their owners' outputs
+ * from the address page indefinitely, with nothing on chain that had consumed them.
+ */
+test("a recovery the network never saw releases its inputs once the abandonment window expires", () => {
+  const result = classifyAttemptEvidence(txid, null, [unspent], 900_005, RECOVERY_ABANDON_AFTER_SECONDS);
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, RECOVERY_ABANDONED_REASON);
+  assert.equal(result.releasesInputs, true, "nothing consumed these inputs, so the owner gets them back");
+  assert.equal(result.replacementTxid, null);
+});
+
+test("inputs are held for the whole abandonment window, so a slow broadcast is never raced", () => {
+  const result = classifyAttemptEvidence(txid, null, [unspent], 900_005, RECOVERY_ABANDON_AFTER_SECONDS - 1);
+
+  assert.equal(result.status, "pending");
+  assert.equal(result.reason, "transaction-not-seen-inputs-unspent");
+  assert.equal(result.releasesInputs, false);
+});
+
+test("age alone never abandons a recovery the network can still see", () => {
+  const ancient = RECOVERY_ABANDON_AFTER_SECONDS * 10;
+  const inMempool = classifyAttemptEvidence(
+    txid,
+    { confirmed: false, blockHeight: null, blockHash: null, blockTime: null },
+    [unspent],
+    900_005,
+    ancient,
+  );
+  assert.equal(inMempool.status, "pending");
+  assert.equal(inMempool.releasesInputs, false);
+
+  const replacement = "33".repeat(32);
+  const replaced = classifyAttemptEvidence(
+    txid,
+    null,
+    [{ spent: true, txid: replacement, block_height: null }],
+    900_005,
+    ancient,
+  );
+  assert.equal(replaced.status, "replaced");
+  assert.equal(replaced.releasesInputs, false, "a replacement did consume these inputs");
 });
 
 test("a single conflicting spender is deterministic replacement evidence", () => {
@@ -67,6 +119,7 @@ test("a single conflicting spender is deterministic replacement evidence", () =>
     null,
     [unspent, { spent: true, txid: replacement, block_height: null }],
     900_005,
+    0,
   );
   assert.equal(result.status, "replaced");
   assert.equal(result.replacementTxid, replacement);
@@ -81,6 +134,7 @@ test("multiple conflicting spenders deterministically make the original impossib
       { spent: true, txid: "44".repeat(32), block_height: 900_002 },
     ],
     900_005,
+    0,
   );
   assert.equal(result.status, "failed");
   assert.equal(result.replacementTxid, null);
@@ -113,6 +167,7 @@ function evidenceFor(status: AttemptEvidence["status"], overrides: Partial<Attem
     blockTime: null,
     confirmations: 0,
     reason: status,
+    releasesInputs: false,
     ...overrides,
   };
 }
@@ -192,6 +247,36 @@ test("no other attempt outcome writes a spend of its own", () => {
   }
 });
 
+test("an abandoned recovery records the release and leaves the work queue", () => {
+  const { db, prepared } = recordingDb();
+  const statements = recoveryAttemptStatements(
+    db,
+    txid,
+    evidenceFor("failed", { reason: RECOVERY_ABANDONED_REASON, releasesInputs: true }),
+    1_700,
+    [{ input_txid: "aa".repeat(32), input_vout: 0 }],
+  );
+
+  assert.equal(statements.length, 1, "an abandoned attempt settles no spend of its own");
+  const attempt = prepared.find((row) => row.sql.includes("UPDATE recovery_attempts"));
+  assert.equal(attempt?.values[6], 0, "there is nothing left to reconcile, so it stops being re-read");
+  assert.equal(attempt?.values[7], 1, "the read path learns these inputs were never consumed");
+});
+
+test("every other outcome keeps its inputs withheld", () => {
+  for (const evidence of [
+    evidenceFor("pending"),
+    evidenceFor("failed", { reason: "inputs-spent-by-multiple-transactions" }),
+    evidenceFor("replaced", { replacementTxid: "99".repeat(32) }),
+    evidenceFor("confirmed", { confirmations: RECOVERY_SPEND_CONFIRMATIONS }),
+  ]) {
+    const { db, prepared } = recordingDb();
+    recoveryAttemptStatements(db, txid, evidence, 1_700, [{ input_txid: "aa".repeat(32), input_vout: 0 }]);
+    const attempt = prepared.find((row) => row.sql.includes("UPDATE recovery_attempts"));
+    assert.equal(attempt?.values[7], 0, `${evidence.reason} must not release inputs`);
+  }
+});
+
 test("marking spent settles exactly the attempt's own unspent inputs", () => {
   const db = new DatabaseSync(":memory:");
   db.exec(`
@@ -254,18 +339,19 @@ test("reconciliation stops re-reading an attempt only once its spends are settle
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE recovery_attempts(txid TEXT PRIMARY KEY,status TEXT NOT NULL,confirmations INTEGER NOT NULL,
-      settlement_pending INTEGER NOT NULL,chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
+      settlement_pending INTEGER NOT NULL,inputs_released INTEGER NOT NULL DEFAULT 0,
+      chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
     CREATE INDEX recovery_attempts_work_queue ON recovery_attempts(chain_checked_at,reported_at,txid)
-      WHERE status<>'confirmed' OR confirmations<6 OR settlement_pending=1;
+      WHERE settlement_pending=1;
     CREATE TABLE recovery_attempt_inputs(recovery_txid TEXT NOT NULL,input_txid TEXT NOT NULL,input_vout INTEGER NOT NULL,
       PRIMARY KEY(recovery_txid,input_txid,input_vout)) WITHOUT ROWID;
     CREATE TABLE recovery_outputs(txid TEXT NOT NULL,vout INTEGER NOT NULL,classification TEXT NOT NULL,
       PRIMARY KEY(txid,vout)) WITHOUT ROWID;
     INSERT INTO recovery_attempts VALUES
-      ('settled','confirmed',400,0,1,1),
-      ('shallow','confirmed',2,1,2,2),
-      ('stale','confirmed',400,1,3,3),
-      ('waiting','pending',0,1,4,4);
+      ('settled','confirmed',400,0,0,1,1),
+      ('shallow','confirmed',2,1,0,2,2),
+      ('stale','confirmed',400,1,0,3,3),
+      ('waiting','pending',0,1,0,4,4);
     INSERT INTO recovery_attempt_inputs VALUES
       ('settled','a',0),('shallow','b',0),('stale','c',0),('waiting','d',0);
     INSERT INTO recovery_outputs VALUES ('a',0,'spent'),('b',0,'recoverable'),('c',0,'recoverable'),('d',0,'recoverable');
@@ -275,6 +361,12 @@ test("reconciliation stops re-reading an attempt only once its spends are settle
 
   assert.equal(queued.includes("settled"), false, "a deep confirmation with no recoverable inputs left is done");
   assert.deepEqual(queued, ["shallow", "stale", "waiting"]);
+  db.exec(`INSERT INTO recovery_attempts VALUES ('abandoned','failed',0,0,1,5,5)`);
+  assert.equal(
+    (db.prepare(RECOVERY_ATTEMPT_QUEUE_SQL).all(10) as { txid: string }[]).some((row) => row.txid === "abandoned"),
+    false,
+    "an abandoned attempt is terminal: re-reading it every two minutes would never learn anything",
+  );
   assert.equal(
     queued.includes("stale"),
     true,
@@ -286,9 +378,10 @@ test("attempt reconciliation seeks only the partial work queue", () => {
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE recovery_attempts(txid TEXT PRIMARY KEY,status TEXT NOT NULL,confirmations INTEGER NOT NULL,
-      settlement_pending INTEGER NOT NULL,chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
+      settlement_pending INTEGER NOT NULL,inputs_released INTEGER NOT NULL DEFAULT 0,
+      chain_checked_at INTEGER,reported_at INTEGER NOT NULL) WITHOUT ROWID;
     CREATE INDEX recovery_attempts_work_queue ON recovery_attempts(chain_checked_at,reported_at,txid)
-      WHERE status<>'confirmed' OR confirmations<6 OR settlement_pending=1;
+      WHERE settlement_pending=1;
   `);
 
   const details = (db.prepare(`EXPLAIN QUERY PLAN ${RECOVERY_ATTEMPT_QUEUE_SQL}`).all(25) as { detail: string }[]).map(
@@ -315,7 +408,12 @@ test("one provider failure does not block healthy recovery attempts", async () =
     }
     async all<T>() {
       if (this.sql.includes("FROM recovery_attempts a"))
-        return { results: [{ txid: healthy }, { txid: broken }] as T[] };
+        return {
+          results: [
+            { txid: healthy, reported_at: 0 },
+            { txid: broken, reported_at: 0 },
+          ] as T[],
+        };
       return {
         results: [
           { recovery_txid: healthy, input_txid: parent, input_vout: 0 },

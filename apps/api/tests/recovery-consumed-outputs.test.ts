@@ -20,7 +20,8 @@ function database(): DatabaseSync {
       txid TEXT NOT NULL,vout INTEGER NOT NULL,recovery_address TEXT,classification TEXT NOT NULL,
       PRIMARY KEY(txid,vout)) WITHOUT ROWID;
     CREATE TABLE recovery_attempts(
-      txid TEXT PRIMARY KEY,address TEXT NOT NULL,status TEXT NOT NULL) WITHOUT ROWID;
+      txid TEXT PRIMARY KEY,address TEXT NOT NULL,status TEXT NOT NULL,
+      inputs_released INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
     CREATE TABLE recovery_attempt_inputs(
       recovery_txid TEXT NOT NULL,input_txid TEXT NOT NULL,input_vout INTEGER NOT NULL,
       PRIMARY KEY(recovery_txid,input_txid,input_vout)) WITHOUT ROWID;
@@ -45,7 +46,7 @@ test("an output consumed by a recovery attempt is never offered again, whatever 
     const recovery = txid(9);
     db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,'recoverable')`).run(txid(1), address);
     db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,'recoverable')`).run(txid(2), address);
-    db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,?)`).run(recovery, address, status);
+    db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,?,0)`).run(recovery, address, status);
     db.prepare(`INSERT INTO recovery_attempt_inputs VALUES (?,?,0)`).run(recovery, txid(1));
 
     assert.deepEqual(recoverable(db), [`${txid(2)}:0`], `a ${status} attempt must still withhold its inputs`);
@@ -65,10 +66,37 @@ test("the filter matches an exact output, not merely its transaction", () => {
   const recovery = txid(9);
   db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,'recoverable')`).run(txid(1), address);
   db.prepare(`INSERT INTO recovery_outputs VALUES (?,1,?,'recoverable')`).run(txid(1), address);
-  db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,'confirmed')`).run(recovery, address);
+  db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,'confirmed',0)`).run(recovery, address);
   db.prepare(`INSERT INTO recovery_attempt_inputs VALUES (?,?,0)`).run(recovery, txid(1));
 
   assert.deepEqual(recoverable(db), [`${txid(1)}:1`], "sibling outputs of the same transaction remain available");
+});
+
+/**
+ * The bug this guards: a recovery reported but never broadcast withheld its inputs forever, because
+ * "the network has not seen it" is not a terminal status and the filter asked only about membership.
+ * Four July 2026 attempts hid 196 outputs from their owners that way, with no spend to justify it.
+ */
+test("an abandoned attempt hands its inputs back, because nothing ever consumed them", () => {
+  const db = database();
+  const recovery = txid(9);
+  db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,'recoverable')`).run(txid(1), address);
+  db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,'recoverable')`).run(txid(2), address);
+  db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,'failed',1)`).run(recovery, address);
+  db.prepare(`INSERT INTO recovery_attempt_inputs VALUES (?,?,0)`).run(recovery, txid(1));
+
+  assert.deepEqual(recoverable(db), [`${txid(1)}:0`, `${txid(2)}:0`]);
+});
+
+test("one attempt releasing an output does not release another attempt's hold on it", () => {
+  const db = database();
+  db.prepare(`INSERT INTO recovery_outputs VALUES (?,0,?,'recoverable')`).run(txid(1), address);
+  db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,'failed',1)`).run(txid(9), address);
+  db.prepare(`INSERT INTO recovery_attempts VALUES (?,?,'confirmed',0)`).run(txid(8), address);
+  db.prepare(`INSERT INTO recovery_attempt_inputs VALUES (?,?,0)`).run(txid(9), txid(1));
+  db.prepare(`INSERT INTO recovery_attempt_inputs VALUES (?,?,0)`).run(txid(8), txid(1));
+
+  assert.deepEqual(recoverable(db), [], "the confirmed spend still consumed it");
 });
 
 test("an output already classified spent is excluded regardless of attempt records", () => {
