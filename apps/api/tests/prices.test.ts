@@ -141,6 +141,7 @@ function fixture(): DatabaseSync {
     CREATE TABLE market_price_observations(
       day TEXT,base_currency TEXT,quote_currency TEXT,source TEXT,venue TEXT,price REAL,
       volume_base REAL,trades INTEGER,first_time INTEGER,last_time INTEGER,method TEXT,
+      partitions INTEGER,
       PRIMARY KEY(day,base_currency,quote_currency,source,venue));
     CREATE TABLE prices(
       day TEXT,currency TEXT,usd REAL,source TEXT,observed_day TEXT,fidelity INTEGER NOT NULL DEFAULT 0,
@@ -197,7 +198,7 @@ test("genesis XCP/USD is reproducibly derived from the burn conversion and same-
       VALUES('2014-01-02','BTC',800,'coinmarketcap_aggregate','2014-01-02',2);
     INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
       VALUES('2014-01-02','XCP',9,'coinmarketcap_archive','2014-01-02',0);
-    INSERT INTO market_price_observations VALUES(
+    INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES(
       '2014-01-02','XCP','BTC','counterparty','burn',0.001,1000,2,NULL,NULL,'protocol_conversion_vwm');
   `);
   db.exec(BUILD_BURN_XCP_USD_SQL);
@@ -235,7 +236,7 @@ test("XCP/BTC materialization is idempotent and prunes only obsolete source days
   db.exec(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - beforeReplay, 0);
 
-  db.exec(`INSERT INTO market_price_observations VALUES(
+  db.exec(`INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES(
     '2025-12-31','XCP','BTC','counterparty','dex',9,1,1,NULL,NULL,'volume_weighted_median')`);
   db.exec(PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL);
   assert.deepEqual(
@@ -297,9 +298,13 @@ test("derived XCP/USD expires after seven days and records provenance", () => {
 test("a liquidity-qualified market day earns full rank and outranks the thin tier", () => {
   const db = fixture();
   // Ten 20-XCP fills on 2026-01-08 at 0.004 BTC/XCP: 10 trades, 200 XCP — clears the floor.
+  // One per hour: this fixture used to stamp all ten at the SAME instant, which cleared the fill
+  // and volume floor while being a single burst in a single bucket — precisely what
+  // MARKET_EDGE_MIN_PARTITIONS now rejects. A day that means to be ordinary has to look ordinary.
   for (let i = 0; i < 10; i++) {
     db.prepare(
-      `INSERT INTO order_matches VALUES(1,'2000000000',2,'8000000',strftime('%s','2026-01-08'),'completed')`,
+      `INSERT INTO order_matches VALUES(1,'2000000000',2,'8000000',
+        strftime('%s','2026-01-08')+${i * 3600},'completed')`,
     ).run();
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -349,6 +354,49 @@ test("hourly partitions stop one burst of trading owning the day's price", () =>
   // bucket medians outvotes the manipulated hour outright, where an unpartitioned volume-weighted
   // median would have handed the day its 0.002.
   assert.equal(Number(edge.price), 0.004);
+  db.close();
+});
+
+test("a day whose fills are one burst does not price at full rank", () => {
+  const db = fixture();
+  // 2020-06-28 as it happened: fifteen fills, 1331 XCP — clears MIN_TRADES and MIN_VOLUME_XCP
+  // comfortably — and every one of them inside a SINGLE hour. Counting fills and volume cannot see
+  // that; one actor filling fifteen times in a minute looks identical to a day of trading.
+  for (let i = 0; i < 15; i += 1) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'10000000000','1000000',
+      strftime('%s','2020-06-28')+${9 * 3600 + i * 60},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  const edge = {
+    ...db
+      .prepare(
+        `SELECT trades,partitions FROM market_price_observations
+        WHERE venue='market' AND day='2020-06-28'`,
+      )
+      .get(),
+  };
+  // The floor's own inputs say this day is fine...
+  assert.equal(edge.trades, 15);
+  // ...and the bucket count is what shows it is one burst, so the median behind the day's price
+  // had exactly one vote and nothing to outvote a bad one with.
+  assert.equal(edge.partitions, 1);
+  assert.ok(Number(edge.partitions) < 4, "a one-bucket day must not clear MARKET_EDGE_MIN_PARTITIONS");
+  db.close();
+});
+
+test("a day spread across the clock keeps its full-rank bucket count", () => {
+  const db = fixture();
+  // Same fifteen fills, same volume, spread over twelve hours instead of one.
+  for (let i = 0; i < 15; i += 1) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'10000000000','1000000',
+      strftime('%s','2020-06-29')+${(i % 12) * 3600 + i * 60},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  const partitions = db
+    .prepare(`SELECT partitions FROM market_price_observations WHERE venue='market' AND day='2020-06-29'`)
+    .get()?.partitions;
+  assert.equal(partitions, 12);
+  assert.ok(Number(partitions) >= 4, "an ordinary day must still clear MARKET_EDGE_MIN_PARTITIONS");
   db.close();
 });
 
@@ -470,7 +518,7 @@ test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles 
   const db = fixture();
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
   db.exec(BUILD_XCP_USD_SQL);
-  db.exec(`INSERT INTO market_price_observations VALUES(
+  db.exec(`INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES(
     '2026-01-01','XCP','USD','coinmarketcap','aggregate',250,0,0,NULL,NULL,'aggregate_daily_close')`);
   db.exec(BUILD_OBSERVED_USD_SQL);
   assert.deepEqual(
@@ -491,7 +539,7 @@ test("observed aggregate XCP/USD outranks the derived cross-rate and reconciles 
 
 test("observed aggregate BTC/USD fills only days without the higher-fidelity primary calendar", () => {
   const db = fixture();
-  db.exec(`INSERT INTO market_price_observations VALUES
+  db.exec(`INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES
     ('2014-01-01','BTC','USD','coinmarketcap','aggregate',800,0,0,NULL,NULL,'aggregate_daily_close'),
     ('2026-01-01','BTC','USD','coinmarketcap','aggregate',90000,0,0,NULL,NULL,'aggregate_daily_close')`);
   db.exec(BUILD_OBSERVED_USD_SQL);
@@ -554,7 +602,7 @@ test("derived XCP/USD replay is idempotent and stale pruning preserves observed 
 test("Zaif XCP/JPY crosses through ECB at rank between the CMC aggregate and the Dex-Trade spot", () => {
   const db = fixture();
   db.exec(`
-    INSERT INTO market_price_observations VALUES
+    INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES
       ('2026-01-08','XCP','JPY','zaif','cex',200,11,2,NULL,NULL,'volume_weighted_median'),
       ('2026-01-06','EUR','USD','ecb','reference',1.10,0,0,NULL,NULL,'reference_rate'),
       ('2026-01-06','EUR','JPY','ecb','reference',160,0,0,NULL,NULL,'reference_rate');
@@ -582,7 +630,7 @@ test("Zaif XCP/JPY crosses through ECB at rank between the CMC aggregate and the
     },
   );
   // The CMC aggregate still outranks it on any day it covers.
-  db.exec(`INSERT INTO market_price_observations VALUES(
+  db.exec(`INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES(
     '2026-01-08','XCP','USD','coinmarketcap','aggregate',1.42,0,0,NULL,NULL,'aggregate_daily_close')`);
   db.exec(BUILD_OBSERVED_USD_SQL);
   assert.equal(
@@ -590,7 +638,7 @@ test("Zaif XCP/JPY crosses through ECB at rank between the CMC aggregate and the
     "coinmarketcap_aggregate",
   );
   // A Zaif day whose FX legs are older than the 4-day carry produces NO row.
-  db.exec(`INSERT INTO market_price_observations VALUES
+  db.exec(`INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method) VALUES
     ('2026-01-20','XCP','JPY','zaif','cex',210,3,1,NULL,NULL,'volume_weighted_median')`);
   db.exec(BUILD_ZAIF_XCP_USD_SQL);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM prices WHERE day='2026-01-20' AND currency='XCP'`).get()?.n, 0);

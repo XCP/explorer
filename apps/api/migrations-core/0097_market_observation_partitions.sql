@@ -1,0 +1,13 @@
+-- The hourly-bucket count behind each market observation.
+--
+-- The liquidity floor (MARKET_EDGE_MIN_TRADES / MARKET_EDGE_MIN_VOLUME_XCP) counts fills and volume
+-- but cannot see WHEN they happened, so ten fills inside one minute from one actor clear it exactly
+-- as well as ten fills spread across the day. That is the burst case partitioning exists to defend
+-- against, and the floor was structurally blind to it: three days in twelve years qualified on a
+-- burst, one of them with the DEX and the dispensers 100x apart.
+--
+-- The daily price is the median of the hourly bucket medians, so this column is that median's sample
+-- size, and the floor can finally require the estimator to have enough votes to outvote a bad one.
+-- NULL on rows written before this column existed; the market build recomputes every day on the next
+-- crawl and fills it in.
+ALTER TABLE market_price_observations ADD COLUMN partitions INTEGER;

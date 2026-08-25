@@ -314,15 +314,36 @@ async function upsertDexTradeObservation(db: D1Database, observation: DexTradeOb
 const DERIVED_FRESH_DAYS = 7;
 
 /**
- * Liquidity floor for the market edge to price a day at full rank. Measured against the CMC
- * aggregate over every overlap day (2026-07-20 sweep): unfloored the combined edge shows 0.245
- * mean |ln err| with a 19.9 worst case (dust-trigger and promo-dispenser days); at >=10 fills and
- * >=100 XCP it reaches 0.114 / 88% within 25% — better than the DEX-only edge ever measured
- * (0.195 / 74%). Days below the floor still price via the THIN tier, which ranks beneath every
- * other source and therefore only ever fills days nothing better covers (e.g. Feb 3-6, 2014).
+ * Liquidity floor for the market edge to price a day at full rank. Days below it still price via the
+ * THIN tier, which ranks beneath every other source and so only fills days nothing better covers.
+ *
+ * ORIGINALLY calibrated against the CMC aggregate (2026-07-20 sweep): unfloored the combined edge
+ * showed 0.245 mean |ln err| against CMC with a 19.9 worst case; at >=10 fills and >=100 XCP it
+ * reached 0.114 / 88% within 25%. That calibration is CIRCULAR and should be read with care — it
+ * tuned the on-chain price to agree with CMC, and CMC is the source we later concluded is wrong for
+ * XCP, being largely Dex-Trade and Zaif summed and printing ~55% below where XCP actually clears.
+ * A day rejected for "error" may have been a day the chain got right.
+ *
+ * RE-VALIDATED 2026-08-25 without reference to CMC at all. DEX order matches and dispenser fills are
+ * two independent price-discovery mechanisms on the same chain, so on the 295 days both traded their
+ * agreement is evidence with no exchange in it. On that measure the floor holds up: it admits days at
+ * 0.110 median |ln(dex/dispense)| and 78.1% within 25%, against 0.117 / 73.9% unfloored. Replacing it
+ * with an hours-only rule was tested and is WORSE — the marginal days an hours>=4/5/6 rule adds score
+ * 0.123 / 0.149 / 0.185 median, monotonically worse the more it admits. The number was reached by
+ * circular means and is still doing real work; both things are true.
+ *
+ * MIN_PARTITIONS is the piece that survived. Fills and volume cannot see WHEN trading happened, so
+ * ten fills inside one minute from one actor clear the floor exactly as ten fills across the day do —
+ * the burst case partitioning exists to defend against, invisible to a count. The daily price is the
+ * median of the hourly bucket medians, so the bucket count IS that median's sample size, and four is
+ * the minimum at which it can outvote a bad bucket. It demotes three days in twelve years: 2020-06-28
+ * (15 fills in ONE hour), 2024-02-15 (10 in two), and 2020-08-28 (11 in three, with the DEX and the
+ * dispensers 100x apart). Cost 3 days of 700; mean |ln| 0.184 -> 0.162, median 0.110 -> 0.108, within
+ * 25% 78.1% -> 78.5%. Every measure improves and none regress.
  */
 const MARKET_EDGE_MIN_TRADES = 10;
 const MARKET_EDGE_MIN_VOLUME_XCP = 100;
+const MARKET_EDGE_MIN_PARTITIONS = 4;
 
 export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
@@ -458,7 +479,7 @@ export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_o
  *  without quantisation a last-bit difference would re-write the row — and re-fire the price-selection
  *  trigger — on every single tick, forever. */
 export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
-  day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
+  day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method,partitions)
   WITH observations AS (
     SELECT date(match.block_time,'unixepoch') day,
       CASE WHEN forward_asset.asset='XCP'
@@ -508,19 +529,20 @@ export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_obs
   SELECT ranked_partitions.day,'XCP','BTC','counterparty','market',
     ROUND(AVG(ranked_partitions.partition_price),12),
     MAX(daily.total_volume)/1e8,MAX(daily.trades),MAX(daily.first_time),MAX(daily.last_time),
-    'hourly_partitioned_volume_weighted_median'
+    'hourly_partitioned_volume_weighted_median',MAX(ranked_partitions.partitions)
   FROM ranked_partitions JOIN daily ON daily.day=ranked_partitions.day
   WHERE ranked_partitions.position IN ((partitions+1)/2,(partitions+2)/2)
   GROUP BY ranked_partitions.day
   ON CONFLICT(day,base_currency,quote_currency,source,venue) DO UPDATE SET price=excluded.price,
     volume_base=excluded.volume_base,trades=excluded.trades,first_time=excluded.first_time,
-    last_time=excluded.last_time,method=excluded.method
+    last_time=excluded.last_time,method=excluded.method,partitions=excluded.partitions
   WHERE market_price_observations.price IS NOT excluded.price
     OR market_price_observations.volume_base IS NOT excluded.volume_base
     OR market_price_observations.trades IS NOT excluded.trades
     OR market_price_observations.first_time IS NOT excluded.first_time
     OR market_price_observations.last_time IS NOT excluded.last_time
-    OR market_price_observations.method IS NOT excluded.method`;
+    OR market_price_observations.method IS NOT excluded.method
+    OR market_price_observations.partitions IS NOT excluded.partitions`;
 
 export const PRUNE_MARKET_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
   WHERE source='counterparty' AND venue='market' AND base_currency='XCP' AND quote_currency='BTC'
@@ -714,10 +736,12 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
       AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
       AND recent.source='counterparty' AND recent.venue='market'
       AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
+      AND recent.partitions>=${MARKET_EDGE_MIN_PARTITIONS}
     ORDER BY recent.day DESC LIMIT 1)
   WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
     AND edge.source='counterparty' AND edge.venue='market'
     AND edge.trades>=${MARKET_EDGE_MIN_TRADES} AND edge.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
+    AND edge.partitions>=${MARKET_EDGE_MIN_PARTITIONS}
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
     price_kind=excluded.price_kind,age_days=excluded.age_days,derivation_depth=excluded.derivation_depth,
@@ -769,7 +793,8 @@ export const PRUNE_XCP_USD_SQL = `DELETE FROM prices
       WHERE recent.day BETWEEN date(prices.day,'-${DERIVED_FRESH_DAYS} days') AND prices.day
         AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
         AND recent.source='counterparty' AND recent.venue='market'
-        AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}))
+        AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
+        AND recent.partitions>=${MARKET_EDGE_MIN_PARTITIONS}))
     OR (source='market_vwm_thin' AND NOT EXISTS (
       SELECT 1 FROM market_price_observations recent
       WHERE recent.day BETWEEN date(prices.day,'-${DERIVED_FRESH_DAYS} days') AND prices.day
