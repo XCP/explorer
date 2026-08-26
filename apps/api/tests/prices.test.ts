@@ -382,7 +382,7 @@ test("a day whose fills are one burst does not price at full rank", () => {
   // ...and the bucket count is what shows it is one burst, so the median behind the day's price
   // had exactly one vote and nothing to outvote a bad one with.
   assert.equal(edge.partitions, 1);
-  assert.ok(Number(edge.partitions) < 4, "a one-bucket day must not clear MARKET_EDGE_MIN_PARTITIONS");
+  assert.ok(Number(edge.partitions) < 5, "a one-bucket day must not clear MARKET_EDGE_MIN_PARTITIONS");
   db.close();
 });
 
@@ -398,7 +398,7 @@ test("a day spread across the clock keeps its full-rank bucket count", () => {
     .prepare(`SELECT partitions FROM market_price_observations WHERE venue='market' AND day='2020-06-29'`)
     .get()?.partitions;
   assert.equal(partitions, 12);
-  assert.ok(Number(partitions) >= 4, "an ordinary day must still clear MARKET_EDGE_MIN_PARTITIONS");
+  assert.ok(Number(partitions) >= 5, "an ordinary day must still clear MARKET_EDGE_MIN_PARTITIONS");
   db.close();
 });
 
@@ -829,6 +829,87 @@ test("the every-block day refresh reclaims a day an exchange spot took at midnig
       .all()
       .map((r) => r.day),
     ["2026-01-08", "2026-01-09"],
+  );
+  db.close();
+});
+
+test("the floor reads volume and time-spread, not a count of transactions", () => {
+  // 2026-08-09 on mainnet: four dispenses, 396 XCP. The old floor rejected it on a count of 4 and
+  // handed the day to a CoinMarketCap print ~40% below where the chain was clearing. Volume and
+  // spread both say it is a real day, and they are what decides now.
+  const db = fixture();
+  for (const [i, hour] of [1, 6, 11, 17, 22].entries()) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'${(80 + i) * 1e8}','${(80 + i) * 4000}',
+      strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  const edge = {
+    ...db
+      .prepare(
+        `SELECT trades,partitions,ROUND(volume_base) volume_base
+                FROM market_price_observations WHERE venue='market' AND day='2026-01-08'`,
+      )
+      .get(),
+  };
+  // Five transactions -- under the count the old floor demanded -- but 410 XCP across five hours.
+  assert.equal(edge.trades, 5);
+  assert.equal(edge.partitions, 5);
+  assert.equal(edge.volume_base, 410);
+
+  db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
+  assert.equal(
+    db.prepare(`SELECT source FROM prices WHERE day='2026-01-08' AND currency='XCP'`).get()?.source,
+    "market_vwm",
+  );
+
+  // The same volume compressed into four hours stays out: time-spread is the leg that survived
+  // every re-derivation, and it is the only one that can see a burst.
+  const burst = fixture();
+  for (const [i, hour] of [1, 2, 3, 4].entries()) {
+    burst.exec(`INSERT INTO dispenses VALUES(1,'${(100 + i) * 1e8}','${(100 + i) * 4000}',
+      strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
+  }
+  burst.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  burst.exec(BUILD_XCP_USD_SQL);
+  burst.exec(BUILD_THIN_XCP_USD_SQL);
+  assert.equal(
+    burst.prepare(`SELECT partitions FROM market_price_observations WHERE venue='market' AND day='2026-01-08'`).get()
+      ?.partitions,
+    4,
+  );
+  assert.equal(
+    burst.prepare(`SELECT source FROM prices WHERE day='2026-01-08' AND currency='XCP'`).get()?.source,
+    "market_vwm_thin",
+  );
+  burst.close();
+  db.close();
+});
+
+test("a well-spread day carrying too little money stays on the thin tier", () => {
+  // Five hours, five fills, 5 XCP. Spread is honest; the money at stake is not, and
+  // MARKET_EDGE_MIN_VOLUME_XCP is the leg that says so.
+  const db = fixture();
+  for (const hour of [1, 6, 11, 17, 22]) {
+    db.exec(`INSERT INTO dispenses VALUES(1,'${1e8}','4000',
+      strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
+  }
+  db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
+  db.exec(BUILD_XCP_USD_SQL);
+  db.exec(BUILD_THIN_XCP_USD_SQL);
+  const edge = {
+    ...db
+      .prepare(
+        `SELECT partitions,ROUND(volume_base) volume_base FROM market_price_observations
+                WHERE venue='market' AND day='2026-01-08'`,
+      )
+      .get(),
+  };
+  assert.equal(edge.partitions, 5);
+  assert.equal(edge.volume_base, 5);
+  assert.equal(
+    db.prepare(`SELECT source FROM prices WHERE day='2026-01-08' AND currency='XCP'`).get()?.source,
+    "market_vwm_thin",
   );
   db.close();
 });

@@ -62,8 +62,8 @@ export const PRICE_SELECTION_POLICY = "usd-payment-v1";
  * one-execution Dex-Trade spot came to price XCP at $1.83 on a day the chain cleared 25 dispenser
  * fills at $2.85.
  *
- * It only reaches this rank when it clears the liquidity floor (see MARKET_EDGE_MIN_TRADES /
- * MARKET_EDGE_MIN_VOLUME_XCP); a thin day demotes itself to `market_vwm_thin` at the bottom, so a
+ * It only reaches this rank when it clears the liquidity floor (see MARKET_EDGE_MIN_VOLUME_XCP /
+ * MARKET_EDGE_MIN_PARTITIONS); a thin day demotes itself to `market_vwm_thin` at the bottom, so a
  * handful of dust trades can never take the day from a real quote. That floor is what makes the
  * promotion safe rather than reckless.
  *
@@ -275,7 +275,7 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       // by construction, and that is itself the point. Failing the bar demotes
       // rather than deletes, exactly as a thin on-chain day falls to the thin
       // tier — no day loses its price, it just stops outranking better evidence.
-      const spotQualified = xcp.latestVolume >= MARKET_EDGE_MIN_VOLUME_XCP;
+      const spotQualified = xcp.latestVolume >= SPOT_MIN_VOLUME_XCP;
       rows.push({
         day,
         currency: "XCP",
@@ -351,47 +351,73 @@ const DERIVED_FRESH_DAYS = 7;
  * Liquidity floor for the market edge to price a day at full rank. Days below it still price via the
  * THIN tier, which ranks beneath every other source and so only fills days nothing better covers.
  *
- * ORIGINALLY calibrated against the CMC aggregate (2026-07-20 sweep), which was CIRCULAR: it tuned
- * the on-chain price to agree with CMC, and CMC is the source we later concluded is wrong for XCP,
- * being largely Dex-Trade and Zaif summed and printing ~55% below where XCP actually clears. A day
- * rejected for "error" may have been a day the chain got right.
+ * ORIGINALLY calibrated against the CMC aggregate (2026-07-20), which was CIRCULAR: it tuned the
+ * on-chain price to agree with CMC, and CMC is the source we later concluded is wrong for XCP.
+ * RE-DERIVED 2026-08-25 against DEX-versus-dispenser agreement instead, with no exchange in the
+ * measurement. RE-DERIVED AGAIN 2026-08-26, which is this shape: the trade COUNT is gone, and what
+ * remains is volume and time-spread.
  *
- * RE-DERIVED 2026-08-25 with no reference to CMC at all. DEX order matches and dispenser fills are
- * two independent price-discovery mechanisms on the same chain, so on the 295 days both traded their
- * agreement is evidence with no exchange in it. Both thresholds were swept against that measure.
+ * The 2026-08-26 sweep, on the 290 days both venues traded (2020-02-06..2026-06-28; the prior note's
+ * 295 days and its n=147 at >=15 trades reproduce here as 290 and n=144, so the construction matches):
  *
- * MIN_TRADES stays 10, and the honest reason is weaker than it looks. Median |ln(dex/dispense)| of
- * admitted days falls monotonically from 0.117 at >=1 trade to 0.108 at >=10 and then flattens; the
- * trend is real. But bootstrap 95% intervals at every threshold overlap heavily (>=10 gives
- * [0.0952, 0.1372], >=15 gives [0.0794, 0.1189]), so 10 cannot be distinguished from 12 or 15 on this
- * evidence and >=15 "looking better" is noise at n=147. 10 is kept because it sits at the end of the
- * monotone stretch and costs the least coverage, NOT because the data singles it out. Anyone
- * re-tuning it should know the measurement cannot currently tell these apart.
+ *   floor                    p95 |ln(dex/disp)|     >1.0    max    published p95   coverage of 2026
+ *   no floor at all          0.788 [0.470, 1.099]      8   21.74       0.558              100%
+ *   t>=10 v>=1  p>=4 (old)   0.433 [0.402, 0.765]      2    4.62       0.196               46%
+ *   v>=50       p>=5 (this)  0.433 [0.400, 0.597]      1    1.10       0.196               75%
  *
- * MIN_VOLUME_XCP drops from 100 to 1, and that one the data is clear about. In twelve years NOT ONE
- * day has >=10 trades and under 10 XCP of volume, so any floor at or below 10 is free — the coverage
- * is identical at 0, 1, 5 and 10. At 100 it starts rejecting, and what it rejects is healthy: 17 days
- * such as 2022-06-08 (12 trades spread across 12 distinct hours, 53 XCP) or 2022-10-20 (10 trades,
- * 8 buckets, 13 XCP). Well-populated, well-distributed days thrown out for being SMALL, which is not
- * the same thing as being manipulated. Removing it recovers those 17 days and improves the validator
- * slightly (0.110 -> 0.108 median, 78.1% -> 78.2% within 25%).
+ * Two things that sweep settled, neither visible to the previous note because it looked at the
+ * MEDIAN. On the median a floor is not distinguishable from no floor at all — 0.131 unfiltered
+ * against 0.112, intervals overlapping. That is not evidence the floor is useless; it is evidence
+ * the median is the wrong statistic for it. A floor exists to stop a rare bad day, and rare bad days
+ * live in the tail: unfiltered, the p95 is 0.788 and eight days disagree by more than e^1. Any floor
+ * cuts that to one or two. So the floor earns its place, and it earns it in the tail.
  *
- * The 1 XCP that remains is a dust guard, not a calibrated threshold. It costs zero days by
- * measurement and exists only to stop a day being anchored by ten satoshi-sized fills, which
- * MIN_PARTITIONS alone would not prevent — the attacker would just spread the dust over four hours.
+ * Second, the trade count was the leg buying none of that. Swapping `t>=10 v>=1` for `v>=50` and one
+ * more bucket leaves the p95 identical on both validators, drops the worst case from 4.62 to 1.10,
+ * and takes effective coverage of 2026 — the share of days some qualified edge falls within
+ * DERIVED_FRESH_DAYS of, which is what actually decides whether an exchange takes the day — from 46%
+ * to 75%. It costs 2 validator days and gains 38.
  *
- * MIN_PARTITIONS is the piece that survived. Fills and volume cannot see WHEN trading happened, so
- * ten fills inside one minute from one actor clear the floor exactly as ten fills across the day do —
- * the burst case partitioning exists to defend against, invisible to a count. The daily price is the
- * median of the hourly bucket medians, so the bucket count IS that median's sample size, and four is
- * the minimum at which it can outvote a bad bucket. It demotes three days in twelve years: 2020-06-28
- * (15 fills in ONE hour), 2024-02-15 (10 in two), and 2020-08-28 (11 in three, with the DEX and the
- * dispensers 100x apart). Cost 3 days of 700; mean |ln| 0.184 -> 0.162, median 0.110 -> 0.108, within
- * 25% 78.1% -> 78.5%. Every measure improves and none regress.
+ * The count had to go because it measures the wrong thing. It cannot see volume or time, so it reads
+ * one buyer sweeping 400 XCP in four dispenses as thinner evidence than forty dust fills, when the
+ * opposite is true. Days like 2026-08-06 (8 fills, 500 XCP) and 2026-08-09 (4 fills, 396 XCP) were
+ * rejected on a count of transactions while carrying more money than most days that passed.
+ *
+ * The single worst day in the whole validator shows the same defect from the other side. 2020-08-28
+ * has 11 fills across 4 buckets, so it cleared `t>=10 p>=4` on the nose — and the DEX and the
+ * dispensers were 101x apart on it, one lone dispense at 100x the book. The count admitted it; a
+ * fifth bucket rejects it. (That day's published price survived anyway, because the middle-bucket
+ * median excluded the outlier. A floor is judged on the evidence it admits, not only on what leaked
+ * through.) Note the earlier entry recorded this day as demoted with "11 in three" — three is the
+ * DEX venue's own bucket count, and the floor is applied to the POOLED market row, which has four.
+ *
+ * MIN_PARTITIONS is the piece that has survived every re-derivation, and it does two jobs. It is the
+ * only input that can see WHEN trading happened, so it is the whole defence against a burst. It is
+ * also what keeps a dust fill out of the day's price: that price is the AVG of the middle one or two
+ * BUCKET medians, unweighted, so an hour holding a single 1e-8 XCP fill counts as much as an hour
+ * holding 500 XCP. At two buckets that lone fill is half the answer — 2020-09-14 prices at 5e13 sats
+ * by exactly that mechanism. At five it cannot reach the middle. Anyone lowering this should
+ * volume-weight that top-level median first.
+ *
+ * MIN_VOLUME_XCP at 50 is a floor on money at stake, and the sweep is flat across 25/50/100/200 on
+ * both validators — 50 is chosen for costing the least coverage at that flatness, NOT because the
+ * data singles it out. The same caution as before applies, and harder: these thresholds cannot be
+ * told apart on this evidence, and the validator is now historical. The XCP/BTC DEX book has cleared
+ * 2 matches in the last 90 days, so there is no second on-chain venue left to re-derive against.
  */
-const MARKET_EDGE_MIN_TRADES = 10;
-const MARKET_EDGE_MIN_VOLUME_XCP = 1;
-const MARKET_EDGE_MIN_PARTITIONS = 4;
+const MARKET_EDGE_MIN_VOLUME_XCP = 50;
+const MARKET_EDGE_MIN_PARTITIONS = 5;
+
+/**
+ * The exchange spot's own volume bar, deliberately NOT the on-chain constant it used to share.
+ *
+ * Both are "XCP behind the quote", but they count incomparable things: the on-chain floor measures a
+ * whole day's aggregate across many fills, and a latest-execution ticker is one trade by
+ * construction. Now that the on-chain leg is 50, sharing it would silently demand a single Dex-Trade
+ * print of 50 XCP and retune the spot tier as a side effect of a sweep that never measured it. The
+ * bar stays where it was measured; failing it demotes rather than deletes, exactly as before.
+ */
+const SPOT_MIN_VOLUME_XCP = 1;
 
 export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
@@ -766,7 +792,7 @@ export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
  * that day to a source with less.
  *
  * The floor still decides WHICH on-chain day is trustworthy enough to anchor. A day under
- * MARKET_EDGE_MIN_TRADES or MARKET_EDGE_MIN_VOLUME_XCP never reaches this build; it either carries a
+ * MARKET_EDGE_MIN_VOLUME_XCP or MARKET_EDGE_MIN_PARTITIONS never reaches this build; it either carries a
  * qualified edge forward or falls to market_vwm_thin, which stays at fidelity 1 beneath every source
  * so dust can never take a day. The change is only that a thin day now reaches for a real price from
  * last week before it reaches for an exchange.
@@ -783,12 +809,12 @@ const xcpUsdBuildSql = (scope: string) => `INSERT INTO prices(day,currency,usd,s
     WHERE recent.day BETWEEN date(btc.day,'-${DERIVED_FRESH_DAYS} days') AND btc.day
       AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
       AND recent.source='counterparty' AND recent.venue='market'
-      AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
+      AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
       AND recent.partitions>=${MARKET_EDGE_MIN_PARTITIONS}
     ORDER BY recent.day DESC LIMIT 1)
   WHERE btc.currency='BTC'${scope} AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
     AND edge.source='counterparty' AND edge.venue='market'
-    AND edge.trades>=${MARKET_EDGE_MIN_TRADES} AND edge.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
+    AND edge.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
     AND edge.partitions>=${MARKET_EDGE_MIN_PARTITIONS}
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
@@ -850,7 +876,7 @@ export const PRUNE_XCP_USD_SQL = `DELETE FROM prices
       WHERE recent.day BETWEEN date(prices.day,'-${DERIVED_FRESH_DAYS} days') AND prices.day
         AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
         AND recent.source='counterparty' AND recent.venue='market'
-        AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
+        AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
         AND recent.partitions>=${MARKET_EDGE_MIN_PARTITIONS}))
     OR (source='market_vwm_thin' AND NOT EXISTS (
       SELECT 1 FROM market_price_observations recent
