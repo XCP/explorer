@@ -203,6 +203,38 @@ export async function crawlMarketQuotes(env: Env): Promise<Record<string, unknow
   return out;
 }
 
+/**
+ * Re-derive ONE day's chain-priced XCP/USD, at the cadence the exchange spot is written.
+ *
+ * The chain-derived build lived only inside crawlPrices, gated at 144 blocks, while the Dex-Trade
+ * spot beside it is gated at 1. So a single exchange execution took every new UTC day within
+ * minutes of midnight and held it — with nothing on the chain's side written to outrank it — until
+ * the daily job happened to fire, hours later. The published XCP price stepped from ~$1.82 to
+ * ~$2.87 and back once a day, and `change_pct` reported that step as a market move: -24.9% on a
+ * day the chain had not moved 2%. Neither the rank order nor the liquidity floor was at fault;
+ * the better source was simply recomputed 144 times less often than the one it outranks.
+ *
+ * Scoped to a single day, this reads today's BTC row and seeks at most DERIVED_FRESH_DAYS rows of
+ * market_price_observations through idx_market_price_pair_day, and writes at most one row. That is
+ * what makes it safe on a per-block schedule: the expensive part of crawlPrices is the full-history
+ * observation rebuild over dispenses and order_matches, and this deliberately does not do it.
+ * Today's own fills therefore still land on the daily pass; what changes is only that the day is
+ * priced from the chain's freshest QUALIFIED edge from the start rather than from an exchange
+ * print. `observed_day` and `age_days` already state on the row how old that edge is.
+ *
+ * The thin build runs too, in the same order the daily job runs them, so a day with no qualified
+ * edge inside the window still carries a chain price at fidelity 1 rather than none. It cannot
+ * displace a real quote; it only fills what nothing better covers.
+ */
+export async function refreshDayXcpUsd(env: Env, day: string): Promise<Record<string, number>> {
+  const full = await env.CORE_DB.prepare(BUILD_XCP_USD_DAY_SQL).bind(day).run();
+  const thin = await env.CORE_DB.prepare(BUILD_THIN_XCP_USD_DAY_SQL).bind(day).run();
+  return {
+    market_vwm_rows: full.meta.rows_written ?? 0,
+    thin_rows: thin.meta.rows_written ?? 0,
+  };
+}
+
 /** Persist a directly observed BTC/USD ticker and a recent XCP/BTC exchange ticker, with explicit lower
  * fidelity than the completed daily calendar but higher fidelity than a carried on-chain edge. This prices
  * today's new sales immediately; it never rewrites a historical day with today's quote. */
@@ -266,6 +298,7 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       // PEPECASH is thin; lack of a fresh execution must not block BTC/XCP maintenance.
     }
     await upsertPrices(env.CORE_DB, rows);
+    const chainDay = await refreshDayXcpUsd(env, day);
     const dayStart = now - (now % DAY);
     const applied = await env.CORE_DB.prepare(APPLY_SPOT_TRADE_USD_SQL)
       .bind(dayStart, dayStart + DAY)
@@ -276,6 +309,7 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       XCP: xcp ? xcp.price * btcUsd : null,
       xcp_error: xcpError,
       dextrade_observations: [xcp?.pair, pepecash?.pair].filter(Boolean),
+      chain_day: chainDay,
       priced_rows: applied.meta.rows_written ?? 0,
     };
   } catch (error) {
@@ -737,7 +771,7 @@ export const PRUNE_BURN_XCP_USD_SQL = `DELETE FROM prices
  * so dust can never take a day. The change is only that a thin day now reaches for a real price from
  * last week before it reaches for an exchange.
  */
-export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+const xcpUsdBuildSql = (scope: string) => `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
     policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
     disagreement_class,selection_reason)
   SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm',edge.day,2,'${PRICE_SELECTION_POLICY}','derived',
@@ -752,7 +786,7 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
       AND recent.trades>=${MARKET_EDGE_MIN_TRADES} AND recent.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
       AND recent.partitions>=${MARKET_EDGE_MIN_PARTITIONS}
     ORDER BY recent.day DESC LIMIT 1)
-  WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+  WHERE btc.currency='BTC'${scope} AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
     AND edge.source='counterparty' AND edge.venue='market'
     AND edge.trades>=${MARKET_EDGE_MIN_TRADES} AND edge.volume_base>=${MARKET_EDGE_MIN_VOLUME_XCP}
     AND edge.partitions>=${MARKET_EDGE_MIN_PARTITIONS}
@@ -766,11 +800,17 @@ export const BUILD_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,obs
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
   )`;
 
+/** The whole calendar, for the daily reconciliation. */
+export const BUILD_XCP_USD_SQL = xcpUsdBuildSql("");
+/** One day, for the every-block refresh. Bound to an explicit day rather than date('now') so the
+ *  statement records which day it priced and a test can drive it. */
+export const BUILD_XCP_USD_DAY_SQL = xcpUsdBuildSql(" AND btc.day=?1");
+
 /** The thin tier: same cross-rate over the freshest edge REGARDLESS of the liquidity floor, at a
  *  rank beneath every other source — it can never displace anything, so it only ever fills days
  *  that would otherwise have no price at all. Labeled distinctly so a reader always sees that the
  *  day was priced on thin evidence. */
-export const BUILD_THIN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
+const thinXcpUsdBuildSql = (scope: string) => `INSERT INTO prices(day,currency,usd,source,observed_day,fidelity,
     policy_version,price_kind,age_days,derivation_depth,observation_count,venue_count,volume_base,
     disagreement_class,selection_reason)
   SELECT btc.day,'XCP',edge.price*btc.usd,'market_vwm_thin',edge.day,1,'${PRICE_SELECTION_POLICY}','derived',
@@ -783,7 +823,7 @@ export const BUILD_THIN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,sourc
       AND recent.base_currency='XCP' AND recent.quote_currency='BTC'
       AND recent.source='counterparty' AND recent.venue='market'
     ORDER BY recent.day DESC LIMIT 1)
-  WHERE btc.currency='BTC' AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
+  WHERE btc.currency='BTC'${scope} AND edge.base_currency='XCP' AND edge.quote_currency='BTC'
     AND edge.source='counterparty' AND edge.venue='market'
   ON CONFLICT(day,currency) DO UPDATE SET usd=excluded.usd,source=excluded.source,
     observed_day=excluded.observed_day,fidelity=excluded.fidelity,policy_version=excluded.policy_version,
@@ -794,6 +834,9 @@ export const BUILD_THIN_XCP_USD_SQL = `INSERT INTO prices(day,currency,usd,sourc
     prices.usd IS NOT excluded.usd OR prices.source IS NOT excluded.source
     OR prices.observed_day IS NOT excluded.observed_day OR prices.fidelity IS NOT excluded.fidelity
   )`;
+
+export const BUILD_THIN_XCP_USD_SQL = thinXcpUsdBuildSql("");
+export const BUILD_THIN_XCP_USD_DAY_SQL = thinXcpUsdBuildSql(" AND btc.day=?1");
 
 // Each tier must remain RE-DERIVABLE at its own rank or it goes: a full-rank market_vwm row needs a
 // liquidity-QUALIFIED edge in its freshness window (else it was priced under a laxer regime and the

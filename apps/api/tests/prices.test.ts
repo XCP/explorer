@@ -10,7 +10,9 @@ import {
   BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL,
   BUILD_MARKET_PRICE_OBSERVATIONS_SQL,
   BUILD_OBSERVED_USD_SQL,
+  BUILD_THIN_XCP_USD_DAY_SQL,
   BUILD_THIN_XCP_USD_SQL,
+  BUILD_XCP_USD_DAY_SQL,
   BUILD_XCP_USD_SQL,
   BUILD_ZAIF_XCP_USD_SQL,
   PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
@@ -774,5 +776,59 @@ test("dust still cannot anchor a day, however well spread", () => {
     .prepare(`SELECT COUNT(*) n FROM prices WHERE day='2026-01-09' AND currency='XCP' AND source='market_vwm'`)
     .get()?.n;
   assert.equal(n, 0, "a dust-only day must not reach full rank");
+  db.close();
+});
+
+test("the every-block day refresh reclaims a day an exchange spot took at midnight", () => {
+  const db = fixture();
+  // A liquidity-qualified chain edge on the 8th: 3,600 sats, sixteen fills across five hours.
+  db.exec(`INSERT INTO market_price_observations(day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method,partitions)
+    VALUES('2026-01-08','XCP','BTC','counterparty','market',0.000036,298,16,NULL,NULL,'hourly_partitioned_volume_weighted_median',5)`);
+  // Midnight on the 9th: crawlSpotPrices writes the Dex-Trade print, and for as long as nothing
+  // re-derives the chain's side it stands unopposed — this is the state the published price was in
+  // for hours every day.
+  db.exec(`INSERT INTO prices(day,currency,usd,source,observed_day,fidelity)
+    VALUES('2026-01-09','XCP',2.7,'dextrade_xcpbtc_spot','2026-01-09',2)`);
+  assert.equal(
+    db.prepare(`SELECT source FROM prices WHERE day='2026-01-09' AND currency='XCP'`).get()?.source,
+    "dextrade_xcpbtc_spot",
+  );
+
+  db.prepare(BUILD_XCP_USD_DAY_SQL).run("2026-01-09");
+  db.prepare(BUILD_THIN_XCP_USD_DAY_SQL).run("2026-01-09");
+
+  // The chain's carried edge takes the day back: 0.000036 x 120,000 BTC/USD.
+  assert.deepEqual(
+    {
+      ...db
+        .prepare(`SELECT usd,source,observed_day,age_days FROM prices WHERE day='2026-01-09' AND currency='XCP'`)
+        .get(),
+    },
+    { usd: 4.32, source: "market_vwm", observed_day: "2026-01-08", age_days: 1 },
+  );
+  // And it touched ONLY that day. The 8th is priceable from the same edge but was not in scope,
+  // which is what keeps this affordable on a per-block schedule.
+  assert.deepEqual(
+    db
+      .prepare(`SELECT day FROM prices WHERE currency='XCP' ORDER BY day`)
+      .all()
+      .map((r) => r.day),
+    ["2026-01-09"],
+  );
+  // Replaying writes nothing, so the schedule cannot churn D1 on an unchanged day.
+  const before = Number(db.prepare(`SELECT total_changes() n`).get()?.n);
+  db.prepare(BUILD_XCP_USD_DAY_SQL).run("2026-01-09");
+  db.prepare(BUILD_THIN_XCP_USD_DAY_SQL).run("2026-01-09");
+  assert.equal(Number(db.prepare(`SELECT total_changes() n`).get()?.n) - before, 0);
+
+  // The unbounded daily build is unchanged by the parameterisation and still prices the rest.
+  db.exec(BUILD_XCP_USD_SQL);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT day FROM prices WHERE currency='XCP' ORDER BY day`)
+      .all()
+      .map((r) => r.day),
+    ["2026-01-08", "2026-01-09"],
+  );
   db.close();
 });
