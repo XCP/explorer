@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { Route } from "next";
 import Link from "next/link";
-import type { PriceCandles, PricePage } from "@xcp/shared/prices";
+import type { PriceCandles, PricePage, PriceTicker } from "@xcp/shared/prices";
 import { getJson, type Envelope } from "@/lib/api/server";
 import {
   SectionHeader,
@@ -17,8 +17,7 @@ import { commas } from "@/lib/format";
 
 // The XCP price, explained — the asset-page anatomy applied to a number: the plate is the
 // twelve-year chart, the factcards say exactly HOW the number is made and what on-chain evidence
-// stands behind it. This is the page the header ticker links to; both read the same calendar that
-// values every trade on the site.
+// stands behind it. The current quote is actionable; the chart remains the reviewed daily record.
 export const metadata: Metadata = {
   title: "XCP price — Counterparty price history",
   description:
@@ -58,23 +57,41 @@ const SOURCE_STORY: Record<string, { name: string; note: string }> = {
 };
 
 export default async function PricePageRoute() {
-  const [env, ohlcEnv] = await Promise.all([
+  const [env, tickerEnv, ohlcEnv] = await Promise.all([
     getJson<Envelope<PricePage>>(`/v2/price`, { revalidate: 300 }),
+    getJson<Envelope<PriceTicker>>(`/v2/price/ticker`, { revalidate: 60 }),
     // The tape is additive — a failed fetch hides the section rather than failing the page.
     getJson<Envelope<PriceCandles>>(`/v2/price/ohlc`, { revalidate: 3600 }).catch(() => null),
   ]);
   const page = env.result;
   if (!page?.xcp) throw new Error("price unavailable");
+  const liveXcp = tickerEnv.result.xcp;
   const candles = ohlcEnv?.result?.candles ?? [];
   const sats = page.sats ? Math.round(page.sats.price_btc * 1e8) : null;
 
   const stats: SectionStat[] = [
     {
       label: "XCP",
-      value: usd(page.xcp.usd),
-      detail: page.change_pct != null ? `${page.change_pct > 0 ? "+" : ""}${page.change_pct}% 24h` : undefined,
+      value: usd(liveXcp?.usd ?? page.xcp.usd),
+      detail:
+        liveXcp?.quote === "confirmed_unit_dispenser_ask" && liveXcp.sats
+          ? `${commas(liveXcp.sats)} sats ask`
+          : page.change_pct != null
+            ? `${page.change_pct > 0 ? "+" : ""}${page.change_pct}% 24h`
+            : undefined,
     },
-    ...(sats ? [{ label: "On-chain", value: `${commas(sats)} sats`, detail: `last edge ${page.sats!.day}` }] : []),
+    ...(sats
+      ? [
+          {
+            label: "Daily reference",
+            value: `${commas(sats)} sats`,
+            detail:
+              page.change_pct != null
+                ? `${page.change_pct > 0 ? "+" : ""}${page.change_pct}% · ${page.sats!.day}`
+                : page.sats!.day,
+          },
+        ]
+      : []),
     ...(page.ath ? [{ label: "All-time high", value: usd(page.ath.usd), detail: page.ath.day }] : []),
     ...(page.btc ? [{ label: "BTC", value: usd(page.btc.usd), detail: page.btc.source.replace("_", " ") }] : []),
   ];
@@ -238,8 +255,8 @@ export default async function PricePageRoute() {
           directly observed aggregates outrank derived cross-rates, and a daily close outranks an intraday spot. The
           on-chain edge — a volume-weighted median over DEX order matches <i>and</i> dispenser executions, with literal
           self-fills excluded — prices XCP in BTC from the chain itself; only the BTC/USD conversion comes from outside.
-          If every external feed went dark tomorrow, the chain-native price would keep printing. This same calendar
-          values every trade on this site — the number in the header is the number in the ledger.{" "}
+          If every external feed went dark tomorrow, the chain-native price would keep printing. This calendar values
+          historical trades and charts; the header uses the cheapest confirmed, fillable one-XCP dispenser ask.{" "}
           <Link href={"/asset/XCP" as Route}>See XCP the asset →</Link>
         </p>
       </section>

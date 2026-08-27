@@ -1,10 +1,16 @@
-/** The explorer's own XCP price surface — GET /v2/price (the /price page payload) and
- *  GET /v2/price/ticker (the header's tiny quote). Every figure comes from the reviewed daily
- *  calendar the explorer already uses to value trades; provenance travels with the number. */
+/** The explorer's own XCP price surface — GET /v2/price (the historical /price payload) and
+ *  GET /v2/price/ticker (the current header quote). Historical figures come from the reviewed
+ *  daily calendar; the live XCP quote uses the cheapest confirmed, fillable one-XCP dispenser. */
 
 export interface PriceTicker {
   as_of: number;
-  xcp: { usd: number; change_pct: number | null } | null;
+  xcp: {
+    usd: number;
+    change_pct: number | null;
+    /** Current confirmed one-XCP dispenser ask. Null when the daily reference is the fallback. */
+    sats: number | null;
+    quote: "confirmed_unit_dispenser_ask" | "daily_reference";
+  } | null;
   btc: { usd: number; change_pct: number | null } | null;
 }
 

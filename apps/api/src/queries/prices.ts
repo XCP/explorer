@@ -31,6 +31,27 @@ export function priceBefore(db: D1Database, currency: string, day: string): Prom
 }
 
 /**
+ * The cheapest confirmed XCP dispenser that can vend one whole XCP right now.
+ *
+ * This intentionally matches the actionable unit-dispenser market shown by the buy-XCP UI:
+ * odd-sized and bulk-only lots are different products, oracle dispensers need an external quote,
+ * and a dispenser with less than one full lot remaining cannot fill the advertised purchase.
+ * The asset/status index bounds the read to the small open-XCP set.
+ */
+export const XCP_UNIT_DISPENSER_ASK_SQL = `SELECT MIN(CAST(dispenser.satoshirate AS INTEGER)) sats
+  FROM dispensers dispenser INDEXED BY idx_dispensers_asset_status
+  WHERE dispenser.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
+    AND dispenser.status=0 AND dispenser.oracle_address_id IS NULL
+    AND CAST(dispenser.give_quantity AS INTEGER)=100000000
+    AND CAST(dispenser.give_remaining AS INTEGER)>=CAST(dispenser.give_quantity AS INTEGER)
+    AND CAST(dispenser.satoshirate AS INTEGER)>0`;
+
+export async function latestXcpUnitDispenserAsk(db: D1Database): Promise<{ sats: number } | null> {
+  const row = await one<{ sats: number | null }>(db, XCP_UNIT_DISPENSER_ASK_SQL);
+  return row?.sats != null && Number.isFinite(row.sats) && row.sats > 0 ? { sats: row.sats } : null;
+}
+
+/**
  * The derivation the projection replaces, kept as the fallback for when the
  * projection is stale. This is deliberately the SAME aggregate the builder
  * stores, so the two cannot disagree about what supply means.
@@ -161,9 +182,13 @@ export const XCP_DAILY_CANDLES_SQL = `WITH observations AS (
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
     UNION ALL
     SELECT date(dispense.block_time,'unixepoch') day,
-      CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL) price,
+      COALESCE(
+        CAST(parent.satoshirate AS REAL)/NULLIF(CAST(parent.give_quantity AS REAL),0),
+        CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL)
+      ) price,
       CAST(dispense.dispense_quantity AS INTEGER) volume_xcp
     FROM dispenses dispense
+    LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
       AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0

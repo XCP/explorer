@@ -30,7 +30,7 @@ import {
   REFRESH_PRICING_HEALTH_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
-import { XCP_DAILY_CANDLES_SQL } from "#api/queries/prices";
+import { XCP_DAILY_CANDLES_SQL, XCP_UNIT_DISPENSER_ASK_SQL } from "#api/queries/prices";
 
 test("the selected-price policy is named and resolves equal-fidelity sources deterministically", () => {
   assert.equal(PRICE_SELECTION_POLICY, "usd-payment-v1");
@@ -141,7 +141,11 @@ function fixture(): DatabaseSync {
       block_time INTEGER,status TEXT,
       block_index INTEGER GENERATED ALWAYS AS (CAST(block_time/600 AS INTEGER)) VIRTUAL);
     CREATE INDEX idx_order_matches_block ON order_matches(block_index);
-    CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,give_quantity TEXT,satoshirate TEXT);
+    CREATE TABLE dispensers(
+      tx_index INTEGER PRIMARY KEY,give_quantity TEXT,satoshirate TEXT,asset_id INTEGER,
+      give_remaining TEXT,status INTEGER,oracle_address_id INTEGER
+    );
+    CREATE INDEX idx_dispensers_asset_status ON dispensers(asset_id,status);
     CREATE TABLE dispenses(
       asset_id INTEGER,dispense_quantity TEXT,btc_amount TEXT,block_time INTEGER,
       source_id INTEGER,destination_id INTEGER,
@@ -173,6 +177,27 @@ function fixture(): DatabaseSync {
   `);
   return db;
 }
+
+test("the live XCP quote is the cheapest confirmed, fillable one-XCP dispenser", () => {
+  const db = fixture();
+  db.exec(`INSERT INTO dispensers
+    (tx_index,give_quantity,satoshirate,asset_id,give_remaining,status,oracle_address_id) VALUES
+    (1,'100000000','5800',1,'13800000000',0,NULL),
+    (2,'100000000','4200',1,'50000000',0,NULL),
+    (3,'100000000','5000',1,'100000000',10,NULL),
+    (4,'1000000000','40000',1,'1000000000',0,NULL),
+    (5,'100000000','5500',1,'100000000',0,99)`);
+  assert.equal(db.prepare(XCP_UNIT_DISPENSER_ASK_SQL).get()?.sats, 5800);
+  const plan = db
+    .prepare(`EXPLAIN QUERY PLAN ${XCP_UNIT_DISPENSER_ASK_SQL}`)
+    .all()
+    .map((row) => String(row.detail));
+  assert.ok(
+    plan.some((detail) => detail.includes("idx_dispensers_asset_status")),
+    JSON.stringify(plan),
+  );
+  db.close();
+});
 
 test("genesis burns materialize as protocol conversions rather than trades", () => {
   const db = fixture();
@@ -272,7 +297,7 @@ test("dispense observations use the protocol unit price when a payment overfills
   const db = fixture();
   db.exec(`
     DELETE FROM order_matches;
-    INSERT INTO dispensers VALUES(1,'100000000','5000');
+    INSERT INTO dispensers(tx_index,give_quantity,satoshirate) VALUES(1,'100000000','5000');
     INSERT INTO dispenses VALUES(
       1,'3100000000','495000',strftime('%s','2026-01-08 12:00:00'),10,20
     );
@@ -290,6 +315,11 @@ test("dispense observations use the protocol unit price when a payment overfills
       { venue: "dispense", price: 0.00005, volume_base: 31, trades: 1 },
       { venue: "market", price: 0.00005, volume_base: 31, trades: 1 },
     ],
+  );
+  assert.equal(
+    db.prepare(XCP_DAILY_CANDLES_SQL).get()?.close,
+    0.00005,
+    "the candle records the dispenser's posted price, not excess BTC sent to its final lot",
   );
   db.close();
 });
