@@ -66,6 +66,22 @@ export default async function PricePageRoute() {
   const page = env.result;
   if (!page?.xcp) throw new Error("price unavailable");
   const liveXcp = tickerEnv.result.xcp;
+  const liveDay = new Date(tickerEnv.result.as_of * 1000).toISOString().slice(0, 10);
+  const history = [...page.history];
+  if (liveXcp?.quote === "confirmed_unit_dispenser_ask" && history.length > 0) {
+    const last = history.at(-1)!;
+    const livePoint = {
+      ...last,
+      day: liveDay,
+      usd: liveXcp.usd,
+      btc: tickerEnv.result.btc?.usd ?? last.btc,
+      source: "dispenser_ask",
+    };
+    if (last.day === liveDay) history[history.length - 1] = livePoint;
+    else history.push(livePoint);
+  }
+  let displayedAth: PricePage["ath"] = null;
+  for (const point of history) if (!displayedAth || point.usd > displayedAth.usd) displayedAth = point;
   const candles = ohlcEnv?.result?.candles ?? [];
   const sats = page.sats ? Math.round(page.sats.price_btc * 1e8) : null;
 
@@ -92,7 +108,7 @@ export default async function PricePageRoute() {
           },
         ]
       : []),
-    ...(page.ath ? [{ label: "All-time high", value: usd(page.ath.usd), detail: page.ath.day }] : []),
+    ...(displayedAth ? [{ label: "All-time high", value: usd(displayedAth.usd), detail: displayedAth.day }] : []),
     ...(page.btc ? [{ label: "BTC", value: usd(page.btc.usd), detail: page.btc.source.replace("_", " ") }] : []),
   ];
 
@@ -101,20 +117,20 @@ export default async function PricePageRoute() {
       {/* Full-width hero: the chart owns the row; USD / in-BTC / vs-BTC modes live inside it. */}
       <div className="plate">
         <div className="bg-[#0e1218] p-3">
-          <PriceHistoryChart history={page.history} />
+          <PriceHistoryChart history={history} />
         </div>
         <div className="cap">
           <span>
-            <b>XCP</b> · daily since {page.history[0]?.day.slice(0, 4)} · log scale
+            <b>XCP</b> · daily since {history[0]?.day.slice(0, 4)} · live ask today · log scale
           </span>
-          <span>{commas(page.history.length)} days</span>
+          <span>{commas(history.length)} days</span>
         </div>
       </div>
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-400">Interactive chart</h2>
         <div className="plate">
           <div className="bg-[#0e1218] p-2">
-            <TradingViewPriceChart history={page.history} />
+            <TradingViewPriceChart history={history} />
           </div>
           <div className="cap">
             <span>
