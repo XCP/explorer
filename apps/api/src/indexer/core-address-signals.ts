@@ -297,9 +297,12 @@ async function flushHeldAssetSignals(db: D1Database): Promise<void> {
        WHERE signal.asset_id IS NULL`,
     ),
     db.prepare(
+      // The dependency queue is normally tiny or empty. CROSS JOIN pins it
+      // first so SQLite cannot scan the much larger asset_signals table just
+      // to discover that there is no queued work.
       `INSERT OR IGNORE INTO asset_holder_signal_dirty(asset_id)
        SELECT dependency.asset_id FROM asset_signal_dependency_dirty dependency
-       JOIN asset_signals signal ON signal.asset_id=dependency.asset_id`,
+       CROSS JOIN asset_signals signal ON signal.asset_id=dependency.asset_id`,
     ),
     db.prepare(`DELETE FROM asset_signal_dependency_dirty`),
   ]);

@@ -31,9 +31,11 @@ const dirtyVaults = async (db: D1Database): Promise<VaultContentRow[]> =>
   (
     await db
       .prepare(
+        // The dirty queue is usually empty. CROSS JOIN keeps it as the outer
+        // loop instead of letting SQLite walk every vault on an idle tick.
         `SELECT vault.rowid,vault.contract_id,vault.token_id,vault.btc_address_id,address.address btc_address
          FROM emblem_vault_contents_dirty dirty
-         JOIN emblem_vaults vault
+         CROSS JOIN emblem_vaults vault
            ON vault.contract_id=dirty.contract_id AND vault.token_id=dirty.token_id
          JOIN address_dictionary address ON address.address_id=vault.btc_address_id
          ORDER BY vault.rowid LIMIT ?`,
