@@ -7,8 +7,11 @@ import {
   BUILD_BURN_PRICE_OBSERVATIONS_SQL,
   BUILD_BURN_XCP_USD_SQL,
   BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL,
+  BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_DAY_SQL,
   BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL,
+  BUILD_DISPENSE_PRICE_OBSERVATIONS_DAY_SQL,
   BUILD_MARKET_PRICE_OBSERVATIONS_SQL,
+  BUILD_MARKET_PRICE_OBSERVATIONS_DAY_SQL,
   BUILD_OBSERVED_USD_SQL,
   BUILD_THIN_XCP_USD_DAY_SQL,
   BUILD_THIN_XCP_USD_SQL,
@@ -135,10 +138,16 @@ function fixture(): DatabaseSync {
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT UNIQUE);
     CREATE TABLE order_matches(
       forward_asset_id INTEGER,forward_quantity TEXT,backward_asset_id INTEGER,backward_quantity TEXT,
-      block_time INTEGER,status TEXT);
+      block_time INTEGER,status TEXT,
+      block_index INTEGER GENERATED ALWAYS AS (CAST(block_time/600 AS INTEGER)) VIRTUAL);
+    CREATE INDEX idx_order_matches_block ON order_matches(block_index);
+    CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,give_quantity TEXT,satoshirate TEXT);
     CREATE TABLE dispenses(
       asset_id INTEGER,dispense_quantity TEXT,btc_amount TEXT,block_time INTEGER,
-      source_id INTEGER,destination_id INTEGER);
+      source_id INTEGER,destination_id INTEGER,
+      dispenser_tx_index INTEGER GENERATED ALWAYS AS (1) VIRTUAL,
+      block_index INTEGER GENERATED ALWAYS AS (CAST(block_time/600 AS INTEGER)) VIRTUAL);
+    CREATE INDEX idx_dispenses_asset ON dispenses(asset_id,block_index DESC);
     CREATE TABLE burns(block_time INTEGER,burned TEXT,earned TEXT,status TEXT);
     CREATE TABLE market_price_observations(
       day TEXT,base_currency TEXT,quote_currency TEXT,source TEXT,venue TEXT,price REAL,
@@ -228,6 +237,60 @@ test("XCP pricing uses completed-trade volume-weighted medians", () => {
   assert.equal(row.price, 0.002);
   assert.equal(row.volume_base, 201);
   assert.equal(row.trades, 3);
+  db.close();
+});
+
+test("current-day XCP observations stay inside the indexed block window", () => {
+  const db = fixture();
+  const fromBlock = 0;
+  const toBlock = 10_000_000;
+  db.prepare(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_DAY_SQL).run("2026-01-01", fromBlock, toBlock);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT day,venue,price FROM market_price_observations ORDER BY day,venue`)
+      .all()
+      .map((row) => ({ ...row })),
+    [{ day: "2026-01-01", venue: "dex", price: 0.002 }],
+  );
+
+  const plan = db
+    .prepare(`EXPLAIN QUERY PLAN ${BUILD_MARKET_PRICE_OBSERVATIONS_DAY_SQL}`)
+    .all("2026-01-01", fromBlock, toBlock)
+    .map((row) => String(row.detail));
+  assert.ok(
+    plan.some((detail) => detail.includes("idx_order_matches_block")),
+    JSON.stringify(plan),
+  );
+  assert.ok(
+    plan.some((detail) => detail.includes("idx_dispenses_asset")),
+    JSON.stringify(plan),
+  );
+  db.close();
+});
+
+test("dispense observations use the protocol unit price when a payment overfills the final lot", () => {
+  const db = fixture();
+  db.exec(`
+    DELETE FROM order_matches;
+    INSERT INTO dispensers VALUES(1,'100000000','5000');
+    INSERT INTO dispenses VALUES(
+      1,'3100000000','495000',strftime('%s','2026-01-08 12:00:00'),10,20
+    );
+  `);
+  const fromBlock = 0;
+  const toBlock = 10_000_000;
+  db.prepare(BUILD_DISPENSE_PRICE_OBSERVATIONS_DAY_SQL).run("2026-01-08", fromBlock, toBlock);
+  db.prepare(BUILD_MARKET_PRICE_OBSERVATIONS_DAY_SQL).run("2026-01-08", fromBlock, toBlock);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT venue,price,volume_base,trades FROM market_price_observations ORDER BY venue`)
+      .all()
+      .map((row) => ({ ...row })),
+    [
+      { venue: "dispense", price: 0.00005, volume_base: 31, trades: 1 },
+      { venue: "market", price: 0.00005, volume_base: 31, trades: 1 },
+    ],
+  );
   db.close();
 });
 

@@ -204,6 +204,37 @@ export async function crawlMarketQuotes(env: Env): Promise<Record<string, unknow
 }
 
 /**
+ * Rebuild only one UTC day's on-chain XCP/BTC observations.
+ *
+ * The canonical mirror is already caught up when this runs. The block-time lookup rides
+ * idx_blocks_time, then every source query is fenced to that small block range and forced onto its
+ * block/asset index. This makes confirmed fills visible on the next block without repeating the
+ * full-history price crawl (which deliberately remains gated at 144 blocks).
+ */
+export async function refreshDayMarketObservations(env: Env, day: string): Promise<Record<string, number>> {
+  const startTime = Math.floor(Date.parse(`${day}T00:00:00Z`) / 1_000);
+  if (!Number.isFinite(startTime)) return { invalid_day: 1 };
+  const range = await env.CORE_DB.prepare(
+    `SELECT MIN(block_index) from_block,MAX(block_index)+1 to_block
+     FROM blocks INDEXED BY idx_blocks_time WHERE block_time>=?1 AND block_time<?2`,
+  )
+    .bind(startTime, startTime + DAY)
+    .first<{ from_block: number | null; to_block: number | null }>();
+  if (range?.from_block == null || range.to_block == null) return { empty_day: 1 };
+
+  const [dex, dispense, market] = await env.CORE_DB.batch([
+    env.CORE_DB.prepare(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_DAY_SQL).bind(day, range.from_block, range.to_block),
+    env.CORE_DB.prepare(BUILD_DISPENSE_PRICE_OBSERVATIONS_DAY_SQL).bind(day, range.from_block, range.to_block),
+    env.CORE_DB.prepare(BUILD_MARKET_PRICE_OBSERVATIONS_DAY_SQL).bind(day, range.from_block, range.to_block),
+  ]);
+  return {
+    dex_rows: dex.meta.rows_written ?? 0,
+    dispense_rows: dispense.meta.rows_written ?? 0,
+    market_rows: market.meta.rows_written ?? 0,
+  };
+}
+
+/**
  * Re-derive ONE day's chain-priced XCP/USD, at the cadence the exchange spot is written.
  *
  * The chain-derived build lived only inside crawlPrices, gated at 144 blocks, while the Dex-Trade
@@ -218,9 +249,9 @@ export async function crawlMarketQuotes(env: Env): Promise<Record<string, unknow
  * market_price_observations through idx_market_price_pair_day, and writes at most one row. That is
  * what makes it safe on a per-block schedule: the expensive part of crawlPrices is the full-history
  * observation rebuild over dispenses and order_matches, and this deliberately does not do it.
- * Today's own fills therefore still land on the daily pass; what changes is only that the day is
- * priced from the chain's freshest QUALIFIED edge from the start rather than from an exchange
- * print. `observed_day` and `age_days` already state on the row how old that edge is.
+ * Today's fills are refreshed immediately beforehand by refreshDayMarketObservations; the expensive
+ * full-history reconciliation still stays on its daily cadence. `observed_day` and `age_days` state
+ * how old the selected edge is.
  *
  * The thin build runs too, in the same order the daily job runs them, so a day with no qualified
  * edge inside the window still carries a chain price at fidelity 1 rather than none. It cannot
@@ -298,6 +329,7 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       // PEPECASH is thin; lack of a fresh execution must not block BTC/XCP maintenance.
     }
     await upsertPrices(env.CORE_DB, rows);
+    const chainObservations = await refreshDayMarketObservations(env, day);
     const chainDay = await refreshDayXcpUsd(env, day);
     const dayStart = now - (now % DAY);
     const applied = await env.CORE_DB.prepare(APPLY_SPOT_TRADE_USD_SQL)
@@ -309,6 +341,7 @@ export async function crawlSpotPrices(env: Env): Promise<Record<string, unknown>
       XCP: xcp ? xcp.price * btcUsd : null,
       xcp_error: xcpError,
       dextrade_observations: [xcp?.pair, pepecash?.pair].filter(Boolean),
+      chain_observations: chainObservations,
       chain_day: chainDay,
       priced_rows: applied.meta.rows_written ?? 0,
     };
@@ -419,23 +452,31 @@ const MARKET_EDGE_MIN_PARTITIONS = 5;
  */
 const SPOT_MIN_VOLUME_XCP = 1;
 
-export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+const observationDay = (alias: string, scoped: boolean) => (scoped ? "?1" : `date(${alias}.block_time,'unixepoch')`);
+
+const observationScope = (alias: string, scoped: boolean) =>
+  scoped
+    ? ` AND ${alias}.block_index>=?2 AND ${alias}.block_index<?3
+      AND date(${alias}.block_time,'unixepoch')=?1`
+    : "";
+
+const buildCounterpartyPriceObservationsSql = (scoped: boolean) => `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
-    SELECT date(match.block_time,'unixepoch') day,
+    SELECT ${observationDay("match", scoped)} day,
       CASE WHEN forward_asset.asset='XCP'
         THEN CAST(match.backward_quantity AS REAL)/CAST(match.forward_quantity AS REAL)
         ELSE CAST(match.forward_quantity AS REAL)/CAST(match.backward_quantity AS REAL) END price,
       CASE WHEN forward_asset.asset='XCP' THEN CAST(match.forward_quantity AS INTEGER)
         ELSE CAST(match.backward_quantity AS INTEGER) END volume_xcp,
       match.block_time observation_time
-    FROM order_matches match
+    FROM order_matches match${scoped ? " INDEXED BY idx_order_matches_block" : ""}
     JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
     JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
     WHERE match.status='completed' AND CAST(match.forward_quantity AS INTEGER)>0
       AND CAST(match.backward_quantity AS INTEGER)>0
       AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
-        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))${observationScope("match", scoped)}
   ), ranked AS (
     SELECT day,price,volume_xcp,observation_time,
       SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
@@ -458,6 +499,9 @@ export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_pri
     OR market_price_observations.last_time IS NOT excluded.last_time
     OR market_price_observations.method IS NOT excluded.method`;
 
+export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = buildCounterpartyPriceObservationsSql(false);
+export const BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_DAY_SQL = buildCounterpartyPriceObservationsSql(true);
+
 export const PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
   WHERE source='counterparty' AND venue='dex' AND base_currency='XCP' AND quote_currency='BTC'
     AND day NOT IN (
@@ -475,17 +519,22 @@ export const PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_pri
  *  through the DEX's quiet years (2021: 4,446 fills/159.8 BTC vs a fading order book). Executions
  *  only — open dispensers are asks, not prices — and literal self-fills are excluded, consistent
  *  with the volume rule everywhere else. */
-export const BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+const buildDispensePriceObservationsSql = (scoped: boolean) => `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
-    SELECT date(dispense.block_time,'unixepoch') day,
-      CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL) price,
+    SELECT ${observationDay("dispense", scoped)} day,
+      COALESCE(
+        CAST(parent.satoshirate AS REAL)/NULLIF(CAST(parent.give_quantity AS REAL),0),
+        CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL)
+      ) price,
       CAST(dispense.dispense_quantity AS INTEGER) volume_xcp,
       dispense.block_time observation_time
-    FROM dispenses dispense
+    FROM dispenses dispense${scoped ? " INDEXED BY idx_dispenses_asset" : ""}
+    LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
       AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+      ${observationScope("dispense", scoped)}
   ), ranked AS (
     SELECT day,price,volume_xcp,observation_time,
       SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,
@@ -507,6 +556,9 @@ export const BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_o
     OR market_price_observations.first_time IS NOT excluded.first_time
     OR market_price_observations.last_time IS NOT excluded.last_time
     OR market_price_observations.method IS NOT excluded.method`;
+
+export const BUILD_DISPENSE_PRICE_OBSERVATIONS_SQL = buildDispensePriceObservationsSql(false);
+export const BUILD_DISPENSE_PRICE_OBSERVATIONS_DAY_SQL = buildDispensePriceObservationsSql(true);
 
 export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
   WHERE source='counterparty' AND venue='dispense' AND base_currency='XCP' AND quote_currency='BTC'
@@ -552,32 +604,37 @@ export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_o
  *  ROUND(...,12) because rule 9 forbids a float that can drift: this is recomputed every crawl, and
  *  without quantisation a last-bit difference would re-write the row — and re-fire the price-selection
  *  trigger — on every single tick, forever. */
-export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_observations(
+const buildMarketPriceObservationsSql = (scoped: boolean) => `INSERT INTO market_price_observations(
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method,partitions)
   WITH observations AS (
-    SELECT date(match.block_time,'unixepoch') day,
+    SELECT ${observationDay("match", scoped)} day,
       CASE WHEN forward_asset.asset='XCP'
         THEN CAST(match.backward_quantity AS REAL)/CAST(match.forward_quantity AS REAL)
         ELSE CAST(match.forward_quantity AS REAL)/CAST(match.backward_quantity AS REAL) END price,
       CASE WHEN forward_asset.asset='XCP' THEN CAST(match.forward_quantity AS INTEGER)
         ELSE CAST(match.backward_quantity AS INTEGER) END volume_xcp,
       match.block_time observation_time
-    FROM order_matches match
+    FROM order_matches match${scoped ? " INDEXED BY idx_order_matches_block" : ""}
     JOIN asset_dictionary forward_asset ON forward_asset.asset_id=match.forward_asset_id
     JOIN asset_dictionary backward_asset ON backward_asset.asset_id=match.backward_asset_id
     WHERE match.status='completed' AND CAST(match.forward_quantity AS INTEGER)>0
       AND CAST(match.backward_quantity AS INTEGER)>0
       AND ((forward_asset.asset='XCP' AND backward_asset.asset='BTC')
-        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
+        OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))${observationScope("match", scoped)}
     UNION ALL
-    SELECT date(dispense.block_time,'unixepoch') day,
-      CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL) price,
+    SELECT ${observationDay("dispense", scoped)} day,
+      COALESCE(
+        CAST(parent.satoshirate AS REAL)/NULLIF(CAST(parent.give_quantity AS REAL),0),
+        CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL)
+      ) price,
       CAST(dispense.dispense_quantity AS INTEGER) volume_xcp,
       dispense.block_time observation_time
-    FROM dispenses dispense
+    FROM dispenses dispense${scoped ? " INDEXED BY idx_dispenses_asset" : ""}
+    LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
       AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+      ${observationScope("dispense", scoped)}
   ), bucketed AS (
     SELECT day,CAST(strftime('%H',observation_time,'unixepoch') AS INTEGER) partition_index,
       price,volume_xcp,observation_time
@@ -617,6 +674,9 @@ export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = `INSERT INTO market_price_obs
     OR market_price_observations.last_time IS NOT excluded.last_time
     OR market_price_observations.method IS NOT excluded.method
     OR market_price_observations.partitions IS NOT excluded.partitions`;
+
+export const BUILD_MARKET_PRICE_OBSERVATIONS_SQL = buildMarketPriceObservationsSql(false);
+export const BUILD_MARKET_PRICE_OBSERVATIONS_DAY_SQL = buildMarketPriceObservationsSql(true);
 
 export const PRUNE_MARKET_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_observations
   WHERE source='counterparty' AND venue='market' AND base_currency='XCP' AND quote_currency='BTC'
