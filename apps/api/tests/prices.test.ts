@@ -30,7 +30,7 @@ import {
   REFRESH_PRICING_HEALTH_SQL,
   tradeUsdWindow,
 } from "#api/indexer/prices";
-import { XCP_DAILY_CANDLES_SQL, XCP_UNIT_DISPENSER_ASK_SQL } from "#api/queries/prices";
+import { XCP_DAILY_CANDLES_SQL, XCP_UNIT_DISPENSER_ASKS_SQL } from "#api/queries/prices";
 
 test("the selected-price policy is named and resolves equal-fidelity sources deterministically", () => {
   assert.equal(PRICE_SELECTION_POLICY, "usd-payment-v1");
@@ -142,7 +142,7 @@ function fixture(): DatabaseSync {
       block_index INTEGER GENERATED ALWAYS AS (CAST(block_time/600 AS INTEGER)) VIRTUAL);
     CREATE INDEX idx_order_matches_block ON order_matches(block_index);
     CREATE TABLE dispensers(
-      tx_index INTEGER PRIMARY KEY,give_quantity TEXT,satoshirate TEXT,asset_id INTEGER,
+      tx_index INTEGER PRIMARY KEY,tx_hash BLOB,give_quantity TEXT,satoshirate TEXT,asset_id INTEGER,
       give_remaining TEXT,status INTEGER,oracle_address_id INTEGER
     );
     CREATE INDEX idx_dispensers_asset_status ON dispensers(asset_id,status);
@@ -181,15 +181,21 @@ function fixture(): DatabaseSync {
 test("the live XCP quote is the cheapest confirmed, fillable one-XCP dispenser", () => {
   const db = fixture();
   db.exec(`INSERT INTO dispensers
-    (tx_index,give_quantity,satoshirate,asset_id,give_remaining,status,oracle_address_id) VALUES
-    (1,'100000000','5800',1,'13800000000',0,NULL),
-    (2,'100000000','4200',1,'50000000',0,NULL),
-    (3,'100000000','5000',1,'100000000',10,NULL),
-    (4,'1000000000','40000',1,'1000000000',0,NULL),
-    (5,'100000000','5500',1,'100000000',0,99)`);
-  assert.equal(db.prepare(XCP_UNIT_DISPENSER_ASK_SQL).get()?.sats, 5800);
+    (tx_index,tx_hash,give_quantity,satoshirate,asset_id,give_remaining,status,oracle_address_id) VALUES
+    (1,x'01','100000000','5800',1,'13800000000',0,NULL),
+    (2,x'02','100000000','4200',1,'50000000',0,NULL),
+    (3,x'03','100000000','5000',1,'100000000',10,NULL),
+    (4,x'04','1000000000','40000',1,'1000000000',0,NULL),
+    (5,x'05','100000000','5500',1,'100000000',0,99)`);
+  assert.deepEqual(
+    db
+      .prepare(XCP_UNIT_DISPENSER_ASKS_SQL)
+      .all()
+      .map((row) => ({ ...row })),
+    [{ tx_hash: "01", give_remaining: "13800000000", sats: 5800 }],
+  );
   const plan = db
-    .prepare(`EXPLAIN QUERY PLAN ${XCP_UNIT_DISPENSER_ASK_SQL}`)
+    .prepare(`EXPLAIN QUERY PLAN ${XCP_UNIT_DISPENSER_ASKS_SQL}`)
     .all()
     .map((row) => String(row.detail));
   assert.ok(

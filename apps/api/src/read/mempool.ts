@@ -147,6 +147,13 @@ async function fetchActions(c: Ctx, path: string): Promise<MempoolActionRow[]> {
   }
 }
 
+/** Pending XCP dispenser fills for the live XCP ask. Kept as the same read-through as the public
+ * mempool routes so price projection and the explorer's pending UI cannot disagree. */
+export async function pendingXcpDispenses(c: Ctx): Promise<MempoolActionRow[]> {
+  const rows = await fetchActions(c, `/mempool/events/DISPENSE?limit=500`);
+  return rows.filter((row) => row.event === "DISPENSE" && row.asset === "XCP" && row.dispenser_tx_hash);
+}
+
 const envelope = (result: MempoolActionRow[]): Envelope<MempoolActionRow[]> => ({ result });
 
 export const mempool = router();

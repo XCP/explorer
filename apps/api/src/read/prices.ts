@@ -7,16 +7,17 @@
  */
 import type { Envelope } from "@xcp/shared/envelope";
 import type { PriceCandles, PricePage, PriceTicker } from "@xcp/shared/prices";
-import { router, J, cached } from "#api/read/respond";
+import { router, cached } from "#api/read/respond";
+import { pendingXcpDispenses } from "#api/read/mempool";
 import {
   latestMarketEdge,
   latestPrice,
-  latestXcpUnitDispenserAsk,
   onChainVenueEvidence,
   priceBefore,
   xcpDailyCandles,
   xcpHistory,
   xcpSourceEras,
+  xcpUnitDispenserAsks,
 } from "#api/queries/prices";
 
 const changePct = (now: number, prior: number | null | undefined): number | null =>
@@ -24,41 +25,63 @@ const changePct = (now: number, prior: number | null | undefined): number | null
 
 export const prices = router();
 
-prices.get("/v2/price/ticker", async (c) => {
-  const db = c.env.CORE_DB;
-  const [xcp, btc, ask] = await Promise.all([
-    latestPrice(db, "XCP"),
-    latestPrice(db, "BTC"),
-    latestXcpUnitDispenserAsk(db),
-  ]);
-  const [xcpPrior, btcPrior] = await Promise.all([
-    xcp ? priceBefore(db, "XCP", xcp.day) : null,
-    btc ? priceBefore(db, "BTC", btc.day) : null,
-  ]);
-  const body: Envelope<PriceTicker> = {
-    result: {
-      as_of: Math.floor(Date.now() / 1000),
-      xcp:
-        ask && btc
-          ? {
-              usd: Math.round(((ask.sats / 1e8) * btc.usd + Number.EPSILON) * 1e8) / 1e8,
-              change_pct: null,
-              sats: ask.sats,
-              quote: "confirmed_unit_dispenser_ask",
-            }
-          : xcp
+const XCP_RAW = 100_000_000n;
+
+function normalizedXcpRaw(value: string | null): bigint {
+  if (!value || !/^\d+(?:\.\d+)?$/.test(value)) return 0n;
+  const [whole, fraction = ""] = value.split(".");
+  return BigInt(whole) * XCP_RAW + BigInt((fraction + "00000000").slice(0, 8));
+}
+
+prices.get("/v2/price/ticker", (c) =>
+  cached(c, "price:ticker:2", { ttl: 30, edge: 10, swr: 30 }, async (): Promise<Envelope<PriceTicker>> => {
+    const db = c.env.CORE_DB;
+    const [xcp, btc, dispensers, pending] = await Promise.all([
+      latestPrice(db, "XCP"),
+      latestPrice(db, "BTC"),
+      xcpUnitDispenserAsks(db),
+      pendingXcpDispenses(c),
+    ]);
+    const [xcpPrior, btcPrior] = await Promise.all([
+      xcp ? priceBefore(db, "XCP", xcp.day) : null,
+      btc ? priceBefore(db, "BTC", btc.day) : null,
+    ]);
+    const pendingByDispenser = new Map<string, bigint>();
+    for (const action of pending) {
+      if (!action.dispenser_tx_hash) continue;
+      const dispenserHash = action.dispenser_tx_hash.toLowerCase();
+      pendingByDispenser.set(
+        dispenserHash,
+        (pendingByDispenser.get(dispenserHash) ?? 0n) + normalizedXcpRaw(action.quantity_normalized),
+      );
+    }
+    const ask = dispensers.find(
+      (row) => BigInt(row.give_remaining) - (pendingByDispenser.get(row.tx_hash) ?? 0n) >= XCP_RAW,
+    );
+    return {
+      result: {
+        as_of: Math.floor(Date.now() / 1000),
+        xcp:
+          ask && btc
             ? {
-                usd: xcp.usd,
-                change_pct: changePct(xcp.usd, xcpPrior?.usd),
-                sats: null,
-                quote: "daily_reference",
+                usd: Math.round(((ask.sats / 1e8) * btc.usd + Number.EPSILON) * 1e8) / 1e8,
+                change_pct: null,
+                sats: ask.sats,
+                quote: "confirmed_unit_dispenser_ask",
               }
-            : null,
-      btc: btc ? { usd: btc.usd, change_pct: changePct(btc.usd, btcPrior?.usd) } : null,
-    },
-  };
-  return J(c, body, 60);
-});
+            : xcp
+              ? {
+                  usd: xcp.usd,
+                  change_pct: changePct(xcp.usd, xcpPrior?.usd),
+                  sats: null,
+                  quote: "daily_reference",
+                }
+              : null,
+        btc: btc ? { usd: btc.usd, change_pct: changePct(btc.usd, btcPrior?.usd) } : null,
+      },
+    };
+  }),
+);
 
 // The /price page's candle tape: daily on-chain XCP/BTC OHLC over raw fills. New fills land at
 // most a few times a day, so an hour-long TTL with a day of stale-while-revalidate is generous.

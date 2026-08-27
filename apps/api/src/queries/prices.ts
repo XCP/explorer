@@ -38,17 +38,24 @@ export function priceBefore(db: D1Database, currency: string, day: string): Prom
  * and a dispenser with less than one full lot remaining cannot fill the advertised purchase.
  * The asset/status index bounds the read to the small open-XCP set.
  */
-export const XCP_UNIT_DISPENSER_ASK_SQL = `SELECT MIN(CAST(dispenser.satoshirate AS INTEGER)) sats
+export interface XcpUnitDispenserAsk {
+  tx_hash: string;
+  give_remaining: string;
+  sats: number;
+}
+
+export const XCP_UNIT_DISPENSER_ASKS_SQL = `SELECT lower(hex(dispenser.tx_hash)) tx_hash,
+    dispenser.give_remaining,CAST(dispenser.satoshirate AS INTEGER) sats
   FROM dispensers dispenser INDEXED BY idx_dispensers_asset_status
   WHERE dispenser.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
     AND dispenser.status=0 AND dispenser.oracle_address_id IS NULL
     AND CAST(dispenser.give_quantity AS INTEGER)=100000000
     AND CAST(dispenser.give_remaining AS INTEGER)>=CAST(dispenser.give_quantity AS INTEGER)
-    AND CAST(dispenser.satoshirate AS INTEGER)>0`;
+    AND CAST(dispenser.satoshirate AS INTEGER)>0
+  ORDER BY CAST(dispenser.satoshirate AS INTEGER),dispenser.tx_index`;
 
-export async function latestXcpUnitDispenserAsk(db: D1Database): Promise<{ sats: number } | null> {
-  const row = await one<{ sats: number | null }>(db, XCP_UNIT_DISPENSER_ASK_SQL);
-  return row?.sats != null && Number.isFinite(row.sats) && row.sats > 0 ? { sats: row.sats } : null;
+export function xcpUnitDispenserAsks(db: D1Database): Promise<XcpUnitDispenserAsk[]> {
+  return q<XcpUnitDispenserAsk>(db, XCP_UNIT_DISPENSER_ASKS_SQL);
 }
 
 /**
