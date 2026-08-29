@@ -65,6 +65,11 @@ export interface AddressDispenserRow {
   satoshirate_normalized: string | null;
   dispense_count: number;
   status: number;
+  /** Oracle pricing, as on DispenserRow: fiat cents settled at the oracle's latest valid broadcast. */
+  oracle_address: string | null;
+  oracle_price: number | null;
+  oracle_price_block_time: number | null;
+  oracle_fiat: string | null;
 }
 
 /** GET /v2/addresses/:address/dispenses — a dispense the address triggered or received. */

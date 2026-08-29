@@ -39,7 +39,7 @@ test("compact dispenser feeds restore storefront and valued-sale relationships",
     CREATE TABLE dispensers(
       tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,
       asset_id INTEGER,give_quantity_normalized TEXT,give_remaining_normalized TEXT,satoshirate TEXT,
-      satoshirate_normalized TEXT,dispense_count INTEGER,status INTEGER,escrow_quantity TEXT,closed_block_index INTEGER
+      satoshirate_normalized TEXT,dispense_count INTEGER,status INTEGER,escrow_quantity TEXT,closed_block_index INTEGER,oracle_address_id INTEGER
     );
     CREATE TABLE dispenses(
       event_index INTEGER PRIMARY KEY,tx_index INTEGER,dispense_index INTEGER,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,
@@ -47,12 +47,18 @@ test("compact dispenser feeds restore storefront and valued-sale relationships",
       btc_amount TEXT,dispense_id INTEGER
     );
     CREATE TABLE trades(venue TEXT,ref TEXT,usd_value REAL);
-    INSERT INTO address_dictionary VALUES(1,'seller'),(2,'buyer');
+    CREATE TABLE broadcasts(tx_index INTEGER PRIMARY KEY,source_id INTEGER,block_index INTEGER,block_time INTEGER,value TEXT,text TEXT,status TEXT);
+    INSERT INTO address_dictionary VALUES(1,'seller'),(2,'buyer'),(3,'oracle');
     INSERT INTO asset_dictionary VALUES(1,'CARD');
     INSERT INTO dispensers VALUES(
       5,x'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',100,1000,1,1,
-      '1','8','1000','0.00001000',2,10,'10',101
+      '1','8','1000','0.00001000',2,10,'10',101,NULL
     );
+    INSERT INTO dispensers VALUES(
+      7,x'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',102,1002,1,1,
+      '1','1','7000','0.00007000',0,0,'1',NULL,3
+    );
+    INSERT INTO broadcasts VALUES(1,3,90,900,'50000','BTC-USD','valid'),(2,3,95,950,'69128','BTC-USD','valid'),(3,3,96,960,'1','BTC-USD','invalid');
     INSERT INTO dispenses VALUES(
       9,6,0,x'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',101,1001,1,2,1,'2',5,'2000',77
     );
@@ -60,10 +66,16 @@ test("compact dispenser feeds restore storefront and valued-sale relationships",
   `);
 
   const dispensers = (await listDispensers(d1(db), 10, 0)).map((row) => ({ ...row }));
-  assert.equal(dispensers[0].source, "seller");
-  assert.equal(dispensers[0].asset, "CARD");
-  assert.equal(dispensers[0].escrow_quantity, "10");
-  assert.equal(dispensers[0].closed_block_index, 101);
+  assert.equal(dispensers[0].oracle_address, "oracle");
+  assert.equal(dispensers[0].oracle_price, 69128);
+  assert.equal(dispensers[0].oracle_price_block_time, 950);
+  assert.equal(dispensers[0].oracle_fiat, "USD");
+  assert.equal(dispensers[1].oracle_address, null);
+  assert.equal(dispensers[1].oracle_price, null);
+  assert.equal(dispensers[1].source, "seller");
+  assert.equal(dispensers[1].asset, "CARD");
+  assert.equal(dispensers[1].escrow_quantity, "10");
+  assert.equal(dispensers[1].closed_block_index, 101);
 
   const dispenses = (await listDispenses(d1(db), 10, 0)).map((row) => ({ ...row }));
   assert.equal(dispenses[0].source, "seller");

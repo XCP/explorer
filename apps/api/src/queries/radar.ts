@@ -48,12 +48,25 @@ export function radarAvailable(db: D1Database, limit = 40): Promise<AvailableAss
     db,
     `WITH px AS (SELECT usd FROM prices WHERE currency='BTC' ORDER BY day DESC LIMIT 1),
      disp AS ( -- cheapest open dispenser per asset, per UNIT of the card (satoshirate is priced per dispense,
-               -- which can hand out give_quantity>1 units, so divide to get the effective one-unit BTC price)
-       SELECT asset_id,MIN(CAST(satoshirate_normalized AS REAL)
-              / NULLIF(CAST(give_quantity_normalized AS REAL),0)) ask_btc
-         FROM dispensers
-        WHERE status=0 AND CAST(give_remaining_normalized AS REAL) > 0
-        GROUP BY asset_id
+               -- which can hand out give_quantity>1 units, so divide to get the effective one-unit BTC price).
+               -- Oracle dispensers quote fiat cents settled at the oracle's latest valid broadcast, exactly as
+               -- counterparty-core prices a dispense; one without a usable quote cannot vend and is skipped.
+       SELECT dispenser.asset_id,MIN(
+              CASE WHEN dispenser.oracle_address_id IS NULL THEN CAST(dispenser.satoshirate_normalized AS REAL)
+                   ELSE (CAST(dispenser.satoshirate AS REAL)/100.0)/quote.price END
+              / NULLIF(CAST(dispenser.give_quantity_normalized AS REAL),0)) ask_btc
+         FROM dispensers dispenser
+         LEFT JOIN (
+           SELECT source_id,CAST(value AS REAL) price,
+                  ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY block_index DESC,tx_index DESC) recency
+             FROM broadcasts
+            WHERE status='valid'
+              AND source_id IN (SELECT DISTINCT oracle_address_id FROM dispensers
+                                 WHERE status=0 AND oracle_address_id IS NOT NULL)
+         ) quote ON quote.source_id=dispenser.oracle_address_id AND quote.recency=1
+        WHERE dispenser.status=0 AND CAST(dispenser.give_remaining_normalized AS REAL) > 0
+          AND (dispenser.oracle_address_id IS NULL OR quote.price > 0)
+        GROUP BY dispenser.asset_id
      ),
      emb_ranked AS ( -- cheapest current-generation listing, keeping venue and URL from the same order
        SELECT asset_id,price_usd ask_usd,marketplace,url,

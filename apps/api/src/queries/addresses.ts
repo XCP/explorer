@@ -89,10 +89,15 @@ export function listDispensers(db: D1Database, address: string, p: Page): Promis
      )
      SELECT LOWER(HEX(d.tx_hash)) tx_hash,d.block_index,d.block_time,source.address source,asset.asset,
        d.give_quantity_normalized,d.give_remaining_normalized,d.satoshirate,d.satoshirate_normalized,
-       d.dispense_count,d.status
+       d.dispense_count,d.status,
+       oracle.address oracle_address,
+       (SELECT CAST(quote.value AS REAL) FROM broadcasts quote WHERE quote.source_id=d.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_price,
+       (SELECT quote.block_time FROM broadcasts quote WHERE quote.source_id=d.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_price_block_time,
+       (SELECT substr(quote.text,instr(quote.text,'-')+1) FROM broadcasts quote WHERE quote.source_id=d.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_fiat
      FROM page JOIN dispensers d ON d.tx_index=page.tx_index
      LEFT JOIN address_dictionary source ON source.address_id=d.source_id
      LEFT JOIN asset_dictionary asset ON asset.asset_id=d.asset_id
+     LEFT JOIN address_dictionary oracle ON oracle.address_id=d.oracle_address_id
      ORDER BY d.block_index DESC,d.tx_index DESC`,
     address,
     p.limit,

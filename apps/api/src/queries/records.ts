@@ -39,16 +39,25 @@ LEFT JOIN address_dictionary source ON source.address_id=issuance.source_id
 LEFT JOIN address_dictionary issuer ON issuer.address_id=issuance.issuer_id
 ORDER BY issuance.block_index DESC,issuance.event_index DESC`;
 
+// Oracle-priced dispensers quote satoshirate in fiat CENTS and settle at the oracle's latest valid broadcast
+// (counterparty-core reads it with no staleness check), so the wire carries the quote a buyer actually pays at.
+const DISPENSER_ORACLE_SQL = `
+  oracle.address oracle_address,
+  (SELECT CAST(quote.value AS REAL) FROM broadcasts quote WHERE quote.source_id=dispenser.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_price,
+  (SELECT quote.block_time FROM broadcasts quote WHERE quote.source_id=dispenser.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_price_block_time,
+  (SELECT substr(quote.text,instr(quote.text,'-')+1) FROM broadcasts quote WHERE quote.source_id=dispenser.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_fiat`;
+
 const DISPENSER_FEED_SQL = `WITH page AS (
   SELECT tx_index FROM dispensers ORDER BY block_index DESC,tx_index DESC LIMIT ? OFFSET ?
 )
 SELECT LOWER(HEX(dispenser.tx_hash)) tx_hash,dispenser.block_index,dispenser.block_time,
   source.address source,asset.asset,dispenser.give_quantity_normalized,dispenser.give_remaining_normalized,
   dispenser.satoshirate,dispenser.satoshirate_normalized,dispenser.dispense_count,dispenser.status,
-  dispenser.escrow_quantity,dispenser.closed_block_index
+  dispenser.escrow_quantity,dispenser.closed_block_index,${DISPENSER_ORACLE_SQL}
 FROM page JOIN dispensers dispenser ON dispenser.tx_index=page.tx_index
 LEFT JOIN address_dictionary source ON source.address_id=dispenser.source_id
 LEFT JOIN asset_dictionary asset ON asset.asset_id=dispenser.asset_id
+LEFT JOIN address_dictionary oracle ON oracle.address_id=dispenser.oracle_address_id
 ORDER BY dispenser.block_index DESC,dispenser.tx_index DESC`;
 
 const DISPENSE_FEED_SQL = `WITH page AS (
@@ -709,10 +718,11 @@ export function coreDispensersByTx(db: D1Database, txIndex: number): Promise<Rec
     `SELECT LOWER(HEX(dispenser.tx_hash)) tx_hash,dispenser.block_index,dispenser.block_time,
       source.address source,asset.asset,dispenser.give_quantity_normalized,dispenser.give_remaining_normalized,
       dispenser.satoshirate,dispenser.satoshirate_normalized,dispenser.dispense_count,dispenser.status,
-      dispenser.escrow_quantity,dispenser.closed_block_index
+      dispenser.escrow_quantity,dispenser.closed_block_index,${DISPENSER_ORACLE_SQL}
       FROM dispensers dispenser
       LEFT JOIN address_dictionary source ON source.address_id=dispenser.source_id
       LEFT JOIN asset_dictionary asset ON asset.asset_id=dispenser.asset_id
+      LEFT JOIN address_dictionary oracle ON oracle.address_id=dispenser.oracle_address_id
       WHERE dispenser.tx_index=?1`,
     txIndex,
   );

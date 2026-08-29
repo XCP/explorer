@@ -1,4 +1,5 @@
 "use client";
+import { dispenseSats } from "@/lib/dispenser-pricing";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TxAction } from "@xcp/shared/chain";
@@ -89,7 +90,7 @@ export function ReceiptShell({
 export function DispenseReceipt({ action }: { action: Extract<TxAction, { kind: "dispense" }> }) {
   const d = action.dispenses[0];
   const machine = action.dispenser;
-  const rate = machine ? fromSats(machine.satoshirate, 1) : null;
+  const rate = machine ? fromSats(dispenseSats(machine), 1) : null;
   const stillOpen = machine && Number(machine.status) === 0 && Number(machine.give_remaining_normalized) > 0;
   return (
     <ReceiptShell

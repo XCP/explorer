@@ -139,6 +139,14 @@ export interface DispenserRow {
   status: number | null;
   escrow_quantity: string | null; // raw units originally escrowed — the storefront stock bar's denominator
   closed_block_index: number | null; // when the machine closed/emptied — the dead-storefront epitaph
+  /** Oracle-priced dispenser: satoshirate is fiat CENTS per dispense, settled at the oracle's latest valid
+   *  broadcast (counterparty-core applies no staleness check). Null on an ordinary BTC-priced dispenser. */
+  oracle_address: string | null;
+  /** The oracle's latest valid broadcast value (fiat per BTC), and when it was published. */
+  oracle_price: number | null;
+  oracle_price_block_time: number | null;
+  /** Fiat label from the broadcast text ("BTC-USD" → "USD"). */
+  oracle_fiat: string | null;
   /** Only on /v2/assets/:a/dispensers — the operator's precomputed track-record score. */
   operator_trust?: number;
 }

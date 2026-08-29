@@ -11,6 +11,7 @@ import { AssetArt } from "@/features/assets/components/asset-art";
 import { usePrices } from "@/lib/prices";
 import { orderView } from "@/lib/trading-pair";
 import { btcAmt, xcpAmt, satsUsd, blocksEta } from "@/lib/tx";
+import { dispenseSats, oracleFace, oracleQuoteStale } from "@/lib/dispenser-pricing";
 import { amount, collectionLabel, commas, fromSats, short, timeAgo } from "@/lib/format";
 
 /**
@@ -124,7 +125,10 @@ export function DispenserStorefront({
   const sold = totals?.units ?? (Number(d.dispense_count) || 0) * perDispense;
   const initial = remaining + sold;
   const pct = initial > 0 ? Math.round((remaining / initial) * 100) : 0;
-  const usd = satsUsd(d.satoshirate, btc);
+  const priceSats = dispenseSats(d);
+  const face = oracleFace(d);
+  const staleQuote = oracleQuoteStale(d);
+  const usd = satsUsd(priceSats, btc);
 
   if (!alive) {
     const soldOut = Number(d.status) === 0 && remaining <= 0;
@@ -190,11 +194,40 @@ export function DispenserStorefront({
             <b>{d.asset}</b> — {perDispense === 1 ? "sold by the unit" : `sold in lots of ${commas(perDispense)}`}
           </div>
           <div className="price">
-            <span className="big">{btcAmt(d.satoshirate)}</span>
+            <span className="big">{btcAmt(priceSats)}</span>
             <span className="usd">
               {usd && <>{usd} </>}per {perDispense === 1 ? "unit" : `${commas(perDispense)} units`}
             </span>
           </div>
+          {face && (
+            <div className="meta">
+              <span>
+                oracle-priced at{" "}
+                <b>
+                  {face.amount.toFixed(2)} {face.fiat}
+                </b>
+                , settled at {addr(d.oracle_address)}
+                {"'"}s last quote
+                {d.oracle_price != null && (
+                  <>
+                    {" "}
+                    of{" "}
+                    <b>
+                      {commas(d.oracle_price)} {face.fiat}/BTC
+                    </b>
+                  </>
+                )}
+                {d.oracle_price_block_time != null && <> ({timeAgo(d.oracle_price_block_time)})</>}
+                {priceSats == null && <> — no usable quote, it cannot vend</>}
+                {staleQuote && (
+                  <>
+                    {" "}
+                    · <b>stale feed</b>: the BTC price above is what you pay, not the fiat sticker
+                  </>
+                )}
+              </span>
+            </div>
+          )}
           <div className="meta">
             <span>
               sold <b>{commas(sold)}</b> unit{sold === 1 ? "" : "s"} in <b>{commas(d.dispense_count)}</b> sale
@@ -221,12 +254,12 @@ export function DispenserStorefront({
           <div className="howto">
             <div className="h">How to buy — automatic, no account</div>
             <div className="step">
-              Send <b>exactly {btcAmt(d.satoshirate)}</b> (or a multiple of it) to <b>{d.source}</b> — the machine vends{" "}
+              Send <b>exactly {btcAmt(priceSats)}</b> (or a multiple of it) to <b>{d.source}</b> — the machine vends{" "}
               {commas(perDispense)} {d.asset} per multiple, to the paying address, in the next block.
             </div>
             <div className="btns">
               {d.source && <ClickCopy label="copy address" value={d.source} />}
-              <ClickCopy label="copy amount" value={String(fromSats(d.satoshirate, 1) ?? "")} />
+              <ClickCopy label="copy amount" value={String(fromSats(priceSats, 1) ?? "")} />
               {d.asset && (
                 <a
                   className="txbtn buy"

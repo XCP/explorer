@@ -1,3 +1,4 @@
+import { dispenseSats } from "@/lib/dispenser-pricing";
 import type { Metadata } from "next";
 import { cache } from "react";
 import { notFound } from "next/navigation";
@@ -40,7 +41,7 @@ function shareCopy(v: TxView, hash: string): { title: string; description: strin
     const d = a.dispenser;
     if (d) {
       const open = Number(d.status) === 0 && Number(d.give_remaining_normalized) > 0;
-      const price = btc(d.satoshirate);
+      const price = btc(dispenseSats(d));
       return open
         ? {
             title: `Buy ${d.asset} — ${price ?? "dispenser"} · OPEN`,

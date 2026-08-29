@@ -660,10 +660,16 @@ export function listAssetDispensers(
     `SELECT lower(hex(dispenser.tx_hash)) tx_hash,dispenser.block_index,dispenser.block_time,
             source.address source,dictionary.asset,dispenser.give_quantity_normalized,
             dispenser.give_remaining_normalized,dispenser.satoshirate,dispenser.satoshirate_normalized,
-            dispenser.dispense_count,dispenser.status,round(coalesce(signal.disp_trust,0),1) operator_trust
+            dispenser.dispense_count,dispenser.status,dispenser.escrow_quantity,dispenser.closed_block_index,
+            round(coalesce(signal.disp_trust,0),1) operator_trust,
+            oracle.address oracle_address,
+            (SELECT CAST(quote.value AS REAL) FROM broadcasts quote WHERE quote.source_id=dispenser.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_price,
+            (SELECT quote.block_time FROM broadcasts quote WHERE quote.source_id=dispenser.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_price_block_time,
+            (SELECT substr(quote.text,instr(quote.text,'-')+1) FROM broadcasts quote WHERE quote.source_id=dispenser.oracle_address_id AND quote.status='valid' ORDER BY quote.block_index DESC,quote.tx_index DESC LIMIT 1) oracle_fiat
        FROM dispensers dispenser
        JOIN asset_dictionary dictionary ON dictionary.asset_id=dispenser.asset_id
        JOIN address_dictionary source ON source.address_id=dispenser.source_id
+       LEFT JOIN address_dictionary oracle ON oracle.address_id=dispenser.oracle_address_id
        LEFT JOIN address_signals signal ON signal.address_id=dispenser.source_id
       WHERE dispenser.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
       ORDER BY dispenser.block_index DESC,dispenser.tx_index DESC LIMIT ? OFFSET ?`,

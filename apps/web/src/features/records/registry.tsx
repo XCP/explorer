@@ -1,3 +1,4 @@
+import { dispenseSats } from "@/lib/dispenser-pricing";
 import Link from "next/link";
 import type {
   PoolRow,
@@ -332,7 +333,10 @@ export const DISPENSER_COLS: Col<DispenserRow>[] = [
     label: "Price (BTC)",
     numeric: true,
     priority: 1,
-    cell: (r) => btcPerUnit(r.satoshirate_normalized, r.give_quantity_normalized),
+    cell: (r) => {
+      const sats = dispenseSats(r);
+      return btcPerUnit(sats == null ? null : sats / 1e8, r.give_quantity_normalized);
+    },
   },
   { label: "Available", numeric: true, priority: 2, cell: (r) => commas(r.give_remaining_normalized) },
   { label: "Sales", numeric: true, priority: 3, w: "70px", cell: (r) => compact(r.dispense_count) },
