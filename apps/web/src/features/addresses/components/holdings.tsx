@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import type { AddressBalanceRow } from "@xcp/shared/addresses";
+import type { DetachedBalanceRow } from "@xcp/shared/addresses";
 import { apiUrl, type Envelope } from "@/lib/api/url";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -16,8 +16,11 @@ import { assetHref } from "@/lib/asset-link";
 // Holdings as a visual collection (the owner's #1 want) — a wall of the actual card art, sorted by
 // quantity, with a table toggle. This is the "lead with art, not a spreadsheet" upgrade.
 export function Holdings({ address }: { address: string }) {
-  const { data, isLoading } = useSWR<Envelope<AddressBalanceRow[]>>(
-    apiUrl(`/v2/addresses/${encodeURIComponent(address)}/balances`, { limit: 100 }),
+  const { data, isLoading } = useSWR<Envelope<DetachedBalanceRow[]>>(
+    apiUrl(`/v2/addresses/${encodeURIComponent(address)}/balances`, {
+      type: "address",
+      limit: 100,
+    }),
   );
   const [view, setView] = useState<"gallery" | "table">("gallery");
   const rows = (data?.result ?? [])

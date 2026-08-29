@@ -3,7 +3,7 @@
  *  queries/addresses.ts; the reputation composition (scoring + archetype tags) stays here — it's
  *  reputation logic, not SQL. */
 import { router, J, lim, off, round, cached } from "#api/read/respond";
-import { listAddressBalances, listAddressSends } from "#api/queries/core";
+import { listAddressBalances, listAddressSends, listAddressUtxoBalances } from "#api/queries/core";
 import { classifyPersona } from "#api/reputation/persona";
 import { addressCurrentActivity } from "#api/reputation/activity";
 import { TAG } from "#api/reputation/config";
@@ -52,9 +52,20 @@ addresses.get("/v2/addresses/census", (c) =>
 );
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
+  const type = c.req.query("type") ?? "address";
+  if (type !== "address" && type !== "utxo") {
+    return c.json({ error: "type must be address or utxo" }, 400);
+  }
   const page = { limit: lim(c), offset: off(c) };
-  const result = await listAddressBalances(c.env.CORE_DB, c.req.param("address"), page.limit, page.offset);
-  return J(c, { result, next_offset: result.length === lim(c) ? off(c) + lim(c) : null });
+  const result =
+    type === "address"
+      ? await listAddressBalances(c.env.CORE_DB, c.req.param("address"), page.limit, page.offset)
+      : await listAddressUtxoBalances(c.env.CORE_DB, c.req.param("address"), page.limit, page.offset);
+  return J(c, {
+    result,
+    result_count: result.length,
+    next_offset: result.length === page.limit ? page.offset + page.limit : null,
+  });
 });
 
 addresses.get("/v2/addresses/:address/sends", async (c) => {

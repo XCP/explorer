@@ -1,5 +1,5 @@
 // Indexed read plans for the canonical schema.
-import type { AddressBalanceRow, AddressSendRow } from "@xcp/shared/addresses";
+import type { AttachedBalanceRow, DetachedBalanceRow, AddressSendRow } from "@xcp/shared/addresses";
 import { one, q } from "#api/db";
 
 export const CORE_SENDS_BY_ADDRESS_SQL = `WITH candidates AS (
@@ -27,11 +27,12 @@ LEFT JOIN asset_dictionary assets ON assets.asset_id=page.asset_id
 ORDER BY page.block_index DESC,page.event_index DESC`;
 
 export const CORE_BALANCES_BY_ADDRESS_SQL = `WITH page AS (
-  SELECT asset_id,quantity,quantity_normalized FROM balances
+  SELECT asset_id,quantity,quantity_normalized,updated_block_index FROM balances
   WHERE address_id=?1 AND CAST(quantity AS INTEGER)>0
   ORDER BY asset_id LIMIT ?2 OFFSET ?3
 )
 SELECT dictionary.asset,page.quantity,page.quantity_normalized,assets.divisible,assets.asset_longname,
+       page.updated_block_index,
        EXISTS(
          SELECT 1 FROM entity_dictionary entity JOIN tags ON tags.entity_id=entity.entity_id
           WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tags.tag='stamp'
@@ -40,6 +41,26 @@ FROM page
 JOIN asset_dictionary dictionary ON dictionary.asset_id=page.asset_id
 LEFT JOIN assets ON assets.asset_id=page.asset_id
 ORDER BY page.asset_id`;
+
+export const CORE_UTXO_BALANCES_BY_ADDRESS_SQL = `WITH page AS (
+  SELECT utxo_tx_hash,utxo_vout,asset_id,quantity,quantity_normalized,
+         updated_block_index,utxo_address_id
+  FROM balances INDEXED BY idx_balances_utxo_address
+  WHERE utxo_address_id=?1 AND CAST(quantity AS INTEGER)>0
+  ORDER BY utxo_tx_hash,utxo_vout,asset_id LIMIT ?2 OFFSET ?3
+)
+SELECT dictionary.asset,page.quantity,page.quantity_normalized,assets.divisible,assets.asset_longname,
+       page.updated_block_index,LOWER(HEX(page.utxo_tx_hash))||':'||page.utxo_vout utxo,
+       controller.address utxo_address,
+       EXISTS(
+         SELECT 1 FROM entity_dictionary entity JOIN tags ON tags.entity_id=entity.entity_id
+          WHERE entity.entity_type='asset' AND entity.entity_key=dictionary.asset AND tags.tag='stamp'
+       ) stamp
+FROM page
+JOIN asset_dictionary dictionary ON dictionary.asset_id=page.asset_id
+JOIN address_dictionary controller ON controller.address_id=page.utxo_address_id
+LEFT JOIN assets ON assets.asset_id=page.asset_id
+ORDER BY page.utxo_tx_hash,page.utxo_vout,page.asset_id`;
 
 export const CORE_TOTAL_BY_ASSET_SQL = `SELECT COALESCE(SUM(CAST(quantity AS INTEGER)),0) total
 FROM balances WHERE asset_id=?1 AND CAST(quantity AS INTEGER)>0`;
@@ -81,9 +102,19 @@ export async function listAddressBalances(
   address: string,
   limit: number,
   offset: number,
-): Promise<AddressBalanceRow[]> {
+): Promise<DetachedBalanceRow[]> {
   const id = await addressId(db, address);
-  return id == null ? [] : q<AddressBalanceRow>(db, CORE_BALANCES_BY_ADDRESS_SQL, id, limit, offset);
+  return id == null ? [] : q<DetachedBalanceRow>(db, CORE_BALANCES_BY_ADDRESS_SQL, id, limit, offset);
+}
+
+export async function listAddressUtxoBalances(
+  db: D1Database,
+  address: string,
+  limit: number,
+  offset: number,
+): Promise<AttachedBalanceRow[]> {
+  const id = await addressId(db, address);
+  return id == null ? [] : q<AttachedBalanceRow>(db, CORE_UTXO_BALANCES_BY_ADDRESS_SQL, id, limit, offset);
 }
 
 export async function assetBalanceTotal(db: D1Database, asset: string): Promise<string> {

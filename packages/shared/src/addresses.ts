@@ -13,14 +13,24 @@ export type AddressTier =
   | "Integrity flag"
   | "No history"; // non-ranked
 
-/** GET /v2/addresses/:address/balances — one held asset (raw + normalized are text; stamp flag from tags). */
-export interface AddressBalanceRow {
+/** Fields shared by the explicit address-held and UTXO-attached balance views. */
+export interface BalanceRow {
   asset: string;
   quantity: string;
   quantity_normalized: string;
   divisible: 0 | 1 | null;
   asset_longname: string | null;
   stamp: 0 | 1;
+  updated_block_index: number | null;
+}
+
+/** GET /v2/addresses/:address/balances?type=address */
+export interface DetachedBalanceRow extends BalanceRow {}
+
+/** GET /v2/addresses/:address/balances?type=utxo */
+export interface AttachedBalanceRow extends BalanceRow {
+  utxo: string;
+  utxo_address: string;
 }
 
 /** GET /v2/addresses/:address/sends — a send where the address is source or destination. */
