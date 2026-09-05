@@ -10,14 +10,13 @@
  * Correctness model — never drop, always retry. Writes are flushed in D1 batches; a batch failure THROWS,
  * so the run aborts without advancing the cursor and the chunk re-runs next tick. Every write is idempotent
  * (INSERT OR IGNORE on event_index / OR REPLACE on PK / balance updated_event_index high-water), so
- * re-applying a partially-committed chunk is exact. No silent drops, so no repair pass is needed.
+ * re-applying a partially-committed chunk is exact. No silent drops; historical imports still require independent verification.
  *
  * Reorg: hash-mismatch at our checkpoint -> cascade DELETE WHERE block_index > rollbackTo across all
- * tables, restore balances from the nearest snapshot, reset the event cursor, replay forward. Balance
+ * tables, reverse committed orphan balance deltas, reset the event cursor, replay forward. Balance
  * snapshots are written only near the tip (FOLLOWING window) and pruned keep-one-below-cutoff.
  */
 import type { Env } from "#api/env";
-import { normalize } from "#api/indexer/codec";
 import { type Ev, type Stmt, type Ctx } from "#api/indexer/events/context";
 import { dispatch } from "#api/indexer/events/dispatch";
 import { counterpartyJson } from "#api/integrations/counterparty";
@@ -27,6 +26,7 @@ import { enqueueCoreSupply } from "#api/indexer/asset-supply";
 import { enqueueCoreAddressSignals } from "#api/indexer/core-address-signals";
 import { applyCoreBalanceDeltas } from "#api/indexer/balance-store";
 import { runCoreBlockGated } from "#api/scheduler/core-block-gate";
+import { balanceRollbackStatements } from "#api/queries/balance-rollback";
 
 const CHUNK = 1000; // events per API page
 // A fetched page can contain hundreds of balance and signal writes. Checkpoint
@@ -92,9 +92,24 @@ async function fetchAsc(api: string, from: number, chunk: number): Promise<Ev[]>
   const d = await counterpartyJson<{ result?: Ev[] }>(api, `/events?cursor=${from + chunk - 1}&limit=${chunk}`, {
     malformedRetries: 0, // oversize/parse failures are deterministic; the caller shrinks chunk instead
   });
-  const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from);
+  const rows: Ev[] = (d.result || []).filter((e) => e.event_index >= from && e.event_index < from + chunk);
   rows.sort((a, b) => a.event_index - b.event_index);
+  if (rows.length !== chunk || rows.some((event, index) => event.event_index !== from + index)) {
+    throw new Error(`Counterparty event gap at ${from}`);
+  }
   return rows;
+}
+
+function checkpointHashStmt(db: D1Database, block: number): D1PreparedStatement {
+  // Store the hash of the locally applied block with its cursor, never the
+  // upstream's possibly replaced hash or the previous completed page's hash.
+  return db
+    .prepare(
+      `INSERT INTO core_state(key,value)
+    VALUES('last_block_hash',coalesce((SELECT lower(hex(block_hash)) FROM blocks WHERE block_index=?),''))
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value IS NOT excluded.value`,
+    )
+    .bind(block);
 }
 /** The chunk's asset→divisible map. Issuance events inside the chunk state divisibility themselves
  *  (and always precede the chunk's uses of a brand-new asset — Counterparty emits ASSET_ISSUANCE
@@ -192,6 +207,42 @@ export async function syncCoreEvents(
     let lastBlock = Number.parseInt(blockValue ?? "0", 10);
     if (!Number.isSafeInteger(lastIndex) || lastIndex < -1) throw new Error("replay cursor is invalid");
 
+    const rollbackValue = await getCoreState(env.CORE_DB, "rollback_to");
+    if (rollbackValue !== null) {
+      const rollbackTo = Number(rollbackValue);
+      const rollbackCursor = await getCoreState(env.CORE_DB, "rollback_event_index");
+      const rollbackIndex = Number(rollbackCursor);
+      const cursorBlock = Number((await getCoreState(env.CORE_DB, "rollback_cursor_block")) ?? rollbackTo);
+      if (
+        rollbackCursor === null ||
+        !Number.isSafeInteger(rollbackTo) ||
+        rollbackTo < 0 ||
+        !Number.isSafeInteger(rollbackIndex) ||
+        rollbackIndex < -1 ||
+        !Number.isSafeInteger(cursorBlock) ||
+        cursorBlock < 0 ||
+        cursorBlock > rollbackTo
+      )
+        throw new Error("Invalid pending rollback");
+      const local = await env.CORE_DB.prepare("SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?")
+        .bind(rollbackTo)
+        .first<{ hash: string }>();
+      if (!local?.hash || local.hash !== (await blockHash(env.COUNTERPARTY_API_BASE, rollbackTo))) {
+        throw new Error("Pending rollback no longer has a verified common ancestor");
+      }
+      await rollbackCoreDatabase(env.CORE_DB, rollbackTo, rollbackIndex);
+      lastIndex = rollbackIndex;
+      lastBlock = cursorBlock;
+      await env.CORE_DB.batch([
+        setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),
+        setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+        checkpointHashStmt(env.CORE_DB, lastBlock),
+        env.CORE_DB.prepare(
+          "DELETE FROM core_state WHERE key IN ('rollback_to','rollback_event_index','rollback_cursor_block')",
+        ),
+      ]);
+    }
+
     const [tip, sourceTipBlock] = await Promise.all([
       tipEventIndex(env.COUNTERPARTY_API_BASE),
       currentBlock(env.COUNTERPARTY_API_BASE),
@@ -201,18 +252,51 @@ export async function syncCoreEvents(
     await setCoreStateStmt(env.CORE_DB, "source_tip_block", String(sourceTipBlock)).run();
     const followingWindow = tip - lastIndex < 5 * CHUNK;
     if (followingWindow && lastBlock > 0) {
+      // Raw page writes can precede the durable cursor. Verify those headers
+      // too, or a crash followed by a fork could retain orphan INSERT OR IGNORE rows.
+      const rawTip = await env.CORE_DB.prepare(
+        "SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1",
+      ).first<{ block_index: number }>();
+      const verifyBlock = Math.max(lastBlock, rawTip?.block_index ?? lastBlock);
       const [storedHash, actualHash] = await Promise.all([
-        getCoreState(env.CORE_DB, "last_block_hash"),
-        blockHash(env.COUNTERPARTY_API_BASE, lastBlock),
+        env.CORE_DB.prepare(`SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?`)
+          .bind(verifyBlock)
+          .first<{ hash: string }>()
+          .then((row) => row?.hash || null),
+        blockHash(env.COUNTERPARTY_API_BASE, verifyBlock),
       ]);
       if (storedHash && actualHash && storedHash !== actualHash) {
-        const rollbackTo = lastBlock - 1;
-        await rollbackCoreDatabase(env.CORE_DB, rollbackTo);
-        lastIndex = await eventCursorBeforeBlock(env.COUNTERPARTY_API_BASE, lastIndex, rollbackTo);
-        lastBlock = rollbackTo;
+        let rollbackTo = verifyBlock - 1;
+        let found = false;
+        for (; rollbackTo >= Math.max(0, verifyBlock - 24); rollbackTo--) {
+          const retained = await env.CORE_DB.prepare(
+            `SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?`,
+          )
+            .bind(rollbackTo)
+            .first<{ hash: string }>();
+          if (retained?.hash && retained.hash === (await blockHash(env.COUNTERPARTY_API_BASE, rollbackTo))) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) throw new Error("Counterparty reorg has no verified common ancestor within 24 blocks");
+        const rollbackIndex = await eventCursorBeforeBlock(env.COUNTERPARTY_API_BASE, lastIndex, rollbackTo);
+        const cursorBlock = Math.min(lastBlock, rollbackTo);
+        await env.CORE_DB.batch([
+          setCoreStateStmt(env.CORE_DB, "rollback_to", String(rollbackTo)),
+          setCoreStateStmt(env.CORE_DB, "rollback_event_index", String(rollbackIndex)),
+          setCoreStateStmt(env.CORE_DB, "rollback_cursor_block", String(cursorBlock)),
+        ]);
+        await rollbackCoreDatabase(env.CORE_DB, rollbackTo, rollbackIndex);
+        lastIndex = rollbackIndex;
+        lastBlock = cursorBlock;
         await env.CORE_DB.batch([
           setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),
           setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+          checkpointHashStmt(env.CORE_DB, lastBlock),
+          env.CORE_DB.prepare(
+            "DELETE FROM core_state WHERE key IN ('rollback_to','rollback_event_index','rollback_cursor_block')",
+          ),
         ]);
       }
     }
@@ -258,6 +342,7 @@ export async function syncCoreEvents(
         await env.CORE_DB.batch([
           setCoreStateStmt(env.CORE_DB, "last_event_index", String(lastIndex)),
           setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
+          checkpointHashStmt(env.CORE_DB, lastBlock),
         ]);
       }
     }
@@ -283,8 +368,6 @@ export async function syncCoreEvents(
           pruneCoreSnapshots(env.CORE_DB, lastBlock - SNAPSHOT_WINDOW),
         );
       }
-      const checkpointHash = lastBlock > 0 ? await blockHash(env.COUNTERPARTY_API_BASE, lastBlock) : null;
-      if (checkpointHash) await setCoreStateStmt(env.CORE_DB, "last_block_hash", checkpointHash).run();
     }
     return {
       applied,
@@ -351,15 +434,12 @@ async function deleteAbove(db: D1Database, table: string, block: number): Promis
   }
 }
 
-interface CoreBalanceIdentity {
-  address_id: number | null;
-  utxo_tx_hash: ArrayBuffer | null;
-  utxo_vout: number | null;
-  asset_id: number;
-}
-
-/** Remove one orphaned branch and restore every affected balance to its nearest retained snapshot. */
-export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number): Promise<void> {
+/** Reverse committed orphan balance deltas before deleting their provenance. */
+export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number, rollbackIndex: number): Promise<void> {
+  const restores = await balanceRollbackStatements(db, rollbackTo, rollbackIndex);
+  for (let offset = 0; offset < restores.length; offset += DB_BATCH) {
+    await db.batch(restores.slice(offset, offset + DB_BATCH));
+  }
   const tables = [
     "transactions",
     "transaction_outputs",
@@ -387,7 +467,6 @@ export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number): 
     "bet_match_resolutions",
     "rps",
     "rps_matches",
-    "ledger_events",
     "blocks",
   ];
   for (const table of tables) await deleteAbove(db, table, rollbackTo);
@@ -404,69 +483,9 @@ export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number): 
     .run();
   await db.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index>?`).bind(rollbackTo).run();
 
-  const changed = await db
-    .prepare(
-      `SELECT DISTINCT address_id,utxo_tx_hash,utxo_vout,asset_id
-       FROM balance_snapshots WHERE block_index>?`,
-    )
-    .bind(rollbackTo)
-    .all<CoreBalanceIdentity>();
-  const statements: Stmt[] = [];
-  for (const identity of changed.results) {
-    const snapshot = await db
-      .prepare(
-        `SELECT s.quantity,s.updated_event_index,
-                CASE WHEN d.asset IN ('BTC','XCP') THEN 1 ELSE coalesce(a.divisible,0) END divisible
-         FROM balance_snapshots s
-         JOIN asset_dictionary d ON d.asset_id=s.asset_id
-         LEFT JOIN assets a ON a.asset_id=s.asset_id
-         WHERE s.asset_id=?
-           AND ((? IS NOT NULL AND s.address_id=?) OR
-                (? IS NULL AND s.utxo_tx_hash=? AND s.utxo_vout=?))
-           AND s.block_index<=?
-         ORDER BY s.block_index DESC LIMIT 1`,
-      )
-      .bind(
-        identity.asset_id,
-        identity.address_id,
-        identity.address_id,
-        identity.address_id,
-        identity.utxo_tx_hash,
-        identity.utxo_vout,
-        rollbackTo,
-      )
-      .first<{ quantity: string; updated_event_index: number; divisible: number }>();
-    const identityPredicate =
-      identity.address_id == null
-        ? `address_id IS NULL AND utxo_tx_hash=? AND utxo_vout=? AND asset_id=?`
-        : `address_id=? AND asset_id=?`;
-    const identityBinds =
-      identity.address_id == null
-        ? [identity.utxo_tx_hash, identity.utxo_vout, identity.asset_id]
-        : [identity.address_id, identity.asset_id];
-    if (snapshot) {
-      statements.push((target) =>
-        target
-          .prepare(
-            `UPDATE balances SET quantity=?,quantity_normalized=?,updated_block_index=?,updated_event_index=?
-             WHERE ${identityPredicate}`,
-          )
-          .bind(
-            snapshot.quantity,
-            normalize(snapshot.quantity, snapshot.divisible === 1),
-            rollbackTo,
-            snapshot.updated_event_index,
-            ...identityBinds,
-          ),
-      );
-    } else {
-      statements.push((target) =>
-        target.prepare(`DELETE FROM balances WHERE ${identityPredicate}`).bind(...identityBinds),
-      );
-    }
-  }
-  statements.push((target) => target.prepare(`DELETE FROM balance_snapshots WHERE block_index>?`).bind(rollbackTo));
-  await batchAll(db, statements);
+  await db.prepare("DELETE FROM balance_snapshots WHERE block_index>?").bind(rollbackTo).run();
+  // Orphan ledger stays until all restores commit, so a crashed rollback can retry.
+  await deleteAbove(db, "ledger_events", rollbackTo);
   await db.batch([
     setCoreStateStmt(db, "last_block_index", String(rollbackTo)),
     setCoreStateStmt(db, "trades_cur_dex", String(rollbackTo)),
