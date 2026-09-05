@@ -56,8 +56,7 @@ test("supply queue chunks identity lookups below D1's SQL-variable ceiling", asy
   );
 });
 
-test("compact supply maintenance is exact, queued by identity, and updates derived protocol totals", async () => {
-  assert.ok(SUPPLY_ID_LOOKUP_BATCH < 100, "D1 identity lookups must stay below its SQL-variable ceiling");
+function supplyFixture(): DatabaseSync {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -87,6 +86,12 @@ test("compact supply maintenance is exact, queued by identity, and updates deriv
     INSERT INTO core_state VALUES('asset_supply_done','1');
     INSERT INTO core_state VALUES('fairminters_full_repair_block','100');
   `);
+  return sqlite;
+}
+
+test("compact supply maintenance is exact, queued by identity, and updates derived protocol totals", async () => {
+  assert.ok(SUPPLY_ID_LOOKUP_BATCH < 100, "D1 identity lookups must stay below its SQL-variable ceiling");
+  const sqlite = supplyFixture();
   const core = d1(sqlite);
   await enqueueCoreSupply(core, ["A", "A", "missing"]);
   assert.equal(sqlite.prepare(`SELECT value FROM core_state WHERE key='asset_supply_queue'`).get()?.value, "[2]");
@@ -136,4 +141,101 @@ test("compact supply maintenance is exact, queued by identity, and updates deriv
     { ...sqlite.prepare(`SELECT earned_quantity,paid_quantity FROM fairminters WHERE tx_index=20`).get() },
     { earned_quantity: "4", paid_quantity: "1" },
   );
+});
+
+function auditAssetWrites(sqlite: DatabaseSync): () => number {
+  sqlite.exec(`CREATE TABLE asset_write_audit(asset_id INTEGER);
+    CREATE TRIGGER audit_asset_write AFTER UPDATE ON assets BEGIN
+      INSERT INTO asset_write_audit VALUES(NEW.asset_id);
+    END`);
+  return () => Number(sqlite.prepare(`SELECT COUNT(*) AS writes FROM asset_write_audit`).get()?.writes);
+}
+
+test("unchanged dirty assets and new-block XCP maintenance perform zero asset writes on replay", async () => {
+  const sqlite = supplyFixture();
+  const core = d1(sqlite);
+  await enqueueCoreSupply(core, ["A"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  const writes = auditAssetWrites(sqlite);
+
+  for (let tip = 101; tip <= 110; tip++) {
+    sqlite.prepare(`INSERT INTO blocks VALUES(?)`).run(tip);
+    await enqueueCoreSupply(core, ["A"]);
+    await crawlAssetSupply({ CORE_DB: core } as Env);
+  }
+
+  assert.equal(writes(), 0, "SQL UPDATE triggers must not fire for unchanged raw or normalized supplies");
+  assert.equal(sqlite.prepare(`SELECT value FROM core_state WHERE key='asset_supply_queue'`).get()?.value, "[]");
+  assert.equal(sqlite.prepare(`SELECT value FROM core_state WHERE key='asset_derived_tip'`).get()?.value, "110");
+  assert.deepEqual(
+    { ...sqlite.prepare(`SELECT supply,supply_normalized FROM assets WHERE asset_id=1`).get() },
+    {
+      supply: "974",
+      supply_normalized: "0.00000974",
+    },
+  );
+  sqlite.close();
+});
+
+test("supply guards still apply changed exact integers, divisibility, zero and missing normalization", async () => {
+  const sqlite = supplyFixture();
+  const core = d1(sqlite);
+  await enqueueCoreSupply(core, ["A"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  const writes = auditAssetWrites(sqlite);
+
+  sqlite.exec(`UPDATE issuances SET quantity='9007199254740993' WHERE quantity='100'`);
+  await enqueueCoreSupply(core, ["A"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  assert.equal(writes(), 2);
+  assert.deepEqual(
+    { ...sqlite.prepare(`SELECT supply,supply_normalized FROM assets WHERE asset_id=2`).get() },
+    {
+      supply: "9007199254741023",
+      supply_normalized: "9007199254741023",
+    },
+  );
+
+  sqlite.exec(`UPDATE assets SET divisible=1 WHERE asset_id=2; DELETE FROM asset_write_audit`);
+  await enqueueCoreSupply(core, ["A"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  assert.equal(writes(), 1, "only normalized supply changes when divisibility changes");
+  assert.equal(
+    sqlite.prepare(`SELECT supply_normalized FROM assets WHERE asset_id=2`).get()?.supply_normalized,
+    "90071992.54741023",
+  );
+
+  sqlite.exec(`UPDATE assets SET supply_normalized=NULL WHERE asset_id=2; DELETE FROM asset_write_audit`);
+  await enqueueCoreSupply(core, ["A"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  assert.equal(writes(), 1, "missing normalization is repaired even when raw supply is already correct");
+
+  sqlite.exec(`INSERT INTO asset_dictionary VALUES(3,'ZERO');
+    INSERT INTO assets VALUES(3,0,NULL,NULL); DELETE FROM asset_write_audit`);
+  await enqueueCoreSupply(core, ["ZERO"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  assert.equal(writes(), 2);
+  assert.deepEqual(
+    { ...sqlite.prepare(`SELECT supply,supply_normalized FROM assets WHERE asset_id=3`).get() },
+    {
+      supply: "0",
+      supply_normalized: "0",
+    },
+  );
+  sqlite.close();
+});
+
+test("backfill retries skip unchanged assets and retain special XCP supply", async () => {
+  const sqlite = supplyFixture();
+  const core = d1(sqlite);
+  await enqueueCoreSupply(core, ["A"]);
+  await crawlAssetSupply({ CORE_DB: core } as Env);
+  const writes = auditAssetWrites(sqlite);
+  sqlite.exec(`UPDATE core_state SET value='0' WHERE key='asset_supply_done'`);
+
+  assert.deepEqual(await crawlAssetSupply({ CORE_DB: core } as Env), { phase: "backfill", from: 0, to: 2 });
+  assert.deepEqual(await crawlAssetSupply({ CORE_DB: core } as Env), { phase: "backfill", complete: true });
+  assert.equal(writes(), 0);
+  assert.equal(sqlite.prepare(`SELECT supply FROM assets WHERE asset_id=1`).get()?.supply, "974");
+  sqlite.close();
 });

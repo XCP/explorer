@@ -44,38 +44,57 @@ const SUPPLY_EXPR = `CAST((
     WHERE d.asset_id=assets.asset_id AND d.status='valid'),0)
   ) AS TEXT)`;
 
+async function updateSupply(db: D1Database, expression: string, predicate: string, binds: unknown[]): Promise<void> {
+  // Materialize once so the no-op guard does not repeat the protocol aggregates.
+  // The bounded source and primary-key join keep retries proportional to the dirty set.
+  await db
+    .prepare(
+      `WITH desired AS MATERIALIZED (
+        SELECT asset_id,${expression} AS supply FROM assets WHERE ${predicate}
+      )
+      UPDATE assets SET supply=desired.supply FROM desired
+      WHERE assets.asset_id=desired.asset_id AND assets.supply IS NOT desired.supply`,
+    )
+    .bind(...binds)
+    .run();
+}
+
 async function normalizeAssets(db: D1Database, predicate: string, binds: unknown[]): Promise<void> {
   const rows = await db
-    .prepare(`SELECT asset_id,supply,divisible FROM assets WHERE ${predicate} AND supply IS NOT NULL`)
+    .prepare(`SELECT asset_id,supply,divisible,supply_normalized FROM assets WHERE ${predicate} AND supply IS NOT NULL`)
     .bind(...binds)
-    .all<{ asset_id: number; supply: string; divisible: number }>();
-  for (let offset = 0; offset < rows.results.length; offset += 90) {
+    .all<{ asset_id: number; supply: string; divisible: number; supply_normalized: string | null }>();
+  const changed = rows.results.flatMap((row) => {
+    const normalized = normalize(row.supply, row.divisible === 1);
+    return normalized === row.supply_normalized ? [] : [{ assetId: row.asset_id, normalized }];
+  });
+  for (let offset = 0; offset < changed.length; offset += 90) {
     await db.batch(
-      rows.results
+      changed
         .slice(offset, offset + 90)
         .map((row) =>
           db
-            .prepare(`UPDATE assets SET supply_normalized=? WHERE asset_id=?`)
-            .bind(normalize(row.supply, row.divisible === 1), row.asset_id),
+            .prepare(`UPDATE assets SET supply_normalized=? WHERE asset_id=? AND supply_normalized IS NOT ?`)
+            .bind(row.normalized, row.assetId, row.normalized),
         ),
     );
   }
 }
 
 async function recomputeXcp(db: D1Database): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE assets SET supply=CAST((
+  await updateSupply(
+    db,
+    `CAST((
         COALESCE((SELECT SUM(CAST(earned AS INTEGER)) FROM burns WHERE status='valid'),0)
         - COALESCE((SELECT SUM(CAST(d.quantity AS INTEGER)) FROM destructions d
           WHERE d.status='valid' AND d.asset_id=assets.asset_id),0)
         - COALESCE((SELECT SUM(CAST(fee_paid AS INTEGER)) FROM issuances WHERE status='valid'),0)
         - COALESCE((SELECT SUM(CAST(fee_paid AS INTEGER)) FROM dividends WHERE status='valid'),0)
         - COALESCE((SELECT SUM(CAST(fee_paid AS INTEGER)) FROM sweeps WHERE status='valid'),0)
-      ) AS TEXT)
-      WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`,
-    )
-    .run();
+      ) AS TEXT)`,
+    `asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`,
+    [],
+  );
   await normalizeAssets(db, `asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`, []);
 }
 
@@ -128,13 +147,12 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
       await recomputeXcp(db);
       return { phase: "backfill", complete: true };
     }
-    await db
-      .prepare(
-        `UPDATE assets SET supply=${SUPPLY_EXPR}
-         WHERE asset_id>? AND asset_id<=? AND asset_id<>(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`,
-      )
-      .bind(cursor, top.top)
-      .run();
+    await updateSupply(
+      db,
+      SUPPLY_EXPR,
+      `asset_id>? AND asset_id<=? AND asset_id<>(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`,
+      [cursor, top.top],
+    );
     await normalizeAssets(
       db,
       `asset_id>? AND asset_id<=? AND asset_id<>(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')`,
@@ -154,10 +172,7 @@ export async function crawlAssetSupply(env: Env): Promise<Record<string, unknown
   for (let index = 0; index < todo.length; index += 90) {
     const chunk = todo.slice(index, index + 90);
     const placeholders = chunk.map(() => "?").join(",");
-    await db
-      .prepare(`UPDATE assets SET supply=${SUPPLY_EXPR} WHERE asset_id IN (${placeholders})`)
-      .bind(...chunk)
-      .run();
+    await updateSupply(db, SUPPLY_EXPR, `asset_id IN (${placeholders})`, chunk);
     await normalizeAssets(db, `asset_id IN (${placeholders})`, chunk);
   }
   const fullRepairValue = await getCoreState(db, "fairminters_full_repair_block");
