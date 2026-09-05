@@ -15,6 +15,13 @@ export function parseCounterpartyJson(text: string): unknown {
   return JSON.parse(text.replace(/:\s*(-?\d{16,})(?=\s*[,}\]])/g, ':"$1"'));
 }
 
+/** Ledger quantities are exact raw integers. Never round or turn invalid data into zero. */
+export function balanceQuantity(value: unknown): bigint {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
+  if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) return BigInt(value);
+  throw new Error("Invalid raw Counterparty balance quantity");
+}
+
 // raw -> human string. Divisible assets store satoshis (×1e8); insert the decimal point with pure string
 // math (no float) so values > 2^53 stay exact. Non-divisible passes through unchanged.
 export function normalize(raw: string | number | bigint | null | undefined, divisible: boolean): string | null {

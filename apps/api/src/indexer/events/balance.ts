@@ -3,13 +3,14 @@
  *  computed purely from these as netted BigInt deltas. holder = utxo (utxo-attached) or address.
  *  We ALSO capture each event 1:1 into credits/debits (migration 0038) — the raw ledger that powers the
  *  per-address provenance view and a definitive first-appearance signal (MIN block over credits). */
-import { type Handler, addDelta, bi, str } from "#api/indexer/events/context";
+import { type Handler, addDelta, str } from "#api/indexer/events/context";
+import { balanceQuantity } from "#api/indexer/codec";
 import { hashToBytes } from "#api/indexer/identities";
 const creditDebit: Handler = ({ ev, p, b, div }, ctx) => {
   const holder = (p.utxo as string) || (p.address as string);
   if (!holder || !p.asset) return;
   const htype = p.utxo ? "utxo" : "address";
-  const q = bi(p.quantity);
+  const q = balanceQuantity(p.quantity);
   addDelta(
     ctx,
     holder,

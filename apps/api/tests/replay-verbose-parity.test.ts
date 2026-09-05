@@ -361,6 +361,13 @@ function stripVerbose(events: FixtureEvent[]): FixtureEvent[] {
 async function replay(pages: FixtureEvent[][]): Promise<DatabaseSync> {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  // The fixture begins with an issuance-fee debit, so its imported opening
+  // balance must fund that debit. Zero was never a valid initial state.
+  database.exec(`INSERT INTO address_dictionary(address) VALUES('${ALICE}');
+    INSERT OR IGNORE INTO asset_dictionary(asset) VALUES('XCP');
+    INSERT INTO balances(address_id,asset_id,quantity,quantity_normalized,updated_block_index,updated_event_index)
+      SELECT a.address_id,d.asset_id,'50000000','0.50000000',100,-1
+      FROM address_dictionary a,asset_dictionary d WHERE a.address='${ALICE}' AND d.asset='XCP';`);
   const tipIndex = pages.flat().length - 1;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -372,7 +379,8 @@ async function replay(pages: FixtureEvent[][]): Promise<DatabaseSync> {
     if (cursor) {
       // fetchAsc requests cursor=from+chunk-1&limit=chunk; recover `from` and serve its page.
       const from = Number(cursor[1]) - Number(cursor[2]) + 1;
-      const page = pages.find((events) => events[0].event_index >= from) ?? [];
+      const end = Number(cursor[1]);
+      const page = pages.flat().filter((event) => event.event_index >= from && event.event_index <= end);
       return new Response(JSON.stringify({ result: [...page].reverse() }));
     }
     throw new Error(`unexpected Counterparty request: ${url}`);

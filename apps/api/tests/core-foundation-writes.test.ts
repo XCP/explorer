@@ -7,6 +7,9 @@ import { applyCoreBalanceDeltas } from "#api/indexer/balance-store";
 import { dispatch } from "#api/indexer/events/dispatch";
 import type { Ctx, Ev, Stmt } from "#api/indexer/events/context";
 import { pruneCoreSnapshots, rollbackCoreDatabase, syncCoreEvents } from "#api/indexer/sync";
+import { balanceQuantity } from "#api/indexer/codec";
+import { balanceRepairStatements } from "#api/queries/balance-repair";
+import { balanceRollbackStatements } from "#api/queries/balance-rollback";
 
 const CORE_DDL = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -19,31 +22,45 @@ class PreparedStatement {
   constructor(
     private readonly database: DatabaseSync,
     private readonly sql: string,
+    private readonly onRead?: (sql: string, binds: unknown[]) => void,
   ) {}
   bind(...values: unknown[]) {
     this.binds = values;
     return this;
   }
   async run() {
-    this.database.prepare(this.sql).run(...this.binds);
-    return { success: true, meta: { changes: 1 } };
+    const result = this.database.prepare(this.sql).run(...this.binds);
+    return { success: true, meta: { changes: result.changes } };
   }
   async all<T>() {
+    this.onRead?.(this.sql, this.binds);
     return { results: this.database.prepare(this.sql).all(...this.binds) as T[] };
   }
   async first<T>() {
+    this.onRead?.(this.sql, this.binds);
     return (this.database.prepare(this.sql).get(...this.binds) as T | undefined) ?? null;
   }
 }
 
-function d1(database: DatabaseSync, onBatch?: () => void): D1Database {
+function d1(
+  database: DatabaseSync,
+  onBatch?: () => void,
+  onRead?: (sql: string, binds: unknown[]) => void,
+): D1Database {
   return {
     prepare(sql: string) {
-      return new PreparedStatement(database, sql);
+      return new PreparedStatement(database, sql, onRead);
     },
     async batch(statements: PreparedStatement[]) {
       onBatch?.();
-      for (const statement of statements) await statement.run();
+      database.exec("BEGIN");
+      try {
+        for (const statement of statements) await statement.run();
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
       return [];
     },
   } as unknown as D1Database;
@@ -80,6 +97,346 @@ function event(event: string, params: Record<string, unknown>, eventIndex: numbe
     block_index: Number(params.block_index ?? 100),
   };
 }
+
+test("raw balance quantities reject rounding, fractions, negatives and malformed values", () => {
+  assert.equal(balanceQuantity("9007199254740993"), 9007199254740993n);
+  for (const value of [9007199254740992, -1, "-1", "1.2", "1e3", "", null, undefined]) {
+    assert.throws(() => balanceQuantity(value), /Invalid raw/);
+  }
+});
+
+test("audited repairs fix positive balances and snapshots atomically and reject stale plans", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "142" }, 1), ctx);
+  await executeCore(database, ctx);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  database.exec("INSERT INTO core_state(key,value) VALUES ('replay_lock','999'),('last_event_index','1')");
+  const balanceId = Number(database.prepare("SELECT balance_id FROM balances").get()?.balance_id);
+  const snapshotId = Number(database.prepare("SELECT snapshot_id FROM balance_snapshots").get()?.snapshot_id);
+  const balance = {
+    balanceId,
+    address: "alice",
+    asset: "RARE",
+    previous: "142",
+    expected: "143",
+    eventIndex: 1,
+    divisible: false,
+  };
+  const snapshot = { snapshotId, address: "alice", asset: "RARE", previous: "142", expected: "143", eventIndex: 1 };
+  let failure: unknown;
+  try {
+    await d1(database).batch(
+      balanceRepairStatements(d1(database), "999", "1", [balance], [{ ...snapshot, previous: "wrong" }]),
+    );
+  } catch (error) {
+    failure = error;
+  }
+  assert.match(String(failure), /malformed JSON/);
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "142");
+  await d1(database).batch(balanceRepairStatements(d1(database), "999", "1", [balance], [snapshot]));
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "143");
+  assert.equal(database.prepare("SELECT quantity FROM balance_snapshots").get()?.quantity, "143");
+  assert.equal(database.prepare("SELECT updated_event_index FROM balances").get()?.updated_event_index, 1);
+  failure = undefined;
+  try {
+    await d1(database).batch(balanceRepairStatements(d1(database), "999", "1", [balance], [snapshot]));
+  } catch (error) {
+    failure = error;
+  }
+  assert.match(String(failure), /malformed JSON/);
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "143");
+});
+
+test("snapshot failure cannot commit a balance high-water and retries are exact", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "10" }, 1), ctx);
+  await executeCore(database, ctx);
+  database.exec(`CREATE TRIGGER checkpoint_failure BEFORE INSERT ON balance_snapshots
+    BEGIN SELECT RAISE(ABORT,'checkpoint failure'); END;`);
+  let failure: unknown;
+  try {
+    await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  } catch (error) {
+    failure = error;
+  }
+  assert.match(String(failure), /checkpoint failure/);
+  assert.equal(database.prepare("SELECT count(*) n FROM balances").get()?.n, 0);
+  database.exec("DROP TRIGGER checkpoint_failure");
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  const changes = database.prepare("SELECT total_changes() n").get()?.n;
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  assert.equal(database.prepare("SELECT total_changes() n").get()?.n, changes);
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "10");
+});
+
+test("multiple blocks retain intermediate checkpoints and a snapshotless imported baseline", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const seed = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "100", block_index: 90 }, 1), seed);
+  await executeCore(database, seed);
+  await applyCoreBalanceDeltas(d1(database), seed.balDelta, false);
+  // Deliberately retain no old ledger or snapshots, like an imported balance.
+  database.exec("DELETE FROM ledger_events");
+  const ctx = context();
+  dispatch(event("DEBIT", { address: "alice", asset: "RARE", quantity: "20", block_index: 100 }, 2), ctx);
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "5", block_index: 101 }, 3), ctx);
+  await executeCore(database, ctx);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  assert.deepEqual(
+    database
+      .prepare("SELECT block_index,quantity FROM balance_snapshots ORDER BY block_index")
+      .all()
+      .map((row) => [row.block_index, row.quantity]),
+    [
+      [90, "100"],
+      [100, "80"],
+      [101, "85"],
+    ],
+  );
+  await rollbackCoreDatabase(d1(database), 100, 2);
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "80");
+  await rollbackCoreDatabase(d1(database), 100, 2);
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "80");
+});
+
+test("rollback restores positive, zero and UTXO balances without snapshots or unapplied ledger deltas", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const utxo = `${"ab".repeat(32)}:0`;
+  const seed = context();
+  dispatch(event("CREDIT", { address: "positive", asset: "RARE", quantity: "100" }, 1), seed);
+  dispatch(event("CREDIT", { address: "zero", asset: "RARE", quantity: "10" }, 2), seed);
+  dispatch(event("CREDIT", { utxo, utxo_address: "owner", asset: "RARE", quantity: "1" }, 3), seed);
+  await executeCore(database, seed);
+  await applyCoreBalanceDeltas(d1(database), seed.balDelta, false);
+  const orphan = context();
+  dispatch(event("DEBIT", { address: "positive", asset: "RARE", quantity: "20", block_index: 101 }, 4), orphan);
+  dispatch(event("DEBIT", { address: "zero", asset: "RARE", quantity: "10", block_index: 101 }, 5), orphan);
+  dispatch(event("DEBIT", { utxo, utxo_address: "owner", asset: "RARE", quantity: "1", block_index: 101 }, 6), orphan);
+  await executeCore(database, orphan);
+  await applyCoreBalanceDeltas(d1(database), orphan.balDelta, false);
+  const pending = context();
+  dispatch(event("CREDIT", { address: "positive", asset: "RARE", quantity: "999", block_index: 101 }, 7), pending);
+  await executeCore(database, pending); // crash before applying this balance delta
+  await rollbackCoreDatabase(d1(database), 100, 3);
+  assert.deepEqual(
+    database
+      .prepare("SELECT quantity FROM balances ORDER BY balance_id")
+      .all()
+      .map((row) => row.quantity),
+    ["100", "10", "1"],
+  );
+  assert.equal(database.prepare("SELECT count(*) n FROM ledger_events WHERE block_index>100").get()?.n, 0);
+});
+
+test("a rollback interrupted between batches resumes without reversing a balance twice", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  for (let index = 0; index < 100; index++) {
+    dispatch(
+      event("CREDIT", { address: `holder${index}`, asset: "RARE", quantity: "10", block_index: 101 }, index + 1),
+      ctx,
+    );
+  }
+  await executeCore(database, ctx);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, false);
+  let batches = 0;
+  let failure: unknown;
+  try {
+    await rollbackCoreDatabase(
+      d1(database, () => {
+        if (++batches === 2) throw new Error("crash");
+      }),
+      100,
+      0,
+    );
+  } catch (error) {
+    failure = error;
+  }
+  assert.match(String(failure), /crash/);
+  assert.equal(database.prepare("SELECT count(*) n FROM balances WHERE quantity='0'").get()?.n, 90);
+  assert.equal(database.prepare("SELECT count(*) n FROM ledger_events").get()?.n, 100);
+  await rollbackCoreDatabase(d1(database), 100, 0);
+  assert.equal(database.prepare("SELECT count(*) n FROM balances WHERE quantity='0'").get()?.n, 100);
+});
+
+test("underflow aborts the entire planned balance slice without clamping", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  dispatch(event("CREDIT", { address: "good", asset: "RARE", quantity: "5" }, 1), ctx);
+  dispatch(event("DEBIT", { address: "bad", asset: "RARE", quantity: "1" }, 2), ctx);
+  await executeCore(database, ctx);
+  let failure: unknown;
+  try {
+    await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  } catch (error) {
+    failure = error;
+  }
+  assert.match(String(failure), /underflow.*bad/);
+  assert.equal(database.prepare("SELECT count(*) n FROM balances").get()?.n, 0);
+});
+
+test("a stale state hash cannot trigger a false rollback after a partial page", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const hash = "a1".repeat(32);
+  database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(101,X'${hash}');
+    INSERT INTO core_state(key,value) VALUES ('last_event_index','10'),('last_block_index','101'),
+      ('last_block_hash','${"a0".repeat(32)}');`);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 10 }] }));
+    if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
+    if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
+    throw new Error(`Unexpected rollback request: ${url}`);
+  };
+  try {
+    const result = await syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" });
+    assert.equal(result.last_event_index, 10);
+    assert.equal(database.prepare("SELECT count(*) n FROM blocks").get()?.n, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rollback queries seek block ranges and exact balance identities", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "10", block_index: 101 }, 10), ctx);
+  await executeCore(database, ctx);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  const details: string[] = [];
+  await balanceRollbackStatements(
+    d1(database, undefined, (sql, binds) => {
+      details.push(
+        ...database
+          .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+          .all(...binds)
+          .map((row) => String(row.detail)),
+      );
+    }),
+    100,
+    9,
+  );
+  assert.ok(details.some((detail) => detail.includes("idx_ledger_block")));
+  assert.ok(details.some((detail) => detail.includes("idx_balances_address_asset")));
+  assert.ok(details.some((detail) => detail.includes("idx_ledger_asset_address")));
+  assert.ok(!details.some((detail) => /SCAN (?:e|b|s|ledger_events|balances)(?: |$)/.test(detail)), details.join("\n"));
+});
+
+test("a fork after raw writes but before the cursor commit discards the orphan prefix", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const seed = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "100", block_index: 99 }, 1), seed);
+  await executeCore(database, seed);
+  await applyCoreBalanceDeltas(d1(database), seed.balDelta, false);
+  const orphan = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "5", block_index: 101 }, 10), orphan);
+  await executeCore(database, orphan);
+  await applyCoreBalanceDeltas(d1(database), orphan.balDelta, true);
+  const hash = "aa".repeat(32);
+  database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${hash}'),(101,X'${"bb".repeat(32)}');
+    INSERT INTO core_state(key,value) VALUES('last_block_index','100'),('last_event_index','9'),('last_block_hash','${hash}');`);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 9 }] }));
+    if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
+    if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "cc".repeat(32) } }));
+    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
+    if (url.includes("/events?cursor=9"))
+      return new Response(JSON.stringify({ result: [{ event_index: 9, block_index: 100 }] }));
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const result = await syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" });
+    assert.equal(result.last_event_index, 9);
+    assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "100");
+    assert.equal(database.prepare("SELECT count(*) n FROM blocks WHERE block_index=101").get()?.n, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a missing event is never skipped even if a later page contains valid events", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec("INSERT INTO core_state(key,value) VALUES ('last_event_index','0'),('last_block_index','100')");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 2 }] }));
+    if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 100 } }));
+    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: {} }));
+    return new Response(
+      JSON.stringify({ result: [{ event_index: 2, block_index: 100, event: "UNHANDLED_TEST_EVENT", params: {} }] }),
+    );
+  };
+  let failure: unknown;
+  try {
+    await syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" });
+  } catch (error) {
+    failure = error;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.match(String(failure), /event gap at 1/);
+  assert.equal(database.prepare("SELECT value FROM core_state WHERE key='last_event_index'").get()?.value, "0");
+});
+
+test("rollback refuses missing provenance before deleting any branch data", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const ctx = context();
+  dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "10", block_index: 101 }, 1), ctx);
+  await executeCore(database, ctx);
+  await applyCoreBalanceDeltas(d1(database), ctx.balDelta, true);
+  database.exec("DELETE FROM ledger_events; INSERT INTO blocks(block_index) VALUES(101)");
+  let failure: unknown;
+  try {
+    await rollbackCoreDatabase(d1(database), 100, 0);
+  } catch (error) {
+    failure = error;
+  }
+  assert.match(String(failure), /Incomplete rollback ledger/);
+  assert.equal(database.prepare("SELECT count(*) n FROM blocks").get()?.n, 1);
+  assert.equal(database.prepare("SELECT quantity FROM balances").get()?.quantity, "10");
+});
+
+test("pending rollback survives a process exit after branch deletion before the cursor commit", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  const hash = "aa".repeat(32);
+  database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${hash}');
+    INSERT INTO core_state(key,value) VALUES ('last_event_index','10'),('last_block_index','101'),
+      ('rollback_to','100'),('rollback_event_index','9');`);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 9 }] }));
+    if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 100 } }));
+    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const result = await syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://counterparty.test" });
+    assert.equal(result.last_event_index, 9);
+    assert.equal(database.prepare("SELECT value FROM core_state WHERE key='last_block_hash'").get()?.value, hash);
+    assert.equal(database.prepare("SELECT count(*) n FROM core_state WHERE key='rollback_to'").get()?.n, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("compact foundational writes preserve identities and converge on replay", async () => {
   const database = new DatabaseSync(":memory:");
@@ -1489,7 +1846,7 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
           ],
         }),
       );
-    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: "replacement-100" } }));
+    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: "a0".repeat(32) } }));
     throw new Error(`unexpected Counterparty request: ${url}`);
   };
   try {
@@ -1512,7 +1869,7 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
   );
   assert.equal(state.last_event_index, "9");
   assert.equal(state.last_block_index, "100");
-  assert.equal(state.last_block_hash, "replacement-100");
+  assert.equal(state.last_block_hash, "a0".repeat(32));
 });
 
 test("compact caught-up maintenance prunes superseded snapshots", async () => {
@@ -1578,7 +1935,7 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
       ('last_block_index','102');
   `);
 
-  await rollbackCoreDatabase(d1(database), 101);
+  await rollbackCoreDatabase(d1(database), 101, 5);
 
   const balance = database
     .prepare(`SELECT quantity,quantity_normalized,updated_block_index,updated_event_index FROM balances`)
