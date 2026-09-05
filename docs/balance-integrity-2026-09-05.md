@@ -2,8 +2,12 @@
 
 ## Status
 
-Implementation and bounded audit in progress. Do not equate a caught-up cursor with verified balances.
-No full balance reindex or recurring repair sweep is part of this change.
+Fixed, tested and deployed: [PR #15](https://github.com/XCP/explorer/pull/15), main `3714416`,
+API version `e7043f76-f620-42e7-927c-0d21a384b938`. All 410 local tests, root checks,
+PR checks and 33 live API checks passed. Live sync reached block 965647 with zero lag.
+
+The bounded incident audit and repairs below are complete. Global historical completeness is not
+established. No full balance reindex or recurring repair sweep is part of this change.
 
 ## What failed
 
@@ -40,14 +44,28 @@ Unchanged replay retries write no balances or snapshots.
 
 ## Audit scope
 
-First pass: all 1,793 address/asset pairs across the four known negative-balance addresses, not just
-negative rows. Complete Core credit/debit pagination, current balances, local ledger totals grouped
-by block/asset/direction, and retained snapshots were compared at stable checkpoints.
+Audited every address touched in suspect blocks 964341 and 965364: 29 addresses, 5,566 address/asset
+pairs and 28,300 local ledger events. Complete Core credit/debit pagination, current balances,
+local ledger totals grouped by block/asset/direction, and snapshots agreed at stable checkpoints.
 
-That pass found 38 bad balances and 39 bad snapshots. Expanding to every holder touched in blocks
-964341 and 965364 found wrong positive balances too, including MYSTERYPEPE at 142 instead of 143.
-The successful first pass cost 50,403 D1 row reads and zero writes. Failed/restarted probes add reads;
-the number is not the total cost of this investigation.
+Found and repaired 43 wrong balances (38 negative and five positive) and 46 snapshots across six
+addresses. Positive errors included MYSTERYPEPE at 142 instead of 143. All 89 repaired records were
+verified by primary-key lookups. Marketplace independently matched all 43 corrected balances;
+no additional Marketplace repair was needed.
+
+Measured D1 work:
+
+| Operation | Rows read | Rows written |
+| --- | ---: | ---: |
+| Successful bounded audit receipts | 105,702 | 0 |
+| Guarded balance/snapshot repairs | 638 | 190 |
+| Post-repair verification | 89 | 0 |
+| Marketplace comparison | 43 | 0 |
+| Queue 38 affected assets and six addresses for derived refresh | 97 | 39 |
+
+Index/lock effects are included in repair writes. Failed/restarted probes add reads, so this is not
+the whole investigation's cost. A final one-time negative census read 1,883,473 rows and found zero
+negative balances. Do not repeat that scan as a monitoring cron. The scoped derived queues drained.
 
 Receipts live locally under `apps/api/outputs/balance-integrity/`. Each records the checkpoint,
 Core evidence, all inspected rows, mismatches, and measured reads. Large evidence files are not committed.
@@ -86,9 +104,9 @@ refresh only their affected derived holder/address projections.
 - Regression cases include positive, zero, attached-UTXO, missing-baseline, partial-page, missing-event,
   snapshot failure, rollback restart, raw-write-before-cursor fork, and stale-repair cases.
 - Query-plan assertions check block-range and holder/asset index seeks.
-- Full API tests, root checks, green PR checks, deployment, and production remeasurement are release gates.
+- Full API tests, root checks, green PR checks, deployment, and production remeasurement passed.
 - Marketplace uses an exact undo journal, not Explorer's snapshot fallback. Its imported baseline accuracy
-  must still be checked against the verified Explorer differences.
+  was checked against every verified Explorer difference and matched.
 - Exchange has a separate LP history rebuild, but its checkpoint hash also trails its height update.
   Coordinate a separate fix with the active Exchange task; do not overwrite its unrelated work.
 - Launchpad and extension were not found to contain this Explorer snapshot rollback implementation.
