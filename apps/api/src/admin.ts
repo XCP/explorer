@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { Env } from "#api/env";
 import { syncCoreEvents } from "#api/indexer/sync";
 import { rebuildCoreAddressSignals, runCoreAddressSignalsStep } from "#api/indexer/core-address-signals";
+import { rebuildCollectionCreators } from "#api/indexer/collection-creators";
 import { runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 import { crawlEmblemStep } from "#api/indexer/emblem";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
@@ -264,6 +265,12 @@ admin.post("/admin/build-curated-collections", async (c) => {
 // manual trigger here to rebuild on demand.
 admin.post("/admin/crawl-collections", async (c) => {
   return c.json(await crawlCollections(c.env));
+});
+
+// Re-project who created each collection's cards. The crawl does this itself; here for the other
+// membership writers (curated, issuer, tokenscan) and for a first fill after the migration.
+admin.post("/admin/build-collection-creators", async (c) => {
+  return c.json(await rebuildCollectionCreators(c.env.CORE_DB));
 });
 
 // Batch-compute holder cohesion onto asset_signals. Cursored: body {after, limit} → {processed, next, sample}.

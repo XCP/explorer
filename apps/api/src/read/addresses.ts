@@ -32,6 +32,7 @@ import {
   reputationHistogram,
   addressCensus,
 } from "#api/queries/addresses";
+import { listAddressCollectionCreators } from "#api/queries/collections";
 
 export const addresses = router();
 
@@ -50,6 +51,19 @@ addresses.get("/v2/addresses/census", (c) =>
     result: await addressCensus(c.env.CORE_DB),
   })),
 );
+
+// Batch creator lookup — badges for a page of addresses in one call. Literal segment, so it sits with
+// census ahead of the :address routes. Keyed by the address list, so the edge cache serves repeat pages.
+addresses.get("/v2/addresses/collections", async (c) => {
+  const requested = (c.req.query("addresses") ?? "")
+    .split(",")
+    .map((address) => address.trim())
+    .filter(Boolean);
+  const unique = [...new Set(requested)];
+  if (unique.length === 0 || unique.length > 50)
+    return c.json({ error: "addresses: 1 to 50 comma-separated addresses" }, 400);
+  return J(c, { result: await listAddressCollectionCreators(c.env.CORE_DB, unique) }, 600);
+});
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
   const type = c.req.query("type") ?? "address";

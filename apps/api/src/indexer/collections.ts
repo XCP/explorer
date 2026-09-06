@@ -15,6 +15,7 @@ import type { Env } from "#api/env";
 import { fetchPepeWtfAssets } from "#api/integrations/pepe-wtf";
 import { COLLECTION_EVIDENCE_UPSERT_SQL, projectCollectionMembership } from "#api/indexer/collection-membership";
 import { invalidateCollectionReads } from "#api/indexer/collection-cache";
+import { rebuildCollectionCreators } from "#api/indexer/collection-creators";
 
 // pepe.wtf collection slug -> our tag slug. `stamps` (26k) is intentionally excluded — we already carry a
 // protocol-derived `stamp` tag; folding all Bitcoin Stamps in here would swamp the collection layer.
@@ -88,7 +89,12 @@ async function fetchMembers(slug: string): Promise<Member[]> {
 }
 
 export async function crawlCollections(env: Env): Promise<Record<string, unknown>> {
-  const out: { collections: Record<string, string | number>; artists?: number; total_collection_tags?: number } = {
+  const out: {
+    collections: Record<string, string | number>;
+    artists?: number;
+    total_collection_tags?: number;
+    creators?: { written: number; removed: number };
+  } = {
     collections: {},
   };
   for (const [slug, rawTag] of Object.entries(PEPEWTF)) {
@@ -167,6 +173,7 @@ export async function crawlCollections(env: Env): Promise<Record<string, unknown
   }>();
   out.total_collection_tags = nc?.c ?? 0;
   out.artists = na?.c ?? 0;
+  out.creators = await rebuildCollectionCreators(env.CORE_DB);
   await invalidateCollectionReads(env.CORE_DB);
   return out;
 }

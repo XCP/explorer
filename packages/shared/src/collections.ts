@@ -57,3 +57,11 @@ export interface CollectionHolderMakeup {
   holders: number;
   personas: CollectionPersonaRow[];
 }
+
+/** GET /v2/addresses/collections?addresses=a,b,c — which curated collections each requested address
+ *  created cards in (the source of a member asset's first valid issuance). Up to 50 addresses per call;
+ *  addresses that created nothing are omitted. `cards` counts that address's cards in that collection. */
+export interface AddressCollectionCreator {
+  address: string;
+  collections: { tag: string; cards: number }[];
+}
