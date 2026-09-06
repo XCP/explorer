@@ -1,4 +1,9 @@
-import type { CollectionHolderMakeup, CollectionPersonaRow, CollectionProfile } from "@xcp/shared/collections";
+import type {
+  AddressCollectionCreator,
+  CollectionHolderMakeup,
+  CollectionPersonaRow,
+  CollectionProfile,
+} from "@xcp/shared/collections";
 import { PERSONA } from "#api/reputation/config";
 import { one, q } from "#api/db";
 
@@ -134,4 +139,29 @@ export async function collectionHolderMakeup(db: D1Database, tag: string): Promi
     tag,
   );
   return { tag, holders: personas.reduce((sum, row) => sum + row.holders, 0), personas };
+}
+
+/** Which curated collections each requested address created cards in, from the collection_creators
+ *  projection: one indexed probe per address, whatever the collection sizes. Addresses that created
+ *  nothing are omitted, so the caller reads absence as "no badge", not "unknown". */
+export async function listAddressCollectionCreators(
+  db: D1Database,
+  addresses: string[],
+): Promise<AddressCollectionCreator[]> {
+  const rows = await q<{ address: string; tag: string; cards: number }>(
+    db,
+    `SELECT dictionary.address,creator.tag,creator.cards
+       FROM json_each(?1) request
+       JOIN address_dictionary dictionary ON dictionary.address=request.value
+       JOIN collection_creators creator ON creator.address_id=dictionary.address_id
+      ORDER BY dictionary.address,creator.cards DESC,creator.tag`,
+    JSON.stringify(addresses),
+  );
+  const out: AddressCollectionCreator[] = [];
+  for (const row of rows) {
+    const last = out[out.length - 1];
+    if (last?.address === row.address) last.collections.push({ tag: row.tag, cards: row.cards });
+    else out.push({ address: row.address, collections: [{ tag: row.tag, cards: row.cards }] });
+  }
+  return out;
 }
