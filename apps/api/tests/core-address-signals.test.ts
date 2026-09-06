@@ -101,6 +101,38 @@ test("compact address signals recompute touched identities and converge to zero"
   });
 });
 
+test("a burn places both the burner and the burn address at the burn block", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  // Burns record only the source: the burn address is every burn's implicit destination, and its
+  // first asset receipt came years later — first_block must come from the burn, not that send.
+  db.exec(`
+    INSERT INTO address_dictionary(address) VALUES('1burner'),('1CounterpartyXXXXXXXXXXXXXXXUWLpVr'),('1sender');
+    INSERT INTO asset_dictionary(asset) VALUES('CARD');
+    INSERT INTO blocks(block_index,block_hash,block_time) VALUES(278310,zeroblob(32),1),(525585,randomblob(32),2);
+    INSERT INTO burns(tx_index,tx_hash,block_index,source_id,burned,earned,status)
+      SELECT 1,randomblob(32),278310,address_id,'100000000','150000000000','valid'
+      FROM address_dictionary WHERE address='1burner';
+    INSERT INTO sends(event_index,tx_index,tx_hash,block_index,source_id,destination_id,source_address_id,destination_address_id,asset_id,quantity,msg_index)
+      SELECT 1,2,randomblob(32),525585,s.address_id,b.address_id,s.address_id,b.address_id,a.asset_id,'1',0
+      FROM address_dictionary s,address_dictionary b,asset_dictionary a
+      WHERE s.address='1sender' AND b.address='1CounterpartyXXXXXXXXXXXXXXXUWLpVr' AND a.asset='CARD';
+  `);
+  await rebuildCoreAddressSignals(d1(db), ["1burner", "1CounterpartyXXXXXXXXXXXXXXXUWLpVr", "1sender"]);
+  const bounds = (address: string) => ({
+    ...db
+      .prepare(
+        `SELECT first_block,last_block FROM address_signals
+         WHERE address_id=(SELECT address_id FROM address_dictionary WHERE address=?)`,
+      )
+      .get(address),
+  });
+  assert.deepEqual(bounds("1burner"), { first_block: 278310, last_block: 278310 });
+  assert.deepEqual(bounds("1CounterpartyXXXXXXXXXXXXXXXUWLpVr"), { first_block: 278310, last_block: 525585 });
+  // Nobody else's burn is attributed to an unrelated address.
+  assert.deepEqual(bounds("1sender"), { first_block: 525585, last_block: 525585 });
+});
+
 test("address signals attribute dispenser proceeds to origin or source exactly once", async () => {
   const db = new DatabaseSync(":memory:");
   for (const migration of migrations) db.exec(migration);
