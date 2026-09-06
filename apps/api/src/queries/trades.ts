@@ -65,7 +65,17 @@ export interface TradeFilter {
   includeLowQuality?: boolean;
 }
 
-/** Recent trades across venues, newest first, with optional venue/asset/currency filters. */
+/**
+ * Recent trades across venues, newest first, with optional venue/asset/currency filters.
+ *
+ * With an asset filter the rows come from two indexed sets: the asset's own trades
+ * (idx_trades_asset_time) and the bundles it rides in as a leg (idx_trade_legs_asset). Each is
+ * read newest-first and stopped at the page size, then the two are merged, so a busy asset costs
+ * a page and a quiet one costs its handful. Written as `asset_id = ? OR EXISTS(legs)` this kept
+ * the planner off both indexes and walked the whole ledger per call — a million rows read to
+ * return a handful, 1.5 billion a day; a plain rowid union then read every trade of a busy asset
+ * before the limit applied.
+ */
 export function listTrades(db: D1Database, f: TradeFilter): Promise<TradeRow[]> {
   const where: string[] = [];
   const binds: unknown[] = [];
@@ -73,30 +83,30 @@ export function listTrades(db: D1Database, f: TradeFilter): Promise<TradeRow[]> 
     where.push("trade.venue = ?");
     binds.push(f.venue);
   }
-  if (f.asset) {
-    // Two indexed sets united by rowid: the asset's own trades (idx_trades_asset_time) and the
-    // bundles it rides in as a leg (idx_trade_legs_asset, then the trades primary key). Written as
-    // `asset_id = ? OR EXISTS(legs)` this kept the planner off both indexes and walked the whole
-    // ledger newest-first per call — a million rows read to return a handful, 1.5 billion a day.
-    where.push(`trade.rowid IN (
-      SELECT own.rowid FROM trades own
-       WHERE own.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?)
-      UNION
-      SELECT bundle.rowid FROM trade_legs filter_leg
-        JOIN trades bundle ON bundle.venue = filter_leg.venue AND bundle.ref = filter_leg.trade_ref
-       WHERE filter_leg.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?))`);
-    binds.push(f.asset.toUpperCase());
-    binds.push(f.asset.toUpperCase());
-  }
   if (f.currency) {
     where.push("trade.currency = ?");
     binds.push(f.currency.toUpperCase());
   }
   if (!f.includeLowQuality) where.push(`NOT ${QUALITY}`);
-  const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const order = "ORDER BY trade.block_time DESC, trade.venue, trade.ref";
+  if (!f.asset) {
+    const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    return q<TradeRow>(db, `${SELECT} ${w} ${order} LIMIT ? OFFSET ?`, ...binds, f.limit, f.offset);
+  }
+  const asset = f.asset.toUpperCase();
+  const branch = (match: string) =>
+    `SELECT * FROM (${SELECT} WHERE ${[match, ...where].join(" AND ")} ${order} LIMIT ${f.limit + f.offset})`;
+  const own = branch("trade.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?)");
+  const legs = branch(`trade.rowid IN (
+      SELECT bundle.rowid FROM trade_legs filter_leg
+        JOIN trades bundle ON bundle.venue = filter_leg.venue AND bundle.ref = filter_leg.trade_ref
+       WHERE filter_leg.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?))`);
   return q<TradeRow>(
     db,
-    `${SELECT} ${w} ORDER BY trade.block_time DESC, trade.venue, trade.ref LIMIT ? OFFSET ?`,
+    `SELECT * FROM (${own} UNION ${legs}) ORDER BY block_time DESC, venue, ref LIMIT ? OFFSET ?`,
+    asset,
+    ...binds,
+    asset,
     ...binds,
     f.limit,
     f.offset,
