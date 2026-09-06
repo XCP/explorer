@@ -74,9 +74,17 @@ export function listTrades(db: D1Database, f: TradeFilter): Promise<TradeRow[]> 
     binds.push(f.venue);
   }
   if (f.asset) {
-    where.push(`(trade.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?)
-      OR EXISTS(SELECT 1 FROM trade_legs filter_leg JOIN asset_dictionary filter_asset ON filter_asset.asset_id=filter_leg.asset_id
-        WHERE filter_leg.venue=trade.venue AND filter_leg.trade_ref=trade.ref AND filter_asset.asset=?))`);
+    // Two indexed sets united by rowid: the asset's own trades (idx_trades_asset_time) and the
+    // bundles it rides in as a leg (idx_trade_legs_asset, then the trades primary key). Written as
+    // `asset_id = ? OR EXISTS(legs)` this kept the planner off both indexes and walked the whole
+    // ledger newest-first per call — a million rows read to return a handful, 1.5 billion a day.
+    where.push(`trade.rowid IN (
+      SELECT own.rowid FROM trades own
+       WHERE own.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?)
+      UNION
+      SELECT bundle.rowid FROM trade_legs filter_leg
+        JOIN trades bundle ON bundle.venue = filter_leg.venue AND bundle.ref = filter_leg.trade_ref
+       WHERE filter_leg.asset_id = (SELECT asset_id FROM asset_dictionary WHERE asset = ?))`);
     binds.push(f.asset.toUpperCase());
     binds.push(f.asset.toUpperCase());
   }
