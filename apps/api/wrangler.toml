@@ -56,5 +56,8 @@ XCPDEX_API = "https://xcpdex-api.me-bbe.workers.dev"
 RECOVERY_FEE_PERCENT = "9"
 RECOVERY_FEE_EXEMPTION_SATS = "10000"
 ELECTRS_API_BASE = "https://api.counterparty.io:3000"
-# RECOVERY_FEE_ADDRESSES is a Worker secret; it is intentionally not stored here.
+# RECOVERY_FEE_XPUB is a Worker secret (wrangler secret put RECOVERY_FEE_XPUB): the account-level
+# BIP86 xpub (m/86'/0'/0') recovery fees derive into. Public key only — never a seed or xprv.
+# RECOVERY_FEE_ADDRESSES is the legacy static list, also a secret; it stays honoured for reports
+# during cutover and can be deleted once no recovery built against it can still be in flight.
 # ADMIN_TOKEN is a Cloudflare secret (wrangler secret put ADMIN_TOKEN) — not stored in the repo.

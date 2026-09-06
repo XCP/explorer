@@ -64,7 +64,11 @@ function assertFinalSchema(database) {
        (SELECT COUNT(*) FROM sqlite_master
          WHERE type='index' AND name='recovery_attempts_reconciliation') reconciliation_index,
        (SELECT COUNT(*) FROM sqlite_master
-         WHERE type='index' AND name='recovery_attempts_work_queue') settlement_queue_index`,
+         WHERE type='index' AND name='recovery_attempts_work_queue') settlement_queue_index,
+       (SELECT COUNT(*) FROM sqlite_master
+         WHERE type='table' AND name='recovery_fee_addresses') fee_address_table,
+       (SELECT COUNT(*) FROM pragma_table_info('recovery_attempts')
+         WHERE name IN ('fee_address_id','fee_vout')) attempt_fee_columns`,
   )[0][0];
   assert.deepEqual(schema, {
     output_chain_column: 1,
@@ -73,6 +77,8 @@ function assertFinalSchema(database) {
     receipt_table: 1,
     reconciliation_index: 1,
     settlement_queue_index: 1,
+    fee_address_table: 1,
+    attempt_fee_columns: 2,
   });
 }
 

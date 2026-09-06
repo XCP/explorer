@@ -3,7 +3,8 @@ import { base58check } from "@scure/base";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { Env } from "#api/env";
 import { boundedInteger } from "#api/http/numbers";
-import { parseRecoveryTransaction } from "#api/recovery/raw-transaction";
+import { allocateRecoveryFeeAddress, legacyFeeScriptsHex, RecoveryFeeKeyError } from "#api/recovery/fee-address";
+import { parseRecoveryTransaction, type RecoveryTransactionOutput } from "#api/recovery/raw-transaction";
 import { requestAddressReverification } from "#api/recovery/verify";
 import type { Context } from "hono";
 
@@ -77,6 +78,58 @@ function deterministicFeeAddress(address: string, configured: string): string | 
   let hash = 2166136261;
   for (const character of address) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
   return addresses[(hash >>> 0) % addresses.length];
+}
+
+/**
+ * Which address this batch pays its service fee to. With the account xpub configured, the database
+ * allocates one derivation index per batch: the scope is the batch's first output as the page orders
+ * it, so a retry or an RBF replacement of the same batch lands on the same address while every
+ * distinct batch gets a fresh one. Nothing is allocated when no fee is due — browsing a dust address
+ * must not consume indexes. The static list stays as the fallback until the xpub is configured.
+ */
+async function recoveryFeeAddress(
+  env: Env,
+  address: string,
+  firstOutput: { txid: string; vout: number } | undefined,
+  feeDue: boolean,
+): Promise<string | null> {
+  if (!env.RECOVERY_FEE_XPUB) return deterministicFeeAddress(address, env.RECOVERY_FEE_ADDRESSES || "");
+  if (!feeDue || !firstOutput) return null;
+  const allocation = await allocateRecoveryFeeAddress(
+    env.RECOVERY_DB,
+    env.RECOVERY_FEE_XPUB,
+    `recovery:${firstOutput.txid}:${firstOutput.vout}`,
+    Math.floor(Date.now() / 1000),
+  );
+  return allocation.address;
+}
+
+/**
+ * The outputs of a reported recovery that pay a fee address this service issued — a derived one from
+ * the allocation table, or one of the legacy static list while that is still configured. The
+ * client's `service_fee_sats` used to be taken on faith; the raw transaction is already parsed here,
+ * so the fee it actually pays is one lookup away.
+ */
+async function recoveryFeeOutputs(
+  env: Env,
+  outputs: RecoveryTransactionOutput[],
+): Promise<Array<{ vout: number; valueSats: bigint; feeAddressId: number | null }>> {
+  const legacyScripts = new Set(legacyFeeScriptsHex(env.RECOVERY_FEE_ADDRESSES || ""));
+  const derived = new Map<string, number>();
+  for (const batch of chunks(outputs, 50)) {
+    const rows = await env.RECOVERY_DB.prepare(
+      `SELECT id,script_pubkey_hex FROM recovery_fee_addresses
+        WHERE script_pubkey_hex IN (${batch.map(() => "?").join(",")})`,
+    )
+      .bind(...batch.map((output) => output.scriptPubkeyHex))
+      .all<{ id: number; script_pubkey_hex: string }>();
+    for (const row of rows.results) derived.set(row.script_pubkey_hex, row.id);
+  }
+  return outputs.flatMap((output, vout) => {
+    const feeAddressId = derived.get(output.scriptPubkeyHex);
+    if (feeAddressId === undefined && !legacyScripts.has(output.scriptPubkeyHex)) return [];
+    return [{ vout, valueSats: output.valueSats, feeAddressId: feeAddressId ?? null }];
+  });
 }
 
 export const recoveryRead = new Hono<{ Bindings: Env }>();
@@ -196,6 +249,14 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
   const totalOutputs = Number(totals?.output_count ?? 0);
   const totalValue = Number(totals?.value_sats ?? 0);
   const threshold = Number(c.env.RECOVERY_FEE_EXEMPTION_SATS || 10_000);
+  const feePercent = totalValue < threshold ? 0 : Number(c.env.RECOVERY_FEE_PERCENT || 10);
+  let feeAddress: string | null;
+  try {
+    feeAddress = await recoveryFeeAddress(c.env, address, outputResult.results[0], feePercent > 0);
+  } catch (error) {
+    if (error instanceof RecoveryFeeKeyError) return c.json({ error: "recovery fee configuration is invalid" }, 503);
+    throw error;
+  }
 
   // Somebody is about to spend these outputs, which makes this the moment their chain state matters
   // most. Ask for a re-check behind the response rather than inside it; the request is self-limiting,
@@ -215,11 +276,7 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
       // pagination the day the two numbers disagree.
       max_outputs_per_page: RECOVERY_MAX_OUTPUTS_PER_PAGE,
     },
-    fee: {
-      address: deterministicFeeAddress(address, c.env.RECOVERY_FEE_ADDRESSES || ""),
-      percent: totalValue < threshold ? 0 : Number(c.env.RECOVERY_FEE_PERCENT || 10),
-      exemption_sats: threshold,
-    },
+    fee: { address: feeAddress, percent: feePercent, exemption_sats: threshold },
     pending_attempts: Number(pending?.attempts ?? 0),
     protection: {
       protected_stamp_outputs: Number(protectedTotals?.output_count ?? 0),
@@ -330,15 +387,32 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
     return c.json({ error: "reported network fee does not match the transaction" }, 400);
   if (outputValue !== BigInt(body.service_fee_sats!) + BigInt(body.output_value_sats!))
     return c.json({ error: "reported service and destination values do not match the transaction" }, 400);
+  const feeOutputs = await recoveryFeeOutputs(c.env, transaction.outputs);
+  if (feeOutputs.length > 1) return c.json({ error: "recovery pays more than one fee output" }, 400);
+  const feeOutput = feeOutputs[0] ?? null;
+  if (feeOutput && feeOutput.valueSats !== BigInt(body.service_fee_sats!))
+    return c.json({ error: "reported service fee does not match the fee output" }, 400);
+  if (!feeOutput && body.service_fee_sats! > 0)
+    return c.json({ error: "reported service fee does not pay a recovery fee address" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   const attempt = c.env.RECOVERY_DB.prepare(
     `INSERT INTO recovery_attempts
-       (txid,address,status,replacement_txid,network_fee_sats,service_fee_sats,output_value_sats,block_height,reported_at,updated_at,
-        confirmations,block_hash,block_time,chain_checked_at,status_reason)
-     VALUES (?,?,'pending',NULL,?,?,?,NULL,?,?,0,NULL,NULL,NULL,'awaiting-chain-evidence')
+       (txid,address,status,replacement_txid,network_fee_sats,service_fee_sats,output_value_sats,fee_address_id,fee_vout,
+        block_height,reported_at,updated_at,confirmations,block_hash,block_time,chain_checked_at,status_reason)
+     VALUES (?,?,'pending',NULL,?,?,?,?,?,NULL,?,?,0,NULL,NULL,NULL,'awaiting-chain-evidence')
      ON CONFLICT(txid) DO UPDATE SET updated_at=excluded.updated_at`,
-  ).bind(transaction.txid, address, body.network_fee_sats, body.service_fee_sats, body.output_value_sats, now, now);
+  ).bind(
+    transaction.txid,
+    address,
+    body.network_fee_sats,
+    body.service_fee_sats,
+    body.output_value_sats,
+    feeOutput?.feeAddressId ?? null,
+    feeOutput?.vout ?? null,
+    now,
+    now,
+  );
   const inputStatements = chunks(transaction.inputs, 25).map((batch) =>
     c.env.RECOVERY_DB.prepare(
       `INSERT INTO recovery_attempt_inputs (recovery_txid,input_txid,input_vout) VALUES
