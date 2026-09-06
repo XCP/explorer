@@ -32,7 +32,7 @@ import {
   reputationHistogram,
   addressCensus,
 } from "#api/queries/addresses";
-import { listAddressCollectionCreators } from "#api/queries/collections";
+import { listAddressCollections } from "#api/queries/collections";
 
 export const addresses = router();
 
@@ -62,7 +62,8 @@ addresses.get("/v2/addresses/collections", async (c) => {
   const unique = [...new Set(requested)];
   if (unique.length === 0 || unique.length > 50)
     return c.json({ error: "addresses: 1 to 50 comma-separated addresses" }, 400);
-  return J(c, { result: await listAddressCollectionCreators(c.env.CORE_DB, unique) }, 600);
+  const includeHeld = c.req.query("include") === "held";
+  return J(c, { result: await listAddressCollections(c.env.CORE_DB, unique, includeHeld) }, 600);
 });
 
 addresses.get("/v2/addresses/:address/balances", async (c) => {
