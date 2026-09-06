@@ -4,7 +4,10 @@ export interface Env {
   CORE_DB: D1Database;
   RECOVERY_DB: D1Database;
   RECOVERY_TRANSACTIONS: R2Bucket;
-  RECOVERY_FEE_ADDRESSES: string;
+  /** Account-level BIP86 xpub the recovery service fee pays into; a Worker secret, never a private key. */
+  RECOVERY_FEE_XPUB?: string;
+  /** Legacy comma-separated fee address list: the fallback until the xpub is set, then honoured for reports only. */
+  RECOVERY_FEE_ADDRESSES?: string;
   RECOVERY_FEE_PERCENT: string;
   RECOVERY_FEE_EXEMPTION_SATS: string;
   ELECTRS_API_BASE: string;

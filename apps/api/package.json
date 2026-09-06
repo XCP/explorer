@@ -101,6 +101,8 @@
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/base": "^2.2.0",
+    "@scure/bip32": "^2.2.0",
+    "@scure/btc-signer": "^2.2.0",
     "@xcp/shared": "*",
     "hono": "^4.13.3"
   }
