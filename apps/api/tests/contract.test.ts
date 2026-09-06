@@ -444,13 +444,20 @@ test("contract: GET /v2/addresses/collections — batch creator badges", async (
     `/v2/addresses/collections?addresses=12LEpGGUnt2hezVCX234QAXvYJxFSi5QF3,1CounterpartyXXXXXXXXXXXXXXXUWLpVr&contract=${Date.now()}`,
   );
   assertRows(j.result, { address: "string", collections: "array" }, "addresses.collections.result");
-  for (const row of j.result) assertRows(row.collections, { tag: "string", cards: "number" }, `${row.address}.collections`);
+  for (const row of j.result)
+    assertRows(row.collections, { tag: "string", cards: "number" }, `${row.address}.collections`);
   assert.ok(
     !j.result.some((row: { address: string }) => row.address === "1CounterpartyXXXXXXXXXXXXXXXUWLpVr"),
     "an address that created nothing must be omitted, not returned empty",
   );
   const bad = await fetch(`${BASE}/v2/addresses/collections?contract=${Date.now()}`);
   assert.equal(bad.status, 400, "no addresses must be a 400");
+  const held = await getJson(
+    `/v2/addresses/collections?addresses=12LEpGGUnt2hezVCX234QAXvYJxFSi5QF3&include=held&contract=${Date.now()}`,
+  );
+  assertRows(held.result, { address: "string", collections: "array" }, "addresses.collections.held.result");
+  for (const row of held.result)
+    if (row.held) assertRows(row.held, { tag: "string", cards: "number" }, `${row.address}.held`);
 });
 
 test("contract: GET /v2/collections — descriptive collection profiles", async (t) => {

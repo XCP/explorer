@@ -60,8 +60,12 @@ export interface CollectionHolderMakeup {
 
 /** GET /v2/addresses/collections?addresses=a,b,c — which curated collections each requested address
  *  created cards in (the source of a member asset's first valid issuance). Up to 50 addresses per call;
- *  addresses that created nothing are omitted. `cards` counts that address's cards in that collection. */
+ *  addresses that created nothing are omitted. `cards` counts that address's cards in that collection.
+ *  With `include=held`, `held` lists the collections the address currently holds a card of (address
+ *  balances above zero, `cards` = distinct member assets held), and an address that created nothing
+ *  but holds something is returned with an empty `collections`. */
 export interface AddressCollectionCreator {
   address: string;
   collections: { tag: string; cards: number }[];
+  held?: { tag: string; cards: number }[];
 }
