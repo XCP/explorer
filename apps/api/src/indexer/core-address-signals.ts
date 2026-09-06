@@ -5,6 +5,9 @@ const FULL_REPAIR_INTERVAL = 1_008;
 const isBitcoinAddress = (address: string) =>
   address.startsWith("1") || address.startsWith("3") || address.toLowerCase().startsWith("bc1");
 
+/** Where proof-of-burn XCP went: never a source, so the ledger tables alone never place it in time. */
+const BURN_ADDRESS = "1CounterpartyXXXXXXXXXXXXXXXUWLpVr";
+
 const ACTIVITY_QUERIES = [
   `SELECT min(block_index) first_block,max(block_index) last_block FROM sends
     WHERE source_id=?1 OR destination_id=?1 OR source_address_id=?1 OR destination_address_id=?1`,
@@ -16,6 +19,11 @@ const ACTIVITY_QUERIES = [
     WHERE tx0_address_id=?1 OR tx1_address_id=?1`,
   `SELECT min(block_index) first_block,max(block_index) last_block FROM dispensers
     WHERE source_id=?1 OR origin_id=?1`,
+  // A burn is the first thing most 2014 addresses did, and the burn address itself is every burn's
+  // destination — Counterparty only records the source, so without this the burn address "first
+  // appeared" when someone sent it an asset in 2018, four years late.
+  `SELECT min(block_index) first_block,max(block_index) last_block FROM burns
+    WHERE source_id=?1 OR ?1=(SELECT address_id FROM address_dictionary WHERE address='${BURN_ADDRESS}')`,
 ] as const;
 
 // The DO UPDATE carries a WHERE guard so the repair lane skips rows whose signals are unchanged —
@@ -217,7 +225,7 @@ async function rebuildCoreAddressSignalsWithChanges(
       .bind(address)
       .first<HolderDependency & { address_id: number; projected: number }>();
     if (!identity) continue;
-    // One batch = one Worker subrequest for all six activity reads. The sequential form cost ~8
+    // One batch = one Worker subrequest for all seven activity reads. The sequential form cost ~8
     // subrequests per address, which capped a drain step near 110 addresses before hitting the
     // 1,000-subrequest invocation limit (and killed the whole maintenance lane when exceeded).
     const bounds = await db.batch<{ first_block: number | null; last_block: number | null }>(
