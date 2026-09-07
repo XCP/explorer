@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const REQUEST_TIMEOUT_MS = 25_000;
 const MAX_RETRIES = 4;
 const MAX_BACKOFF_MS = 8_000;
@@ -20,8 +21,11 @@ async function postAlchemy(apiKey: string, body: string, what: string): Promise<
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (response.ok) return response.json();
-    if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
-      const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    const retryable = (response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES;
+    const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    // Released before the sleep, not after it.
+    await discard(response);
+    if (retryable) {
       await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt, retryAfter)));
       continue;
     }

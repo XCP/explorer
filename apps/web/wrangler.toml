@@ -30,6 +30,25 @@ head_sampling_rate = 0.01
 binding = "API_WORKER"
 service = "xcp-api"
 
+# OpenNext's ISR queue calls back into this same Worker to re-render an expired
+# page. Without this binding the queue has nothing to invoke.
+[[services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "xcp-web"
+
+# The queue itself. The class is exported by the generated worker
+# (@opennextjs/cloudflare's worker template re-exports DOQueueHandler), so this
+# binding only needs to name it. `wrangler dev` warns that the class is not
+# exported because it validates before the adapter's bundle exists; the
+# deployed bundle does export it.
+[[durable_objects.bindings]]
+name = "NEXT_CACHE_DO_QUEUE"
+class_name = "DOQueueHandler"
+
+[[migrations]]
+tag = "xcp-web-isr-v1"
+new_sqlite_classes = ["DOQueueHandler"]
+
 # OpenNext incremental cache (ISR / Next Data Cache) — persists `revalidate` fetches so SSR reads hit this
 # bucket instead of re-querying D1 cold on every request. Binding name is fixed by r2IncrementalCache.
 [[r2_buckets]]

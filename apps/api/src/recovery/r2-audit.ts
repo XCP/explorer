@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import { parseRecoveryTransaction } from "#api/recovery/raw-transaction";
+import { mapWithLimit } from "#api/lib/net";
 
 export interface RecoveryR2AuditPage {
   checked: number;
@@ -28,22 +29,23 @@ export async function auditRecoveryTransactionObjects(
   const missing: string[] = [];
   const corrupt: Array<{ txid: string; reason: string }> = [];
 
-  await Promise.all(
-    txids.map(async (txid) => {
-      const object = await bucket.get(`transactions/${txid}.hex`);
-      if (!object) {
-        missing.push(txid);
-        return;
-      }
-      try {
-        const rawTransactionHex = (await object.text()).trim();
-        const parsed = parseRecoveryTransaction(rawTransactionHex);
-        if (parsed.txid !== txid) corrupt.push({ txid, reason: `body hashes to ${parsed.txid}` });
-      } catch (error) {
-        corrupt.push({ txid, reason: error instanceof Error ? error.message : "invalid transaction body" });
-      }
-    }),
-  );
+  // One R2 get per txid, up to the route's limit of 100. Asking for all of
+  // them at once is what R2 answers with "Reduce your concurrent request rate
+  // for the same object"; waves read the same bytes without the throttle.
+  await mapWithLimit(txids, async (txid) => {
+    const object = await bucket.get(`transactions/${txid}.hex`);
+    if (!object) {
+      missing.push(txid);
+      return;
+    }
+    try {
+      const rawTransactionHex = (await object.text()).trim();
+      const parsed = parseRecoveryTransaction(rawTransactionHex);
+      if (parsed.txid !== txid) corrupt.push({ txid, reason: `body hashes to ${parsed.txid}` });
+    } catch (error) {
+      corrupt.push({ txid, reason: error instanceof Error ? error.message : "invalid transaction body" });
+    }
+  });
 
   missing.sort();
   corrupt.sort((left, right) => left.txid.localeCompare(right.txid));

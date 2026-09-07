@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const ETHERSCAN_URL = "https://api.etherscan.io/v2/api";
 const REQUEST_TIMEOUT_MS = 25_000;
 
@@ -50,6 +51,9 @@ export async function fetchEtherscanMintLogs(
     apikey: apiKey,
   });
   const response = await fetch(`${ETHERSCAN_URL}?${query}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`Etherscan logs request failed: ${response.status}`);
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`Etherscan logs request failed: ${response.status}`);
+  }
   return parseEtherscanLogs(await response.json());
 }

@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 /**
  * Bitcoin Counters reference indexer (bitcoincounters.com) — the numbering authority for COUNT/ord
  * witness files owned through Counterparty assets. This integration only lists and validates the
@@ -37,6 +38,9 @@ export async function fetchCounterList(): Promise<CounterListing[]> {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`counters request failed: ${response.status}`);
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`counters request failed: ${response.status}`);
+  }
   return parseCounterList(await response.json());
 }

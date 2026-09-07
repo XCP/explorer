@@ -8,6 +8,7 @@ import type { Env } from "#api/env";
 import { requireAdmin } from "#api/middleware/admin-auth";
 import { boundedInteger, optionalBoundedInteger } from "#api/http/numbers";
 import { counterpartyJson as fetchCounterpartyJson } from "#api/integrations/counterparty";
+import { mapWithLimit } from "#api/lib/net";
 
 export const verify = new Hono<{ Bindings: Env }>();
 
@@ -125,12 +126,13 @@ verify.get("/admin/verify", async (c) => {
 
   // 2) Counterparty counts (parallel) + Counterparty tip
   const cpCounts: Record<string, number | null> = {};
-  await Promise.all(
-    MODELS.map(async (m) => {
-      const j = await counterpartyJson<{ result_count?: number }>(base, `${m.cp}?limit=1`);
-      cpCounts[m.table] = j?.result_count ?? null;
-    }),
-  );
+  // Eighteen models, so eighteen Counterparty reads issued at once against the
+  // six connections a Worker gets — and against a node that answers 429 under
+  // exactly this kind of burst.
+  await mapWithLimit(MODELS, async (m) => {
+    const j = await counterpartyJson<{ result_count?: number }>(base, `${m.cp}?limit=1`);
+    cpCounts[m.table] = j?.result_count ?? null;
+  });
   const cpTip =
     (await counterpartyJson<{ result?: Array<{ block_index?: number }> }>(base, `blocks?limit=1`))?.result?.[0]
       ?.block_index ?? null;

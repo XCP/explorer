@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export interface PepeWtfAsset {
@@ -45,6 +46,9 @@ export async function fetchPepeWtfAssets(collection: string): Promise<PepeWtfAss
     headers: { "user-agent": "xcp.io-indexer" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`pepe.wtf ${collection} request failed: ${response.status}`);
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`pepe.wtf ${collection} request failed: ${response.status}`);
+  }
   return parsePepeWtfAssets(await response.json());
 }

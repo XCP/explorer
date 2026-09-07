@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const CURATED_URL = "https://v2.emblemvault.io/curated";
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -41,6 +42,9 @@ export function parseEmblemCuratedCollections(value: unknown): EmblemCuratedColl
 
 export async function fetchEmblemCuratedCollections(): Promise<EmblemCuratedCollection[]> {
   const response = await fetch(CURATED_URL, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`Emblem curated request failed: ${response.status}`);
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`Emblem curated request failed: ${response.status}`);
+  }
   return parseEmblemCuratedCollections(await response.json());
 }

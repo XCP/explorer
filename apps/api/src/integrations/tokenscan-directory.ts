@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const TOKENSCAN_DIRECTORY_URL = "https://tokenscan.io/js/nfts.js";
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -50,6 +51,9 @@ export async function fetchTokenscanDirectory(): Promise<TokenscanCollection[]> 
     headers: { "user-agent": "xcp.io-indexer" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`Tokenscan directory request failed: ${response.status}`);
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`Tokenscan directory request failed: ${response.status}`);
+  }
   return parseTokenscanDirectoryScript(await response.text());
 }

@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 export interface XcpDexMarket {
   baseAsset: string;
   quoteAsset: string;
@@ -91,7 +92,10 @@ export function parseXcpDexMarket(value: unknown): XcpDexProviderMarket {
 async function fetchPair(fetcher: Fetcher, baseAsset: string, quoteAsset: string) {
   const pair = `${encodeURIComponent(baseAsset)}_${encodeURIComponent(quoteAsset)}`;
   const response = await fetcher.fetch(`https://xcpdex-api/pair/${pair}`);
-  if (!response.ok) throw new XcpDexRequestError(response.status);
+  if (!response.ok) {
+    await discard(response);
+    throw new XcpDexRequestError(response.status);
+  }
   return parseXcpDexMarket(await response.json());
 }
 

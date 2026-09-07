@@ -1,5 +1,6 @@
 /** Counterparty HTTP client — fetch + decode (precision-safe) with good-citizen backoff. */
 import { parseCounterpartyJson } from "#api/indexer/codec";
+import { discard } from "#api/lib/net";
 
 export function parseCounterpartyResponse<T = unknown>(text: string): T {
   const value: unknown = parseCounterpartyJson(text);
@@ -55,8 +56,14 @@ export async function counterpartyJson<T = unknown>(
         throw error;
       }
     }
-    if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
-      const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    const retryable = (response.status === 429 || response.status >= 500) && attempt < maxRetries;
+    const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    // This is the hot sync path, and a Counterparty node under load answers 429
+    // for a run of requests. Holding each refused body across its backoff — up
+    // to four per call, with a two-minute deadline — is the shape that exhausts
+    // the six outbound connections a Worker gets.
+    await discard(response);
+    if (retryable) {
       const delay = Math.min(backoffMs(attempt, retryAfter), deadline - Date.now());
       if (delay <= 0) throw new Error(`Counterparty ${path} request deadline exceeded`);
       await new Promise((resolve) => setTimeout(resolve, delay));

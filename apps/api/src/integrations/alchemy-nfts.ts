@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const REQUEST_TIMEOUT_MS = 25_000;
 const PAGE_SIZE = 100;
 const MAX_RETRIES = 4;
@@ -68,8 +69,12 @@ export async function fetchAlchemyContractNfts(
       },
     );
     if (response.ok) return parseAlchemyContractNftsPage(await response.json());
-    if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
-      const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    const retryable = (response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES;
+    const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    // Released before the sleep, not after it: holding a body across the
+    // backoff is what turns a slow provider into an exhausted connection pool.
+    await discard(response);
+    if (retryable) {
       await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt, retryAfter)));
       continue;
     }

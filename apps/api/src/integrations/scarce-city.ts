@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const REQUEST_TIMEOUT_MS = 12_000;
 
 export interface ScarceCitySale {
@@ -35,9 +36,20 @@ export async function fetchScarceCitySales(asset: string): Promise<ScarceCitySal
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (response.status === 404) return [];
-  if (!response.ok) throw new Error(`Scarce City sales request failed: ${response.status}`);
+  // Most assets have never been listed on Scarce City, so 404 is the usual
+  // answer and the usual place to leak a connection.
+  if (response.status === 404) {
+    await discard(response);
+    return [];
+  }
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`Scarce City sales request failed: ${response.status}`);
+  }
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("json")) return [];
+  if (!contentType.includes("json")) {
+    await discard(response);
+    return [];
+  }
   return parseScarceCitySales(await response.json());
 }

@@ -1,3 +1,4 @@
+import { discard } from "#api/lib/net";
 const EMBLEM_METADATA_URL = "https://v2.emblemvault.io/meta";
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -63,7 +64,15 @@ export async function fetchEmblemMetadata(
     headers: { accept: "application/json", ...options.headers },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (response.status === 404 && options.acceptNotFound !== false) return {};
-  if (!response.ok) throw new Error(`Emblem metadata request failed: ${response.status}`);
+  // A 404 is an ordinary answer here — most tokens have no metadata — so this
+  // is the hot path, not an exceptional one.
+  if (response.status === 404 && options.acceptNotFound !== false) {
+    await discard(response);
+    return {};
+  }
+  if (!response.ok) {
+    await discard(response);
+    throw new Error(`Emblem metadata request failed: ${response.status}`);
+  }
   return parseEmblemMetadata(await response.json());
 }
