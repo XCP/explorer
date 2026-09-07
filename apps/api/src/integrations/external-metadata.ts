@@ -1,3 +1,5 @@
+import { discard } from "#api/lib/net";
+
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_BODY_CHARS = 262_144;
 
@@ -17,7 +19,12 @@ export async function fetchExternalMetadata(urls: string[]): Promise<ExternalMet
         headers: { "user-agent": "xcp.io/1.0", accept: "application/json,*/*" },
       }).catch(() => null);
       if (response?.ok) return { text: (await response.text()).slice(0, MAX_BODY_CHARS), lastStatus };
-      if (response) lastStatus = response.status;
+      if (response) {
+        lastStatus = response.status;
+        // Arweave gateways get three attempts; without this each failed one
+        // holds a connection while the next is made.
+        await discard(response);
+      }
     }
   }
   return { text: null, lastStatus };

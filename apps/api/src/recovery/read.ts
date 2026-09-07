@@ -7,6 +7,7 @@ import { allocateRecoveryFeeAddress, legacyFeeScriptsHex, RecoveryFeeKeyError } 
 import { parseRecoveryTransaction, type RecoveryTransactionOutput } from "#api/recovery/raw-transaction";
 import { requestAddressReverification } from "#api/recovery/verify";
 import type { Context } from "hono";
+import { mapWithLimit } from "#api/lib/net";
 
 interface RecoveryOutputRow {
   txid: string;
@@ -240,12 +241,14 @@ recoveryRead.get("/addresses/:address/recovery", async (c) => {
   ]);
 
   const uniqueTxids = [...new Set(outputResult.results.map((row) => row.txid))];
-  const transactionEntries = await Promise.all(
-    uniqueTxids.map(async (txid) => {
-      const object = await c.env.RECOVERY_TRANSACTIONS.get(`transactions/${txid}.hex`);
-      return [txid, object ? await object.text() : null] as const;
-    }),
-  );
+  // One R2 get per distinct transaction, over a page that may hold up to
+  // RECOVERY_MAX_OUTPUTS_PER_PAGE rows. Asking for all of them at once is what
+  // R2 answers with "Reduce your concurrent request rate for the same object";
+  // waves get the same bytes without the throttle. See lib/net.ts.
+  const transactionEntries = await mapWithLimit(uniqueTxids, async (txid) => {
+    const object = await c.env.RECOVERY_TRANSACTIONS.get(`transactions/${txid}.hex`);
+    return [txid, object ? await object.text() : null] as const;
+  });
   const totalOutputs = Number(totals?.output_count ?? 0);
   const totalValue = Number(totals?.value_sats ?? 0);
   const threshold = Number(c.env.RECOVERY_FEE_EXEMPTION_SATS || 10_000);

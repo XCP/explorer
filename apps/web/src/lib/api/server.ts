@@ -2,6 +2,7 @@ import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { API_BASE } from "@/lib/api/url";
 import { ApiResponseError, readJsonResponse } from "@/lib/api/response";
+import { discard } from "@/lib/net";
 
 const BINDING_TIMEOUT_MS = 5_000;
 const ORIGIN_TIMEOUT_MS = 15_000;
@@ -37,6 +38,10 @@ async function serverFetch(url: string, init: NextFetchInit): Promise<Response> 
         usedBinding = true;
         const response = await binding.fetch(url, { ...init, signal: AbortSignal.timeout(BINDING_TIMEOUT_MS) });
         if (response.status < 500) return response;
+        // Falling through to the public origin below opens a second
+        // connection; releasing this one first keeps the retry from competing
+        // with the attempt it is replacing.
+        await discard(response);
         console.error(`serverFetch binding ${url} -> ${response.status}`);
       } else {
         console.error(`serverFetch: API_WORKER binding missing for ${url}`);
@@ -66,6 +71,8 @@ export async function getJson<T>(path: string, options: { revalidate?: number } 
       // (e.g. Cloudflare's block on sibling workers.dev fetches after a binding timeout) is an
       // infrastructure failure — treating it as NotFound turns transient outages into rendered,
       // ISR-cached not-found pages (the /year launch failure mode).
+      await discard(response);
+      await discard(response);
       if (response.headers.get("content-type")?.includes("json")) throw new NotFoundError(path);
       throw new ApiResponseError(response.status, `non-API 404 for ${path}`);
     }
