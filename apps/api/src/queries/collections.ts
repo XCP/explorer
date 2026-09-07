@@ -165,3 +165,54 @@ export async function listAddressCollectionCreators(
   }
   return out;
 }
+
+/** Which curated collections each requested address currently holds a card of. Answered live from the
+ *  addresses' own balance rows (one indexed range per address) probed against membership evidence, not
+ *  from a projection: a holdings table would be thirty times the creators one and rebuilt daily for a
+ *  reader that asks in batches a few times a day. Opt-in on the route for the same reason. */
+export async function listAddressCollectionHoldings(
+  db: D1Database,
+  addresses: string[],
+): Promise<Map<string, { tag: string; cards: number }[]>> {
+  const rows = await q<{ address: string; tag: string; cards: number }>(
+    db,
+    `SELECT dictionary.address,evidence.tag,COUNT(DISTINCT balance.asset_id) cards
+       FROM json_each(?1) request
+       JOIN address_dictionary dictionary ON dictionary.address=request.value
+       JOIN balances balance ON balance.address_id=dictionary.address_id AND CAST(balance.quantity AS INTEGER)>0
+       JOIN asset_dictionary asset ON asset.asset_id=balance.asset_id
+       JOIN entity_dictionary entity ON entity.entity_type='asset' AND entity.entity_key=asset.asset
+       JOIN collection_membership_evidence evidence ON evidence.entity_id=entity.entity_id
+        AND evidence.source IN (${SOURCES})
+      GROUP BY dictionary.address,evidence.tag
+      ORDER BY dictionary.address,cards DESC,evidence.tag`,
+    JSON.stringify(addresses),
+  );
+  const out = new Map<string, { tag: string; cards: number }[]>();
+  for (const row of rows) {
+    const list = out.get(row.address) ?? [];
+    list.push({ tag: row.tag, cards: row.cards });
+    out.set(row.address, list);
+  }
+  return out;
+}
+
+/** Creators and, when asked, holdings, merged per address in request order. */
+export async function listAddressCollections(
+  db: D1Database,
+  addresses: string[],
+  includeHeld: boolean,
+): Promise<AddressCollectionCreator[]> {
+  const created = await listAddressCollectionCreators(db, addresses);
+  if (!includeHeld) return created;
+  const held = await listAddressCollectionHoldings(db, addresses);
+  const byAddress = new Map(created.map((row) => [row.address, row]));
+  for (const address of addresses) {
+    const list = held.get(address);
+    if (!list) continue;
+    const row = byAddress.get(address);
+    if (row) row.held = list;
+    else byAddress.set(address, { address, collections: [], held: list });
+  }
+  return addresses.flatMap((address) => byAddress.get(address) ?? []);
+}
