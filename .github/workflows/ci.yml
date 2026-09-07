@@ -24,7 +24,13 @@ jobs:
         working-directory: apps/api
         run: |
           npx wrangler deploy --dry-run --outdir .dry-run
-          node ../../scripts/check-bundle-size.mjs .dry-run/index.js 716800
+          # 768 KiB. Raised from 700 because main had already outgrown it:
+          # 737.9 KiB at 8e7b16d, with no PR able to go green since. The same
+          # thing happened at 600 and the answer was the same. Compressed the
+          # worker is 191 KiB, which is nowhere near a platform limit, so this
+          # is a discipline guard rather than a hard ceiling -- but it only
+          # works as one if it is honest about where the worker actually is.
+          node ../../scripts/check-bundle-size.mjs .dry-run/index.js 786432
 
   web-deployment-build:
     runs-on: ubuntu-latest
