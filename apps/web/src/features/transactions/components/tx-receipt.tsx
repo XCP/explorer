@@ -8,7 +8,7 @@ import { RecordTable } from "@/features/records/components/record-table";
 import { REGISTRY } from "@/features/records/registry";
 import { assetChip, statusPill, dispenserPill, sweepFlagsBadge, type Col } from "@/features/records/cells";
 import { btcAmt, xcpAmt } from "@/lib/tx";
-import { amount, commas, fromSats, short } from "@/lib/format";
+import { amount, commas, fromSats, fromSatsExact, short } from "@/lib/format";
 
 /**
  * JOB ② — THE RECEIPT. The settled kinds: something already happened and this page is the proof.
@@ -116,7 +116,7 @@ export function DispenseReceipt({ action }: { action: Extract<TxAction, { kind: 
             <td>{assetChip(d.asset)}</td>
             <td className="r">{commas(d.dispense_quantity_normalized)}</td>
             <td className="r">{rate != null ? rate.toFixed(8).replace(/0+$/, "") : "—"}</td>
-            <td className="r">{fromSats(d.btc_amount, 1)?.toFixed(8) ?? "—"}</td>
+            <td className="r">{amount(fromSatsExact(d.btc_amount, 1))}</td>
             <td className="r dim">{d.usd_value != null ? `≈$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
           </tr>
         ),
@@ -224,7 +224,7 @@ export function FairmintReceipt({ action }: { action: Extract<TxAction, { kind: 
     <ReceiptShell
       headline={
         <span>
-          <b>{amount(fromSats(m.earn_quantity, m.divisible), m.divisible)}</b> {assetChip(m.asset)} minted
+          <b>{amount(fromSatsExact(m.earn_quantity, m.divisible), m.divisible)}</b> {assetChip(m.asset)} minted
           {Number(m.paid_quantity) > 0 && (
             <>
               {" "}
@@ -259,7 +259,7 @@ export function FairmintReceipt({ action }: { action: Extract<TxAction, { kind: 
         rows: (
           <tr>
             <td>{assetChip(m.asset)}</td>
-            <td className="r">{amount(fromSats(m.earn_quantity, m.divisible), m.divisible)}</td>
+            <td className="r">{amount(fromSatsExact(m.earn_quantity, m.divisible), m.divisible)}</td>
             <td className="r">{Number(m.paid_quantity) > 0 ? xcpAmt(m.paid_quantity) : "free"}</td>
           </tr>
         ),

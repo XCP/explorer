@@ -1,4 +1,6 @@
 "use client";
+import { DEFAULT_NUMBER_LOCALE } from "@/lib/format";
+
 import { useEffect, useRef, useState } from "react";
 import { createChart, HistogramSeries, type IChartApi, type Time, ColorType } from "lightweight-charts";
 import type { AssetActivityMonth } from "@xcp/shared/assets";
@@ -103,7 +105,7 @@ export function AssetActivityChart({ data }: { data: AssetActivityMonth[] }) {
     const stacks = buildStackedData(toBuckets(data), visible);
     for (let i = stacks.length - 1; i >= 0; i--) {
       const series = chart.addSeries(HistogramSeries, {
-        priceFormat: { type: "custom", formatter: (v: number) => v.toLocaleString() },
+        priceFormat: { type: "custom", formatter: (v: number) => v.toLocaleString(DEFAULT_NUMBER_LOCALE) },
         priceScaleId: "right",
         lastValueVisible: false,
         priceLineVisible: false,
@@ -154,7 +156,7 @@ export function AssetActivityChart({ data }: { data: AssetActivityMonth[] }) {
           </button>
         ))}
         <span className="ml-auto font-mono text-[10px] tabular-nums text-zinc-600">
-          {total.toLocaleString()} events
+          {total.toLocaleString(DEFAULT_NUMBER_LOCALE)} events
         </span>
       </div>
       <div ref={containerRef} style={{ height: HEIGHT, width: "100%" }} />

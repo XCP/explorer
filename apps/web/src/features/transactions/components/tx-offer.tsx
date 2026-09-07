@@ -12,7 +12,7 @@ import { usePrices } from "@/lib/prices";
 import { orderView } from "@/lib/trading-pair";
 import { btcAmt, xcpAmt, satsUsd, blocksEta } from "@/lib/tx";
 import { dispenseSats, oracleFace, oracleQuoteStale } from "@/lib/dispenser-pricing";
-import { amount, collectionLabel, commas, fromSats, short, timeAgo } from "@/lib/format";
+import { amount, collectionLabel, commas, fromSats, fromSatsExact, short, timeAgo } from "@/lib/format";
 
 /**
  * JOB ① — THE OFFER. A dispenser / fairminter / open order has no page but its transaction page, so
@@ -259,7 +259,7 @@ export function DispenserStorefront({
             </div>
             <div className="btns">
               {d.source && <ClickCopy label="copy address" value={d.source} />}
-              <ClickCopy label="copy amount" value={String(fromSats(priceSats, 1) ?? "")} />
+              <ClickCopy label="copy amount" value={fromSatsExact(priceSats, 1) ?? ""} />
               {d.asset && (
                 <a
                   className="txbtn buy"
@@ -298,17 +298,18 @@ export function FairminterCampaign({ fairminter: f }: { fairminter: FairminterRo
       <div className="tx-dead">
         <span className="pill cancelled">{f.status ?? "closed"}</span>
         <span className="msg">
-          This fair mint is over — <b>{amount(earned, f.divisible)}</b> {name} minted
+          This fair mint is over — <b>{amount(fromSatsExact(f.earned_quantity, f.divisible), f.divisible)}</b> {name}{" "}
+          minted
           {cap > 0 && pct != null && (
             <>
               {" "}
-              ({pct}% of the {amount(cap, f.divisible)} cap)
+              ({pct}% of the {amount(fromSatsExact(f.hard_cap, f.divisible), f.divisible)} cap)
             </>
           )}
           {!free && (
             <>
               {" "}
-              at <b>{xcpAmt(f.price)}</b> per {commas(f.quantity_by_price)}
+              at <b>{xcpAmt(f.price)}</b> per {commas(fromSatsExact(f.quantity_by_price, f.divisible))}
             </>
           )}
           {Number(f.paid_quantity) > 0 && (
@@ -340,7 +341,7 @@ export function FairminterCampaign({ fairminter: f }: { fairminter: FairminterRo
           ) : (
             <>
               {" "}
-              — {xcpAmt(f.price)} per {commas(f.quantity_by_price)}
+              — {xcpAmt(f.price)} per {commas(fromSatsExact(f.quantity_by_price, f.divisible))}
             </>
           )}
         </div>
@@ -350,9 +351,9 @@ export function FairminterCampaign({ fairminter: f }: { fairminter: FairminterRo
               <div className="fill" style={{ width: `${pct}%` }} />
             </div>
             <div className="lbl">
-              <span>{amount(earned, f.divisible)} minted</span>
+              <span>{amount(fromSatsExact(f.earned_quantity, f.divisible), f.divisible)} minted</span>
               <span>
-                {pct}% of {amount(cap, f.divisible)} hard cap
+                {pct}% of {amount(fromSatsExact(f.hard_cap, f.divisible), f.divisible)} hard cap
               </span>
             </div>
           </div>
@@ -360,17 +361,18 @@ export function FairminterCampaign({ fairminter: f }: { fairminter: FairminterRo
         <div className="meta" style={{ marginTop: 12 }}>
           {!free && (
             <span>
-              price <b>{xcpAmt(f.price)}</b> / {commas(f.quantity_by_price)}
+              price <b>{xcpAmt(f.price)}</b> / {commas(fromSatsExact(f.quantity_by_price, f.divisible))}
             </span>
           )}
           {cap === 0 && (
             <span>
-              minted so far <b>{amount(earned, f.divisible)}</b>
+              minted so far <b>{amount(fromSatsExact(f.earned_quantity, f.divisible), f.divisible)}</b>
             </span>
           )}
           {soft > 0 && (
             <span>
-              soft cap <b>{earned >= soft ? "reached ✓" : amount(soft, f.divisible)}</b>
+              soft cap{" "}
+              <b>{earned >= soft ? "reached ✓" : amount(fromSatsExact(f.soft_cap, f.divisible), f.divisible)}</b>
             </span>
           )}
           {Number(f.paid_quantity) > 0 && (
@@ -391,7 +393,7 @@ export function FairminterCampaign({ fairminter: f }: { fairminter: FairminterRo
             ) : (
               <>
                 {" "}
-                — paying <b>{xcpAmt(f.price)}</b> per {commas(f.quantity_by_price)} units.
+                — paying <b>{xcpAmt(f.price)}</b> per {commas(fromSatsExact(f.quantity_by_price, f.divisible))} units.
               </>
             )}
           </div>

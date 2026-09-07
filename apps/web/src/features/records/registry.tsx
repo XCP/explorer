@@ -18,7 +18,7 @@ import type {
   PoolLiquidityRow,
 } from "@xcp/shared/records";
 import type { AssetListRow } from "@xcp/shared/assets";
-import { commas, compact, short, fromSats } from "@/lib/format";
+import { commas, compact, short, fromSats, fromSatsExact, DEFAULT_NUMBER_LOCALE } from "@/lib/format";
 import { orderView, matchView } from "@/lib/trading-pair";
 import {
   lockStateCell,
@@ -117,7 +117,7 @@ const fmtPrice = (n: number) =>
     ? "—"
     : n >= 1
       ? commas(n.toFixed(4))
-      : parseFloat(n.toFixed(8)).toLocaleString(undefined, { maximumFractionDigits: 8 });
+      : parseFloat(n.toFixed(8)).toLocaleString(DEFAULT_NUMBER_LOCALE, { maximumFractionDigits: 8 });
 const side = (d: "buy" | "sell") => <span className={`side ${d}`}>{d}</span>;
 const pairCell = (base: string, quote: string) => (
   <span className="inline-flex max-w-full items-center gap-2 font-mono">
@@ -206,8 +206,8 @@ const BET_MATCH_COLS: Col<BetMatchRow>[] = [
   { label: "Feed", priority: 2, cell: (r) => addrCell(r.feed_address) },
   { label: "Party A", priority: 1, cell: (r) => addrCell(r.tx0_address) },
   { label: "Party B", priority: 2, cell: (r) => addrCell(r.tx1_address) },
-  { label: "Forward (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.forward_quantity)) },
-  { label: "Backward (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSats(r.backward_quantity)) },
+  { label: "Forward (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSatsExact(r.forward_quantity)) },
+  { label: "Backward (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSatsExact(r.backward_quantity)) },
   cStatus,
 ];
 
@@ -216,7 +216,7 @@ const RPS_COLS: Col<RpsRow>[] = [
   cBlock,
   cSource,
   { label: "Moves", numeric: true, priority: 2, cell: (r) => commas(r.possible_moves) },
-  { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.wager)) },
+  { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSatsExact(r.wager)) },
   { label: "Expiration", numeric: true, priority: 3, cell: (r) => commas(r.expiration) },
   cStatus,
   cView,
@@ -228,7 +228,7 @@ const RPS_MATCH_COLS: Col<RpsMatchRow>[] = [
   { label: "Player A", priority: 1, cell: (r) => addrCell(r.tx0_address) },
   { label: "Player B", priority: 2, cell: (r) => addrCell(r.tx1_address) },
   { label: "Moves", numeric: true, priority: 3, cell: (r) => commas(r.possible_moves) },
-  { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.wager)) },
+  { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSatsExact(r.wager)) },
   cStatus,
 ];
 
@@ -319,7 +319,8 @@ const btcPerUnit = (rate?: string | number | null, give?: string | number | null
     g = Number(give);
   return rate != null && rate !== "" && Number.isFinite(r) && Number.isFinite(g) && g > 0 ? (r / g).toFixed(8) : "—";
 };
-const sats = (n?: number | null) => (n != null && Number.isFinite(n) ? Math.round(n).toLocaleString() : "—");
+const sats = (n?: number | null) =>
+  n != null && Number.isFinite(n) ? Math.round(n).toLocaleString(DEFAULT_NUMBER_LOCALE) : "—";
 export const DISPENSER_COLS: Col<DispenserRow>[] = [
   {
     label: "Asset",
@@ -372,8 +373,8 @@ export const FAIRMINT_COLS: Col<FairmintRow>[] = [
     omitOn: "asset",
     cell: (r) => assetCell(r.asset),
   },
-  { label: "Earned", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.earn_quantity, r.divisible)) },
-  { label: "Paid (XCP)", numeric: true, priority: 2, cell: (r) => commas(fromSats(r.paid_quantity)) },
+  { label: "Earned", numeric: true, priority: 1, cell: (r) => commas(fromSatsExact(r.earn_quantity, r.divisible)) },
+  { label: "Paid (XCP)", numeric: true, priority: 2, cell: (r) => commas(fromSatsExact(r.paid_quantity)) },
   { label: "Minter", priority: 2, omitOn: "address", cell: (r) => addrCell(r.source) },
   cView,
 ];
@@ -652,7 +653,7 @@ export const REGISTRY: Registry = {
           </span>
         ),
       },
-      { label: "Fee Paid (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSats(r.fee_paid)) },
+      { label: "Fee Paid (XCP)", numeric: true, priority: 3, cell: (r) => commas(fromSatsExact(r.fee_paid)) },
       {
         label: "Memo",
         priority: 4,
@@ -712,13 +713,13 @@ export const REGISTRY: Registry = {
     cols: [
       { label: "Source", priority: 1, omitOn: "address", cell: (r) => addrCell(r.source) },
       { label: "Type", priority: 1, w: "96px", cell: (r) => betTypeBadge(r.bet_type) },
-      { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSats(r.wager_quantity)) },
+      { label: "Wager (XCP)", numeric: true, priority: 1, cell: (r) => commas(fromSatsExact(r.wager_quantity)) },
       {
         label: "Counterwager (XCP)",
         numeric: true,
         priority: 2,
         w: "140px",
-        cell: (r) => commas(fromSats(r.counterwager_quantity)),
+        cell: (r) => commas(fromSatsExact(r.counterwager_quantity)),
       },
       {
         label: "Target",

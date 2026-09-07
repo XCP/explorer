@@ -46,16 +46,16 @@ export const KIND_TAB: Record<string, string> = {
   pool_swap: "Swap",
 };
 
-import { fromSats, commas } from "@/lib/format";
+import { fromSats, fromSatsExact, commas } from "@/lib/format";
 
 /** satoshi value → trimmed BTC display ("0.0299 BTC"). */
 export const btcAmt = (sats?: string | number | null): string => {
-  const v = fromSats(sats, 1);
-  return v == null ? "—" : `${v.toFixed(8).replace(/0+$/, "").replace(/\.$/, ".0")} BTC`;
+  const v = fromSatsExact(sats, 1);
+  return v == null ? "—" : `${v.includes(".") ? v : `${v}.0`} BTC`;
 };
 /** XCP-satoshi value → "1,650 XCP". */
 export const xcpAmt = (sats?: string | number | null): string => {
-  const v = fromSats(sats, 1);
+  const v = fromSatsExact(sats, 1);
   return v == null ? "—" : `${commas(v)} XCP`;
 };
 /** sats → USD at the given BTC price ("≈ $1,891"); null when either side is unknown. */

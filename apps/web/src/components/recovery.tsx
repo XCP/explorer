@@ -9,7 +9,7 @@ import { Card, Stat } from "@/components/ui/card";
 import { LineChart, type LineSeries } from "@/components/ui/charts";
 import { Board } from "@/components/board";
 import { Skeleton } from "@/components/ui/feedback";
-import { commas } from "@/lib/format";
+import { commas, DEFAULT_NUMBER_LOCALE } from "@/lib/format";
 
 const WALLET_URL = "https://chromewebstore.google.com/detail/xcp-wallet/nicpjdbehgcjbjfjkobcidnfmfpijohg";
 
@@ -60,7 +60,7 @@ interface AddressRecovery {
 }
 
 const btc = (sats?: number) =>
-  `${((sats ?? 0) / 100_000_000).toLocaleString(undefined, { maximumFractionDigits: 8 })} BTC`;
+  `${((sats ?? 0) / 100_000_000).toLocaleString(DEFAULT_NUMBER_LOCALE, { maximumFractionDigits: 8 })} BTC`;
 
 function RecoveryLookup() {
   const [address, setAddress] = useState("");
@@ -191,7 +191,7 @@ function RecoveryChart({ rows, recovered }: { rows: RecoveryMonth[]; recovered: 
       <LineChart
         series={series}
         height={240}
-        formatValue={(value) => `${value.toLocaleString(undefined, { maximumFractionDigits: 8 })} BTC`}
+        formatValue={(value) => `${value.toLocaleString(DEFAULT_NUMBER_LOCALE, { maximumFractionDigits: 8 })} BTC`}
         formatDate={(timestamp) =>
           new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" }).format(
             timestamp * 1000,
