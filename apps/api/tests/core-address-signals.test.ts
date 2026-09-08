@@ -7,6 +7,7 @@ import {
   rebuildCoreAddressSignals,
   runCoreAddressSignalsStep,
 } from "#api/indexer/core-address-signals";
+import { rebuildCoreAssetSignals, runCoreAssetSignalsStep } from "#api/indexer/core-asset-signals";
 
 const migrations = readdirSync("migrations-core")
   .filter((name) => name.endsWith(".sql"))
@@ -294,14 +295,14 @@ test("an economic-only address change does not re-derive the assets that address
   const db = new DatabaseSync(":memory:");
   for (const migration of migrations) db.exec(migration);
   db.exec(`
-    INSERT INTO address_dictionary(address) VALUES('1spender');
+    INSERT INTO address_dictionary(address) VALUES('1spender'),('1peerA'),('1peerB');
     INSERT INTO asset_dictionary(asset) VALUES('CARD');
     INSERT INTO assets(asset_id,type,divisible,locked,first_issuance_block_index)
       SELECT asset_id,'asset',0,0,1 FROM asset_dictionary WHERE asset='CARD';
     INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
       SELECT address.address_id,asset.asset_id,'1',1
       FROM address_dictionary address,asset_dictionary asset
-      WHERE address.address='1spender' AND asset.asset='CARD';
+      WHERE address.address IN ('1spender','1peerA','1peerB') AND asset.asset='CARD';
     INSERT INTO asset_signals(asset_id) SELECT asset_id FROM asset_dictionary WHERE asset='CARD';
     INSERT INTO transactions(tx_index,tx_hash,block_index,block_time,source_id,supported)
       SELECT 1,zeroblob(32),1,1,address_id,1 FROM address_dictionary WHERE address='1spender';
@@ -340,5 +341,151 @@ test("an economic-only address change does not re-derive the assets that address
     db.prepare(`SELECT COUNT(*) count FROM asset_holder_signal_dirty`).get()?.count,
     1,
     "dex_trades is a holder-projection input, so its change still fans out",
+  );
+});
+
+test("community-only address changes skip small holder sets without suppressing real changes", async () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  db.exec(`
+    INSERT INTO address_dictionary(address_id,address)
+      VALUES(20,'1holder'),(21,'1peerA'),(22,'1peerB'),(23,'1zero');
+    INSERT INTO asset_dictionary(asset) VALUES('SINGLE'),('PAIR'),('COMMUNITY'),('UTXO');
+    INSERT INTO assets(asset_id,type,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',0,0,1 FROM asset_dictionary WHERE asset NOT IN ('BTC','XCP');
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT 20,asset_id,'1',1 FROM assets;
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT 21,asset_id,'1',1 FROM asset_dictionary WHERE asset IN ('PAIR','COMMUNITY');
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT 22,asset_id,'1',1 FROM asset_dictionary WHERE asset='COMMUNITY';
+    INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+      SELECT 23,asset_id,'0',1 FROM assets;
+    INSERT INTO balances(utxo_tx_hash,utxo_vout,asset_id,quantity,updated_event_index)
+      SELECT zeroblob(32),0,asset_id,'1',1 FROM asset_dictionary WHERE asset='UTXO';
+    INSERT INTO balances(utxo_tx_hash,utxo_vout,asset_id,quantity,updated_event_index)
+      SELECT zeroblob(32),1,asset_id,'1',1 FROM asset_dictionary WHERE asset='UTXO';
+  `);
+  const core = d1(db);
+  const assets = ["SINGLE", "PAIR", "COMMUNITY", "UTXO"];
+  await rebuildCoreAddressSignals(core, ["1holder", "1peerA", "1peerB"]);
+  await rebuildCoreAssetSignals(core, assets);
+  const before = db.prepare(`SELECT * FROM asset_signals ORDER BY asset_id`).all();
+  db.exec(`INSERT INTO order_matches(tx0_index,tx1_index,tx0_hash,tx1_hash,tx0_address_id,block_index)
+    VALUES(1,2,zeroblob(32),zeroblob(32),20,1)`);
+  await enqueueCoreAddressSignals(core, ["1holder"]);
+  await runCoreAddressSignalsStep(core, 10);
+  assert.deepEqual(
+    db
+      .prepare(`SELECT asset FROM asset_holder_signal_dirty JOIN asset_dictionary USING(asset_id)`)
+      .all()
+      .map((row) => row.asset),
+    ["COMMUNITY"],
+    "zero and UTXO balances do not count toward the three-address threshold",
+  );
+  await runCoreAssetSignalsStep(core, 10);
+  const after = db.prepare(`SELECT * FROM asset_signals ORDER BY asset_id`).all();
+  assert.equal(
+    db
+      .prepare(
+        `SELECT avg_holder_dex FROM asset_signals JOIN asset_dictionary USING(asset_id)
+      WHERE asset='COMMUNITY'`,
+      )
+      .get()?.avg_holder_dex,
+    1 / 3,
+  );
+  assert.deepEqual(
+    after.filter((row) => row.avg_holder_dex === 0),
+    before.filter((row) => row.asset_id !== after.find((item) => item.avg_holder_dex !== 0)?.asset_id),
+    "single-holder, two-holder and UTXO assets are unchanged",
+  );
+  await rebuildCoreAssetSignals(core, assets);
+  assert.deepEqual(db.prepare(`SELECT * FROM asset_signals ORDER BY asset_id`).all(), after);
+
+  // Crossing the threshold must still work in both directions. Named event dependencies preserve
+  // the asset even if the address losing its last unit is absent from its current balance rows.
+  db.exec(`INSERT INTO balances(address_id,asset_id,quantity,updated_event_index)
+    SELECT 22,asset_id,'1',2 FROM asset_dictionary WHERE asset='PAIR'`);
+  await enqueueCoreAddressSignals(core, ["1peerB"], ["PAIR"]);
+  await runCoreAddressSignalsStep(core, 10);
+  await runCoreAssetSignalsStep(core, 10);
+  assert.equal(
+    db
+      .prepare(
+        `SELECT avg_holder_dex FROM asset_signals JOIN asset_dictionary USING(asset_id)
+    WHERE asset='PAIR'`,
+      )
+      .get()?.avg_holder_dex,
+    1 / 3,
+  );
+  db.exec(`DELETE FROM balances WHERE address_id=22
+    AND asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='PAIR')`);
+  await enqueueCoreAddressSignals(core, ["1peerB"], ["PAIR"]);
+  await runCoreAddressSignalsStep(core, 10);
+  await runCoreAssetSignalsStep(core, 10);
+  assert.equal(
+    db
+      .prepare(
+        `SELECT avg_holder_dex FROM asset_signals JOIN asset_dictionary USING(asset_id)
+    WHERE asset='PAIR'`,
+      )
+      .get()?.avg_holder_dex,
+    0,
+  );
+
+  // Burn classification affects holder counts and quantities at every cardinality.
+  db.exec(`INSERT INTO curated(kind,key) VALUES('burn','1holder')`);
+  await enqueueCoreAddressSignals(core, ["1holder"]);
+  await runCoreAddressSignalsStep(core, 10);
+  assert.equal(db.prepare(`SELECT count(*) n FROM asset_holder_signal_dirty`).get()?.n, 4);
+  await runCoreAssetSignalsStep(core, 10);
+  assert.equal(
+    db
+      .prepare(
+        `SELECT holders FROM asset_signals JOIN asset_dictionary USING(asset_id)
+    WHERE asset='SINGLE'`,
+      )
+      .get()?.holders,
+    0,
+  );
+  const burned = db.prepare(`SELECT * FROM asset_signals ORDER BY asset_id`).all();
+  await rebuildCoreAssetSignals(core, assets);
+  assert.deepEqual(db.prepare(`SELECT * FROM asset_signals ORDER BY asset_id`).all(), burned);
+
+  // Creator participation is a boolean input. A second surviving creation changes the address
+  // reputation but cannot change whether that address is a creator in its held communities.
+  db.exec(`INSERT INTO asset_dictionary(asset) VALUES('CREATED1');
+    INSERT INTO assets(asset_id,type,issuer_id,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',20,0,0,1 FROM asset_dictionary WHERE asset='CREATED1';
+    INSERT INTO asset_signals(asset_id,holders)
+      SELECT asset_id,10 FROM asset_dictionary WHERE asset='CREATED1'`);
+  await rebuildCoreAddressSignals(core, ["1holder"]);
+  db.exec(`INSERT INTO asset_dictionary(asset) VALUES('CREATED2');
+    INSERT INTO assets(asset_id,type,issuer_id,divisible,locked,first_issuance_block_index)
+      SELECT asset_id,'asset',20,0,0,1 FROM asset_dictionary WHERE asset='CREATED2';
+    INSERT INTO asset_signals(asset_id,holders)
+      SELECT asset_id,10 FROM asset_dictionary WHERE asset='CREATED2'`);
+  await enqueueCoreAddressSignals(core, ["1holder"]);
+  await runCoreAddressSignalsStep(core, 10);
+  assert.equal(db.prepare(`SELECT survived_assets FROM address_signals WHERE address_id=20`).get()?.survived_assets, 2);
+  assert.equal(db.prepare(`SELECT count(*) n FROM asset_holder_signal_dirty`).get()?.n, 0);
+  assert.equal(db.prepare(`SELECT count(*) n FROM asset_signal_dependency_dirty`).get()?.n, 0);
+
+  // A missing projection is repaired even for a small holder set.
+  db.exec(`DELETE FROM asset_signals WHERE asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='SINGLE');
+    INSERT INTO order_matches(tx0_index,tx1_index,tx0_hash,tx1_hash,tx0_address_id,block_index)
+      VALUES(3,4,zeroblob(32),zeroblob(32),20,1)`);
+  await enqueueCoreAddressSignals(core, ["1holder"]);
+  await runCoreAddressSignalsStep(core, 10);
+  assert.equal(db.prepare(`SELECT count(*) n FROM asset_signal_dirty`).get()?.n, 1);
+  await runCoreAssetSignalsStep(core, 10);
+  assert.equal(
+    db
+      .prepare(
+        `SELECT holders FROM asset_signals JOIN asset_dictionary USING(asset_id)
+    WHERE asset='SINGLE'`,
+      )
+      .get()?.holders,
+    0,
   );
 });

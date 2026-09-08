@@ -187,18 +187,21 @@ interface HolderDependency {
 }
 
 const HOLDER_DEPENDENCY_COLUMNS = "is_burn,assets_held,survived_assets,dex_trades";
+const hasSurvivingCreation = (signal: HolderDependency): boolean => Number(signal.survived_assets) > 0;
 
 const holderDependencyChanged = (before: HolderDependency | null, after: HolderDependency): boolean =>
   before === null ||
   before.is_burn !== after.is_burn ||
   before.assets_held !== after.assets_held ||
-  before.survived_assets !== after.survived_assets ||
+  hasSurvivingCreation(before) !== hasSurvivingCreation(after) ||
   before.dex_trades !== after.dex_trades;
 
 interface AddressSignalRebuild {
   processed: number;
   /** Addresses whose holder-projection inputs moved — the only ones worth staging held assets for. */
   holderRelevantAddressIds: number[];
+  /** A burn flag or missing prior projection can affect even a single-holder asset. */
+  allHeldAssetAddressIds: number[];
 }
 
 async function rebuildCoreAddressSignalsWithChanges(
@@ -209,6 +212,7 @@ async function rebuildCoreAddressSignalsWithChanges(
   // but they are UTXOs rather than addresses and must not receive address reputation projections.
   const unique = [...new Set(addresses)].filter(isBitcoinAddress);
   const holderRelevantAddressIds: number[] = [];
+  const allHeldAssetAddressIds: number[] = [];
   // Keep the small multi-table activity query separate from the large projection UPSERT. Combining them can
   // exceed D1's compound-SELECT limit, while each address remains independently replay-safe.
   for (const address of unique) {
@@ -242,10 +246,12 @@ async function rebuildCoreAddressSignalsWithChanges(
       .bind(address, firstBlock, lastBlock)
       .first<HolderDependency & { address_id: number }>();
     if (!changed) continue;
-    if (holderDependencyChanged(identity.projected ? identity : null, changed))
-      holderRelevantAddressIds.push(changed.address_id);
+    if (holderDependencyChanged(identity.projected ? identity : null, changed)) {
+      if (!identity.projected || identity.is_burn !== changed.is_burn) allHeldAssetAddressIds.push(changed.address_id);
+      else holderRelevantAddressIds.push(changed.address_id);
+    }
   }
-  return { processed: unique.length, holderRelevantAddressIds };
+  return { processed: unique.length, holderRelevantAddressIds, allHeldAssetAddressIds };
 }
 
 export async function rebuildCoreAddressSignals(db: D1Database, addresses: Iterable<string>): Promise<number> {
@@ -264,14 +270,24 @@ async function queuedIds(db: D1Database): Promise<number[]> {
   }
 }
 
-async function stageHeldAssetSignals(db: D1Database, addressIds: number[]): Promise<void> {
+async function stageHeldAssetSignals(db: D1Database, addressIds: number[], communityOnly = false): Promise<void> {
   for (let index = 0; index < addressIds.length; index += 90) {
     const chunk = addressIds.slice(index, index + 90);
     await db
       .prepare(
         `INSERT INTO asset_signal_dependency_dirty(asset_id)
-         SELECT DISTINCT asset_id FROM balances
-         WHERE address_id IN (${chunk.map(() => "?").join(",")}) AND CAST(quantity AS INTEGER)>0
+         SELECT DISTINCT balance.asset_id FROM balances balance
+         WHERE balance.address_id IN (${chunk.map(() => "?").join(",")}) AND CAST(balance.quantity AS INTEGER)>0
+           ${
+             communityOnly
+               ? `AND (NOT EXISTS(SELECT 1 FROM asset_signals signal WHERE signal.asset_id=balance.asset_id)
+                   OR (SELECT count(*) FROM (
+                     SELECT 1 FROM balances holder
+                     WHERE holder.asset_id=balance.asset_id AND holder.address_id IS NOT NULL
+                       AND CAST(holder.quantity AS INTEGER)>0 LIMIT 3
+                   ))=3)`
+               : ""
+           }
          ON CONFLICT(asset_id) DO NOTHING`,
       )
       .bind(...chunk)
@@ -359,7 +375,11 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
     // Asset holder-community fields read address_signals. Propagate a queued address refresh to
     // the assets whose address projection actually changed. Stage dependencies until the address
     // queue completes so popular assets are inserted into the main work queue only once.
-    await stageHeldAssetSignals(db, rebuilt.holderRelevantAddressIds);
+    // Community fields are zero below three positive address balances. Their inputs cannot change
+    // that answer, so avoid staging, promoting, and deleting a queue entry for each such holding.
+    // Stop after three positive address balances; burn changes and missing projections retain full fan-out.
+    await stageHeldAssetSignals(db, rebuilt.allHeldAssetAddressIds);
+    await stageHeldAssetSignals(db, rebuilt.holderRelevantAddressIds, true);
     const remaining = queue.slice(todo.length);
     await setCoreState(db, "address_signals_queue", JSON.stringify(remaining));
     if (remaining.length === 0 && (await getCoreStateInt(db, "address_signals_cursor")) === 0)
@@ -400,7 +420,8 @@ export async function runCoreAddressSignalsStep(db: D1Database, limit = 150, for
     db,
     rows.results.map((row) => row.address),
   );
-  await stageHeldAssetSignals(db, rebuilt.holderRelevantAddressIds);
+  await stageHeldAssetSignals(db, rebuilt.allHeldAssetAddressIds);
+  await stageHeldAssetSignals(db, rebuilt.holderRelevantAddressIds, true);
   const next = rows.results.at(-1)?.address_id ?? cursor;
   await setCoreState(db, "address_signals_cursor", next);
   return { processed: rebuilt.processed, cursor: next, cycleComplete: false };
