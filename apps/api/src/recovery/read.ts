@@ -3,6 +3,7 @@ import { base58check } from "@scure/base";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { Env } from "#api/env";
 import { boundedInteger } from "#api/http/numbers";
+import { BodyTooLargeError, readBoundedText } from "#api/http/body";
 import { allocateRecoveryFeeAddress, legacyFeeScriptsHex, RecoveryFeeKeyError } from "#api/recovery/fee-address";
 import { parseRecoveryTransaction, type RecoveryTransactionOutput } from "#api/recovery/raw-transaction";
 import { requestAddressReverification } from "#api/recovery/verify";
@@ -29,6 +30,10 @@ const check = base58check(sha256);
  * tuning knob, and it is reported on every page so clients need not carry their own copy of it.
  */
 export const RECOVERY_MAX_OUTPUTS_PER_PAGE = 420;
+
+// Even a 4,000,000-byte Bitcoin transaction fits as hex, with 64 KiB for JSON
+// fields/formatting. Keep the existing 420-input semantic limit independently.
+export const RECOVERY_REPORT_MAX_BYTES = 8_000_000 + 65_536;
 
 /**
  * Never hand back an output some reported recovery already consumed. Keying this on a *pending*
@@ -321,7 +326,14 @@ recoveryRead.post("/addresses/:address/recoveries", async (c) => {
   if (!(await recoveryReadsReady(c.env))) return c.json({ error: "recovery index is still being verified" }, 503);
   const address = c.req.param("address");
   if (!isP2pkhAddress(address)) return c.json({ error: "invalid P2PKH address" }, 400);
-  const body = await c.req.json<RecoveryReportBody>().catch(() => null);
+  let body: RecoveryReportBody | null;
+  try {
+    body = JSON.parse(await readBoundedText(c.req.raw, RECOVERY_REPORT_MAX_BYTES));
+  } catch (error) {
+    if (error instanceof BodyTooLargeError)
+      return c.json({ error: "recovery report body is too large", max_bytes: RECOVERY_REPORT_MAX_BYTES }, 413);
+    body = null;
+  }
   if (!body || typeof body.raw_transaction_hex !== "string")
     return c.json({ error: "raw_transaction_hex is required" }, 400);
   const amounts = [body.network_fee_sats, body.service_fee_sats, body.output_value_sats];
