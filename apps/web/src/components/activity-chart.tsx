@@ -1,4 +1,6 @@
 "use client";
+import { DEFAULT_NUMBER_LOCALE } from "@/lib/format";
+
 import { useState } from "react";
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api/url";
@@ -44,7 +46,7 @@ export function ActivityChart({ btcFeesComplete }: { btcFeesComplete: boolean })
   }
   const unit = metric === "btc_fees" ? " BTC" : metric === "xcp_burned" ? " XCP" : "";
   const format = (value: number) =>
-    `${value.toLocaleString(undefined, { maximumFractionDigits: metric === "transactions" ? 0 : 2 })}${unit}`;
+    `${value.toLocaleString(DEFAULT_NUMBER_LOCALE, { maximumFractionDigits: metric === "transactions" ? 0 : 2 })}${unit}`;
   const formatDate = grouped
     ? (timestamp: number) =>
         new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" }).format(

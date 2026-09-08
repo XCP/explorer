@@ -6,7 +6,7 @@ import type { TxView } from "@xcp/shared/chain";
 import { getJson, NotFoundError, type Envelope } from "@/lib/api/server";
 import { TxLive } from "@/features/transactions/components/tx-view";
 import { KIND_TITLE } from "@/lib/tx";
-import { short } from "@/lib/format";
+import { short, commas, fromSatsExact } from "@/lib/format";
 
 /**
  * The transaction page — a thin server shell around the live client view. The
@@ -34,8 +34,8 @@ function shareCopy(v: TxView, hash: string): { title: string; description: strin
   const art = (asset?: string | null) =>
     asset ? `https://cdn.xcp.io/img/full/${encodeURIComponent(asset)}?image=1` : undefined; // always-a-picture (the resize proxy 415s on video)
   const btc = (sats?: string | number | null) => {
-    const n = Number(sats);
-    return Number.isFinite(n) && n > 0 ? `${(n / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} BTC` : null;
+    const value = fromSatsExact(sats, true);
+    return value !== null && value !== "0" ? `${value} BTC` : null;
   };
   if (a?.kind === "dispenser" || a?.kind === "refill") {
     const d = a.dispenser;
@@ -45,7 +45,7 @@ function shareCopy(v: TxView, hash: string): { title: string; description: strin
       return open
         ? {
             title: `Buy ${d.asset} — ${price ?? "dispenser"} · OPEN`,
-            description: `Automatic dispenser: ${Number(d.give_remaining_normalized).toLocaleString()} in stock · send the exact amount, it vends in the next block. On xcp.io.`,
+            description: `Automatic dispenser: ${commas(d.give_remaining_normalized)} in stock · send the exact amount, it vends in the next block. On xcp.io.`,
             image: art(d.asset),
           }
         : {
@@ -69,14 +69,14 @@ function shareCopy(v: TxView, hash: string): { title: string; description: strin
   if (a?.kind === "order") {
     const o = a.order;
     return {
-      title: `${o.status === "open" ? "Open order" : `Order (${(o.status ?? "ended").split(":")[0]})`}: ${Number(o.give_quantity_normalized).toLocaleString()} ${o.give_asset} for ${Number(o.get_quantity_normalized).toLocaleString()} ${o.get_asset}`,
+      title: `${o.status === "open" ? "Open order" : `Order (${(o.status ?? "ended").split(":")[0]})`}: ${commas(o.give_quantity_normalized)} ${o.give_asset} for ${commas(o.get_quantity_normalized)} ${o.get_asset}`,
       description: `Counterparty DEX order · ${state}. Take it on xcpdex.`,
     };
   }
   if (a?.kind === "dispense") {
     const d = a.dispenses[0];
     return {
-      title: `${Number(d.dispense_quantity_normalized).toLocaleString()} ${d.asset} bought for ${btc(d.btc_amount) ?? "BTC"}`,
+      title: `${commas(d.dispense_quantity_normalized)} ${d.asset} bought for ${btc(d.btc_amount) ?? "BTC"}`,
       description: `Dispense receipt · ${state} · on xcp.io.`,
       image: art(d.asset),
     };

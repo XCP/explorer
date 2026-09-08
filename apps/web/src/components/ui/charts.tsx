@@ -1,4 +1,6 @@
 "use client";
+import { DEFAULT_NUMBER_LOCALE } from "@/lib/format";
+
 import { useState } from "react";
 
 type Point = { t: number; v: number };
@@ -26,7 +28,7 @@ export function alignLineValues(series: LineSeries[], timestamps: number[]): num
 export function LineChart({
   series,
   height = 200,
-  formatValue = (value) => value.toLocaleString(),
+  formatValue = (value) => value.toLocaleString(DEFAULT_NUMBER_LOCALE),
   formatDate,
 }: {
   series: LineSeries[];
@@ -155,7 +157,7 @@ export function LineChart({
 export function AreaChart({
   data,
   height = 200,
-  formatValue = (value) => value.toLocaleString(),
+  formatValue = (value) => value.toLocaleString(DEFAULT_NUMBER_LOCALE),
   formatDate,
 }: {
   data: Point[];

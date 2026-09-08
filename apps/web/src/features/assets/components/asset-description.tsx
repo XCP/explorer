@@ -1,4 +1,6 @@
 "use client";
+import { DEFAULT_NUMBER_LOCALE } from "@/lib/format";
+
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { AssetEnhanced } from "@xcp/shared/assets";
@@ -99,7 +101,9 @@ export function AssetDescription({ asset, description }: { asset: string; descri
         {binaryKind ? (
           <p className="text-sm text-zinc-400">
             {binaryKind}
-            <span className="ml-1 text-zinc-600">· {description.length.toLocaleString()} bytes on-chain</span>
+            <span className="ml-1 text-zinc-600">
+              · {description.length.toLocaleString(DEFAULT_NUMBER_LOCALE)} bytes on-chain
+            </span>
           </p>
         ) : (
           // [overflow-wrap:anywhere] force-breaks unbroken tokens (long URLs, base64) so nothing overflows.

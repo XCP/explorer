@@ -1,4 +1,6 @@
 "use client";
+import { DEFAULT_NUMBER_LOCALE } from "@/lib/format";
+
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import useSWR from "swr";
 import { apiUrl, type Envelope } from "@/lib/api/url";
@@ -180,7 +182,7 @@ export function DetailTabs({
         {count != null && (
           <>
             {" "}
-            <span className="count">{count.toLocaleString()}</span>
+            <span className="count">{count.toLocaleString(DEFAULT_NUMBER_LOCALE)}</span>
           </>
         )}
       </a>

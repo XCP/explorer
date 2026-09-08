@@ -2,25 +2,68 @@
 export const short = (s?: string | null, head = 8, tail = 6) =>
   !s ? "" : s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${tail > 0 ? s.slice(-tail) : ""}`;
 
-export const commas = (v?: string | number | null) => {
-  if (v == null || v === "") return "—";
-  const n = typeof v === "string" ? Number(v) : v;
-  if (!Number.isFinite(n)) return String(v);
-  return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
+// The current interface is English. SSR and browsers must use the same explicit locale.
+// Currency is separate: historical valuations remain USD, never relabelled by browser region.
+export const DEFAULT_NUMBER_LOCALE = "en-US";
+export const DEFAULT_FIAT_CURRENCY = "USD";
+
+/** Intl accepts decimal strings exactly; TypeScript's older signature only names number/bigint. */
+const formatDecimal = (value: string | number, options: Intl.NumberFormatOptions, locale: string) => {
+  const formatter = new Intl.NumberFormat(locale, options);
+  return (formatter.format as (value: string | number) => string)(value);
 };
 
-// A protocol quantity rendered per the asset's divisibility — the counterparty-core rule (see
-// verbose.py inject_normalized_quantity): an INDIVISIBLE asset has no fractional part (0 dp), a DIVISIBLE
-// asset carries satoshi precision shown at the FULL 8 dp, so we never silently round precision away (the
-// mixed 3-6 dp the sig-fig formatters produced). For exact quantity rows (supply, balances, amounts) —
-// not the compact headline stats. `divisible` must come from the asset; default true = the always-divisible
-// XCP/BTC money fields.
-export const amount = (v?: string | number | null, divisible: boolean | 0 | 1 = true) => {
+/** Expand a finite numeric display value without rounding away tiny fractions. */
+const decimalText = (value: string | number): string => {
+  const text = String(value);
+  const scientific = /^(-?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i.exec(text);
+  if (!scientific) return text;
+  const [, sign, whole, fraction = "", exponent] = scientific;
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponent);
+  return (
+    sign +
+    (point <= 0
+      ? `0.${"0".repeat(-point)}${digits}`
+      : point >= digits.length
+        ? digits + "0".repeat(point - digits.length)
+        : `${digits.slice(0, point)}.${digits.slice(point)}`)
+  );
+};
+
+export const commas = (v?: string | number | null, locale = DEFAULT_NUMBER_LOCALE) => {
   if (v == null || v === "") return "—";
-  const n = typeof v === "string" ? Number(v) : v;
-  if (!Number.isFinite(n)) return String(v);
+  if (!Number.isFinite(Number(v))) return String(v);
+  return formatDecimal(v, { maximumFractionDigits: 8 }, locale);
+};
+
+// Exact protocol quantities use the asset's own scale. Preserve string precision before formatting;
+// unknown values and fractional indivisible quantities must not become different rounded amounts.
+export const amount = (
+  v?: string | number | null,
+  divisible: boolean | 0 | 1 = true,
+  locale = DEFAULT_NUMBER_LOCALE,
+) => {
+  if (v == null || v === "") return "—";
+  const text = typeof v === "number" ? decimalText(v) : v;
   const dp = divisible ? 8 : 0;
-  return n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  if (!/^-?\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(Number(v))) return "—";
+  const fractional = text.split(".")[1]?.replace(/0+$/, "") ?? "";
+  if (fractional.length > dp) return "—";
+  if (typeof v === "number" && Number.isInteger(v) && !Number.isSafeInteger(v)) return "—";
+  return formatDecimal(v, { minimumFractionDigits: dp, maximumFractionDigits: dp }, locale);
+};
+
+/** Raw ledger integer to canonical display/input text, without Number or an assumed asset scale. */
+export const fromSatsExact = (v?: string | number | null, divisible: boolean | 0 | 1 = true): string | null => {
+  if (v == null || v === "") return null;
+  if (typeof v === "number" && (!Number.isSafeInteger(v) || v < 0)) return null;
+  if (!/^[0-9]+$/.test(String(v))) return null;
+  const digits = BigInt(v).toString();
+  if (!divisible) return digits;
+  const padded = digits.padStart(9, "0");
+  const fraction = padded.slice(-8).replace(/0+$/, "");
+  return `${padded.slice(0, -8)}${fraction ? `.${fraction}` : ""}`;
 };
 
 // Compact large COUNTS/caps (1.2K, 3.4M, 5.6B, 7.8T) — for count-like columns where exactness isn't essential.
@@ -35,7 +78,7 @@ export const compact = (v?: string | number | null) => {
   if (a >= 1e9) return strip((n / 1e9).toFixed(2)) + "B";
   if (a >= 1e6) return strip((n / 1e6).toFixed(2)) + "M";
   if (a >= 1e5) return strip((n / 1e3).toFixed(1)) + "K";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
+  return n.toLocaleString(DEFAULT_NUMBER_LOCALE, { maximumFractionDigits: 8 });
 };
 
 // Compact USD for money-stat surfaces ($114 / $3.4K / $1.2M) — dollar amounts where magnitude beats
@@ -46,7 +89,7 @@ export const usdCompact = (v?: number | null) => {
   if (a >= 1e9) return "$" + strip((v / 1e9).toFixed(1)) + "B";
   if (a >= 1e6) return "$" + strip((v / 1e6).toFixed(1)) + "M";
   if (a >= 1e3) return "$" + strip((v / 1e3).toFixed(1)) + "K";
-  if (a >= 1) return "$" + Math.round(v).toLocaleString();
+  if (a >= 1) return "$" + Math.round(v).toLocaleString(DEFAULT_NUMBER_LOCALE);
   if (a >= 0.01) return "$" + v.toFixed(2);
   // Sub-cent per-unit prices (cheap cards trade at fractions of a cent) — keep ~2 significant figures so
   // "$0.0030" doesn't collapse to a useless "$0.00".

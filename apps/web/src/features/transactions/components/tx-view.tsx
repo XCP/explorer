@@ -16,7 +16,7 @@ import { usePrices } from "@/lib/prices";
 import { TxActionPanel } from "@/features/transactions/components/tx-action-panel";
 import { BitcoinTab, useBitcoinTx } from "@/features/transactions/components/tx-bitcoin";
 import { EventsTab } from "@/features/transactions/components/tx-events";
-import { commas, ts, timeAgo } from "@/lib/format";
+import { commas, ts, timeAgo, DEFAULT_NUMBER_LOCALE } from "@/lib/format";
 
 /**
  * The live transaction view — the page both sides of a payment watch. Polls while it matters and
@@ -106,7 +106,7 @@ function LocalTime({ t }: { t: number | null | undefined }) {
   );
   if (t == null) return <>—</>;
   const local = mounted
-    ? new Date(t * 1000).toLocaleString(undefined, {
+    ? new Date(t * 1000).toLocaleString(DEFAULT_NUMBER_LOCALE, {
         year: "numeric",
         month: "short",
         day: "numeric",

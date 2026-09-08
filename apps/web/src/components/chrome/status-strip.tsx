@@ -1,4 +1,6 @@
 "use client";
+import { DEFAULT_NUMBER_LOCALE } from "@/lib/format";
+
 import type { Route } from "next";
 import Link from "next/link";
 import { useStats, useMempoolCount } from "@/lib/hooks";
@@ -63,18 +65,21 @@ export function StatusStrip() {
           href={"/price" as Route}
           prefetch={false}
           className="hidden items-center !no-underline md:flex"
-          title="Counterparty price history"
+          title="Counterparty price history · USD"
         >
           <Cell>
             <span className="text-zinc-500">BTC</span>{" "}
-            <span className="font-medium text-zinc-300">{btc != null ? `$${btc.toLocaleString()}` : "—"}</span>
+            <span className="font-medium text-zinc-300">
+              {btc != null ? `$${btc.toLocaleString(DEFAULT_NUMBER_LOCALE)}` : "—"}
+            </span>
             <Delta chg={btcChange} />
           </Cell>
           <Cell last>
             <span className="text-zinc-500">XCP</span>{" "}
             <span className="font-medium text-zinc-300">
-              {xcp != null ? `$${xcp < 10 ? xcp.toFixed(2) : xcp.toLocaleString()}` : "—"}
+              {xcp != null ? `$${xcp < 10 ? xcp.toFixed(2) : xcp.toLocaleString(DEFAULT_NUMBER_LOCALE)}` : "—"}
             </span>
+            <span className="ml-1 text-zinc-500">USD</span>
             <Delta chg={xcpChange} />
           </Cell>
         </Link>
