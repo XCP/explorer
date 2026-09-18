@@ -77,14 +77,15 @@ export function getCollectionProfile(db: D1Database, tag: string): Promise<Colle
   return one<CollectionProfile>(db, profileSql(true), tag, tag, tag);
 }
 
-/** Whether the tag would produce a profile — the same >=3-member floor profileSql applies, answered
- *  by a seek on the (tag, entity_id) index so an unknown tag can 404 without paying for the profile. */
+/** Whether the tag clears the profile's three-member floor. Stop at the third distinct member;
+ *  counting the rest of a large collection cannot change the answer. */
 export async function collectionProfileExists(db: D1Database, tag: string): Promise<boolean> {
   const row = await one<{ present: number }>(
     db,
-    `SELECT 1 present FROM collection_membership_evidence
-      WHERE tag=? AND source IN (${SOURCES})
-      GROUP BY tag HAVING COUNT(DISTINCT entity_id)>=3`,
+    `SELECT 1 present FROM (
+      SELECT DISTINCT entity_id FROM collection_membership_evidence
+      WHERE tag=? AND source IN (${SOURCES}) LIMIT 3
+    ) LIMIT 1 OFFSET 2`,
     tag,
   );
   return row !== null;
