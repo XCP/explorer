@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { getCollectionProfile, listCollectionProfiles } from "#api/queries/collections";
+import { collectionProfileExists, getCollectionProfile, listCollectionProfiles } from "#api/queries/collections";
 
 class Statement {
   private values: unknown[] = [];
@@ -22,6 +22,27 @@ class Statement {
 }
 const d1 = (db: DatabaseSync): D1Database =>
   ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
+
+test("collection existence stops after three distinct members without counting duplicate evidence", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE collection_membership_evidence(entity_id INTEGER NOT NULL,tag TEXT,source TEXT);
+    CREATE INDEX idx_collection_membership_evidence_tag ON collection_membership_evidence(tag,entity_id);
+    INSERT INTO collection_membership_evidence VALUES
+      (1,'cards','manual'),(1,'cards','issuer'),(1,'cards','tokenscan'),
+      (2,'cards','manual'),(3,'cards','unrecognized'),(3,'other','manual');`);
+  try {
+    assert.equal(await collectionProfileExists(d1(db), "missing"), false);
+    assert.equal(await collectionProfileExists(d1(db), "cards"), false);
+    db.exec("INSERT INTO collection_membership_evidence VALUES(3,'cards','tokenscan')");
+    assert.equal(await collectionProfileExists(d1(db), "cards"), true);
+    db.exec(`WITH RECURSIVE ids(n) AS (SELECT 4 UNION ALL SELECT n+1 FROM ids WHERE n<10000)
+      INSERT INTO collection_membership_evidence SELECT n,'cards','manual' FROM ids`);
+    assert.equal(await collectionProfileExists(d1(db), "cards"), true);
+    assert.equal(await collectionProfileExists(d1(db), "other"), false);
+  } finally {
+    db.close();
+  }
+});
 
 test("collection profiles reconcile Rating, clean market, overlap, concentration, and integrity axes", async () => {
   const db = new DatabaseSync(":memory:");
