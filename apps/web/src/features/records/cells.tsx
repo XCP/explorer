@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { commas, short, ts, timeAgo } from "@/lib/format";
 import { AssetIcon } from "@/components/ui/badges";
 import { assetHref } from "@/lib/asset-link";
+import { RecordLink } from "@/features/records/components/record-link";
 
 /** The page subject a record table renders under — drives contextual column suppression (R4:
  *  never render the column the page already answers) and perspective signing of quantities.
@@ -55,13 +56,13 @@ export const blockCell = (n?: number | null) =>
   ) : (
     <span className="blk">—</span>
   );
-export const txCell = (h?: string | null) => (h ? <Link href={`/tx/${h}`}>{mono(short(h))}</Link> : "—");
+export const txCell = (h?: string | null) => (h ? <RecordLink href={`/tx/${h}`}>{mono(short(h))}</RecordLink> : "—");
 /** Address — single-line ellipsis over the FULL string, complete address in title. Never 4+4 (R5). */
 export const addrCell = (a?: string | null) =>
   a ? (
-    <Link className="address" href={`/address/${a}`} title={a}>
+    <RecordLink className="address" href={`/address/${a}`} title={a}>
       {a}
-    </Link>
+    </RecordLink>
   ) : (
     "—"
   );
@@ -69,9 +70,14 @@ export const addrCell = (a?: string | null) =>
  *  table, where two address columns share a row and the front-ellipsis form was unreadable. */
 export const addrEndsCell = (a?: string | null) =>
   a ? (
-    <Link className="font-mono text-[12px] text-(--t3)" style={{ color: "var(--t3)" }} href={`/address/${a}`} title={a}>
+    <RecordLink
+      className="font-mono text-[12px] text-(--t3)"
+      style={{ color: "var(--t3)" }}
+      href={`/address/${a}`}
+      title={a}
+    >
       {short(a, 8, 6)}
-    </Link>
+    </RecordLink>
   ) : (
     "—"
   );
@@ -110,9 +116,9 @@ export const timeCell = (t?: number | null) =>
 /** The row's trailing action — the quiet View link, sr-only header. */
 export const viewCell = (h?: string | null) =>
   h ? (
-    <Link className="view" href={`/tx/${h}`}>
+    <RecordLink className="view" href={`/tx/${h}`}>
       View
-    </Link>
+    </RecordLink>
   ) : (
     <span className="view">—</span>
   );

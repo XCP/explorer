@@ -47,3 +47,5 @@ jobs:
       - name: Build OpenNext Worker
         working-directory: apps/web
         run: npx opennextjs-cloudflare build
+      - name: Check production prefetch behavior
+        run: npm run test:prefetch -w xcp-explorer-web
