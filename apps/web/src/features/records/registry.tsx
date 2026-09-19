@@ -1,5 +1,6 @@
 import { dispenseSats } from "@/lib/dispenser-pricing";
 import Link from "next/link";
+import { RecordLink } from "@/features/records/components/record-link";
 import type {
   PoolRow,
   RecordKind,
@@ -595,9 +596,9 @@ export const REGISTRY: Registry = {
           if (!Number.isFinite(paid) || !paid || !qty) return "—";
           const unit = sats(paid / qty);
           return r.dispenser_tx_hash ? (
-            <Link href={`/tx/${r.dispenser_tx_hash}`} title="the dispenser that sold">
+            <RecordLink href={`/tx/${r.dispenser_tx_hash}`} title="the dispenser that sold">
               {unit}
-            </Link>
+            </RecordLink>
           ) : (
             unit
           );
@@ -809,9 +810,9 @@ export const REGISTRY: Registry = {
         w: "130px",
         cell: (r) =>
           r.order_match_id ? (
-            <Link href={`/tx/${r.order_match_id.split("_")[0]}`} className="font-mono">
+            <RecordLink href={`/tx/${r.order_match_id.split("_")[0]}`} className="font-mono">
               {short(r.order_match_id, 8, 6)}
-            </Link>
+            </RecordLink>
           ) : (
             "—"
           ),
