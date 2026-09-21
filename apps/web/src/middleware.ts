@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-
-const BLOCKED_COMMERCIAL_CRAWLER = /(?:AhrefsBot|SemrushBot|MJ12bot|DotBot)/i;
+import { isBlockedCrawler } from "@/lib/crawlers";
 
 /**
  * Reject expensive low-value crawlers and retire legacy URL shapes before application rendering.
  */
 export function middleware(request: Request) {
   const { pathname } = new URL(request.url);
-  if (BLOCKED_COMMERCIAL_CRAWLER.test(request.headers.get("user-agent") ?? "")) {
+  if (isBlockedCrawler(request.headers.get("user-agent") ?? "")) {
     return new NextResponse("Forbidden", {
       status: 403,
       headers: {
