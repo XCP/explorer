@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-
-const BLOCKED_CRAWLERS = ["AhrefsBot", "SemrushBot", "MJ12bot", "DotBot"];
+import { BLOCKED_CRAWLERS } from "@/lib/crawlers";
 
 export default function robots(): MetadataRoute.Robots {
   return {
