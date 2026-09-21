@@ -86,6 +86,14 @@ export function Footer() {
           <SyncStatus />
           <span className="text-xs text-zinc-400">Counterparty blockchain explorer — on Bitcoin since 2014.</span>
         </div>
+        <nav aria-label="XCP Wallet policies" className="flex flex-wrap gap-x-6 gap-y-2">
+          <Link href="/privacy" prefetch={false} className={linkClass}>
+            XCP Wallet Privacy Policy
+          </Link>
+          <Link href="/terms" prefetch={false} className={linkClass}>
+            XCP Wallet Terms of Service
+          </Link>
+        </nav>
       </div>
     </footer>
   );
