@@ -216,7 +216,7 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       tx_index INTEGER,out_index INTEGER,block_index INTEGER,destination_id INTEGER,btc_amount TEXT);
     CREATE TABLE dispenses(
       event_index INTEGER,tx_index INTEGER,dispense_index INTEGER,asset_id INTEGER,block_time INTEGER,block_index INTEGER,
-      dispense_quantity_normalized TEXT,btc_amount TEXT,destination_id INTEGER,source_id INTEGER,tx_hash BLOB);
+      dispense_quantity_normalized TEXT,btc_amount TEXT,destination_id INTEGER,source_id INTEGER,tx_hash BLOB,quote_sats REAL);
     CREATE TABLE emblem_sales(
       tx_hash TEXT,log_index INTEGER,contract_id INTEGER,token_id TEXT,price_raw TEXT,
       token_address_id INTEGER,buyer_id INTEGER,seller_id INTEGER,block_number INTEGER);
@@ -241,14 +241,14 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       x'${"11".repeat(32)}',x'${"22".repeat(32)}',1,2,1,'100000000',3,'2',100,1000,'completed');
     INSERT INTO transactions VALUES(9,x'${"33".repeat(32)}');
     INSERT INTO transaction_outputs VALUES(9,0,101,2,'50000000');
-    INSERT INTO dispenses VALUES(77,9,0,3,1001,101,'4','50000000',1,2,x'${"33".repeat(32)}');
+    INSERT INTO dispenses(event_index,tx_index,dispense_index,asset_id,block_time,block_index,dispense_quantity_normalized,btc_amount,destination_id,source_id,tx_hash) VALUES(77,9,0,3,1001,101,'4','50000000',1,2,x'${"33".repeat(32)}');
     INSERT INTO transactions VALUES(10,x'${"44".repeat(32)}');
     INSERT INTO transaction_outputs VALUES(10,1,102,2,'60000000');
-    INSERT INTO dispenses VALUES
+    INSERT INTO dispenses(event_index,tx_index,dispense_index,asset_id,block_time,block_index,dispense_quantity_normalized,btc_amount,destination_id,source_id,tx_hash) VALUES
       (78,10,0,3,1002,102,'1','60000000',1,2,x'${"44".repeat(32)}'),
       (79,10,1,4,1002,102,'2','60000000',1,2,x'${"44".repeat(32)}');
     INSERT INTO transactions VALUES(11,x'${"55".repeat(32)}');
-    INSERT INTO dispenses VALUES
+    INSERT INTO dispenses(event_index,tx_index,dispense_index,asset_id,block_time,block_index,dispense_quantity_normalized,btc_amount,destination_id,source_id,tx_hash) VALUES
       (80,11,0,3,1003,103,'3','70000000',1,2,x'${"55".repeat(32)}'),
       (81,11,1,4,1003,103,'5','70000000',1,2,x'${"55".repeat(32)}');
     INSERT INTO emblem_sales VALUES
@@ -261,6 +261,10 @@ test("compact venue builders preserve canonical identities and bundled Emblem sa
       ('9',3,3,1,'single',NULL,0,5,1);
     INSERT INTO scarce_city_sales VALUES(3,2000,0.25);
   `);
+  // Allocated legs: a bundle payment appears once in the parent trade.
+  db.exec(
+    `UPDATE dispenses SET quote_sats=CAST(btc_amount AS REAL)/(SELECT COUNT(*) FROM dispenses sibling WHERE sibling.tx_index=dispenses.tx_index)`,
+  );
   db.prepare(coreDexTradesSql()).run(0, 200);
   db.prepare(DISPENSE_TRADES_SQL).run(0, 200);
   db.prepare(DISPENSE_TRADE_LEGS_SQL).run(0, 200);

@@ -148,10 +148,14 @@ function fixture(): DatabaseSync {
     CREATE INDEX idx_dispensers_asset_status ON dispensers(asset_id,status);
     CREATE TABLE dispenses(
       asset_id INTEGER,dispense_quantity TEXT,btc_amount TEXT,block_time INTEGER,
-      source_id INTEGER,destination_id INTEGER,
+      source_id INTEGER,destination_id INTEGER,quote_sats REAL NOT NULL DEFAULT 0,
       dispenser_tx_index INTEGER GENERATED ALWAYS AS (1) VIRTUAL,
       block_index INTEGER GENERATED ALWAYS AS (CAST(block_time/600 AS INTEGER)) VIRTUAL);
     CREATE INDEX idx_dispenses_asset ON dispenses(asset_id,block_index DESC);
+    -- Single-asset, already-allocated price-observation fixtures.
+    CREATE TRIGGER seed_allocated_price AFTER INSERT ON dispenses BEGIN
+      UPDATE dispenses SET quote_sats=CAST(NEW.btc_amount AS REAL) WHERE rowid=NEW.rowid;
+    END;
     CREATE TABLE burns(block_time INTEGER,burned TEXT,earned TEXT,status TEXT);
     CREATE TABLE market_price_observations(
       day TEXT,base_currency TEXT,quote_currency TEXT,source TEXT,venue TEXT,price REAL,
@@ -273,6 +277,7 @@ test("XCP pricing uses completed-trade volume-weighted medians", () => {
 
 test("current-day XCP observations stay inside the indexed block window", () => {
   const db = fixture();
+  db.exec("UPDATE dispenses SET quote_sats=155000");
   const fromBlock = 0;
   const toBlock = 10_000_000;
   db.prepare(BUILD_COUNTERPARTY_PRICE_OBSERVATIONS_DAY_SQL).run("2026-01-01", fromBlock, toBlock);
@@ -304,10 +309,11 @@ test("dispense observations use the protocol unit price when a payment overfills
   db.exec(`
     DELETE FROM order_matches;
     INSERT INTO dispensers(tx_index,give_quantity,satoshirate) VALUES(1,'100000000','5000');
-    INSERT INTO dispenses VALUES(
+    INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(
       1,'3100000000','495000',strftime('%s','2026-01-08 12:00:00'),10,20
     );
   `);
+  db.exec("UPDATE dispenses SET quote_sats=155000");
   const fromBlock = 0;
   const toBlock = 10_000_000;
   db.prepare(BUILD_DISPENSE_PRICE_OBSERVATIONS_DAY_SQL).run("2026-01-08", fromBlock, toBlock);
@@ -464,7 +470,7 @@ test("a day whose fills are one burst does not price at full rank", () => {
   // comfortably — and every one of them inside a SINGLE hour. Counting fills and volume cannot see
   // that; one actor filling fifteen times in a minute looks identical to a day of trading.
   for (let i = 0; i < 15; i += 1) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'10000000000','1000000',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'10000000000','1000000',
       strftime('%s','2020-06-28')+${9 * 3600 + i * 60},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -489,7 +495,7 @@ test("a day spread across the clock keeps its full-rank bucket count", () => {
   const db = fixture();
   // Same fifteen fills, same volume, spread over twelve hours instead of one.
   for (let i = 0; i < 15; i += 1) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'10000000000','1000000',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'10000000000','1000000',
       strftime('%s','2020-06-29')+${(i % 12) * 3600 + i * 60},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -509,13 +515,15 @@ test("a single absurd fill cannot take the day when it is alone in its hour", ()
   //
   // Hour 0 is a dispenser that paid 0.03 BTC for ONE satoshi of XCP. Real, on-chain, and
   // economically meaningless at a price of 3,000,000 BTC/XCP.
-  db.exec(`INSERT INTO dispenses VALUES(1,'1','3000000',strftime('%s','2021-08-09'),10,11)`);
+  db.exec(
+    `INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'1','3000000',strftime('%s','2021-08-09'),10,11)`,
+  );
   for (const hour of [1, 3, 4, 6, 9, 10, 15, 17]) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'1500000000','267000',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'1500000000','267000',
       strftime('%s','2021-08-09')+${hour * 3600},10,11)`);
   }
   for (const hour of [7, 18]) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'1000000000','75500',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'1000000000','75500',
       strftime('%s','2021-08-09')+${hour * 3600},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -549,7 +557,7 @@ test("dispense executions carry the on-chain price when the order book is silent
   const db = fixture();
   // 2026-01-08 has NO order matches — only two arm's-length dispenses at 0.003 BTC/XCP and one
   // literal self-fill at a fantasy price that must not count.
-  db.exec(`INSERT INTO dispenses VALUES
+  db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES
     (1,'100000000','300000',strftime('%s','2026-01-08'),10,20),
     (1,'100000000','300000',strftime('%s','2026-01-08'),11,21),
     (1,'100000000','99900000',strftime('%s','2026-01-08'),12,12)`);
@@ -580,7 +588,7 @@ test("daily candles keep error prints out of the wicks and dust-only days off th
   // plus a self-fill that must not count. 2026-01-09 splits its volume evenly between an honest
   // fill and a 50× error print — volume share alone can't save the wick there; the ±10×-of-median
   // sanity band must. 2026-01-10 is a dust-only day (0.005 XCP) that must not chart at all.
-  db.exec(`INSERT INTO dispenses VALUES
+  db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES
     (1,'100000000','300000',strftime('%s','2026-01-08'),10,20),
     (1,'100000000','300000',strftime('%s','2026-01-08'),11,21),
     (1,'100000000','99900000',strftime('%s','2026-01-08'),12,12)`);
@@ -848,7 +856,7 @@ test("the liquidity floor admits a small day that is well spread", () => {
   // old MIN_VOLUME_XCP of 100 rejected this — a day a dozen people traded
   // across half the clock, thrown out for being small. Small is not manipulated.
   for (let hour = 0; hour < 12; hour += 1) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'440000000','78320',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'440000000','78320',
       strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -866,7 +874,7 @@ test("dust still cannot anchor a day, however well spread", () => {
   // hours — clearing MIN_TRADES and MIN_PARTITIONS outright — for a few
   // satoshi in total. Spreading dust over the clock must not buy full rank.
   for (let hour = 0; hour < 12; hour += 1) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'100','1',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'100','1',
       strftime('%s','2026-01-09')+${hour * 3600},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -938,7 +946,7 @@ test("the floor reads volume and time-spread, not a count of transactions", () =
   // spread both say it is a real day, and they are what decides now.
   const db = fixture();
   for (const [i, hour] of [1, 6, 11, 17, 22].entries()) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'${(80 + i) * 1e8}','${(80 + i) * 4000}',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'${(80 + i) * 1e8}','${(80 + i) * 4000}',
       strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -966,7 +974,7 @@ test("the floor reads volume and time-spread, not a count of transactions", () =
   // every re-derivation, and it is the only one that can see a burst.
   const burst = fixture();
   for (const [i, hour] of [1, 2, 3, 4].entries()) {
-    burst.exec(`INSERT INTO dispenses VALUES(1,'${(100 + i) * 1e8}','${(100 + i) * 4000}',
+    burst.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'${(100 + i) * 1e8}','${(100 + i) * 4000}',
       strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
   }
   burst.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);
@@ -990,7 +998,7 @@ test("a well-spread day carrying too little money stays on the thin tier", () =>
   // MARKET_EDGE_MIN_VOLUME_XCP is the leg that says so.
   const db = fixture();
   for (const hour of [1, 6, 11, 17, 22]) {
-    db.exec(`INSERT INTO dispenses VALUES(1,'${1e8}','4000',
+    db.exec(`INSERT INTO dispenses(asset_id,dispense_quantity,btc_amount,block_time,source_id,destination_id) VALUES(1,'${1e8}','4000',
       strftime('%s','2026-01-08')+${hour * 3600},10,11)`);
   }
   db.exec(BUILD_MARKET_PRICE_OBSERVATIONS_SQL);

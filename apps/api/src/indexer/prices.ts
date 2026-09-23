@@ -515,7 +515,7 @@ export const PRUNE_COUNTERPARTY_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_pri
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
   )`;
 
-/** XCP-for-BTC dispenses are executions at posted prices — the venue that carried XCP/BTC liquidity
+/** XCP-for-BTC dispenses use payment-capped allocated execution prices — the venue that carried XCP/BTC liquidity
  *  through the DEX's quiet years (2021: 4,446 fills/159.8 BTC vs a fading order book). Executions
  *  only — open dispensers are asks, not prices — and literal self-fills are excluded, consistent
  *  with the volume rule everywhere else. */
@@ -523,17 +523,14 @@ const buildDispensePriceObservationsSql = (scoped: boolean) => `INSERT INTO mark
   day,base_currency,quote_currency,source,venue,price,volume_base,trades,first_time,last_time,method)
   WITH observations AS (
     SELECT ${observationDay("dispense", scoped)} day,
-      COALESCE(
-        CAST(parent.satoshirate AS REAL)/NULLIF(CAST(parent.give_quantity AS REAL),0),
-        CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL)
-      ) price,
+      (dispense.quote_sats/CAST(dispense.dispense_quantity AS REAL)) price,
       CAST(dispense.dispense_quantity AS INTEGER) volume_xcp,
       dispense.block_time observation_time
     FROM dispenses dispense${scoped ? " INDEXED BY idx_dispenses_asset" : ""}
     LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
-      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+      AND dispense.quote_sats>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
       ${observationScope("dispense", scoped)}
   ), ranked AS (
     SELECT day,price,volume_xcp,observation_time,
@@ -566,7 +563,7 @@ export const PRUNE_DISPENSE_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_o
     SELECT DISTINCT date(dispense.block_time,'unixepoch') FROM dispenses dispense
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
-      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+      AND dispense.quote_sats>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
   )`;
 
 /** The combined on-chain XCP/BTC edge: a volume-weighted median over the union of DEX order matches
@@ -623,17 +620,14 @@ const buildMarketPriceObservationsSql = (scoped: boolean) => `INSERT INTO market
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))${observationScope("match", scoped)}
     UNION ALL
     SELECT ${observationDay("dispense", scoped)} day,
-      COALESCE(
-        CAST(parent.satoshirate AS REAL)/NULLIF(CAST(parent.give_quantity AS REAL),0),
-        CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL)
-      ) price,
+      (dispense.quote_sats/CAST(dispense.dispense_quantity AS REAL)) price,
       CAST(dispense.dispense_quantity AS INTEGER) volume_xcp,
       dispense.block_time observation_time
     FROM dispenses dispense${scoped ? " INDEXED BY idx_dispenses_asset" : ""}
     LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
-      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+      AND dispense.quote_sats>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
       ${observationScope("dispense", scoped)}
   ), bucketed AS (
     SELECT day,CAST(strftime('%H',observation_time,'unixepoch') AS INTEGER) partition_index,
@@ -693,7 +687,7 @@ export const PRUNE_MARKET_PRICE_OBSERVATIONS_SQL = `DELETE FROM market_price_obs
       SELECT date(dispense.block_time,'unixepoch') FROM dispenses dispense
       WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
         AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
-        AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+        AND dispense.quote_sats>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
   )`;
 
 /** Genesis burns are protocol conversions, not trades. They form the authoritative pre-DEX XCP/BTC edge. */

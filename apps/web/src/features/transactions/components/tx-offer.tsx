@@ -11,7 +11,7 @@ import { AssetArt } from "@/features/assets/components/asset-art";
 import { usePrices } from "@/lib/prices";
 import { orderView } from "@/lib/trading-pair";
 import { btcAmt, xcpAmt, satsUsd, blocksEta } from "@/lib/tx";
-import { dispenseSats, oracleFace, oracleQuoteStale } from "@/lib/dispenser-pricing";
+import { allocatedBtc, dispenseSats, oracleFace, oracleQuoteStale } from "@/lib/dispenser-pricing";
 import { amount, collectionLabel, commas, fromSats, fromSatsExact, short, timeAgo } from "@/lib/format";
 
 /**
@@ -156,7 +156,7 @@ export function DispenserStorefront({
             {totals && totals.n > 0 && (
               <>
                 {" "}
-                · <b>{commas(totals.n)}</b> sale{totals.n === 1 ? "" : "s"} for <b>{btcAmt(totals.sats)}</b>
+                · <b>{commas(totals.n)}</b> sale{totals.n === 1 ? "" : "s"} for <b>{allocatedBtc(totals.sats)} BTC</b>
                 {takeUsd && <span className="text-zinc-500"> ({takeUsd})</span>} total
               </>
             )}

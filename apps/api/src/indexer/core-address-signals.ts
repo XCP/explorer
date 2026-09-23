@@ -51,24 +51,24 @@ controlled AS (
   WHERE issuer_id=(SELECT address_id FROM identity) OR owner_id=(SELECT address_id FROM identity)
 ),
 earned_items AS (
-  SELECT item.btc_amount,item.asset_id,item.block_index
+  SELECT item.quote_sats,item.asset_id,item.block_index
   FROM dispensers dispenser INDEXED BY idx_dispensers_origin
   JOIN dispenses item INDEXED BY idx_dispenses_dispenser ON item.dispenser_tx_index=dispenser.tx_index
   WHERE dispenser.origin_id=(SELECT address_id FROM identity)
   UNION ALL
-  SELECT item.btc_amount,item.asset_id,item.block_index
+  SELECT item.quote_sats,item.asset_id,item.block_index
   FROM dispenses item INDEXED BY idx_dispenses_source
   LEFT JOIN dispensers dispenser ON dispenser.tx_index=item.dispenser_tx_index
   WHERE item.source_id=(SELECT address_id FROM identity) AND dispenser.origin_id IS NULL
 ),
 earned AS (
-  SELECT count(*) dispenses,coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) btc,
-    coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.btc_amount AS REAL) END)/1e8,0) clean
+  SELECT count(*) dispenses,coalesce(sum(CAST(item.quote_sats AS REAL))/1e8,0) btc,
+    coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.quote_sats AS REAL) END)/1e8,0) clean
   FROM earned_items item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
 ),
 spent AS (
-  SELECT coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) btc,
-    coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.btc_amount AS REAL) END)/1e8,0) clean
+  SELECT coalesce(sum(CAST(item.quote_sats AS REAL))/1e8,0) btc,
+    coalesce(sum(CASE WHEN coalesce(signal.low_quality,0)=0 THEN CAST(item.quote_sats AS REAL) END)/1e8,0) clean
   FROM dispenses item LEFT JOIN asset_signals signal ON signal.asset_id=item.asset_id
   WHERE item.destination_id=(SELECT address_id FROM identity)
 ),

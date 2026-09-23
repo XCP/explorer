@@ -45,7 +45,9 @@ test("compact dispenser feeds restore storefront and valued-sale relationships",
       event_index INTEGER PRIMARY KEY,tx_index INTEGER,dispense_index INTEGER,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,
       destination_id INTEGER,asset_id INTEGER,dispense_quantity_normalized TEXT,dispenser_tx_index INTEGER,
       btc_amount TEXT,dispense_id INTEGER
-    );
+    ,quote_sats REAL GENERATED ALWAYS AS (CAST(btc_amount AS REAL)) VIRTUAL,payment_asset_count INTEGER GENERATED ALWAYS AS (1) VIRTUAL);
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL);
+    INSERT INTO prices VALUES('1970-01-01','BTC',625000);
     CREATE TABLE trades(venue TEXT,ref TEXT,usd_value REAL);
     CREATE TABLE broadcasts(tx_index INTEGER PRIMARY KEY,source_id INTEGER,block_index INTEGER,block_time INTEGER,value TEXT,text TEXT,status TEXT);
     INSERT INTO address_dictionary VALUES(1,'seller'),(2,'buyer'),(3,'oracle');

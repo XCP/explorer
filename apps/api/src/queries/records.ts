@@ -65,13 +65,13 @@ const DISPENSE_FEED_SQL = `WITH page AS (
 )
 SELECT LOWER(HEX(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
   source.address source,destination.address destination,asset.asset,dispense.dispense_quantity_normalized,
-  LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,trade.usd_value
+  LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,dispense.quote_sats,dispense.payment_asset_count,
+  (SELECT dispense.quote_sats*price.usd/1e8 FROM prices price WHERE price.currency='BTC' AND price.day=date(dispense.block_time,'unixepoch')) usd_value
 FROM page JOIN dispenses dispense ON dispense.event_index=page.event_index
 LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
 LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
 LEFT JOIN asset_dictionary asset ON asset.asset_id=dispense.asset_id
 LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
-LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
 ORDER BY dispense.block_index DESC,dispense.event_index DESC`;
 
 const SWEEP_FEED_SQL = `WITH page AS (
@@ -376,11 +376,10 @@ export const ORDER_MATCH_SELECT = `SELECT om.id,om.block_index,om.block_time,om.
   CAST(om.backward_quantity AS REAL)/(CASE WHEN om.backward_asset IN ('XCP','BTC') OR ba.divisible THEN 100000000.0 ELSE 1 END) backward_quantity_normalized
   FROM order_matches om LEFT JOIN assets fa ON fa.asset=om.forward_asset LEFT JOIN assets ba ON ba.asset=om.backward_asset`;
 
-// dispenses with the BTC actually paid + the trades ledger's USD valuation (venue='dispense', ref=id —
-// the trades PK, so the join is an index hit per row).
+// Legacy mirror has no payment allocations; do not present repeated raw payments as sale values.
 export const DISPENSE_SELECT = `SELECT d.tx_hash,d.block_index,d.block_time,d.source,d.destination,d.asset,
-  d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,t.usd_value
-  FROM dispenses d LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.id AS TEXT)`;
+  d.dispense_quantity_normalized,d.dispenser_tx_hash,d.btc_amount,NULL quote_sats,NULL payment_asset_count,NULL usd_value
+  FROM dispenses d`;
 
 // fairmints with the minted asset's divisibility so earn_quantity can render in human units.
 export const FAIRMINT_SELECT = `SELECT f.tx_hash,f.block_index,f.block_time,f.source,f.fairminter_tx_hash,f.asset,
@@ -733,13 +732,13 @@ export function coreDispensesByTx(db: D1Database, txIndex: number): Promise<Reco
     db,
     `SELECT LOWER(HEX(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
       source.address source,destination.address destination,asset.asset,dispense.dispense_quantity_normalized,
-      LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,trade.usd_value
+      LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,dispense.quote_sats,dispense.payment_asset_count,
+  (SELECT dispense.quote_sats*price.usd/1e8 FROM prices price WHERE price.currency='BTC' AND price.day=date(dispense.block_time,'unixepoch')) usd_value
       FROM dispenses dispense
       LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
       LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
       LEFT JOIN asset_dictionary asset ON asset.asset_id=dispense.asset_id
       LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
-      LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
       WHERE dispense.tx_index=?1 ORDER BY dispense.dispense_index`,
     txIndex,
   );
@@ -783,13 +782,13 @@ export function coreDispensesOfDispenser(
     db,
     `SELECT LOWER(HEX(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
       source.address source,destination.address destination,asset.asset,dispense.dispense_quantity_normalized,
-      LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,trade.usd_value
+      LOWER(HEX(parent.tx_hash)) dispenser_tx_hash,dispense.btc_amount,dispense.quote_sats,dispense.payment_asset_count,
+  (SELECT dispense.quote_sats*price.usd/1e8 FROM prices price WHERE price.currency='BTC' AND price.day=date(dispense.block_time,'unixepoch')) usd_value
       FROM dispenses dispense
       LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
       LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
       LEFT JOIN asset_dictionary asset ON asset.asset_id=dispense.asset_id
       LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
-      LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
       WHERE dispense.dispenser_tx_index=?1 ORDER BY dispense.block_index DESC,dispense.event_index DESC LIMIT ?2`,
     dispenserTxIndex,
     limit,
@@ -802,7 +801,7 @@ export function coreDispenserTotals(
 ): Promise<{ n: number; sats: number; units: number } | null> {
   return one<{ n: number; sats: number; units: number }>(
     db,
-    `SELECT COUNT(*) n,COALESCE(SUM(CAST(btc_amount AS REAL)),0) sats,
+    `SELECT COUNT(*) n,COALESCE(SUM(quote_sats),0) sats,
       COALESCE(SUM(CAST(dispense_quantity_normalized AS REAL)),0) units
       FROM dispenses WHERE dispenser_tx_index=?1`,
     dispenserTxIndex,

@@ -16,6 +16,7 @@ import { crawlEmblemStep, maybeRefreshEmblemStats } from "#api/indexer/emblem";
 import { maybeRefreshExchangeTopAssets } from "#api/indexer/exchange-top-assets";
 import { buildIssuerCollections } from "#api/indexer/issuer-collections";
 import { crawlPrices, crawlSpotPrices, crawlMarketQuotes, applyTradeUsd } from "#api/indexer/prices";
+import { repairUnaccountedDispenses } from "#api/indexer/dispense-accounting";
 import { maybeRefreshXcpSupply } from "#api/indexer/xcp-supply";
 import { maybeRefreshAssetActivityOutlook } from "#api/indexer/asset-activity-outlook";
 import { maybeRefreshAssetRatings } from "#api/indexer/asset-rating";
@@ -93,6 +94,7 @@ export async function runCanonicalMaintenance(env: Env): Promise<boolean> {
   return withCanonicalMaintenanceLease(
     env.CORE_DB,
     async () => {
+      await repairUnaccountedDispenses(env.CORE_DB);
       await runScheduledJob("backfillBitcoinBlockCounts", () => backfillBitcoinBlockCounts(env));
       await runScheduledJob("reconcileStagedBitcoinFees", () => reconcileStagedBitcoinFees(env));
       await runScheduledJob("reconcileRecentDailyTransactions", () => reconcileRecentDailyTransactions(env.CORE_DB));

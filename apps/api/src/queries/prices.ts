@@ -189,16 +189,13 @@ export const XCP_DAILY_CANDLES_SQL = `WITH observations AS (
         OR (forward_asset.asset='BTC' AND backward_asset.asset='XCP'))
     UNION ALL
     SELECT date(dispense.block_time,'unixepoch') day,
-      COALESCE(
-        CAST(parent.satoshirate AS REAL)/NULLIF(CAST(parent.give_quantity AS REAL),0),
-        CAST(dispense.btc_amount AS REAL)/CAST(dispense.dispense_quantity AS REAL)
-      ) price,
+      (dispense.quote_sats/CAST(dispense.dispense_quantity AS REAL)) price,
       CAST(dispense.dispense_quantity AS INTEGER) volume_xcp
     FROM dispenses dispense
     LEFT JOIN dispensers parent ON parent.tx_index=dispense.dispenser_tx_index
     WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset='XCP')
       AND dispense.block_time IS NOT NULL AND dispense.source_id<>dispense.destination_id
-      AND CAST(dispense.btc_amount AS INTEGER)>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
+      AND dispense.quote_sats>0 AND CAST(dispense.dispense_quantity AS INTEGER)>0
   ), ranked AS (
     SELECT day, price, volume_xcp,
       SUM(volume_xcp) OVER(PARTITION BY day ORDER BY price ROWS UNBOUNDED PRECEDING) cumulative_volume,

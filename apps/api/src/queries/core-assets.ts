@@ -690,13 +690,13 @@ export function listAssetDispenses(
     `SELECT lower(hex(dispense.tx_hash)) tx_hash,dispense.block_index,dispense.block_time,
             source.address source,destination.address destination,dictionary.asset,
             dispense.dispense_quantity_normalized,lower(hex(parent.tx_hash)) dispenser_tx_hash,
-            dispense.btc_amount,trade.usd_value
+            dispense.btc_amount,dispense.quote_sats,dispense.payment_asset_count,
+  (SELECT dispense.quote_sats*price.usd/1e8 FROM prices price WHERE price.currency='BTC' AND price.day=date(dispense.block_time,'unixepoch')) usd_value
        FROM dispenses dispense
        JOIN asset_dictionary dictionary ON dictionary.asset_id=dispense.asset_id
        LEFT JOIN transactions parent ON parent.tx_index=dispense.dispenser_tx_index
        LEFT JOIN address_dictionary source ON source.address_id=dispense.source_id
        LEFT JOIN address_dictionary destination ON destination.address_id=dispense.destination_id
-       LEFT JOIN trades trade ON trade.venue='dispense' AND trade.ref=CAST(dispense.dispense_id AS TEXT)
       WHERE dispense.asset_id=(SELECT asset_id FROM asset_dictionary WHERE asset=?)
       ORDER BY dispense.block_index DESC,dispense.event_index DESC LIMIT ? OFFSET ?`,
     asset,

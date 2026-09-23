@@ -34,8 +34,10 @@ test("compact address tabs deduplicate both-sided relationships and restore iden
     CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT);
     CREATE TABLE issuances(event_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,issuer_id INTEGER,asset_id INTEGER,asset_longname TEXT,quantity_normalized TEXT,transfer INTEGER,description TEXT,asset_events TEXT,status TEXT);
     CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,asset_id INTEGER,give_quantity_normalized TEXT,give_remaining_normalized TEXT,satoshirate TEXT,satoshirate_normalized TEXT,dispense_count INTEGER,status INTEGER,oracle_address_id INTEGER);
-    CREATE TABLE dispenses(event_index INTEGER PRIMARY KEY,dispense_id INTEGER,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,destination_id INTEGER,asset_id INTEGER,dispense_quantity_normalized TEXT,dispenser_tx_index INTEGER,btc_amount TEXT);
+    CREATE TABLE dispenses(event_index INTEGER PRIMARY KEY,dispense_id INTEGER,tx_hash BLOB,block_index INTEGER,block_time INTEGER,source_id INTEGER,destination_id INTEGER,asset_id INTEGER,dispense_quantity_normalized TEXT,dispenser_tx_index INTEGER,btc_amount TEXT,quote_sats REAL GENERATED ALWAYS AS (CAST(btc_amount AS REAL)) VIRTUAL,payment_asset_count INTEGER GENERATED ALWAYS AS (1) VIRTUAL);
     CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,asset_longname TEXT,divisible INTEGER,locked INTEGER,issuer_id INTEGER,owner_id INTEGER,first_issuance_block_index INTEGER);
+    CREATE TABLE prices(day TEXT,currency TEXT,usd REAL);
+    INSERT INTO prices VALUES('1970-01-01','BTC',2550000);
     CREATE TABLE trades(venue TEXT,ref TEXT,usd_value REAL,PRIMARY KEY(venue,ref));
     CREATE TABLE broadcasts(tx_index INTEGER PRIMARY KEY,source_id INTEGER,block_index INTEGER,block_time INTEGER,value TEXT,text TEXT,status TEXT);
     INSERT INTO address_dictionary VALUES(1,'alice'),(2,'bob');
