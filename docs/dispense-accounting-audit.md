@@ -68,3 +68,13 @@ Archived July evaluation files remain historical research records; the materiali
 rejects reports without payment-capped accounting provenance so they cannot restore
 obsolete prices. Regenerate the dispenser evaluation and dual-market census before
 using them as new materialization input.
+
+## Production verification, 2026-09-23
+
+Migration 0099 and the API/web deployment are live. The repair processed 208,847
+stored dispense rows, corrected 234 XCP/USD daily prices and 58,861 trade USD
+values, and rechecked 382 existing bridge-price days (21 no longer qualified).
+Final checks found zero unallocated rows, overallocated payments, or stale USD
+values with an available price. The live Pokémon receipt shows 151 entries,
+0.02 BTC total and approximately $1,522.90. Marketplace and Launchpad required no
+historical changes for this error.

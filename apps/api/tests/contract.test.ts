@@ -393,8 +393,9 @@ test("contract: GET /v2/firsts — normalized historical catalog", async (t) => 
     );
   }
   const oneBtc = j.result.find((row: { key?: string }) => row.key === "sale_1_btc");
-  assert.equal(oneBtc?.ref, "MPBTC", "the BTC threshold must use executed unit price, not total trade volume");
-  assert.equal(oneBtc?.block, 290948);
+  // The recovered OTC ledger predates MPBTC: 0.99 XBTC for 1 BTC (1.0101 BTC/unit).
+  assert.equal(oneBtc?.ref, "XBTC", "the BTC threshold must use executed unit price, not total trade volume");
+  assert.equal(oneBtc?.block, 289096);
   const stamp = j.result.find((row: { key?: string }) => row.key === "stamp");
   assert.deepEqual(
     stamp,
