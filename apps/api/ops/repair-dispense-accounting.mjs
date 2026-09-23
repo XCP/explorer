@@ -74,6 +74,18 @@ try {
   const tradeTip = Number(run("trade-tip", "SELECT MAX(rowid) tip FROM trades")[0].tip);
   for (let low = 0; low < tradeTip; low += 200000)
     run(`trade-usd:${low}`, prices.APPLY_TRADE_USD_SQL, [low, Math.min(low + 200000, tradeTip)]);
+  // Reconcile monetary signals again after any old-Worker deployment-gap writes.
+  run(
+    "asset-dispense-money",
+    `WITH corrected AS (
+    SELECT d.asset_id,SUM(d.quote_sats)/1e8 btc,MAX(d.quote_sats)/1e8 largest,
+      COALESCE(MAX(CASE WHEN d.destination_id<>d.source_id
+        AND d.destination_id<>COALESCE(p.origin_id,d.source_id) THEN d.quote_sats END)/1e8,0) clean_largest
+    FROM dispenses d LEFT JOIN dispensers p ON p.tx_index=d.dispenser_tx_index GROUP BY d.asset_id
+  ) UPDATE asset_signals SET dispense_btc=c.btc,max_dispense_btc=c.largest,max_dispense_btc_clean=c.clean_largest
+    FROM corrected c WHERE asset_signals.asset_id=c.asset_id AND (dispense_btc IS NOT c.btc
+      OR max_dispense_btc IS NOT c.largest OR max_dispense_btc_clean IS NOT c.clean_largest)`,
+  );
   // Price changes affect realized-value signals beyond dispensers: re-derive the
   // same monetary fields used by core-asset-signals from the corrected ledger.
   run(
