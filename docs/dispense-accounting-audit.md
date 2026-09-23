@@ -48,7 +48,8 @@ Run `node ops/repair-dispense-accounting.mjs` to inspect the plan, then append
 `--apply` to rebuild historical payment trades, legs, XCP/BTC observations,
 XCP/USD prices, trade USD values, monetary signals and rankings. It reuses the
 existing BTC/USD calendar and shipping SQL; raw chain records remain unchanged.
-The script is repeatable, clears response caches, and verifies no unallocated
+The script is repeatable, takes the canonical maintenance lease, retries transient
+D1 overloads, expires response caches for background refresh, and verifies no unallocated
 rows, overallocated payments or stale priced trade values remain. Maintenance
 also recovers rows written by the previous Worker during the deployment gap.
 
