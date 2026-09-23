@@ -16,10 +16,10 @@ const reference = new Map(
   }),
 );
 const daily = executeRemoteD1(`WITH raw AS (
- SELECT date(d.block_time,'unixepoch') day,CAST(d.btc_amount AS REAL)/CAST(d.dispense_quantity AS REAL) btc_per_pepecash,
+ SELECT date(d.block_time,'unixepoch') day,d.quote_sats/CAST(d.dispense_quantity AS REAL) btc_per_pepecash,
    CAST(d.dispense_quantity AS REAL) volume_raw,d.source_id
  FROM dispenses d JOIN asset_dictionary a ON a.asset_id=d.asset_id
- WHERE a.asset='PEPECASH' AND d.block_time IS NOT NULL AND CAST(d.dispense_quantity AS INTEGER)>0 AND CAST(d.btc_amount AS INTEGER)>0
+ WHERE a.asset='PEPECASH' AND d.block_time IS NOT NULL AND CAST(d.dispense_quantity AS INTEGER)>0 AND d.quote_sats>0
 ), counts AS (
  SELECT day,COUNT(*) executions,COUNT(DISTINCT source_id) dispensers FROM raw GROUP BY day
 ), ranked AS (
