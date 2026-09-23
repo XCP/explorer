@@ -1,3 +1,4 @@
+import { dispenseAccountingSql } from "#api/indexer/dispense-accounting";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -161,6 +162,7 @@ test("address signals attribute dispenser proceeds to origin or source exactly o
       WHERE source.address='1source' AND buyer.address='1buyer' AND asset.asset='CARD';
   `);
 
+  db.exec(dispenseAccountingSql());
   await rebuildCoreAddressSignals(d1(db), ["1origin", "1source"]);
   const rows = db
     .prepare(

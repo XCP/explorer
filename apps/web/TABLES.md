@@ -1,3 +1,5 @@
+> Accounting correction (2026-09-23): historical notes below predate shared-payment allocation. Use `dispenses.quote_sats` for asset sale amounts and monetary signals. Raw `btc_amount` repeats the entire output for each asset and must not be summed as asset revenue. See [the accounting audit](../../docs/dispense-accounting-audit.md).
+
 # TABLES.md — record-table spec (FINAL)
 
 Synthesized from three inputs: (1) conventions mined from the owner's prior Counterparty UIs,

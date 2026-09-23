@@ -92,9 +92,11 @@ export interface AddressDispenseRow {
   asset: string | null;
   dispense_quantity_normalized: string;
   dispenser_tx_hash: string | null;
-  /** BTC the buyer paid, raw satoshis as text. */
+  /** Raw output payment in satoshis, repeated across bundle assets. */
   btc_amount: string | null;
-  /** Approximate execution-day USD payment value from the trades ledger where known. */
+  quote_sats?: number;
+  payment_asset_count?: number;
+  /** Approximate execution-day USD value of this asset allocation. */
   usd_value: number | null;
 }
 

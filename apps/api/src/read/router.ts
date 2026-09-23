@@ -28,7 +28,7 @@ export const read = router();
 
 // The Cache API is keyed before route handlers run, so D1 cache-key changes alone cannot invalidate an
 // already-cached response. Bump this contract version when a read response's historical meaning changes.
-const READ_EDGE_CACHE_VERSION = "22"; // 22: asset valuations/market volume, corrected tag realized volume, stale-if-error
+const READ_EDGE_CACHE_VERSION = "23"; // Payment-capped dispense allocations, including historical records.
 
 // Edge cache (Cloudflare Cache API) for read GETs. SSR reads arrive via the API_WORKER service binding,
 // which BYPASSES Cloudflare's CDN edge cache — so a fresh copy of a heavy read (e.g. the 9-query AssetDetail)

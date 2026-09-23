@@ -18,6 +18,7 @@
  */
 import type { Env } from "#api/env";
 import { type Ev, type Stmt, type Ctx } from "#api/indexer/events/context";
+import { accountDispenseTransactions } from "#api/indexer/dispense-accounting";
 import { dispatch } from "#api/indexer/events/dispatch";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { createIdentitySet, dictionaryStatements } from "#api/indexer/dictionaries";
@@ -331,6 +332,11 @@ export async function syncCoreEvents(
         };
         for (const event of slice) dispatch(event, ctx);
         await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
+        const dispenseTxs = slice
+          .filter((event) => event.event === "DISPENSE")
+          .map((event) => Number(event.params.tx_index));
+        for (const asset of await accountDispenseTransactions(env.CORE_DB, dispenseTxs))
+          ctx.identities.assets.add(asset);
         await applyCoreBalanceDeltas(env.CORE_DB, ctx.balDelta, tip - lastIndex < 5 * CHUNK);
         await rebuildCoreAssetSignals(env.CORE_DB, ctx.identities.assets);
         await enqueueCoreAddressSignals(env.CORE_DB, ctx.identities.addresses, ctx.identities.assets);

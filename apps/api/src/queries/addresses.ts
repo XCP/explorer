@@ -119,13 +119,13 @@ export function listDispenses(db: D1Database, address: string, p: Page): Promise
      )
      SELECT LOWER(HEX(d.tx_hash)) tx_hash,d.block_index,d.block_time,source.address source,
        destination.address destination,asset.asset,d.dispense_quantity_normalized,
-       LOWER(HEX(dispenser.tx_hash)) dispenser_tx_hash,d.btc_amount,t.usd_value
+       LOWER(HEX(dispenser.tx_hash)) dispenser_tx_hash,d.btc_amount,d.quote_sats,d.payment_asset_count,
+  (SELECT d.quote_sats*price.usd/1e8 FROM prices price WHERE price.currency='BTC' AND price.day=date(d.block_time,'unixepoch')) usd_value
      FROM page JOIN dispenses d ON d.event_index=page.event_index
      LEFT JOIN address_dictionary source ON source.address_id=d.source_id
      LEFT JOIN address_dictionary destination ON destination.address_id=d.destination_id
      LEFT JOIN asset_dictionary asset ON asset.asset_id=d.asset_id
      LEFT JOIN dispensers dispenser ON dispenser.tx_index=d.dispenser_tx_index
-     LEFT JOIN trades t ON t.venue='dispense' AND t.ref=CAST(d.dispense_id AS TEXT)
      ORDER BY d.block_index DESC,d.event_index DESC`,
     address,
     p.limit,

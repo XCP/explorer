@@ -38,3 +38,9 @@ export function oracleQuoteStale(d: DispenserQuote, now = Date.now() / 1000): bo
     now - d.oracle_price_block_time > ORACLE_STALE_AFTER_SECONDS
   );
 }
+
+/** Derived bundle shares can contain fractional satoshis; raw chain amounts cannot. */
+export function allocatedBtc(sats: number | null | undefined): string | null {
+  if (sats == null || !Number.isFinite(sats) || sats < 0) return null;
+  return (sats / 1e8).toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 12 });
+}

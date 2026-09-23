@@ -1,5 +1,4 @@
 "use client";
-import { dispenseSats } from "@/lib/dispenser-pricing";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TxAction } from "@xcp/shared/chain";
@@ -7,8 +6,9 @@ import type { SendRow } from "@xcp/shared/records";
 import { RecordTable } from "@/features/records/components/record-table";
 import { REGISTRY } from "@/features/records/registry";
 import { assetChip, statusPill, dispenserPill, sweepFlagsBadge, type Col } from "@/features/records/cells";
+import { allocatedBtc } from "@/lib/dispenser-pricing";
 import { btcAmt, xcpAmt } from "@/lib/tx";
-import { amount, commas, fromSats, fromSatsExact, short } from "@/lib/format";
+import { amount, commas, fromSatsExact, short } from "@/lib/format";
 
 /**
  * JOB ② — THE RECEIPT. The settled kinds: something already happened and this page is the proof.
@@ -90,15 +90,26 @@ export function ReceiptShell({
 export function DispenseReceipt({ action }: { action: Extract<TxAction, { kind: "dispense" }> }) {
   const d = action.dispenses[0];
   const machine = action.dispenser;
-  const rate = machine ? fromSats(dispenseSats(machine), 1) : null;
+  const totalSats = action.dispenses.every((row) => row.quote_sats != null)
+    ? action.dispenses.reduce((total, row) => total + Number(row.quote_sats), 0)
+    : null;
+  const totalUsd = action.dispenses.every((row) => row.usd_value != null)
+    ? action.dispenses.reduce((total, row) => total + Number(row.usd_value), 0)
+    : null;
   const stillOpen = machine && Number(machine.status) === 0 && Number(machine.give_remaining_normalized) > 0;
   return (
     <ReceiptShell
       headline={
         <span>
-          <b>{commas(d.dispense_quantity_normalized)}</b> {assetChip(d.asset)} bought from a dispenser for{" "}
-          <b>{btcAmt(d.btc_amount)}</b>
-          {d.usd_value != null && <span className="dim"> (≈${commas(d.usd_value.toFixed(2))})</span>}
+          {action.dispenses.length > 1 ? (
+            <b>{action.dispenses.length} dispense entries</b>
+          ) : (
+            <>
+              <b>{commas(d.dispense_quantity_normalized)}</b> {assetChip(d.asset)}
+            </>
+          )}{" "}
+          received; allocated cost <b>{totalSats != null ? `${allocatedBtc(totalSats)} BTC` : "—"}</b>
+          {totalUsd != null && <span className="dim"> (≈${commas(totalUsd.toFixed(2))})</span>}
         </span>
       }
       table={{
@@ -106,25 +117,31 @@ export function DispenseReceipt({ action }: { action: Extract<TxAction, { kind: 
           <tr>
             <th>Item</th>
             <th className="r">Qty</th>
-            <th className="r">Rate (BTC)</th>
+            <th className="r">Allocated price (BTC)</th>
             <th className="r">Total (BTC)</th>
             <th className="r">USD</th>
           </tr>
         ),
-        rows: (
-          <tr>
-            <td>{assetChip(d.asset)}</td>
-            <td className="r">{commas(d.dispense_quantity_normalized)}</td>
-            <td className="r">{rate != null ? rate.toFixed(8).replace(/0+$/, "") : "—"}</td>
-            <td className="r">{amount(fromSatsExact(d.btc_amount, 1))}</td>
-            <td className="r dim">{d.usd_value != null ? `≈$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
-          </tr>
-        ),
+        rows: action.dispenses.map((row, index) => {
+          const rate =
+            row.quote_sats != null && Number(row.dispense_quantity_normalized) > 0
+              ? row.quote_sats / 1e8 / Number(row.dispense_quantity_normalized)
+              : null;
+          return (
+            <tr key={index}>
+              <td>{assetChip(row.asset)}</td>
+              <td className="r">{commas(row.dispense_quantity_normalized)}</td>
+              <td className="r">{rate != null ? allocatedBtc(rate * 1e8) : "—"}</td>
+              <td className="r">{allocatedBtc(row.quote_sats) ?? "—"}</td>
+              <td className="r dim">{row.usd_value != null ? `≈$${commas(row.usd_value.toFixed(2))}` : "—"}</td>
+            </tr>
+          );
+        }),
         foot: (
           <>
             <td />
-            <td className="r">{btcAmt(d.btc_amount)}</td>
-            <td className="r">{d.usd_value != null ? `≈$${commas(d.usd_value.toFixed(2))}` : "—"}</td>
+            <td className="r">{totalSats != null ? `${allocatedBtc(totalSats)} BTC` : "—"}</td>
+            <td className="r">{totalUsd != null ? `≈$${commas(totalUsd.toFixed(2))}` : "—"}</td>
           </>
         ),
       }}

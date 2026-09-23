@@ -100,7 +100,7 @@ export const DISPENSE_TRADES_SQL = `${DISPENSE_PAYMENTS}
     MIN(dispense.block_time),payment.block_index,
     CASE WHEN payment.output_count=1 AND COUNT(*)=1
       THEN MIN(CAST(dispense.dispense_quantity_normalized AS REAL)) END,
-    'BTC',payment.total_sats/1e8,MIN(dispense.destination_id),payment.seller_id,payment.tx_hash,
+    'BTC',SUM(dispense.quote_sats)/1e8,MIN(dispense.destination_id),payment.seller_id,payment.tx_hash,
     CASE WHEN payment.output_count=1 AND COUNT(*)=1 THEN 'single' ELSE 'bundle' END
   FROM payment
   JOIN dispenses dispense ON dispense.tx_index=payment.tx_index

@@ -591,7 +591,7 @@ export const REGISTRY: Registry = {
         priority: 3,
         w: "92px",
         cell: (r) => {
-          const paid = Number(r.btc_amount);
+          const paid = Number(r.quote_sats);
           const qty = Number(r.dispense_quantity_normalized);
           if (!Number.isFinite(paid) || !paid || !qty) return "—";
           const unit = sats(paid / qty);
@@ -612,7 +612,7 @@ export const REGISTRY: Registry = {
         w: "100px",
         w760: "100px",
         w420: "92px",
-        cell: (r) => btc8(fromSats(r.btc_amount)),
+        cell: (r) => btc8(fromSats(r.quote_sats)),
       },
       {
         label: "USD",

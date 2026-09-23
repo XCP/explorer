@@ -54,14 +54,14 @@ WITH identity AS (SELECT asset_id FROM asset_dictionary WHERE asset=?1),
     FROM matches
   ),
   dispense AS (
-    SELECT count(*) dispenses,coalesce(sum(CAST(item.btc_amount AS REAL))/1e8,0) dispense_btc,
-      coalesce(max(CAST(item.btc_amount AS REAL))/1e8,0) max_dispense_btc,
+    SELECT count(*) dispenses,coalesce(sum(CAST(item.quote_sats AS REAL))/1e8,0) dispense_btc,
+      coalesce(max(CAST(item.quote_sats AS REAL))/1e8,0) max_dispense_btc,
       count(DISTINCT CASE WHEN item.destination_id<>item.source_id
         AND item.destination_id<>coalesce(dispenser.origin_id,item.source_id) THEN item.destination_id END)
         distinct_dispense_buyers,
       coalesce(max(CASE WHEN item.destination_id<>item.source_id
         AND item.destination_id<>coalesce(dispenser.origin_id,item.source_id)
-        THEN CAST(item.btc_amount AS REAL) END)/1e8,0) max_dispense_btc_clean
+        THEN CAST(item.quote_sats AS REAL) END)/1e8,0) max_dispense_btc_clean
     FROM dispenses item LEFT JOIN dispensers dispenser ON dispenser.tx_index=item.dispenser_tx_index
     WHERE item.asset_id=(SELECT asset_id FROM identity)
   ),

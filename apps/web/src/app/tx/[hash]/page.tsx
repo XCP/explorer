@@ -1,4 +1,4 @@
-import { dispenseSats } from "@/lib/dispenser-pricing";
+import { allocatedBtc, dispenseSats } from "@/lib/dispenser-pricing";
 import type { Metadata } from "next";
 import { cache } from "react";
 import { notFound } from "next/navigation";
@@ -75,8 +75,15 @@ function shareCopy(v: TxView, hash: string): { title: string; description: strin
   }
   if (a?.kind === "dispense") {
     const d = a.dispenses[0];
+    const total = a.dispenses.every((row) => row.quote_sats != null)
+      ? allocatedBtc(a.dispenses.reduce((sum, row) => sum + Number(row.quote_sats), 0))
+      : null;
+    const items =
+      a.dispenses.length > 1
+        ? `${a.dispenses.length} dispense entries`
+        : `${commas(d.dispense_quantity_normalized)} ${d.asset}`;
     return {
-      title: `${commas(d.dispense_quantity_normalized)} ${d.asset} bought for ${btc(d.btc_amount) ?? "BTC"}`,
+      title: `${items} — allocated ${total != null ? `${total} BTC` : "cost unavailable"}`,
       description: `Dispense receipt · ${state} · on xcp.io.`,
       image: art(d.asset),
     };
