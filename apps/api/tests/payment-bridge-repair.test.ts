@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { repairPaymentBridges, selectBridgePrice } from "../ops/lib/payment-bridge-repair.mjs";
+import { repairPaymentBridges, selectBridgePrice } from "#ops/lib/payment-bridge-repair";
 
 test("historical PEPECASH bridge must still agree after shared-payment correction", () => {
   const dex = [
