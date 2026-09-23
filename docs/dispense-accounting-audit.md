@@ -48,7 +48,8 @@ Run `node ops/repair-dispense-accounting.mjs` to inspect the plan, then append
 `--apply` to rebuild historical payment trades, legs, XCP/BTC observations,
 XCP/USD prices, trade USD values, monetary signals and rankings. It reuses the
 existing BTC/USD calendar and shipping SQL; raw chain records remain unchanged.
-The script is repeatable, clears response caches, and verifies no unallocated
+The script is repeatable, takes the canonical maintenance lease, retries transient
+D1 overloads, expires response caches for background refresh, and verifies no unallocated
 rows, overallocated payments or stale priced trade values remain. Maintenance
 also recovers rows written by the previous Worker during the deployment gap.
 
@@ -56,3 +57,24 @@ Regression coverage includes 151-asset bundles, repeated identical outputs,
 overpayment, missing metadata, event-page boundaries, migration repair and a
 browser receipt test. Marketplace collection-volume/fill/checkout and Launchpad
 trade-history/dispenser-quote tests cover the audited adjacent paths.
+
+## Dependent bridge history
+
+The repair also recomputes existing selected XCP-derived collection-currency
+prices and PEPECASH's dual-market prices from current allocated executions.
+It preserves the original breadth, dispersion and corroboration rules, withdraws
+prices that no longer qualify, and updates their trade USD values afterward.
+Archived July evaluation files remain historical research records; the materializer
+rejects reports without payment-capped accounting provenance so they cannot restore
+obsolete prices. Regenerate the dispenser evaluation and dual-market census before
+using them as new materialization input.
+
+## Production verification, 2026-09-23
+
+Migration 0099 and the API/web deployment are live. The repair processed 208,847
+stored dispense rows, corrected 234 XCP/USD daily prices and 58,861 trade USD
+values, and rechecked 382 existing bridge-price days (21 no longer qualified).
+Final checks found zero unallocated rows, overallocated payments, or stale USD
+values with an available price. The live Pokémon receipt shows 151 entries,
+0.02 BTC total and approximately $1,522.90. Marketplace and Launchpad required no
+historical changes for this error.
