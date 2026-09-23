@@ -57,3 +57,14 @@ Regression coverage includes 151-asset bundles, repeated identical outputs,
 overpayment, missing metadata, event-page boundaries, migration repair and a
 browser receipt test. Marketplace collection-volume/fill/checkout and Launchpad
 trade-history/dispenser-quote tests cover the audited adjacent paths.
+
+## Dependent bridge history
+
+The repair also recomputes existing selected XCP-derived collection-currency
+prices and PEPECASH's dual-market prices from current allocated executions.
+It preserves the original breadth, dispersion and corroboration rules, withdraws
+prices that no longer qualify, and updates their trade USD values afterward.
+Archived July evaluation files remain historical research records; the materializer
+rejects reports without payment-capped accounting provenance so they cannot restore
+obsolete prices. Regenerate the dispenser evaluation and dual-market census before
+using them as new materialization input.

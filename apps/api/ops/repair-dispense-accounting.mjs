@@ -3,6 +3,7 @@
  * Uses the shipping queries and existing BTC/USD calendar; never imports new
  * prices or rewrites raw chain records. Every phase is safe to repeat.
  */
+import { repairPaymentBridges } from "./lib/payment-bridge-repair.mjs";
 import { executeRemoteD1 } from "./lib/remote-d1.mjs";
 import { DISPENSE_TRADES_SQL, DISPENSE_TRADE_LEGS_SQL } from "../.test-dist/src/indexer/trades.js";
 import * as prices from "../.test-dist/src/indexer/prices.js";
@@ -69,6 +70,7 @@ try {
     "BUILD_THIN_XCP_USD_SQL",
   ])
     run(key, prices[key]);
+  repairPaymentBridges(run);
   const tradeTip = Number(run("trade-tip", "SELECT MAX(rowid) tip FROM trades")[0].tip);
   for (let low = 0; low < tradeTip; low += 200000)
     run(`trade-usd:${low}`, prices.APPLY_TRADE_USD_SQL, [low, Math.min(low + 200000, tradeTip)]);

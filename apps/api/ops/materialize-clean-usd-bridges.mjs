@@ -73,8 +73,13 @@ for (const bridge of BRIDGES) {
 const pepecashPath = resolve(
   process.env.PEPECASH_POST2020_INPUT || "../../docs/data/pepecash-post2020-census-2026-07-18.json",
 );
-const pepecash = JSON.parse(readFileSync(pepecashPath, "utf8"))
-  .days.filter((row) => row.admitted)
+const pepecashReport = JSON.parse(readFileSync(pepecashPath, "utf8"));
+if (pepecashReport.dispense_accounting !== "payment-capped-v1")
+  throw new Error(
+    "Regenerate the PEPECASH dispenser and dual-market census with payment-capped accounting before materializing prices.",
+  );
+const pepecash = pepecashReport.days
+  .filter((row) => row.admitted)
   .map((row) => ({
     day: row.day,
     bridge: "PEPECASH",

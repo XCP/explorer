@@ -81,6 +81,7 @@ const summarize = (rows) => {
 };
 const report = {
   schema: "pepecash-post2020-dual-market-census/1",
+  dispense_accounting: dispenser.dispense_accounting ?? "legacy-raw-payment",
   generated_at: new Date().toISOString(),
   selecting: false,
   frozen_rule: {

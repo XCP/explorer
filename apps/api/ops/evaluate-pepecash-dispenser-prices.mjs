@@ -75,6 +75,7 @@ const post = paymentDays.filter((row) => row.day > "2020-12-31");
 const covered = post.filter((row) => available.has(row.day));
 const report = {
   schema: "pepecash-dispenser-prices/1",
+  dispense_accounting: "payment-capped-v1",
   generated_at: new Date().toISOString(),
   selecting: false,
   predeclared_candidate_rule: {
