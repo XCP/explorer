@@ -150,13 +150,15 @@ export async function classifyVaults(env: Env): Promise<Record<string, unknown>>
 
     // Outbound SWEEPS are ALSO a crack — a sweep moves EVERYTHING out of the address at once (no per-asset
     // row), so any outbound sweep from a funded vault empties it. Merge with sends; earliest wins.
+    // Keep selected vaults outermost: scanning sweeps first makes SQLite probe every selected rowid
+    // for each sweep. A 1,000-vault production batch read 1.5M rows instead of 3k indexed probes.
     const sweepRows =
       (
         await env.CORE_DB.prepare(
           `WITH ${selected}
          SELECT source.address,sweep.block_time,destination.address destination
          FROM selected vault
-         JOIN sweeps sweep ON sweep.source_id=vault.btc_address_id
+         CROSS JOIN sweeps sweep INDEXED BY idx_sweeps_source ON sweep.source_id=vault.btc_address_id
          JOIN address_dictionary source ON source.address_id=sweep.source_id
          JOIN address_dictionary destination ON destination.address_id=sweep.destination_id
          ORDER BY sweep.source_id,sweep.block_time`,

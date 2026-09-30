@@ -56,6 +56,7 @@ test("vault classification derives compact identities, contents, and crack recip
       WHERE destination_address_id IS NOT NULL;
     CREATE TABLE balances(address_id INTEGER,asset_id INTEGER,quantity TEXT,quantity_normalized TEXT);
     CREATE TABLE sweeps(source_id INTEGER,destination_id INTEGER,block_time INTEGER);
+    CREATE INDEX idx_sweeps_source ON sweeps(source_id);
     INSERT INTO address_dictionary VALUES
       (10,'vault-single'),(11,'vault-multi'),(12,'vault-foreign'),(20,'funder'),(30,'cracker'),(40,'contract');
     INSERT INTO asset_dictionary VALUES(1,'XCP'),(2,'CARD'),(3,'OTHER');
@@ -69,6 +70,7 @@ test("vault classification derives compact identities, contents, and crack recip
       (4,20,11,NULL,NULL,3,'100000000','1',1,101),
       (5,20,99,NULL,10,2,'100000000','1',1,110),
       (6,99,99,10,30,2,'100000000','1',3,190);
+    INSERT INTO sweeps VALUES(11,30,150),(12,30,160),(20,30,170);
   `);
   const result = await classifyVaults({ CORE_DB: d1(sqlite) } as never);
   assert.equal(result.classified, 3);
@@ -105,8 +107,8 @@ test("vault classification derives compact identities, contents, and crack recip
         funded: 1,
         contents_asset: null,
         contents_qty: null,
-        cracked_at: null,
-        cracker: null,
+        cracked_at: 150,
+        cracker: "cracker",
       },
       {
         token_id: "3",
