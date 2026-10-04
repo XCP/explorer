@@ -28,3 +28,23 @@ Tests exercise a retained URL cache, stale parent probes, catch-up verification,
 unknown hashes, exact partial-fill rollback, interrupted undo and missing history.
 This change does not certify historical imported state or all asynchronous derived
 projections; those retain their existing repair queues and maintenance behavior.
+
+Replay also compares stored `ledger_hash` and `messages_hash`, so Counterparty
+reparses are detected even when the Bitcoin block hash stays unchanged. The last
+completed block is verified when the cursor is inside a partially applied block.
+Before writes, each replay slice saves its verified block identities in
+`core_state.replay_protocol_identities`. They survive cursor commits and restarts,
+covering partial blocks whose `BLOCK_PARSED` event has not yet been applied.
+
+A fixed parsed source-tip identity is captured before event retrieval and checked
+again before writes. A newly mined descendant does not change that fixed anchor.
+Missing protocol hashes pause replay; a changed anchor during fetching retries
+without resetting application data. Confirmed mismatches use the existing exact
+undo path and require a protocol-verified ancestor within retained history.
+
+No additional migration is needed. Blocks already store completed protocol
+identities; the new state key records future slices without inventing hashes for
+historical incomplete blocks. Administrative imports must establish a verified
+baseline and clear obsolete slice identities while replay is paused. Each slice
+adds bounded header reads and one small durable state write. Following mode
+normally needs one slice; backlog processing costs more verification requests.

@@ -306,7 +306,10 @@ test("a stale state hash cannot trigger a false rollback after a partial page", 
     const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 10 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
-    if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
+    if (url.endsWith("/blocks/101"))
+      return new Response(
+        JSON.stringify({ result: { block_hash: hash, ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) } }),
+      );
     throw new Error(`Unexpected rollback request: ${url}`);
   };
   try {
@@ -367,8 +370,16 @@ test("a fork after raw writes but before the cursor commit discards the orphan p
     const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 9 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
-    if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "cc".repeat(32) } }));
-    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
+    if (url.endsWith("/blocks/101"))
+      return new Response(
+        JSON.stringify({
+          result: { block_hash: "cc".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+        }),
+      );
+    if (url.endsWith("/blocks/100"))
+      return new Response(
+        JSON.stringify({ result: { block_hash: hash, ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) } }),
+      );
     if (url.includes("/events?cursor=9"))
       return new Response(JSON.stringify({ result: [{ event_index: 9, block_index: 100 }] }));
     throw new Error(`unexpected request: ${url}`);
@@ -394,8 +405,14 @@ test("a missing event is never skipped even if a later page contains valid event
     const parsed = new URL(String(input));
     parsed.searchParams.delete("verbose");
     const url = parsed.toString();
-    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
-    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
+    if (url.endsWith("/blocks/100"))
+      return Response.json({
+        result: { block_hash: "a0".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
+    if (url.endsWith("/blocks/101"))
+      return Response.json({
+        result: { block_hash: "a1".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 2 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 100 } }));
     if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: {} }));
@@ -451,7 +468,10 @@ test("pending rollback survives a process exit after branch deletion before the 
     const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 9 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 100 } }));
-    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
+    if (url.endsWith("/blocks/100"))
+      return new Response(
+        JSON.stringify({ result: { block_hash: hash, ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) } }),
+      );
     throw new Error(`unexpected request: ${url}`);
   };
   try {
@@ -1694,8 +1714,14 @@ test("replay advances its durable cursor", async () => {
     const parsed = new URL(String(input));
     parsed.searchParams.delete("verbose");
     const url = parsed.toString();
-    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
-    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
+    if (url.endsWith("/blocks/100"))
+      return Response.json({
+        result: { block_hash: "a0".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
+    if (url.endsWith("/blocks/101"))
+      return Response.json({
+        result: { block_hash: "a1".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
     if (url.endsWith("/events?limit=1")) {
       // The event row is authoritative even if a node's result_count uses
       // different indexing semantics.
@@ -1785,8 +1811,14 @@ test("replay checkpoints a dense fetched page in durable slices", async () => {
     const parsed = new URL(String(input));
     parsed.searchParams.delete("verbose");
     const url = parsed.toString();
-    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
-    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
+    if (url.endsWith("/blocks/100"))
+      return Response.json({
+        result: { block_hash: "a0".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
+    if (url.endsWith("/blocks/101"))
+      return Response.json({
+        result: { block_hash: "a1".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
     if (url.endsWith("/events?limit=1")) {
       return new Response(JSON.stringify({ result_count: 251, result: [{ event_index: 251 }] }));
     }
@@ -1836,8 +1868,18 @@ test("replay clamps the events page to the pending window and shrinks it when a 
     const parsed = new URL(String(input));
     parsed.searchParams.delete("verbose");
     const url = parsed.toString();
-    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
-    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
+    if (url.endsWith("/blocks/100"))
+      return Response.json({
+        result: { block_hash: "a0".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
+    if (url.endsWith("/blocks/102"))
+      return Response.json({
+        result: { block_hash: "a2".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
+    if (url.endsWith("/blocks/101"))
+      return Response.json({
+        result: { block_hash: "a1".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
     if (url.endsWith("/events?limit=1")) {
       return new Response(JSON.stringify({ result_count: 3 }), { status: 200 });
     }
@@ -1897,7 +1939,12 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
     const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result_count: 10 }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
-    if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "replacement-101" } }));
+    if (url.endsWith("/blocks/101"))
+      return new Response(
+        JSON.stringify({
+          result: { block_hash: "dd".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+        }),
+      );
     if (url.includes("/events?cursor=10"))
       return new Response(
         JSON.stringify({
@@ -1907,7 +1954,12 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
           ],
         }),
       );
-    if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: "a0".repeat(32) } }));
+    if (url.endsWith("/blocks/100"))
+      return new Response(
+        JSON.stringify({
+          result: { block_hash: "a0".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+        }),
+      );
     throw new Error(`unexpected Counterparty request: ${url}`);
   };
   try {
@@ -2079,8 +2131,14 @@ test("a stale parent height probe cannot splice a new event header onto the old 
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     if (url.pathname === "/blocks/last") return Response.json({ result: { block_index: 101 } });
-    if (url.pathname === "/blocks/100") return Response.json({ result: { block_hash: "aa".repeat(32) } });
-    if (url.pathname === "/blocks/101") return Response.json({ result: { block_hash: "cc".repeat(32) } });
+    if (url.pathname === "/blocks/100")
+      return Response.json({
+        result: { block_hash: "aa".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
+    if (url.pathname === "/blocks/101")
+      return Response.json({
+        result: { block_hash: "cc".repeat(32), ledger_hash: "bb".repeat(32), messages_hash: "cc".repeat(32) },
+      });
     if (!url.searchParams.has("cursor")) return Response.json({ result: [{ event_index: 1 }] });
     return Response.json({
       result: [
@@ -2154,4 +2212,116 @@ test("mutable undo rolls back atomically on failure and rejects pre-deployment h
   assert.equal(database.prepare("SELECT give_remaining FROM orders").get()?.give_remaining, "75");
   await assert.rejects(restoreUndo(db, 99), /predates exact undo/);
   database.close();
+});
+
+for (const messagesOnly of [false, true])
+  for (const interrupted of [false, true])
+    test(`protocol-only reparse restores exact state (interrupted=${interrupted}, messagesOnly=${messagesOnly})`, async () => {
+      const database = new DatabaseSync(":memory:");
+      database.exec(CORE_DDL);
+      const hash = "aa".repeat(32),
+        ledger = "bb".repeat(32),
+        messages = "cc".repeat(32),
+        replacement = "dd".repeat(32);
+      database.exec(`INSERT INTO reorg_undo_state VALUES(1,100);
+    INSERT INTO blocks(block_index,block_hash,ledger_hash,messages_hash) VALUES(100,X'${hash}',X'${ledger}',X'${messages}'),(101,X'${hash}',${interrupted ? "NULL" : `X'${ledger}'`},${interrupted ? "NULL" : `X'${messages}'`});
+    INSERT INTO core_state VALUES('last_block_index','${interrupted ? 100 : 101}'),('last_event_index','${interrupted ? 0 : 2}');
+    INSERT INTO orders(tx_index,tx_hash,block_index,status,give_remaining) VALUES(1,zeroblob(32),100,'open','75');`);
+      const db = d1(database);
+      await writeWithUndo(db, [
+        { block: 101, statement: db.prepare("UPDATE orders SET status='filled',give_remaining='0'") },
+      ]);
+      if (interrupted)
+        database
+          .prepare("INSERT INTO core_state VALUES(?,?)")
+          .run(
+            "replay_protocol_identities",
+            JSON.stringify([{ block_index: 101, block_hash: hash, ledger_hash: ledger, messages_hash: messages }]),
+          );
+      const original = globalThis.fetch;
+      let latestReads = 0;
+      const events = [
+        {
+          event_index: 0,
+          block_index: 100,
+          event: "BLOCK_PARSED",
+          params: { ledger_hash: ledger, messages_hash: messages },
+        },
+        {
+          event_index: 1,
+          block_index: 101,
+          event: "NEW_BLOCK",
+          params: { block_hash: hash, previous_block_hash: hash },
+        },
+        {
+          event_index: 2,
+          block_index: 101,
+          event: "BLOCK_PARSED",
+          params: { ledger_hash: messagesOnly ? ledger : replacement, messages_hash: replacement },
+        },
+      ];
+      globalThis.fetch = async (input) => {
+        const u = new URL(String(input));
+        if (u.pathname === "/blocks/last") {
+          latestReads++;
+          return Response.json({ result: { block_index: latestReads === 1 ? 101 : 102 } });
+        }
+        if (u.pathname.startsWith("/blocks/")) {
+          const height = Number(u.pathname.split("/").at(-1));
+          return Response.json({
+            result: {
+              block_index: height,
+              block_hash: hash,
+              ledger_hash: height === 101 && !messagesOnly ? replacement : ledger,
+              messages_hash: height === 101 ? replacement : messages,
+            },
+          });
+        }
+        const cursor = u.searchParams.has("cursor") ? Number(u.searchParams.get("cursor")) : Infinity;
+        return Response.json({
+          result: events
+            .filter((e) => e.event_index <= cursor)
+            .reverse()
+            .slice(0, Number(u.searchParams.get("limit"))),
+        });
+      };
+      try {
+        const result = await syncCoreEvents({ CORE_DB: db, COUNTERPARTY_API_BASE: "https://core.test" });
+        assert.equal(result.caught_up, true);
+        assert.equal(result.applied, 2);
+        assert.equal(latestReads, 1);
+        assert.equal(database.prepare("SELECT give_remaining FROM orders").get()?.give_remaining, "75");
+        assert.equal(
+          database.prepare("SELECT lower(hex(ledger_hash)) h FROM blocks WHERE block_index=101").get()?.h,
+          messagesOnly ? ledger : replacement,
+        );
+        assert.equal(database.prepare("SELECT value FROM core_state WHERE key='rollback_to'").get(), undefined);
+        assert.ok(database.prepare("SELECT value FROM core_state WHERE key='replay_protocol_identities'").get());
+      } finally {
+        globalThis.fetch = original;
+        database.close();
+      }
+    });
+
+test("missing protocol evidence leaves existing state and cursors intact", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`INSERT INTO blocks(block_index,block_hash,ledger_hash,messages_hash) VALUES(100,zeroblob(32),zeroblob(32),zeroblob(32));
+    INSERT INTO core_state VALUES('last_block_index','100'),('last_event_index','0');`);
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) =>
+    new URL(String(input)).pathname === "/events"
+      ? Response.json({ result: [{ event_index: 0 }] })
+      : Response.json({ result: { block_index: 100, block_hash: "00".repeat(32) } });
+  try {
+    await assert.rejects(
+      syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://core.test" }),
+      /protocol hashes unavailable/,
+    );
+    assert.equal(database.prepare("SELECT value FROM core_state WHERE key='last_event_index'").get()?.value, "0");
+    assert.equal(database.prepare("SELECT COUNT(*) n FROM blocks").get()?.n, 1);
+  } finally {
+    globalThis.fetch = original;
+    database.close();
+  }
 });
