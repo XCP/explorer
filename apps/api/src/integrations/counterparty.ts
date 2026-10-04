@@ -1,3 +1,4 @@
+import { freshCounterpartyUrl } from "#api/integrations/fresh-read";
 /** Counterparty HTTP client — fetch + decode (precision-safe) with good-citizen backoff. */
 import { parseCounterpartyJson } from "#api/indexer/codec";
 import { discard } from "#api/lib/net";
@@ -42,7 +43,9 @@ export async function counterpartyJson<T = unknown>(
   for (let attempt = 0; ; attempt++) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error(`Counterparty ${path} request deadline exceeded`);
-    const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(Math.min(timeoutMs, remaining)) });
+    const response = await fetch(freshCounterpartyUrl(`${api}${path}`), {
+      signal: AbortSignal.timeout(Math.min(timeoutMs, remaining)),
+    });
     if (response.ok) {
       try {
         return parseCounterpartyResponse<T>(await response.text());

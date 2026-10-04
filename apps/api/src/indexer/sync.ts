@@ -1,3 +1,4 @@
+import { initializeUndo, pruneUndo, restoreUndo, writeWithUndo } from "#api/indexer/reorg-undo";
 /**
  * Counterparty mirror engine — chronological event replay into normalized D1.
  *
@@ -64,7 +65,10 @@ function setCoreStateStmt(db: D1Database, key: string, value: string): D1Prepare
 // without advancing the cursor; the chunk re-runs and idempotency re-applies it exactly. Never drops.
 async function batchAll(db: D1Database, stmts: Stmt[]): Promise<void> {
   for (let i = 0; i < stmts.length; i += DB_BATCH) {
-    await db.batch(stmts.slice(i, i + DB_BATCH).map((f) => f(db)));
+    await writeWithUndo(
+      db,
+      stmts.slice(i, i + DB_BATCH).map((f) => ({ statement: f(db), block: f.blockIndex })),
+    );
   }
 }
 
@@ -208,6 +212,7 @@ export async function syncCoreEvents(
     let lastBlock = Number.parseInt(blockValue ?? "0", 10);
     if (!Number.isSafeInteger(lastIndex) || lastIndex < -1) throw new Error("replay cursor is invalid");
 
+    await initializeUndo(env.CORE_DB, lastBlock);
     const rollbackValue = await getCoreState(env.CORE_DB, "rollback_to");
     if (rollbackValue !== null) {
       const rollbackTo = Number(rollbackValue);
@@ -251,8 +256,7 @@ export async function syncCoreEvents(
     // Persist the independently observed source height before replay. Even when a later event handler fails,
     // readiness must report the lag instead of comparing the local mirror to itself and claiming "synced".
     await setCoreStateStmt(env.CORE_DB, "source_tip_block", String(sourceTipBlock)).run();
-    const followingWindow = tip - lastIndex < 5 * CHUNK;
-    if (followingWindow && lastBlock > 0) {
+    if (lastBlock > 0) {
       // Raw page writes can precede the durable cursor. Verify those headers
       // too, or a crash followed by a fork could retain orphan INSERT OR IGNORE rows.
       const rawTip = await env.CORE_DB.prepare(
@@ -264,9 +268,12 @@ export async function syncCoreEvents(
           .bind(verifyBlock)
           .first<{ hash: string }>()
           .then((row) => row?.hash || null),
-        blockHash(env.COUNTERPARTY_API_BASE, verifyBlock),
+        sourceTipBlock < verifyBlock
+          ? Promise.resolve("past-source-tip")
+          : blockHash(env.COUNTERPARTY_API_BASE, verifyBlock),
       ]);
-      if (storedHash && actualHash && storedHash !== actualHash) {
+      if (!storedHash || !actualHash) throw new Error("Cannot verify applied block hash");
+      if (storedHash !== actualHash) {
         let rollbackTo = verifyBlock - 1;
         let found = false;
         for (; rollbackTo >= Math.max(0, verifyBlock - 24); rollbackTo--) {
@@ -330,7 +337,43 @@ export async function syncCoreEvents(
           assetDivisibility: await chunkAssetDivisibility(env.CORE_DB, slice),
           blockTime,
         };
-        for (const event of slice) dispatch(event, ctx);
+        // Validate the actual event header, not just a separately cached height lookup.
+        let previousHeight = lastBlock;
+        let previousHash =
+          lastBlock > 0
+            ? await env.CORE_DB.prepare("SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?")
+                .bind(lastBlock)
+                .first<{ hash: string }>()
+                .then((row) => row?.hash)
+            : undefined;
+        for (const event of slice) {
+          if (event.event === "NEW_BLOCK") {
+            const height = event.block_index;
+            const hash = event.params.block_hash;
+            if (
+              typeof hash !== "string" ||
+              !/^[0-9a-f]{64}$/i.test(hash) ||
+              hash !== (await blockHash(env.COUNTERPARTY_API_BASE, height))
+            )
+              throw new Error(`Unverified event block ${height}`);
+            if (previousHash && (height !== previousHeight + 1 || event.params.previous_block_hash !== previousHash))
+              throw new Error(`Event block ${height} does not extend the applied chain`);
+            previousHeight = height;
+            previousHash = hash;
+          }
+          dispatch(event, ctx);
+        }
+        // A fork during page retrieval must not overwrite the checkpoint with
+        // a child from the new branch and hide an orphaned parent forever.
+        if (
+          lastBlock > 0 &&
+          (await blockHash(env.COUNTERPARTY_API_BASE, lastBlock)) !==
+            (await env.CORE_DB.prepare("SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?")
+              .bind(lastBlock)
+              .first<{ hash: string }>()
+              .then((row) => row?.hash))
+        )
+          throw new Error("Applied chain changed while fetching events");
         await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
         const dispenseTxs = slice
           .filter((event) => event.event === "DISPENSE")
@@ -353,6 +396,7 @@ export async function syncCoreEvents(
       }
     }
 
+    await pruneUndo(env.CORE_DB, lastBlock);
     const caughtUp = lastIndex >= tip;
     if (caughtUp) {
       // Gated, not every tick. The prune retains the newest snapshot per
@@ -442,6 +486,7 @@ async function deleteAbove(db: D1Database, table: string, block: number): Promis
 
 /** Reverse committed orphan balance deltas before deleting their provenance. */
 export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number, rollbackIndex: number): Promise<void> {
+  await restoreUndo(db, rollbackTo);
   const restores = await balanceRollbackStatements(db, rollbackTo, rollbackIndex);
   for (let offset = 0; offset < restores.length; offset += DB_BATCH) {
     await db.batch(restores.slice(offset, offset + DB_BATCH));
@@ -483,12 +528,6 @@ export async function rollbackCoreDatabase(db: D1Database, rollbackTo: number, r
        AND NOT EXISTS (SELECT 1 FROM trades WHERE trades.venue=trade_legs.venue AND trades.ref=trade_legs.trade_ref)`,
     )
     .run();
-  await db
-    .prepare(`UPDATE orders SET status='open',closed_block_index=NULL WHERE closed_block_index>?`)
-    .bind(rollbackTo)
-    .run();
-  await db.prepare(`UPDATE dispensers SET closed_block_index=NULL WHERE closed_block_index>?`).bind(rollbackTo).run();
-
   await db.prepare("DELETE FROM balance_snapshots WHERE block_index>?").bind(rollbackTo).run();
   // Orphan ledger stays until all restores commit, so a crashed rollback can retry.
   await deleteAbove(db, "ledger_events", rollbackTo);

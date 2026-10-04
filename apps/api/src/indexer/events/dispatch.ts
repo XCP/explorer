@@ -45,8 +45,10 @@ export function dispatch(ev: Ev, ctx: Ctx): void {
   // The chronological stream states block_time once per block (NEW_BLOCK); every later event in the
   // block inherits it. Divisibility comes from the chunk's local map, never from verbose enrichment.
   if (ev.event === "NEW_BLOCK" && p.block_time != null) ctx.blockTime = p.block_time;
+  const start = ctx.stmts.length;
   const h = HANDLERS[ev.event];
   if (h) h({ ev, p, b, bt: p.block_time ?? ctx.blockTime, div: assetDivisible(ctx, p.asset) }, ctx);
+  for (const stmt of ctx.stmts.slice(start)) stmt.blockIndex = b;
 }
 // Every event name we have a handler for — used to build the stream fetch filter (single source of truth).
 export const HANDLED_EVENTS = Object.keys(HANDLERS);

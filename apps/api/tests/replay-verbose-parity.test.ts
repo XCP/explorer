@@ -371,7 +371,10 @@ async function replay(pages: FixtureEvent[][]): Promise<DatabaseSync> {
   const tipIndex = pages.flat().length - 1;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
+    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "aa".repeat(32) } });
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result_count: tipIndex + 1 }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 102 } }));
     if (url.endsWith("/blocks/102")) return new Response(JSON.stringify({ result: { block_hash: "ab".repeat(32) } }));

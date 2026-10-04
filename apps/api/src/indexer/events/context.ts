@@ -6,7 +6,7 @@
  * one file per message type, each self-contained, routed by dispatch.ts.
  */
 // A statement is a thunk so it can be bound against the live DB inside the batcher.
-export type Stmt = (db: D1Database) => D1PreparedStatement;
+export type Stmt = ((db: D1Database) => D1PreparedStatement) & { blockIndex?: number };
 // One Counterparty event from the event stream.
 export interface Ev {
   event_index: number;
