@@ -1,3 +1,5 @@
+import { counterpartyJson } from "#api/integrations/counterparty";
+import { restoreUndo, writeWithUndo } from "#api/indexer/reorg-undo";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -108,6 +110,7 @@ test("raw balance quantities reject rounding, fractions, negatives and malformed
 test("audited repairs fix positive balances and snapshots atomically and reject stale plans", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "142" }, 1), ctx);
   await executeCore(database, ctx);
@@ -152,6 +155,7 @@ test("audited repairs fix positive balances and snapshots atomically and reject 
 test("snapshot failure cannot commit a balance high-water and retries are exact", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "10" }, 1), ctx);
   await executeCore(database, ctx);
@@ -176,6 +180,7 @@ test("snapshot failure cannot commit a balance high-water and retries are exact"
 test("multiple blocks retain intermediate checkpoints and a snapshotless imported baseline", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const seed = context();
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "100", block_index: 90 }, 1), seed);
   await executeCore(database, seed);
@@ -207,6 +212,7 @@ test("multiple blocks retain intermediate checkpoints and a snapshotless importe
 test("rollback restores positive, zero and UTXO balances without snapshots or unapplied ledger deltas", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const utxo = `${"ab".repeat(32)}:0`;
   const seed = context();
   dispatch(event("CREDIT", { address: "positive", asset: "RARE", quantity: "100" }, 1), seed);
@@ -237,6 +243,7 @@ test("rollback restores positive, zero and UTXO balances without snapshots or un
 test("a rollback interrupted between batches resumes without reversing a balance twice", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   for (let index = 0; index < 100; index++) {
     dispatch(
@@ -269,6 +276,7 @@ test("a rollback interrupted between batches resumes without reversing a balance
 test("underflow aborts the entire planned balance slice without clamping", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   dispatch(event("CREDIT", { address: "good", asset: "RARE", quantity: "5" }, 1), ctx);
   dispatch(event("DEBIT", { address: "bad", asset: "RARE", quantity: "1" }, 2), ctx);
@@ -286,13 +294,16 @@ test("underflow aborts the entire planned balance slice without clamping", async
 test("a stale state hash cannot trigger a false rollback after a partial page", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const hash = "a1".repeat(32);
   database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(101,X'${hash}');
     INSERT INTO core_state(key,value) VALUES ('last_event_index','10'),('last_block_index','101'),
       ('last_block_hash','${"a0".repeat(32)}');`);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 10 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
     if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
@@ -310,6 +321,7 @@ test("a stale state hash cannot trigger a false rollback after a partial page", 
 test("rollback queries seek block ranges and exact balance identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "10", block_index: 101 }, 10), ctx);
   await executeCore(database, ctx);
@@ -336,6 +348,7 @@ test("rollback queries seek block ranges and exact balance identities", async ()
 test("a fork after raw writes but before the cursor commit discards the orphan prefix", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const seed = context();
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "100", block_index: 99 }, 1), seed);
   await executeCore(database, seed);
@@ -349,7 +362,9 @@ test("a fork after raw writes but before the cursor commit discards the orphan p
     INSERT INTO core_state(key,value) VALUES('last_block_index','100'),('last_event_index','9'),('last_block_hash','${hash}');`);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 9 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
     if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "cc".repeat(32) } }));
@@ -371,10 +386,16 @@ test("a fork after raw writes but before the cursor commit discards the orphan p
 test("a missing event is never skipped even if a later page contains valid events", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   database.exec("INSERT INTO core_state(key,value) VALUES ('last_event_index','0'),('last_block_index','100')");
+  database.exec(`INSERT OR IGNORE INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}');`);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
+    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
+    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 2 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 100 } }));
     if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: {} }));
@@ -397,6 +418,7 @@ test("a missing event is never skipped even if a later page contains valid event
 test("rollback refuses missing provenance before deleting any branch data", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   dispatch(event("CREDIT", { address: "alice", asset: "RARE", quantity: "10", block_index: 101 }, 1), ctx);
   await executeCore(database, ctx);
@@ -416,13 +438,17 @@ test("rollback refuses missing provenance before deleting any branch data", asyn
 test("pending rollback survives a process exit after branch deletion before the cursor commit", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const hash = "aa".repeat(32);
   database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${hash}');
     INSERT INTO core_state(key,value) VALUES ('last_event_index','10'),('last_block_index','101'),
-      ('rollback_to','100'),('rollback_event_index','9');`);
+      ('rollback_to','100'),('rollback_event_index','9');
+    INSERT OR REPLACE INTO reorg_undo_state VALUES(1,100);`);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result: [{ event_index: 9 }] }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 100 } }));
     if (url.endsWith("/blocks/100")) return new Response(JSON.stringify({ result: { block_hash: hash } }));
@@ -441,6 +467,7 @@ test("pending rollback survives a process exit after branch deletion before the 
 test("compact foundational writes preserve identities and converge on replay", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const hash = "ab".repeat(32);
   const previousHash = "99".repeat(32);
   const utxoHash = "cd".repeat(32);
@@ -580,6 +607,7 @@ test("compact foundational writes preserve identities and converge on replay", a
 test("compact balance catch-up applies only events above an imported row high-water", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   database.exec(`
     INSERT INTO address_dictionary(address) VALUES ('alice');
     INSERT INTO asset_dictionary(asset) VALUES ('RARE');
@@ -604,6 +632,7 @@ test("compact balance catch-up applies only events above an imported row high-wa
 test("compact asset creation, issuances, and MPMA sends preserve canonical identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const hash = "ef".repeat(32);
   const asset = "A123";
   const ctx = context();
@@ -746,6 +775,7 @@ test("compact asset creation, issuances, and MPMA sends preserve canonical ident
 test("compact orders preserve match pairs and lifecycle updates", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const tx0 = "21".repeat(32);
   const tx1 = "43".repeat(32);
   const payHash = "65".repeat(32);
@@ -885,6 +915,7 @@ test("compact orders preserve match pairs and lifecycle updates", async () => {
 test("compact transaction-level protocol records converge on replay", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const ctx = context();
   const hash = (byte: string) => byte.repeat(32);
 
@@ -996,6 +1027,7 @@ test("compact transaction-level protocol records converge on replay", async () =
 test("compact dispenser lifecycle preserves dispenser transaction relationships", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const dispenserHash = "71".repeat(32);
   const dispenseHash = "72".repeat(32);
   const refillHash = "73".repeat(32);
@@ -1116,6 +1148,7 @@ test("compact dispenser lifecycle preserves dispenser transaction relationships"
 test("compact fairminter lifecycle preserves campaign and mint transaction identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const fairminterHash = "81".repeat(32);
   const fairmintHash = "82".repeat(32);
   const ctx = context();
@@ -1225,6 +1258,7 @@ test("compact fairminter lifecycle preserves campaign and mint transaction ident
 test("compact pool lifecycle preserves pair, swap, and liquidity identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const depositHash = "91".repeat(32);
   const matchHash = "92".repeat(32);
   const withdrawalHash = "93".repeat(32);
@@ -1393,6 +1427,7 @@ test("compact pool swaps keep every fill when one routed order sweeps a pool twi
   // same pool. The fills share tx_hash/tx_index and differ only by event_index and quantities.
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const orderHash = "94".repeat(32);
   const ctx = context();
 
@@ -1478,6 +1513,7 @@ test("compact pool swaps keep every fill when one routed order sweeps a pool twi
 test("compact bet and RPS state machines preserve composite match identities", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const bet0Hash = "a1".repeat(32);
   const bet1Hash = "a2".repeat(32);
   const betMatchId = `${bet0Hash}_${bet1Hash}`;
@@ -1643,15 +1679,23 @@ test("compact bet and RPS state machines preserve composite match identities", a
 test("replay advances its durable cursor", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   database.exec(`
     INSERT INTO core_state(key,value) VALUES
       ('last_event_index','0'),
       ('last_block_index','100');
   `);
   const txHash = "d1".repeat(32);
+  database.exec(
+    `INSERT OR IGNORE INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}'),(101,X'${"a1".repeat(32)}');`,
+  );
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
+    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
+    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
     if (url.endsWith("/events?limit=1")) {
       // The event row is authoritative even if a node's result_count uses
       // different indexing semantics.
@@ -1722,6 +1766,7 @@ test("replay advances its durable cursor", async () => {
 test("replay checkpoints a dense fetched page in durable slices", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   database.exec(`
     INSERT INTO core_state(key,value) VALUES
       ('last_event_index','0'),
@@ -1734,9 +1779,14 @@ test("replay checkpoints a dense fetched page in durable slices", async () => {
     params: {},
   }));
   let batches = 0;
+  database.exec(`INSERT OR IGNORE INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}');`);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
+    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
+    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
     if (url.endsWith("/events?limit=1")) {
       return new Response(JSON.stringify({ result_count: 251, result: [{ event_index: 251 }] }));
     }
@@ -1764,6 +1814,7 @@ test("replay checkpoints a dense fetched page in durable slices", async () => {
 test("replay clamps the events page to the pending window and shrinks it when a page is unreadable", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   database.exec(`
     INSERT INTO core_state(key,value) VALUES
       ('last_event_index','0'),
@@ -1777,9 +1828,16 @@ test("replay clamps the events page to the pending window and shrinks it when a 
     tx_hash: hash,
     params: { tx_index: index, tx_hash: hash, block_index: 100 + index, source: "alice" },
   });
+  database.exec(
+    `INSERT OR IGNORE INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}'),(101,X'${"a1".repeat(32)}');`,
+  );
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
+    if (url.endsWith("/blocks/100")) return Response.json({ result: { block_hash: "a0".repeat(32) } });
+    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "a1".repeat(32) } });
     if (url.endsWith("/events?limit=1")) {
       return new Response(JSON.stringify({ result_count: 3 }), { status: 200 });
     }
@@ -1825,6 +1883,7 @@ test("replay clamps the events page to the pending window and shrinks it when a 
 test("compact replay rolls back a mismatched checkpoint before accepting the replacement branch", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   database.exec(`
     INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${"a0".repeat(32)}'),(101,X'${"a1".repeat(32)}');
     INSERT INTO transactions(tx_index,tx_hash,block_index) VALUES(1,X'${"b1".repeat(32)}',101);
@@ -1833,7 +1892,9 @@ test("compact replay rolls back a mismatched checkpoint before accepting the rep
   `);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const parsed = new URL(String(input));
+    parsed.searchParams.delete("verbose");
+    const url = parsed.toString();
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result_count: 10 }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 101 } }));
     if (url.endsWith("/blocks/101")) return new Response(JSON.stringify({ result: { block_hash: "replacement-101" } }));
@@ -1901,6 +1962,7 @@ test("compact caught-up maintenance prunes superseded snapshots", async () => {
 test("compact rollback removes orphan rows and restores balance quantity and high-water", async () => {
   const database = new DatabaseSync(":memory:");
   database.exec(CORE_DDL);
+  database.exec("INSERT INTO reorg_undo_state VALUES(1,0)");
   const addressId = Number(
     database.prepare(`INSERT INTO address_dictionary(address) VALUES ('alice') RETURNING address_id`).get()?.address_id,
   );
@@ -1928,14 +1990,25 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
     INSERT INTO ledger_events(event_index,direction,block_index,address_id,asset_id,quantity)
       VALUES (10,1,102,${addressId},${assetId},'10');
     INSERT INTO orders(tx_index,tx_hash,block_index,status,closed_block_index)
-      VALUES (1,X'${"e1".repeat(32)}',100,'filled',102);
+      VALUES (1,X'${"e1".repeat(32)}',100,'open',NULL);
+    UPDATE orders SET give_remaining='80',get_remaining='160';
     INSERT INTO dispensers(tx_index,tx_hash,block_index,source_id,asset_id,status,closed_block_index)
-      VALUES (3,X'${"e3".repeat(32)}',100,${addressId},${assetId},11,102);
+      VALUES (3,X'${"e3".repeat(32)}',100,${addressId},${assetId},0,NULL);
     INSERT INTO core_state(key,value) VALUES
       ('last_block_index','102');
   `);
 
-  await rollbackCoreDatabase(d1(database), 101, 5);
+  const db = d1(database);
+  await writeWithUndo(db, [
+    {
+      block: 102,
+      statement: db.prepare(
+        "UPDATE orders SET status='filled',closed_block_index=102,give_remaining='0',get_remaining='0'",
+      ),
+    },
+    { block: 102, statement: db.prepare("UPDATE dispensers SET status=11,closed_block_index=102") },
+  ]);
+  await rollbackCoreDatabase(db, 101, 5);
 
   const balance = database
     .prepare(`SELECT quantity,quantity_normalized,updated_block_index,updated_event_index FROM balances`)
@@ -1948,12 +2021,17 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
   assert.equal(database.prepare(`SELECT COUNT(*) count FROM transactions`).get()?.count, 1);
   assert.equal(database.prepare(`SELECT COUNT(*) count FROM ledger_events`).get()?.count, 0);
   assert.deepEqual(
-    { ...(database.prepare(`SELECT status,closed_block_index FROM orders`).get() as Record<string, unknown>) },
-    { status: "open", closed_block_index: null },
+    {
+      ...(database.prepare(`SELECT status,closed_block_index,give_remaining,get_remaining FROM orders`).get() as Record<
+        string,
+        unknown
+      >),
+    },
+    { status: "open", closed_block_index: null, give_remaining: "80", get_remaining: "160" },
   );
   assert.deepEqual(
     { ...(database.prepare(`SELECT status,closed_block_index FROM dispensers`).get() as Record<string, unknown>) },
-    { status: 11, closed_block_index: null },
+    { status: 0, closed_block_index: null },
   );
   const state = Object.fromEntries(
     (database.prepare(`SELECT key,value FROM core_state`).all() as { key: string; value: string }[]).map((row) => [
@@ -1962,4 +2040,118 @@ test("compact rollback removes orphan rows and restores balance quantity and hig
     ]),
   );
   assert.equal(state.last_block_index, "101");
+});
+
+test("fixed event pages stay fresh across forks in a URL-retaining cache", async () => {
+  const original = globalThis.fetch;
+  const cache = new Map<string, string>();
+  let branch = "a";
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    assert.equal(url.searchParams.get("cursor"), "200");
+    assert.equal(url.searchParams.get("verbose"), "true");
+    if (!cache.has(url.href)) cache.set(url.href, JSON.stringify({ result: branch }));
+    return new Response(cache.get(url.href));
+  };
+  try {
+    assert.equal(
+      (await counterpartyJson<{ result: string }>("https://core.test", "/events?cursor=200&limit=100&verbose=true"))
+        .result,
+      "a",
+    );
+    branch = "b";
+    assert.equal(
+      (await counterpartyJson<{ result: string }>("https://core.test", "/events?cursor=200&limit=100&verbose=true"))
+        .result,
+      "b",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a stale parent height probe cannot splice a new event header onto the old chain", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${"aa".repeat(32)}');
+    INSERT INTO core_state VALUES('last_block_index','100'),('last_event_index','0');`);
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/blocks/last") return Response.json({ result: { block_index: 101 } });
+    if (url.pathname === "/blocks/100") return Response.json({ result: { block_hash: "aa".repeat(32) } });
+    if (url.pathname === "/blocks/101") return Response.json({ result: { block_hash: "cc".repeat(32) } });
+    if (!url.searchParams.has("cursor")) return Response.json({ result: [{ event_index: 1 }] });
+    return Response.json({
+      result: [
+        {
+          event_index: 1,
+          event: "NEW_BLOCK",
+          block_index: 101,
+          params: { block_hash: "cc".repeat(32), previous_block_hash: "bb".repeat(32) },
+        },
+      ],
+    });
+  };
+  try {
+    await assert.rejects(
+      syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://core.test" }),
+      /does not extend/,
+    );
+    assert.equal(database.prepare("SELECT MAX(block_index) n FROM blocks").get()?.n, 100);
+    assert.equal(database.prepare("SELECT value FROM core_state WHERE key='last_event_index'").get()?.value, "0");
+  } finally {
+    globalThis.fetch = original;
+    database.close();
+  }
+});
+
+test("catch-up verifies old checkpoints beyond the former 5000-event window and rejects unknown hashes", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(`INSERT INTO blocks(block_index,block_hash) VALUES(100,X'${"aa".repeat(32)}');
+    INSERT INTO core_state VALUES('last_block_index','100'),('last_event_index','0');`);
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/events") return Response.json({ result: [{ event_index: 6000 }] });
+    if (url.pathname === "/blocks/last") return Response.json({ result: { block_index: 200 } });
+    return Response.json({ result: {} });
+  };
+  try {
+    await assert.rejects(
+      syncCoreEvents({ CORE_DB: d1(database), COUNTERPARTY_API_BASE: "https://core.test" }),
+      /Cannot verify/,
+    );
+  } finally {
+    globalThis.fetch = original;
+    database.close();
+  }
+});
+
+test("mutable undo rolls back atomically on failure and rejects pre-deployment history", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(CORE_DDL);
+  database.exec(
+    "INSERT INTO reorg_undo_state VALUES(1,100); INSERT INTO orders(tx_index,tx_hash,block_index,status,give_remaining) VALUES(1,zeroblob(32),100,'open','75')",
+  );
+  const db = d1(database);
+  await writeWithUndo(db, [
+    { block: 101, statement: db.prepare("UPDATE orders SET give_remaining='0',status='filled'") },
+  ]);
+  await assert.rejects(
+    restoreUndo(
+      d1(database, () => {
+        throw new Error("crash");
+      }),
+      100,
+    ),
+    /crash/,
+  );
+  assert.equal(database.prepare("SELECT give_remaining FROM orders").get()?.give_remaining, "0");
+  await restoreUndo(db, 100);
+  await restoreUndo(db, 100);
+  assert.equal(database.prepare("SELECT give_remaining FROM orders").get()?.give_remaining, "75");
+  await assert.rejects(restoreUndo(db, 99), /predates exact undo/);
+  database.close();
 });
