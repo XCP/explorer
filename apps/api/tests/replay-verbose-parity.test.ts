@@ -374,10 +374,18 @@ async function replay(pages: FixtureEvent[][]): Promise<DatabaseSync> {
     const parsed = new URL(String(input));
     parsed.searchParams.delete("verbose");
     const url = parsed.toString();
-    if (url.endsWith("/blocks/101")) return Response.json({ result: { block_hash: "aa".repeat(32) } });
+    if (url.endsWith("/blocks/101"))
+      return Response.json({
+        result: { block_hash: "aa".repeat(32), ledger_hash: "b1".repeat(32), messages_hash: "b3".repeat(32) },
+      });
     if (url.endsWith("/events?limit=1")) return new Response(JSON.stringify({ result_count: tipIndex + 1 }));
     if (url.endsWith("/blocks/last")) return new Response(JSON.stringify({ result: { block_index: 102 } }));
-    if (url.endsWith("/blocks/102")) return new Response(JSON.stringify({ result: { block_hash: "ab".repeat(32) } }));
+    if (url.endsWith("/blocks/102"))
+      return new Response(
+        JSON.stringify({
+          result: { block_hash: "ab".repeat(32), ledger_hash: "c1".repeat(32), messages_hash: "c3".repeat(32) },
+        }),
+      );
     const cursor = /\/events\?cursor=(\d+)&limit=(\d+)/.exec(url);
     if (cursor) {
       // fetchAsc requests cursor=from+chunk-1&limit=chunk; recover `from` and serve its page.

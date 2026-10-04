@@ -1,4 +1,11 @@
 import { initializeUndo, pruneUndo, restoreUndo, writeWithUndo } from "#api/indexer/reorg-undo";
+import {
+  fetchReplayIdentity,
+  sameReplayIdentity,
+  pendingReplayIdentities,
+  PENDING_PROTOCOL_KEY,
+} from "#api/indexer/protocol-checkpoint";
+import { storedReplayIdentity, lastParsedIdentity } from "#api/queries/replay-checkpoints";
 /**
  * Counterparty mirror engine — chronological event replay into normalized D1.
  *
@@ -230,10 +237,11 @@ export async function syncCoreEvents(
         cursorBlock > rollbackTo
       )
         throw new Error("Invalid pending rollback");
-      const local = await env.CORE_DB.prepare("SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?")
-        .bind(rollbackTo)
-        .first<{ hash: string }>();
-      if (!local?.hash || local.hash !== (await blockHash(env.COUNTERPARTY_API_BASE, rollbackTo))) {
+      const local = await storedReplayIdentity(env.CORE_DB, rollbackTo);
+      if (
+        !local?.block_hash ||
+        !sameReplayIdentity(local, await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, rollbackTo))
+      ) {
         throw new Error("Pending rollback no longer has a verified common ancestor");
       }
       await rollbackCoreDatabase(env.CORE_DB, rollbackTo, rollbackIndex);
@@ -246,6 +254,7 @@ export async function syncCoreEvents(
         env.CORE_DB.prepare(
           "DELETE FROM core_state WHERE key IN ('rollback_to','rollback_event_index','rollback_cursor_block')",
         ),
+        env.CORE_DB.prepare("DELETE FROM core_state WHERE key=?").bind(PENDING_PROTOCOL_KEY),
       ]);
     }
 
@@ -256,6 +265,19 @@ export async function syncCoreEvents(
     // Persist the independently observed source height before replay. Even when a later event handler fails,
     // readiness must report the lag instead of comparing the local mirror to itself and claiming "synced".
     await setCoreStateStmt(env.CORE_DB, "source_tip_block", String(sourceTipBlock)).run();
+    // This fixed parsed tip commits to protocol history before event pages are
+    // fetched. A later descendant is fine; changing this identity is not.
+    const sourceAnchor = await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, sourceTipBlock, true);
+    let pendingMismatch: number | null = null;
+    let retainedIdentities = pendingReplayIdentities(await getCoreState(env.CORE_DB, PENDING_PROTOCOL_KEY));
+    for (const identity of retainedIdentities) {
+      if (
+        identity.block_index > sourceTipBlock ||
+        !sameReplayIdentity(identity, await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, identity.block_index, true))
+      ) {
+        pendingMismatch = Math.min(pendingMismatch ?? identity.block_index, identity.block_index);
+      }
+    }
     if (lastBlock > 0) {
       // Raw page writes can precede the durable cursor. Verify those headers
       // too, or a crash followed by a fork could retain orphan INSERT OR IGNORE rows.
@@ -263,26 +285,34 @@ export async function syncCoreEvents(
         "SELECT block_index FROM blocks ORDER BY block_index DESC LIMIT 1",
       ).first<{ block_index: number }>();
       const verifyBlock = Math.max(lastBlock, rawTip?.block_index ?? lastBlock);
-      const [storedHash, actualHash] = await Promise.all([
-        env.CORE_DB.prepare(`SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?`)
-          .bind(verifyBlock)
-          .first<{ hash: string }>()
-          .then((row) => row?.hash || null),
-        sourceTipBlock < verifyBlock
-          ? Promise.resolve("past-source-tip")
-          : blockHash(env.COUNTERPARTY_API_BASE, verifyBlock),
-      ]);
-      if (!storedHash || !actualHash) throw new Error("Cannot verify applied block hash");
-      if (storedHash !== actualHash) {
-        let rollbackTo = verifyBlock - 1;
+      const stored = await storedReplayIdentity(env.CORE_DB, verifyBlock);
+      if (!stored?.block_hash) throw new Error("Cannot verify applied block hash");
+      let changedBlock = pendingMismatch;
+      if (
+        sourceTipBlock < verifyBlock ||
+        !sameReplayIdentity(stored, await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, verifyBlock))
+      )
+        changedBlock = Math.min(changedBlock ?? verifyBlock, verifyBlock);
+      // The cursor can be inside an unfinished block. Its completed predecessor
+      // still commits to protocol history and must be checked every invocation.
+      const parsed = await lastParsedIdentity(env.CORE_DB, verifyBlock);
+      if (
+        parsed &&
+        parsed.block_index !== verifyBlock &&
+        !sameReplayIdentity(parsed, await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, parsed.block_index, true))
+      )
+        changedBlock = Math.min(changedBlock ?? parsed.block_index, parsed.block_index);
+      if (changedBlock !== null) {
+        let rollbackTo = changedBlock - 1;
         let found = false;
-        for (; rollbackTo >= Math.max(0, verifyBlock - 24); rollbackTo--) {
-          const retained = await env.CORE_DB.prepare(
-            `SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?`,
-          )
-            .bind(rollbackTo)
-            .first<{ hash: string }>();
-          if (retained?.hash && retained.hash === (await blockHash(env.COUNTERPARTY_API_BASE, rollbackTo))) {
+        const protocolRequired = pendingMismatch !== null || !!parsed;
+        for (; rollbackTo >= Math.max(0, changedBlock - 24); rollbackTo--) {
+          const retained = await storedReplayIdentity(env.CORE_DB, rollbackTo);
+          if (
+            retained?.block_hash &&
+            (!protocolRequired || (retained.ledger_hash && retained.messages_hash)) &&
+            sameReplayIdentity(retained, await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, rollbackTo))
+          ) {
             found = true;
             break;
           }
@@ -296,6 +326,7 @@ export async function syncCoreEvents(
           setCoreStateStmt(env.CORE_DB, "rollback_cursor_block", String(cursorBlock)),
         ]);
         await rollbackCoreDatabase(env.CORE_DB, rollbackTo, rollbackIndex);
+        retainedIdentities = [];
         lastIndex = rollbackIndex;
         lastBlock = cursorBlock;
         await env.CORE_DB.batch([
@@ -305,9 +336,10 @@ export async function syncCoreEvents(
           env.CORE_DB.prepare(
             "DELETE FROM core_state WHERE key IN ('rollback_to','rollback_event_index','rollback_cursor_block')",
           ),
+          env.CORE_DB.prepare("DELETE FROM core_state WHERE key=?").bind(PENDING_PROTOCOL_KEY),
         ]);
       }
-    }
+    } else if (pendingMismatch !== null) throw new Error("Protocol changed before first checkpoint; rebuild required");
     const cap = Math.min(opts.maxEvents ?? MAX_EVENTS_PER_RUN, MAX_EVENTS_PER_RUN);
     let applied = 0;
     let chunk = CHUNK;
@@ -328,6 +360,19 @@ export async function syncCoreEvents(
       if (events.length === 0) break;
       for (let offset = 0; offset < events.length; offset += APPLY_CHUNK) {
         const slice = events.slice(offset, offset + APPLY_CHUNK);
+        if (slice.some((event) => event.block_index > sourceTipBlock))
+          throw new Error("Events advanced beyond this pass's fixed anchor; retry");
+        const identities = await Promise.all(
+          [...new Set(slice.map((event) => event.block_index))].map((height) =>
+            fetchReplayIdentity(env.COUNTERPARTY_API_BASE, height, true),
+          ),
+        );
+        for (const retained of retainedIdentities) {
+          const fresh =
+            identities.find((row) => row.block_index === retained.block_index) ??
+            (await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, retained.block_index, true));
+          if (!sameReplayIdentity(retained, fresh)) throw new Error("Protocol changed between replay slices");
+        }
         const ctx: Ctx = {
           stmts: [],
           identities: createIdentitySet(),
@@ -362,18 +407,50 @@ export async function syncCoreEvents(
             previousHash = hash;
           }
           dispatch(event, ctx);
+          if (event.event === "BLOCK_PARSED") {
+            const identity = identities.find((row) => row.block_index === event.block_index)!;
+            if (
+              event.params.ledger_hash !== identity.ledger_hash ||
+              event.params.messages_hash !== identity.messages_hash
+            )
+              throw new Error("Parsed event protocol identity changed");
+          }
         }
         // A fork during page retrieval must not overwrite the checkpoint with
         // a child from the new branch and hide an orphaned parent forever.
+        if (lastBlock > 0) {
+          const anchor = await storedReplayIdentity(env.CORE_DB, lastBlock);
+          if (!anchor || !sameReplayIdentity(anchor, await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, lastBlock)))
+            throw new Error("Applied chain changed while fetching events");
+        }
+        for (const identity of identities) {
+          if (
+            !sameReplayIdentity(
+              identity,
+              await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, identity.block_index, true),
+            )
+          )
+            throw new Error("Protocol changed while fetching events");
+        }
+        for (const retained of retainedIdentities.filter(
+          (row) => !identities.some((identity) => identity.block_index === row.block_index),
+        )) {
+          if (
+            !sameReplayIdentity(
+              retained,
+              await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, retained.block_index, true),
+            )
+          )
+            throw new Error("Protocol anchor changed while fetching events");
+        }
         if (
-          lastBlock > 0 &&
-          (await blockHash(env.COUNTERPARTY_API_BASE, lastBlock)) !==
-            (await env.CORE_DB.prepare("SELECT lower(hex(block_hash)) hash FROM blocks WHERE block_index=?")
-              .bind(lastBlock)
-              .first<{ hash: string }>()
-              .then((row) => row?.hash))
+          !sameReplayIdentity(
+            sourceAnchor,
+            await fetchReplayIdentity(env.COUNTERPARTY_API_BASE, sourceAnchor.block_index, true),
+          )
         )
-          throw new Error("Applied chain changed while fetching events");
+          throw new Error("Protocol source anchor changed while fetching events");
+        await setCoreStateStmt(env.CORE_DB, PENDING_PROTOCOL_KEY, JSON.stringify(identities)).run();
         await batchAll(env.CORE_DB, [...dictionaryStatements(ctx.identities), ...ctx.stmts]);
         const dispenseTxs = slice
           .filter((event) => event.event === "DISPENSE")
@@ -393,6 +470,7 @@ export async function syncCoreEvents(
           setCoreStateStmt(env.CORE_DB, "last_block_index", String(lastBlock)),
           checkpointHashStmt(env.CORE_DB, lastBlock),
         ]);
+        retainedIdentities = identities;
       }
     }
 
