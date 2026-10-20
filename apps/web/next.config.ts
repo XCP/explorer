@@ -1,5 +1,15 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      { source: "/.well-known/:path*", headers: [{ key: "Access-Control-Allow-Origin", value: "*" }] },
+      {
+        source: "/.well-known/wallet-app.json",
+        headers: [{ key: "Content-Type", value: "application/json; charset=utf-8" }],
+      },
+      { source: "/wallet-app/:path*", headers: [{ key: "Access-Control-Allow-Origin", value: "*" }] },
+    ];
+  },
   reactStrictMode: true,
   reactCompiler: true,
   typedRoutes: true,
