@@ -18,6 +18,11 @@ export interface RecoveryImportTransaction {
   outputs: RecoveryImportOutput[];
 }
 
+export interface RecoveryImportOptions {
+  /** The reclassifier reads the canonical body from this same bucket, so rewriting it is redundant. */
+  persistRawTransactions?: boolean;
+}
+
 const hashPattern = /^[0-9a-f]{64}$/i;
 
 export async function batchRecoveryStatements(
@@ -49,7 +54,11 @@ export const RECOVERY_OUTPUT_UPSERT_SQL = `
     ${keepSpend("spent_height")},verified_at=excluded.verified_at,classifier_version=excluded.classifier_version,
     ${keepSpend("chain_checked_at")}`;
 
-export async function importRecoveryTransactions(env: Env, rows: RecoveryImportTransaction[]): Promise<number> {
+export async function importRecoveryTransactions(
+  env: Env,
+  rows: RecoveryImportTransaction[],
+  options: RecoveryImportOptions = {},
+): Promise<number> {
   if (rows.length === 0 || rows.length > 100) throw new Error("expected 1 to 100 transactions");
   const now = Math.floor(Date.now() / 1000);
   const statements: D1PreparedStatement[] = [];
@@ -63,12 +72,14 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
     if (transaction.txid !== expectedTxid) throw new Error(`raw transaction hash mismatch: ${expectedTxid}`);
     if (!Array.isArray(row.outputs) || row.outputs.length === 0)
       throw new Error(`transaction has no outputs: ${expectedTxid}`);
-    blobs.push(
-      env.RECOVERY_TRANSACTIONS.put(`transactions/${expectedTxid}.hex`, row.raw_transaction_hex.toLowerCase(), {
-        httpMetadata: { contentType: "text/plain" },
-        customMetadata: { txid: expectedTxid },
-      }),
-    );
+    if (options.persistRawTransactions !== false) {
+      blobs.push(
+        env.RECOVERY_TRANSACTIONS.put(`transactions/${expectedTxid}.hex`, row.raw_transaction_hex.toLowerCase(), {
+          httpMetadata: { contentType: "text/plain" },
+          customMetadata: { txid: expectedTxid },
+        }),
+      );
+    }
 
     const validated = row.outputs.map((candidate) => {
       if (!Number.isSafeInteger(candidate.vout) || candidate.vout < 0) throw new Error("invalid output index");
