@@ -18,7 +18,13 @@ candidates.get("/v2/collections/candidates", (c) =>
   cached(
     c,
     "collection-candidates:chosen:2",
-    { ttl: 86400, edge: 300, swr: 86400, staleKey: "collection-candidates:chosen:1" },
+    {
+      ttl: 86400,
+      edge: 300,
+      swr: 86400,
+      staleKey: "collection-candidates:chosen:1",
+      durableWrite: true,
+    },
     async (): Promise<Envelope<CollectionCandidatesPayload>> => {
       const seeds = await collectorCandidateSeeds(c.env.CORE_DB, SEED_LIMIT);
       const chosen = new Map<number, number>();
