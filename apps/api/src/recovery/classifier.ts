@@ -6,7 +6,7 @@ import { base58check } from "@scure/base";
 export type CounterpartyMultisigLayout = "historical-1-of-2" | "current-1-of-3";
 export type RecoveryClassification = "recoverable" | "spent" | "ambiguous" | "unsupported" | "invalid" | "unverified";
 
-export const RECOVERY_CLASSIFIER_VERSION = 1;
+export const RECOVERY_CLASSIFIER_VERSION = 2;
 
 export interface ParsedBareMultisig {
   requiredSignatures: number;
@@ -30,6 +30,12 @@ export interface RecoveryDecision {
   recoveryKeyPosition?: number;
   derivedAddress?: string;
   parsed?: ParsedBareMultisig;
+}
+
+export interface RecoveryTransactionOutputEvidence {
+  vout: number;
+  scriptPubkeyHex: string;
+  spent?: boolean;
 }
 
 const hexPattern = /^[0-9a-f]+$/i;
@@ -191,4 +197,76 @@ export function classifyRecovery(evidence: RecoveryEvidence): RecoveryDecision {
     derivedAddress,
     parsed,
   };
+}
+
+function classifyVerifiedOwner(output: RecoveryTransactionOutputEvidence, firstInputTxid?: string): RecoveryDecision {
+  const evidence = {
+    scriptPubkeyHex: output.scriptPubkeyHex,
+    firstInputTxid,
+    spent: output.spent,
+  };
+  const provisional = classifyRecovery(evidence);
+  if (provisional.classification !== "ambiguous" || !provisional.derivedAddress) return provisional;
+  return classifyRecovery({ ...evidence, expectedAddress: provisional.derivedAddress });
+}
+
+/**
+ * Classify every candidate in one Bitcoin transaction.
+ *
+ * Legacy Counterparty decoded 1-of-2 data by concatenating every data-shaped output and checking
+ * `CNTRPRTY` once at the start of the combined payload. Consequently only the first output carries
+ * independently verifiable provenance. A later output may inherit that proof only when an earlier,
+ * independently verified historical output contains the exact same real recovery pubkey and every
+ * inherited output is the next vout in that uninterrupted same-key run. The script remains
+ * independently signable: it is still 1-of-2 and contains that curve-valid key.
+ *
+ * Decisions are returned in the same order as `outputs`; vout ordering is used only while proving
+ * that an anchor precedes a continuation.
+ */
+export function classifyRecoveryTransaction(
+  outputs: RecoveryTransactionOutputEvidence[],
+  firstInputTxid?: string,
+): RecoveryDecision[] {
+  const entries = outputs.map((output, index) => ({
+    index,
+    output,
+    decision: classifyVerifiedOwner(output, firstInputTxid),
+  }));
+  const historicalRunEndByKey = new Map<string, number>();
+
+  for (const entry of [...entries].sort((left, right) => left.output.vout - right.output.vout)) {
+    const { decision, output } = entry;
+    if (
+      decision.layout === "historical-1-of-2" &&
+      decision.recoveryKeyHex &&
+      (decision.classification === "recoverable" || decision.classification === "spent")
+    ) {
+      historicalRunEndByKey.set(decision.recoveryKeyHex, output.vout);
+      continue;
+    }
+
+    const parsed = decision.parsed;
+    if (decision.classification !== "unverified" || parsed?.requiredSignatures !== 1 || parsed.publicKeyCount !== 2) {
+      continue;
+    }
+    const recoveryKeyHex = parsed.keyDataHex[0];
+    if (historicalRunEndByKey.get(recoveryKeyHex) !== output.vout - 1) continue;
+    const derivedAddress = p2pkhAddress(recoveryKeyHex);
+    if (!derivedAddress) continue;
+
+    entry.decision = {
+      classification: output.spent ? "spent" : "recoverable",
+      reason: output.spent
+        ? "verified-historical-continuation-output-already-spent"
+        : "verified-historical-continuation-output",
+      layout: "historical-1-of-2",
+      recoveryKeyHex,
+      recoveryKeyPosition: 0,
+      derivedAddress,
+      parsed,
+    };
+    historicalRunEndByKey.set(recoveryKeyHex, output.vout);
+  }
+
+  return entries.sort((left, right) => left.index - right.index).map((entry) => entry.decision);
 }

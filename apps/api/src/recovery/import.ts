@@ -1,11 +1,5 @@
 import type { Env } from "#api/env";
-import {
-  RECOVERY_CLASSIFIER_VERSION,
-  classifyRecovery,
-  p2pkhAddress,
-  parseBareMultisig,
-  verifyCounterpartyLayout,
-} from "#api/recovery/classifier";
+import { RECOVERY_CLASSIFIER_VERSION, classifyRecoveryTransaction, parseBareMultisig } from "#api/recovery/classifier";
 import { parseRecoveryTransaction } from "#api/recovery/raw-transaction";
 
 export interface RecoveryImportOutput {
@@ -38,7 +32,7 @@ export async function batchRecoveryStatements(
 // about spends, so its rows always say classification='recoverable', spent_by_txid=NULL. Preserve a
 // settled spend rather than letting a cursor rewind resurrect an output its owner already recovered.
 // An importer that does supply spend evidence still wins, which only the explicit import path does.
-const SPEND_ALREADY_SETTLED = `recovery_outputs.classification='spent' AND excluded.spent_by_txid IS NULL`;
+const SPEND_ALREADY_SETTLED = `recovery_outputs.spent_by_txid IS NOT NULL AND excluded.spent_by_txid IS NULL`;
 const keepSpend = (column: string) =>
   `${column}=CASE WHEN ${SPEND_ALREADY_SETTLED} THEN recovery_outputs.${column} ELSE excluded.${column} END`;
 
@@ -76,7 +70,7 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
       }),
     );
 
-    for (const candidate of row.outputs) {
+    const validated = row.outputs.map((candidate) => {
       if (!Number.isSafeInteger(candidate.vout) || candidate.vout < 0) throw new Error("invalid output index");
       if (!Number.isSafeInteger(candidate.value_sats) || candidate.value_sats < 0)
         throw new Error("invalid output value");
@@ -91,19 +85,24 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
       const parsed = parseBareMultisig(scriptPubkeyHex);
       if (!parsed || parsed.requiredSignatures !== 1 || (parsed.publicKeyCount !== 2 && parsed.publicKeyCount !== 3))
         throw new Error(`unsupported recovery candidate: ${expectedTxid}:${candidate.vout}`);
-      const structuralLayout = parsed.publicKeyCount === 2 ? "historical-1-of-2" : "current-1-of-3";
-      const verifiedLayout = verifyCounterpartyLayout(parsed, transaction.firstInputTxid);
-      const recoveryKeyPosition = verifiedLayout ? (verifiedLayout === "historical-1-of-2" ? 0 : 2) : null;
-      const recoveryKeyHex = recoveryKeyPosition == null ? null : parsed.keyDataHex[recoveryKeyPosition];
-      const recoveryAddress = recoveryKeyHex ? p2pkhAddress(recoveryKeyHex) : null;
-      const decision = recoveryAddress
-        ? classifyRecovery({
-            scriptPubkeyHex,
-            firstInputTxid: transaction.firstInputTxid,
-            expectedAddress: recoveryAddress,
-            spent: !!candidate.spent_by_txid,
-          })
-        : { classification: "unverified" as const, reason: "counterparty-provenance-not-verified" };
+      return {
+        candidate,
+        scriptPubkeyHex,
+        structuralLayout: parsed.publicKeyCount === 2 ? ("historical-1-of-2" as const) : ("current-1-of-3" as const),
+      };
+    });
+    const decisions = classifyRecoveryTransaction(
+      validated.map(({ candidate, scriptPubkeyHex }) => ({
+        vout: candidate.vout,
+        scriptPubkeyHex,
+        spent: !!candidate.spent_by_txid,
+      })),
+      transaction.firstInputTxid,
+    );
+
+    for (let index = 0; index < validated.length; index++) {
+      const { candidate, scriptPubkeyHex, structuralLayout } = validated[index]!;
+      const decision = decisions[index]!;
 
       statements.push(
         upsert.bind(
@@ -112,9 +111,9 @@ export async function importRecoveryTransactions(env: Env, rows: RecoveryImportT
           candidate.value_sats,
           scriptPubkeyHex,
           structuralLayout,
-          recoveryKeyHex,
-          recoveryKeyPosition,
-          recoveryAddress,
+          decision.recoveryKeyHex ?? null,
+          decision.recoveryKeyPosition ?? null,
+          decision.derivedAddress ?? null,
           decision.classification,
           decision.reason,
           candidate.block_height ?? null,

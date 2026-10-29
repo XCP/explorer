@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { RECOVERY_CLASSIFIER_VERSION } from "#api/recovery/classifier";
-import { RECOVERY_RECLASSIFY_QUEUE_SQL } from "#api/recovery/reclassify";
+import { RECOVERY_RECLASSIFY_QUEUE_SQL, retainRecoverySpendEvidence } from "#api/recovery/reclassify";
 
 function database(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -57,4 +57,26 @@ test("an index already on the current classifier has nothing to do", () => {
   db.prepare(`INSERT INTO recovery_outputs VALUES ('aa',0,1,1,?)`).run(RECOVERY_CLASSIFIER_VERSION);
 
   assert.deepEqual(queued(db), []);
+});
+
+test("reclassification carries settled spend evidence into the new verdict", () => {
+  assert.deepEqual(
+    retainRecoverySpendEvidence(
+      [
+        { vout: 0, value_sats: 1_000, script_pubkey_hex: "51" },
+        { vout: 1, value_sats: 2_000, script_pubkey_hex: "51" },
+      ],
+      [{ vout: 1, spent_by_txid: "cc", spent_height: 900_000 }],
+    ),
+    [
+      { vout: 0, value_sats: 1_000, script_pubkey_hex: "51" },
+      {
+        vout: 1,
+        value_sats: 2_000,
+        script_pubkey_hex: "51",
+        spent_by_txid: "cc",
+        spent_height: 900_000,
+      },
+    ],
+  );
 });
