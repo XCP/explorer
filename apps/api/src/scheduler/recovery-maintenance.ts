@@ -11,6 +11,9 @@ import { runScheduledJob } from "#api/scheduler/job";
 
 /** Independent recovery-database/provider lane; never delays canonical ingestion or projections. */
 export async function runRecoveryMaintenance(env: Env): Promise<void> {
+  // Classifier upgrades are rare and R2-backed. Give their bounded queue first use of the recovery
+  // invocation so a slow, unrelated CORE_DB projection cannot delay newly proven Bitcoin outputs.
+  await runScheduledJob("reclassifyRecoveryOutputs", () => reclassifyRecoveryOutputs(env, 50));
   // Address projection gets a fresh CORE_DB invocation. Running it after the large asset projection can exhaust
   // D1's internal compound-statement budget even though both jobs are independently valid.
   await runScheduledJob("runCoreAddressSignalsStep", () => runCoreAddressSignalsStep(env.CORE_DB));
@@ -19,9 +22,6 @@ export async function runRecoveryMaintenance(env: Env): Promise<void> {
   // durable cursor only after the complete page succeeds. Use a larger page while catching up so a restart
   // does not leave the recovery index days behind the canonical transaction mirror.
   await runScheduledJob("scanRecoveryTransactions", () => scanRecoveryTransactions(env, 100));
-  // Re-deciding an already-indexed transaction reads only R2, so it can run alongside the chain-bound
-  // jobs without competing for the Electrs budget that caps everything else on this lane.
-  await runScheduledJob("reclassifyRecoveryOutputs", () => reclassifyRecoveryOutputs(env, 25));
   await runScheduledJob("verifyRecoveryTransactions", () => verifyRecoveryTransactions(env, 10));
   await runScheduledJob("reconcileRecoveryAttempts", () => reconcileRecoveryAttempts(env, 25));
   await runScheduledJob("refreshRecoveryStats", () => refreshRecoveryStats(env));
