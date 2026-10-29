@@ -12,7 +12,6 @@ import { collectorCandidateSeeds, chosenCollectorCounts } from "#api/queries/can
 export const candidates = router();
 
 const SEED_LIMIT = 150;
-const CHOSEN_BATCH = 30;
 const BOARD_SIZE = 100;
 
 candidates.get("/v2/collections/candidates", (c) =>
@@ -23,11 +22,11 @@ candidates.get("/v2/collections/candidates", (c) =>
     async (): Promise<Envelope<CollectionCandidatesPayload>> => {
       const seeds = await collectorCandidateSeeds(c.env.CORE_DB, SEED_LIMIT);
       const chosen = new Map<number, number>();
-      for (let index = 0; index < seeds.length; index += CHOSEN_BATCH) {
-        const batch = seeds.slice(index, index + CHOSEN_BATCH).map((seed) => seed.asset_id);
-        for (const row of await chosenCollectorCounts(c.env.CORE_DB, batch)) {
-          chosen.set(row.asset_id, row.chosen_collectors);
-        }
+      for (const row of await chosenCollectorCounts(
+        c.env.CORE_DB,
+        seeds.map((seed) => seed.asset_id),
+      )) {
+        chosen.set(row.asset_id, row.chosen_collectors);
       }
       const board: CollectionCandidate[] = seeds
         .map((seed) => ({
