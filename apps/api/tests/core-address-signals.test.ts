@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
+  burnActivityQuery,
   enqueueCoreAddressSignals,
   rebuildCoreAddressSignals,
   runCoreAddressSignalsStep,
@@ -45,6 +46,19 @@ const d1 = (db: DatabaseSync) =>
       return results;
     },
   }) as unknown as D1Database;
+
+test("ordinary address burn activity uses the source index instead of scanning every burn", () => {
+  const db = new DatabaseSync(":memory:");
+  for (const migration of migrations) db.exec(migration);
+  const plan = db
+    .prepare(`EXPLAIN QUERY PLAN ${burnActivityQuery("1ordinary")}`)
+    .all(1)
+    .map((row) => String(row.detail))
+    .join("\n");
+
+  assert.match(plan, /SEARCH burns USING COVERING INDEX idx_burns_source \(source_id=\?\)/);
+  assert.equal(plan.includes("SCAN burns"), false);
+});
 
 test("compact address signals recompute touched identities and converge to zero", async () => {
   const db = new DatabaseSync(":memory:");

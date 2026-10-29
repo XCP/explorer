@@ -135,9 +135,11 @@ export async function reclassifyRecoveryOutputs(
       continue;
     }
     if (item.candidates.length === 0) continue;
-    outputs += await importRecoveryTransactions(env, [
-      { txid: item.row.txid, raw_transaction_hex: item.rawHex, outputs: item.candidates },
-    ]);
+    outputs += await importRecoveryTransactions(
+      env,
+      [{ txid: item.row.txid, raw_transaction_hex: item.rawHex, outputs: item.candidates }],
+      { persistRawTransactions: false },
+    );
   }
   return { transactions: outdated.results.length - missing, outputs, missing };
 }

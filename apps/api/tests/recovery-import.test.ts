@@ -2,7 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import type { D1PreparedStatement } from "@cloudflare/workers-types";
-import { batchRecoveryStatements, RECOVERY_OUTPUT_UPSERT_SQL } from "#api/recovery/import";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import type { Env } from "#api/env";
+import { batchRecoveryStatements, importRecoveryTransactions, RECOVERY_OUTPUT_UPSERT_SQL } from "#api/recovery/import";
+import { parseRecoveryTransaction } from "#api/recovery/raw-transaction";
+import { recoveryCandidates } from "#api/recovery/scanner";
 
 test("recovery imports chunk large Counterparty transactions at the D1 batch ceiling", async () => {
   const batches: D1PreparedStatement[][] = [];
@@ -22,6 +26,66 @@ test("recovery imports chunk large Counterparty transactions at the D1 batch cei
   );
   assert.equal((batches[0]![0] as unknown as { index: number }).index, 0);
   assert.equal((batches[1]![0] as unknown as { index: number }).index, 100);
+});
+
+const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+const recoveryKey = hex(secp256k1.getPublicKey(new Uint8Array(32).fill(7), true));
+const counterpartyPrefix = hex(new TextEncoder().encode("CNTRPRTY"));
+const dataKey = `08${counterpartyPrefix}${"00".repeat(24)}`;
+const multisig = `51${(recoveryKey.length / 2).toString(16)}${recoveryKey}21${dataKey}52ae`;
+const input = `${"12".repeat(32)}0000000000ffffffff`;
+const raw = `0100000001${input}01e803000000000000${(multisig.length / 2).toString(16)}${multisig}00000000`;
+
+function importEnvironment(puts: string[], batches: number[]): Env {
+  const statement = {
+    bind() {
+      return this;
+    },
+  } as unknown as D1PreparedStatement;
+  return {
+    RECOVERY_DB: {
+      prepare: () => statement,
+      batch: async (items: D1PreparedStatement[]) => {
+        batches.push(items.length);
+        return [];
+      },
+    } as unknown as D1Database,
+    RECOVERY_TRANSACTIONS: {
+      put: async (key: string) => {
+        puts.push(key);
+        return null;
+      },
+    } as unknown as R2Bucket,
+  } as Env;
+}
+
+const importRow = () => ({
+  txid: parseRecoveryTransaction(raw).txid,
+  raw_transaction_hex: raw,
+  outputs: recoveryCandidates(raw, 900_000, 1_700_000_000),
+});
+
+test("normal recovery imports persist their canonical raw transaction", async () => {
+  const puts: string[] = [];
+  const batches: number[] = [];
+
+  assert.equal(await importRecoveryTransactions(importEnvironment(puts, batches), [importRow()]), 1);
+  assert.equal(puts.length, 1);
+  assert.deepEqual(batches, [1]);
+});
+
+test("reclassification can reuse its R2 body without rewriting the same object", async () => {
+  const puts: string[] = [];
+  const batches: number[] = [];
+
+  assert.equal(
+    await importRecoveryTransactions(importEnvironment(puts, batches), [importRow()], {
+      persistRawTransactions: false,
+    }),
+    1,
+  );
+  assert.equal(puts.length, 0);
+  assert.deepEqual(batches, [1]);
 });
 
 type OutputRow = { classification: string; spent_by_txid: string | null; chain_checked_at: number | null };

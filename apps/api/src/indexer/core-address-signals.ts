@@ -19,12 +19,18 @@ const ACTIVITY_QUERIES = [
     WHERE tx0_address_id=?1 OR tx1_address_id=?1`,
   `SELECT min(block_index) first_block,max(block_index) last_block FROM dispensers
     WHERE source_id=?1 OR origin_id=?1`,
-  // A burn is the first thing most 2014 addresses did, and the burn address itself is every burn's
-  // destination — Counterparty only records the source, so without this the burn address "first
-  // appeared" when someone sent it an asset in 2018, four years late.
-  `SELECT min(block_index) first_block,max(block_index) last_block FROM burns
-    WHERE source_id=?1 OR ?1=(SELECT address_id FROM address_dictionary WHERE address='${BURN_ADDRESS}')`,
 ] as const;
+
+/**
+ * A burn is the first thing most 2014 addresses did, and the burn address itself is every burn's
+ * implicit destination. Keep that special case in TypeScript: putting it in a SQL OR makes SQLite
+ * scan the complete burns index for every ordinary address instead of seeking idx_burns_source.
+ * Both variants accept one binding so the surrounding D1 batch stays uniform.
+ */
+export const burnActivityQuery = (address: string) =>
+  address === BURN_ADDRESS
+    ? `SELECT min(block_index) first_block,max(block_index) last_block FROM burns WHERE ?1 IS NOT NULL`
+    : `SELECT min(block_index) first_block,max(block_index) last_block FROM burns WHERE source_id=?1`;
 
 // The DO UPDATE carries a WHERE guard so the repair lane skips rows whose signals are unchanged —
 // the weekly full-population cycle recycles ~500k addresses and nearly all are historically inert.
@@ -233,7 +239,7 @@ async function rebuildCoreAddressSignalsWithChanges(
     // subrequests per address, which capped a drain step near 110 addresses before hitting the
     // 1,000-subrequest invocation limit (and killed the whole maintenance lane when exceeded).
     const bounds = await db.batch<{ first_block: number | null; last_block: number | null }>(
-      ACTIVITY_QUERIES.map((query) => db.prepare(query).bind(identity.address_id)),
+      [...ACTIVITY_QUERIES, burnActivityQuery(address)].map((query) => db.prepare(query).bind(identity.address_id)),
     );
     const activity = bounds.flatMap((result) => result.results ?? []);
     const firstBlocks = activity.flatMap((row) => (row.first_block === null ? [] : [row.first_block]));
