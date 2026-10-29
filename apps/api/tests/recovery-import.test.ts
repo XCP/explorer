@@ -76,6 +76,16 @@ test("re-importing a settled output never resurrects it as recoverable", () => {
   assert.deepEqual(rescan(db), { classification: "spent", spent_by_txid: "c2", chain_checked_at: 1_700 });
 });
 
+test("re-importing never clears spend evidence from a previously unverified output", () => {
+  const db = outputsDatabase();
+  rescan(db);
+  db.prepare(
+    `UPDATE recovery_outputs SET classification='unverified',spent_by_txid='c2',spent_height=960262,chain_checked_at=1700`,
+  ).run();
+
+  assert.deepEqual(rescan(db), { classification: "unverified", spent_by_txid: "c2", chain_checked_at: 1_700 });
+});
+
 test("an importer that supplies its own spend evidence still wins", () => {
   const db = outputsDatabase();
   rescan(db);

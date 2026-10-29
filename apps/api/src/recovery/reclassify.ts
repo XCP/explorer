@@ -1,6 +1,6 @@
 import type { Env } from "#api/env";
 import { RECOVERY_CLASSIFIER_VERSION } from "#api/recovery/classifier";
-import { importRecoveryTransactions } from "#api/recovery/import";
+import { importRecoveryTransactions, type RecoveryImportOutput } from "#api/recovery/import";
 import { recoveryCandidates } from "#api/recovery/scanner";
 
 /**
@@ -27,6 +27,26 @@ interface OutdatedTransactionRow {
   block_time: number | null;
 }
 
+interface ExistingSpendRow {
+  vout: number;
+  spent_by_txid: string;
+  spent_height: number | null;
+}
+
+export function retainRecoverySpendEvidence(
+  candidates: RecoveryImportOutput[],
+  existingSpends: ExistingSpendRow[],
+): RecoveryImportOutput[] {
+  const byVout = new Map(existingSpends.map((row) => [row.vout, row]));
+  return candidates.map((candidate) => {
+    if (candidate.spent_by_txid) return candidate;
+    const existing = byVout.get(candidate.vout);
+    return existing
+      ? { ...candidate, spent_by_txid: existing.spent_by_txid, spent_height: existing.spent_height }
+      : candidate;
+  });
+}
+
 export async function reclassifyRecoveryOutputs(
   env: Env,
   transactionLimit = 25,
@@ -50,8 +70,19 @@ export async function reclassifyRecoveryOutputs(
       missing++;
       continue;
     }
-    const rawHex = await object.text();
-    const candidates = recoveryCandidates(rawHex, row.block_height ?? 0, row.block_time);
+    const [rawHex, existingSpends] = await Promise.all([
+      object.text(),
+      env.RECOVERY_DB.prepare(
+        `SELECT vout,spent_by_txid,spent_height FROM recovery_outputs
+          WHERE txid=? AND spent_by_txid IS NOT NULL`,
+      )
+        .bind(row.txid)
+        .all<ExistingSpendRow>(),
+    ]);
+    const candidates = retainRecoverySpendEvidence(
+      recoveryCandidates(rawHex, row.block_height ?? 0, row.block_time),
+      existingSpends.results,
+    );
     if (candidates.length === 0) continue;
     outputs += await importRecoveryTransactions(env, [
       { txid: row.txid, raw_transaction_hex: rawHex, outputs: candidates },

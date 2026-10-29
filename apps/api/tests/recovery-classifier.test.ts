@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import {
   classifyRecovery,
+  classifyRecoveryTransaction,
   isCurvePublicKey,
   p2pkhAddress,
   parseBareMultisig,
@@ -76,6 +77,32 @@ test("parses exact historical Counterparty 1-of-2 layout", () => {
   });
   assert.equal(result.classification, "recoverable");
   assert.equal(result.recoveryKeyPosition, 0);
+});
+
+test("inherits historical provenance only for later 1-of-2 outputs with the exact recovery key", () => {
+  const historicalData = `${prefix.length.toString(16).padStart(2, "0")}${hex(prefix)}${"00".repeat(24)}`;
+  const continuationData = `04deadbeef${"00".repeat(28)}`;
+  const otherRecoveryKey = dataKeyA;
+  const decisions = classifyRecoveryTransaction([
+    { vout: 2, scriptPubkeyHex: script(1, [recoveryKey, continuationData]) },
+    { vout: 0, scriptPubkeyHex: script(1, [recoveryKey, continuationData]) },
+    { vout: 1, scriptPubkeyHex: script(1, [recoveryKey, historicalData]) },
+    { vout: 4, scriptPubkeyHex: script(1, [otherRecoveryKey, continuationData]) },
+    { vout: 3, scriptPubkeyHex: script(1, [recoveryKey, continuationData]), spent: true },
+    { vout: 6, scriptPubkeyHex: script(1, [recoveryKey, continuationData]) },
+  ]);
+
+  assert.equal(decisions[0]?.classification, "recoverable");
+  assert.equal(decisions[0]?.reason, "verified-historical-continuation-output");
+  assert.equal(decisions[0]?.recoveryKeyHex, recoveryKey);
+  assert.equal(decisions[0]?.recoveryKeyPosition, 0);
+  assert.equal(decisions[0]?.derivedAddress, address);
+  assert.equal(decisions[1]?.classification, "unverified", "an output before the anchor cannot inherit proof");
+  assert.equal(decisions[2]?.classification, "recoverable", "the prefixed output is independently verified");
+  assert.equal(decisions[3]?.classification, "unverified", "a different recovery key cannot inherit proof");
+  assert.equal(decisions[4]?.classification, "spent");
+  assert.equal(decisions[4]?.reason, "verified-historical-continuation-output-already-spent");
+  assert.equal(decisions[5]?.classification, "unverified", "a vout gap ends the inherited historical run");
 });
 
 test("does not mistake modern curve-valid data keys for the recovery key", () => {
