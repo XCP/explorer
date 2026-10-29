@@ -21,6 +21,7 @@ export const J = (c: Ctx, body: unknown, ttl = 30) =>
   });
 
 const CACHE_REFRESH_LEASE_SECONDS = 60;
+const CACHE_WRITE_RETRY_DELAYS_MS = [250, 750, 2_000, 4_000] as const;
 
 function primaryCacheDatabase(db: D1Database): D1Database {
   const session = db as unknown as { withSession?: (mode: string) => D1Database };
@@ -34,6 +35,29 @@ export async function claimCacheRefresh(db: D1Database, key: string, now: number
     .bind(now + CACHE_REFRESH_LEASE_SECONDS, key, now)
     .run();
   return (result.meta.rows_written ?? 0) === 1;
+}
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+/**
+ * An expensive producer can briefly saturate D1, causing the immediately following cache INSERT to
+ * fail. Retrying only that explicit overload prevents a successful result from becoming an endless
+ * cold-cache recomputation loop; schema/auth/logic errors still fail immediately.
+ */
+export async function retryD1CacheWrite(
+  write: () => Promise<void>,
+  pause: (milliseconds: number) => Promise<void> = wait,
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await write();
+      return;
+    } catch (error) {
+      const overloaded = error instanceof Error && error.message.includes("D1 DB is overloaded");
+      if (!overloaded || attempt >= CACHE_WRITE_RETRY_DELAYS_MS.length) throw error;
+      await pause(CACHE_WRITE_RETRY_DELAYS_MS[attempt]!);
+    }
+  }
 }
 
 /**
@@ -55,10 +79,12 @@ export async function cached(
      *  stale body serves immediately and the primary computes in the background, so a version
      *  bump never opens a cold window for readers. */
     staleKey?: string;
+    /** Require a successful cache publication before returning an expensive cold result. */
+    durableWrite?: boolean;
   },
   producer: () => Promise<unknown>,
 ): Promise<Response> {
-  const { ttl, edge = Math.min(ttl, 30), swr = ttl, staleKey } = opts;
+  const { ttl, edge = Math.min(ttl, 30), swr = ttl, staleKey, durableWrite = false } = opts;
   // Public query producers keep using the replica-local database from the route context. Cache rows
   // and their refresh lease use the primary so every colo observes one global coordination point.
   const cacheDb = primaryCacheDatabase(c.env.CORE_DB);
@@ -71,15 +97,18 @@ export async function cached(
     });
   const write = async (): Promise<string> => {
     const body = JSON.stringify(await producer());
-    await cacheDb
-      .prepare(
-        `INSERT INTO cache (key,body,ctype,expires_at,refreshing_until) VALUES (?,?,'application/json',?,0)
-       ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype,
-         expires_at=excluded.expires_at,refreshing_until=0`,
-      )
-      .bind(key, body, Math.floor(Date.now() / 1000) + ttl)
-      .run()
-      .catch(() => {});
+    const persist = async () => {
+      await cacheDb
+        .prepare(
+          `INSERT INTO cache (key,body,ctype,expires_at,refreshing_until) VALUES (?,?,'application/json',?,0)
+         ON CONFLICT(key) DO UPDATE SET body=excluded.body, ctype=excluded.ctype,
+           expires_at=excluded.expires_at,refreshing_until=0`,
+        )
+        .bind(key, body, Math.floor(Date.now() / 1000) + ttl)
+        .run();
+    };
+    if (durableWrite) await retryD1CacheWrite(persist);
+    else await persist().catch(() => {});
     return body;
   };
   const hit = await cacheDb

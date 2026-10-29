@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { cached, claimCacheRefresh, type Ctx } from "#api/read/respond";
+import { cached, claimCacheRefresh, retryD1CacheWrite, type Ctx } from "#api/read/respond";
 
 class Statement {
   private args: unknown[] = [];
@@ -50,6 +50,35 @@ test("only one stale-cache request owns a refresh lease", async () => {
   assert.equal(await claimCacheRefresh(db, "heavy", 161), true);
   assert.equal(await claimCacheRefresh(db, "missing", 161), false);
   sqlite.close();
+});
+
+test("durable cache publication retries only transient D1 overload", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  await retryD1CacheWrite(
+    async () => {
+      attempts++;
+      if (attempts < 3) throw new Error("D1_ERROR: D1 DB is overloaded. Requests queued for too long.");
+    },
+    async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+  );
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [250, 750]);
+
+  attempts = 0;
+  await assert.rejects(
+    retryD1CacheWrite(
+      async () => {
+        attempts++;
+        throw new Error("D1_ERROR: no such table: cache");
+      },
+      async () => {},
+    ),
+    /no such table/,
+  );
+  assert.equal(attempts, 1);
 });
 
 test("a fresh hit is edge-cacheable for the configured window", async () => {
