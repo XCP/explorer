@@ -38,11 +38,8 @@ export function radarEstablished(db: D1Database, limit = 40): Promise<RadarAsset
   );
 }
 
-/** Available now: high-Conviction assets (raw ≥ calibrated p90) purchasable right now, ranked by Conviction,
- *  showing the CHEAPEST path per asset (in USD) across two venues:
- *   - dispenser: cheapest open Counterparty dispenser holding stock (fixed-price BTC vending, instant buy)
- *   - emblem:    cheapest live Ethereum listing of a vault wrapping the card (Sequence-aggregated ask, USD)
- *  The dispenser ask converts to USD at the latest daily BTC rate so the two venues are comparable. */
+/** Available now: eligible high-Conviction assets with a stocked Counterparty dispenser.
+ * Ethereum asks are no longer advertised: their Sequence provider is retiring. */
 export function radarAvailable(db: D1Database, limit = 40): Promise<AvailableAsset[]> {
   return q<AvailableAsset>(
     db,
@@ -68,29 +65,12 @@ export function radarAvailable(db: D1Database, limit = 40): Promise<AvailableAss
           AND (dispenser.oracle_address_id IS NULL OR quote.price > 0)
         GROUP BY dispenser.asset_id
      ),
-     emb_ranked AS ( -- cheapest current-generation listing, keeping venue and URL from the same order
-       SELECT asset_id,price_usd ask_usd,marketplace,url,
-              ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY price_usd,order_id) rank
-         FROM emblem_listings
-        WHERE generation=COALESCE((SELECT CAST(value AS INTEGER) FROM core_state
-                                    WHERE key='emblem_listings_generation'),0)
-          AND asset_id IS NOT NULL AND price_usd IS NOT NULL
-          AND (expiry=0 OR expiry>=unixepoch())
-     ),
-     emb AS (
-       SELECT asset_id,ask_usd,marketplace,url FROM emb_ranked WHERE rank=1
-     ),
-     offers AS MATERIALIZED (
-       SELECT asset_id FROM disp
-       UNION
-       SELECT asset_id FROM emb
-     ),
      conv AS (
        SELECT signal.asset_id,dictionary.asset, (${CONVICTION}) conviction,
               COALESCE(signal.max_realized_usd,0) market_usd,
               signal.holders,signal.supply,signal.avg_holder_dex,signal.pct_creator_holders
-         FROM offers
-         JOIN asset_signals signal ON signal.asset_id=offers.asset_id
+         FROM disp
+         JOIN asset_signals signal ON signal.asset_id=disp.asset_id
          JOIN asset_dictionary dictionary ON dictionary.asset_id=signal.asset_id
         WHERE ${ELIGIBLE} AND (${CONVICTION}) >= ${CONVICTION_PCT.p90}
      )
@@ -98,21 +78,13 @@ export function radarAvailable(db: D1Database, limit = 40): Promise<AvailableAss
             ROUND(c.conviction,2) conviction, ROUND(c.market_usd) market_usd,
             c.holders, CAST(ROUND(c.supply) AS INTEGER) supply,
             ROUND(c.avg_holder_dex,1) holder_dex, ROUND(c.pct_creator_holders) creator_pct,
-            CASE WHEN emb.ask_usd IS NOT NULL AND (disp.ask_btc IS NULL OR emb.ask_usd < disp.ask_btc*(SELECT usd FROM px))
-                 THEN 'emblem' ELSE 'dispenser' END venue,
-            CASE WHEN emb.ask_usd IS NOT NULL AND (disp.ask_btc IS NULL OR emb.ask_usd < disp.ask_btc*(SELECT usd FROM px))
-                 THEN ROUND(emb.ask_usd) ELSE ROUND(disp.ask_btc*(SELECT usd FROM px)) END ask_usd,
-            CASE WHEN emb.ask_usd IS NOT NULL AND (disp.ask_btc IS NULL OR emb.ask_usd < disp.ask_btc*(SELECT usd FROM px))
-                 THEN NULL ELSE ROUND(disp.ask_btc,8) END ask_btc,
-            CASE WHEN emb.ask_usd IS NOT NULL AND (disp.ask_btc IS NULL OR emb.ask_usd < disp.ask_btc*(SELECT usd FROM px))
-                 THEN emb.marketplace ELSE NULL END marketplace,
-            CASE WHEN emb.ask_usd IS NOT NULL AND (disp.ask_btc IS NULL OR emb.ask_usd < disp.ask_btc*(SELECT usd FROM px))
-                 THEN emb.url ELSE NULL END listing_url
+            'dispenser' venue,
+            ROUND(disp.ask_btc*(SELECT usd FROM px)) ask_usd,
+            ROUND(disp.ask_btc,8) ask_btc,
+            NULL marketplace, NULL listing_url
        FROM conv c
-       LEFT JOIN disp ON disp.asset_id=c.asset_id
-      LEFT JOIN emb ON emb.asset_id=c.asset_id
+       JOIN disp ON disp.asset_id=c.asset_id
        LEFT JOIN assets state ON state.asset_id=c.asset_id
-      WHERE disp.asset_id IS NOT NULL OR emb.asset_id IS NOT NULL
       ORDER BY c.conviction DESC,c.asset ASC LIMIT ${limit}`,
   );
 }

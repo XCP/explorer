@@ -18,7 +18,6 @@ import { crawlScarceSales } from "#api/indexer/scarce-sales";
 import { classifyVaults } from "#api/indexer/vault-contents";
 import { crawlEmblemMeta } from "#api/indexer/emblem-meta";
 import { crawlEmblemTransfers } from "#api/indexer/emblem-transfers";
-import { crawlEmblemListings } from "#api/indexer/emblem-listings";
 import { crawlTokenscanCollections } from "#api/indexer/tokenscan-collections";
 import { syncCounterTags } from "#api/indexer/counters";
 import { buildScamAttribution } from "#api/indexer/emblem-scam";
@@ -194,9 +193,10 @@ admin.post("/admin/crawl-emblem", async (c) => {
   return c.json(await crawlEmblemStep(c.env));
 });
 
-// Refresh live Emblem listings from the Sequence Marketplace API (rotating contract subset per call). Loop
-// this to sweep all ~36 contracts; the cron also advances it ~hourly.
-admin.post("/admin/crawl-emblem-listings", async (c) => c.json(await crawlEmblemListings(c.env)));
+// Retired explicitly rather than silently running the discontinued provider.
+admin.post("/admin/crawl-emblem-listings", (c) =>
+  c.json({ error: "Live Ethereum listings are no longer supported" }, 410),
+);
 
 // Fold in the tokenscan project directory (~60 collections + sites) as source='tokenscan' collection tags.
 admin.post("/admin/crawl-tokenscan", async (c) => c.json(await crawlTokenscanCollections(c.env)));
