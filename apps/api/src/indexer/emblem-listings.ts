@@ -1,14 +1,4 @@
-/** Live asks for Ethereum NFTs that wrap Counterparty assets, sourced from Sequence Marketplace. */
-import type { Env } from "#api/env";
-import { fetchSequenceListingsPage, SequenceUnregisteredCollection } from "#api/integrations/sequence";
-import { getCoreStateInt, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
-
-// 40 pages × 100 = a 4,000-listing ceiling per contract. Five pages proved real-world short: the
-// curated-fakes contract (0x7e6027…, ~1,700 vaults) carries 500+ live OpenSea listings, and the cap
-// throw stalled the whole rotation at its cursor for a day. A page is one subrequest; forty stays
-// trivial inside the invocation budget.
-const MAX_PAGES_PER_CONTRACT = 40;
-const CONTRACTS_PER_RUN = 6;
+/** Historical listing projection retained for recovery tooling; live ingestion is retired. */
 const MAP_CHUNK = 90;
 
 export interface Ask {
@@ -23,51 +13,6 @@ export interface Ask {
 
 export interface ListingRow extends Ask {
   assetId: number | null;
-}
-
-/** A contract sweep is accepted only when every provider page is present. */
-async function sweepContract(key: string, contract: string): Promise<Ask[]> {
-  const asks: Ask[] = [];
-  for (let page = 1; page <= MAX_PAGES_PER_CONTRACT; page++) {
-    const response = await fetchSequenceListingsPage(key, contract, page);
-    for (const item of response.collectibles ?? []) {
-      const order = item.listing ?? item.order;
-      const tokenId = order?.tokenId ?? item.metadata?.tokenId;
-      if (!order || !tokenId || order.priceUSD == null) continue;
-      const expiry = order.validUntil ? Math.floor(new Date(order.validUntil).getTime() / 1000) : 0;
-      asks.push({
-        tokenId: String(tokenId),
-        orderId: order.orderId ?? null,
-        marketplace: String(order.marketplace ?? ""),
-        priceUsd: order.priceUSD,
-        priceAmount: order.priceAmount ?? null,
-        currency: (order.priceCurrencyAddress ?? "").toLowerCase(),
-        expiry: Number.isFinite(expiry) ? expiry : 0,
-      });
-    }
-    if (!response.page?.more) return asks;
-  }
-  throw new Error(`Sequence listing sweep exceeded ${MAX_PAGES_PER_CONTRACT} pages for ${contract}`);
-}
-
-async function resolveAssets(db: D1Database, contract: string, asks: Ask[]): Promise<ListingRow[]> {
-  const assetByToken = new Map<string, number>();
-  const tokenIds = [...new Set(asks.map((ask) => ask.tokenId))];
-  for (let index = 0; index < tokenIds.length; index += MAP_CHUNK) {
-    const chunk = tokenIds.slice(index, index + MAP_CHUNK);
-    const rows = await db
-      .prepare(
-        `SELECT vault.token_id,vault.contents_asset_id
-         FROM emblem_vaults vault
-         JOIN address_dictionary contract ON contract.address_id=vault.contract_id
-        WHERE contract.address=? AND vault.token_id IN (${chunk.map(() => "?").join(",")})`,
-      )
-      .bind(contract, ...chunk)
-      .all<{ token_id: string; contents_asset_id: number | null }>();
-    for (const row of rows.results)
-      if (row.contents_asset_id != null) assetByToken.set(row.token_id, row.contents_asset_id);
-  }
-  return asks.map((ask) => ({ ...ask, assetId: assetByToken.get(ask.tokenId) ?? null }));
 }
 
 /** Reconcile one fully observed contract inside an unpublished generation. */
@@ -128,69 +73,4 @@ export async function upsertEmblemListingContract(
     )
     .bind(generation, contract, observedAt)
     .run();
-}
-
-/** Advance a complete generation in bounded contract groups; publish only after every contract succeeds. */
-export async function crawlEmblemListings(env: Env): Promise<Record<string, unknown>> {
-  if (!env.SEQUENCE_ACCESS_KEY) return { skipped: "no SEQUENCE_ACCESS_KEY" };
-  const contracts = await getCoreStateStringArray(env.CORE_DB, "emblem_contracts");
-  if (contracts.length === 0) return { skipped: "no contracts" };
-
-  const published = await getCoreStateInt(env.CORE_DB, "emblem_listings_generation");
-  const generation = published + 1;
-  let cursor = await getCoreStateInt(env.CORE_DB, "emblem_listings_contract_cursor");
-  if (cursor < 0 || cursor >= contracts.length) cursor = 0;
-  let live = 0;
-  let upserts = 0;
-  let unregistered = 0;
-  const processed: string[] = [];
-
-  for (let count = 0; count < CONTRACTS_PER_RUN && cursor < contracts.length; count++) {
-    const contract = contracts[cursor].toLowerCase();
-    let asks: Ask[];
-    try {
-      asks = await sweepContract(env.SEQUENCE_ACCESS_KEY, contract);
-    } catch (error) {
-      // A contract the Sequence project doesn't include is a complete, honestly-empty observation —
-      // most vault contracts are unregistered, and aborting on the first one wedged the venue at
-      // generation zero while the registered contracts carried real (OpenSea-sourced) listings.
-      // Anything else is a provider failure: abort so an incomplete generation never publishes.
-      if (error instanceof SequenceUnregisteredCollection) {
-        asks = [];
-        unregistered++;
-      } else {
-        return { generation, processed: processed.length, failed: contract, error: String(error).slice(0, 120) };
-      }
-    }
-    const observedAt = Date.now();
-    const rows = await resolveAssets(env.CORE_DB, contract, asks);
-    await upsertEmblemListingContract(env.CORE_DB, generation, contract, rows, observedAt);
-    cursor++;
-    await setCoreState(env.CORE_DB, "emblem_listings_contract_cursor", cursor);
-    live += rows.length;
-    upserts += rows.length;
-    processed.push(contract);
-  }
-
-  if (cursor >= contracts.length) {
-    await env.CORE_DB.batch([
-      env.CORE_DB.prepare(
-        `INSERT INTO core_state(key,value) VALUES('emblem_listings_generation',?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ).bind(String(generation)),
-      env.CORE_DB.prepare(
-        `INSERT INTO core_state(key,value) VALUES('emblem_listings_contract_cursor','0')
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ),
-      env.CORE_DB.prepare(`DELETE FROM emblem_listings WHERE generation<?`).bind(generation),
-    ]);
-  }
-  return {
-    generation,
-    published: cursor >= contracts.length,
-    processed: processed.length,
-    unregistered,
-    live,
-    upserts,
-  };
 }

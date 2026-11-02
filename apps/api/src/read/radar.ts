@@ -35,7 +35,7 @@ radar.get("/v2/radar/emergence", (c) =>
 );
 
 radar.get("/v2/radar", (c) =>
-  cached(c, "radar:established", { ttl: 600, edge: 120 }, async (): Promise<Envelope<RadarPayload>> => {
+  cached(c, "radar:established:dispenser-only", { ttl: 600, edge: 120 }, async (): Promise<Envelope<RadarPayload>> => {
     const [establishedRows, availableRows] = await Promise.all([
       radarEstablished(c.env.CORE_DB),
       radarAvailable(c.env.CORE_DB),
