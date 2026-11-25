@@ -1,3 +1,4 @@
+import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
 import type { Env } from "#api/env";
 import { crawlAssetSupply } from "#api/indexer/asset-supply";
 import { refreshAssetEmergence } from "#api/indexer/asset-emergence";
@@ -47,29 +48,33 @@ async function blockGatedProviderJob(
   interval: number,
   run: () => Promise<{ err?: unknown; failed?: unknown; skipped?: unknown }>,
 ): Promise<Record<string, unknown> | undefined> {
-  const tip =
-    Number((await env.CORE_DB.prepare(`SELECT MAX(block_index) tip FROM blocks`).first<{ tip: number }>())?.tip) || 0;
-  const last = Number(
-    (await env.CORE_DB.prepare(`SELECT value FROM core_state WHERE key=?`).bind(stateKey).first<{ value: string }>())
-      ?.value ?? 0,
+  let progress: Record<string, unknown> | undefined;
+  await runCoreBlockGated(
+    env.CORE_DB,
+    stateKey,
+    interval,
+    async () => {
+      const result = await run();
+      progress = result;
+      return result;
+    },
+    (result) => result.err === undefined && result.failed === undefined && result.skipped === undefined,
   );
-  if (tip - last < interval) return undefined; // fresh — the quiet, normal case
-  const result = await run();
-  if (result.err === undefined && result.failed === undefined && result.skipped === undefined) {
-    await env.CORE_DB.prepare(
-      `INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-      .bind(stateKey, String(tip))
-      .run();
-  }
-  return result as Record<string, unknown>;
+  return progress;
 }
 
 const maybeRebuildTags = (env: Env) =>
-  runCoreBlockGated(env.CORE_DB, "tags_rebuilt_blk", 144, async () => {
-    await buildTags(env);
-    await buildIssuerCollections(env);
-    await buildCuratedCollections(env);
+  runCoreBlockGated(env.CORE_DB, "tags_rebuilt_blk", 144, async (tip, previous) => {
+    const stages = [
+      ["tag_rules_completed_blk", buildTags],
+      ["issuer_collections_completed_blk", buildIssuerCollections],
+      ["curated_collections_completed_blk", buildCuratedCollections],
+    ] as const;
+    for (const [key, run] of stages) {
+      if ((await getCoreStateInt(env.CORE_DB, key)) > previous) continue;
+      await run(env);
+      await setCoreState(env.CORE_DB, key, tip);
+    }
   });
 
 const maybeCrawlPrices = (env: Env) => runCoreBlockGated(env.CORE_DB, "prices_synced_blk", 144, () => crawlPrices(env));
