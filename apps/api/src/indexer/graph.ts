@@ -24,6 +24,7 @@
  *          in-memory form bills the changed rows.
  */
 import { advanceGraphDiff, startGraphDiff } from "#api/indexer/graph-diff";
+import { measureGraphRefresh } from "#api/indexer/graph-usage";
 import type { Env } from "#api/env";
 import { q } from "#api/db";
 import { claimCoreMaintenance, setCoreStateStatement } from "#api/indexer/core-state";
@@ -629,10 +630,12 @@ async function advanceGraph(
  * every ~8 weeks the edge topology itself rebuilds (bounded ops trickled a few per tick), then scores.
  */
 export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
-  const phase = (await getState(env.CORE_DB, K_PHASE)) || "done";
-  if (phase === "diff") return await buildGraphTrust(env);
+  const phaseResult = await env.CORE_DB.prepare("SELECT value FROM core_state WHERE key=?")
+    .bind(K_PHASE)
+    .all<{ value: string }>();
+  const phase = phaseResult.results[0]?.value || "done";
+  if (phase === "diff" || phase === "score") return measureGraphRefresh(env, phase, phaseResult.meta, buildGraphTrust);
   if (phase === "build") return await buildGraphTrust(env, { work: 4 });
-  if (phase === "score") return await buildGraphTrust(env, {});
   const tip = await graphTip(env);
   const edgesBuilt = int(await getState(env.CORE_DB, K_EDGES_BLOCK), 0);
   const scored = int(await getState(env.CORE_DB, K_SCORED_BLOCK), 0);
