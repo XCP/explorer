@@ -12,25 +12,35 @@ const arg = (name, fallback) => {
   const prefix = `--${name}=`;
   return process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? fallback;
 };
-const state = executeRemoteD1(
-  `SELECT CAST((SELECT value FROM core_state WHERE key='graph_generation') AS INTEGER) generation,
+const publishedState = () =>
+  executeRemoteD1(
+    `SELECT CAST((SELECT value FROM core_state WHERE key='graph_generation') AS INTEGER) generation,
+    COALESCE((SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_edge_revision'),0) revision,
+    (SELECT value FROM core_state WHERE key='graph_phase') phase,
+    (SELECT value FROM core_state WHERE key='graph_rebuilt_block') scored_block,
     COALESCE((SELECT MAX(block_index) FROM blocks),0) tip`,
-).rows[0];
+  ).rows[0];
+const state = publishedState();
+if (state.phase === "score") throw new Error("Graph seeds are being refreshed. Retry after score publication.");
 const generation = Number(state.generation);
+const revision = Number(state.revision);
 const tip = Number(state.tip);
 const holdoutFold = Number(arg("fold", "0"));
 if (!Number.isInteger(holdoutFold) || holdoutFold < 0 || holdoutFold > 4) throw new Error("fold must be 0..4");
-const root = resolve(arg("output", join(".analytics", "reputation", "graph", `generation-${generation}`)));
+const snapshot = `generation-${generation}-revision-${revision}`;
+const root = resolve(arg("output", join(".analytics", "reputation", "graph", snapshot)));
 mkdirSync(root, { recursive: true });
 const buildPath = join(root, "build.json");
 let build;
 try {
   build = JSON.parse(readFileSync(buildPath, "utf8"));
-} catch {
-  build = { schema: "xcp-graph-evaluation-build/1", generation, tip };
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+  build = { schema: "xcp-graph-evaluation-build/1", generation, revision, tip };
   writeFileSync(buildPath, `${JSON.stringify(build, null, 2)}\n`);
 }
-if (build.generation !== generation) throw new Error("Published graph generation changed; use a new output directory");
+if (build.generation !== generation || (build.revision ?? 0) !== revision)
+  throw new Error("Published graph changed. Use a new output directory.");
 
 const chunks = [];
 const edges = [];
@@ -45,8 +55,8 @@ for (let page = 0; ; page++) {
   } catch {
     const result = executeRemoteD1(
       `SELECT source_entity_id source,destination_entity_id destination,weight,edge_block
-       FROM graph_edges WHERE generation=${generation}
-         AND (source_entity_id>${source} OR (source_entity_id=${source} AND destination_entity_id>${destination}))
+       FROM published_graph_edges WHERE generation=${generation}
+         AND (source_entity_id,destination_entity_id)>(${source},${destination})
        ORDER BY source_entity_id,destination_entity_id LIMIT ${PAGE_SIZE}`,
     );
     body = result.rows.map((row) => JSON.stringify(row)).join("\n");
@@ -61,16 +71,26 @@ for (let page = 0; ; page++) {
   destination = Number(rows.at(-1).destination);
 }
 
-const seedResult = executeRemoteD1(
-  `SELECT seed.entity_id,entity.entity_type,entity.entity_key key,seed.slot
+const seeds = [];
+let slot = -1,
+  seedId = -1;
+for (;;) {
+  const { rows } = executeRemoteD1(`SELECT seed.entity_id,entity.entity_type,entity.entity_key key,seed.slot
    FROM graph_seed seed JOIN entity_dictionary entity ON entity.entity_id=seed.entity_id
-   WHERE seed.generation=${generation} ORDER BY seed.slot,seed.entity_id LIMIT 10000`,
-);
-if (seedResult.rows.length >= 10_000) throw new Error("Graph seed export reached its safety limit");
-const seeds = seedResult.rows.map((row) => ({ ...row, entity_id: Number(row.entity_id), slot: Number(row.slot) }));
+   WHERE seed.generation=${generation} AND (seed.slot,seed.entity_id)>(${slot},${seedId})
+   ORDER BY seed.slot,seed.entity_id LIMIT ${PAGE_SIZE}`);
+  seeds.push(...rows.map((row) => ({ ...row, entity_id: Number(row.entity_id), slot: Number(row.slot) })));
+  if (rows.length < PAGE_SIZE) break;
+  ({ slot, entity_id: seedId } = seeds.at(-1));
+}
+const finalState = publishedState();
+if (Number(finalState.generation) !== generation || Number(finalState.revision) !== revision)
+  throw new Error("The published graph changed during export. Restart against the current revision.");
+if (finalState.phase === "score" || finalState.scored_block !== state.scored_block)
+  throw new Error("Graph seeds changed during export. Retry after score publication.");
 const maxNode = edges.reduce((max, edge) => Math.max(max, Number(edge.source), Number(edge.destination)), 0);
 const manifest = snapshotManifest({
-  cutoff: `graph-generation-${generation}`,
+  cutoff: `graph-${snapshot}`,
   horizonDays: 0,
   frontier: String(build.tip),
   chunks,
@@ -79,6 +99,7 @@ const manifest = snapshotManifest({
 const report = {
   schema: "xcp-graph-heldout-evaluation/1",
   generation,
+  revision,
   tip: build.tip,
   manifest,
   seeds: seeds.length,
