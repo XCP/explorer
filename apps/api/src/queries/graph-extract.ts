@@ -64,6 +64,24 @@ function analyse(
   };
 }
 
+// Drive primary-key lookups from the bounded list. SQLite otherwise starts at the full graph index.
+function edgesAmong(db: D1Database, addresses: string[]): Promise<GraphEdge[]> {
+  if (!addresses.length) return Promise.resolve([]);
+  return q<GraphEdge>(
+    db,
+    `WITH member AS MATERIALIZED (
+       SELECT entity.entity_id,entity.entity_key FROM json_each(?1) input
+       CROSS JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=input.value
+     )
+     SELECT source.entity_key source,destination.entity_key target,ROUND(edge.weight,3) weight
+     FROM member source CROSS JOIN member destination CROSS JOIN published_graph_edges edge
+     WHERE edge.generation=(SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_generation')
+       AND edge.source_entity_id=source.entity_id AND edge.destination_entity_id=destination.entity_id
+     ORDER BY edge.destination_entity_id,edge.source_entity_id`,
+    JSON.stringify(addresses),
+  );
+}
+
 /** One address's ego-network: center + top-N neighbours, WITH neighbour↔neighbour interlinks, clustered so a
  *  clique (a coordinated circle around the hub) stands out from a hub that merely bridges unrelated parties. */
 export async function addressEgo(
@@ -77,11 +95,11 @@ export async function addressEgo(
      center AS (SELECT entity.entity_id FROM entity_dictionary entity
        WHERE entity.entity_type='address' AND entity.entity_key=?1),
      neighbour AS (
-       SELECT edge.destination_entity_id entity_id,edge.weight FROM published_graph_edges edge,active,center
-       WHERE edge.generation=active.generation AND edge.source_entity_id=center.entity_id
+       SELECT edge.destination_entity_id entity_id,edge.weight FROM published_graph_edges edge
+       WHERE edge.generation=(SELECT generation FROM active) AND edge.source_entity_id=(SELECT entity_id FROM center)
        UNION ALL
-       SELECT edge.source_entity_id entity_id,edge.weight FROM published_graph_edges edge,active,center
-       WHERE edge.generation=active.generation AND edge.destination_entity_id=center.entity_id
+       SELECT edge.source_entity_id entity_id,edge.weight FROM published_graph_edges edge
+       WHERE edge.generation=(SELECT generation FROM active) AND edge.destination_entity_id=(SELECT entity_id FROM center)
      )
      SELECT entity.entity_key id,ROUND(SUM(neighbour.weight),3) w FROM neighbour
      JOIN entity_dictionary entity ON entity.entity_id=neighbour.entity_id AND entity.entity_type='address'
@@ -90,19 +108,7 @@ export async function addressEgo(
     limit,
   );
   const peripheral = nbrs.map((n) => n.id);
-  const memberJson = JSON.stringify([addr, ...peripheral]);
-  const allEdges = await q<GraphEdge>(
-    db,
-    `WITH active AS (SELECT CAST(value AS INTEGER) generation FROM core_state WHERE key='graph_generation'),
-     member AS (SELECT entity.entity_id,entity.entity_key FROM json_each(?1) input
-       JOIN entity_dictionary entity ON entity.entity_type='address' AND entity.entity_key=input.value)
-     SELECT source.entity_key source,destination.entity_key target,ROUND(edge.weight,3) weight
-     FROM published_graph_edges edge,active
-     JOIN member source ON source.entity_id=edge.source_entity_id
-     JOIN member destination ON destination.entity_id=edge.destination_entity_id
-     WHERE edge.generation=active.generation`,
-    memberJson,
-  );
+  const allEdges = await edgesAmong(db, [addr, ...peripheral]);
   // interlinks = edges NOT touching the center → the diagnostic (do the neighbours know each other?)
   const interlinks = allEdges.filter((e) => e.source !== addr && e.target !== addr);
   const { clusterOf, stats } = analyse(peripheral, interlinks);
@@ -146,22 +152,7 @@ export async function assetHolders(
     limit,
   );
   const ids = holders.map((h) => h.holder);
-  const memberJson = JSON.stringify(holders.map((holder) => holder.entity_id));
-  const holderEdges = ids.length
-    ? await q<GraphEdge>(
-        db,
-        `WITH active AS (SELECT CAST(value AS INTEGER) generation FROM core_state WHERE key='graph_generation'),
-         member AS (SELECT CAST(value AS INTEGER) entity_id FROM json_each(?1))
-         SELECT source.entity_key source,destination.entity_key target,ROUND(edge.weight,3) weight
-         FROM published_graph_edges edge,active
-         JOIN member source_member ON source_member.entity_id=edge.source_entity_id
-         JOIN member destination_member ON destination_member.entity_id=edge.destination_entity_id
-         JOIN entity_dictionary source ON source.entity_id=edge.source_entity_id
-         JOIN entity_dictionary destination ON destination.entity_id=edge.destination_entity_id
-         WHERE edge.generation=active.generation`,
-        memberJson,
-      )
-    : [];
+  const holderEdges = await edgesAmong(db, ids);
   const { clusterOf, stats } = analyse(ids, holderEdges);
   const nodes: GraphNode[] = [
     { id: asset, kind: "asset", label: asset, weight: holders.length, center: true, cluster: -1 },

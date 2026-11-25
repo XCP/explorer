@@ -16,7 +16,7 @@ import { exchanges } from "#api/read/exchanges";
 import { trades } from "#api/read/trades";
 import { mempool } from "#api/read/mempool";
 import { tags } from "#api/read/tags";
-import { graph } from "#api/read/graph";
+import { graph, graphLimit } from "#api/read/graph";
 import { radar } from "#api/read/radar";
 import { candidates } from "#api/read/candidates";
 import { markets } from "#api/read/markets";
@@ -39,19 +39,33 @@ read.use("*", async (c, next) => {
   const cache = caches.default;
   if (c.req.method !== "GET" || !cache) return next();
   const keyUrl = new URL(c.req.url);
+  const graphKind = /^\/v2\/graph\/(asset|address)\/[^/]+$/.exec(keyUrl.pathname)?.[1];
+  const reportTtl: Record<string, number> = {
+    "/v2/addresses/census": 604800,
+    "/v2/price": 300,
+    "/v2/price/ticker": 120,
+    "/v2/price/ohlc": 3600,
+  };
+  const report = reportTtl[keyUrl.pathname];
+  if (graphKind || report) {
+    const limit = keyUrl.searchParams.get("limit");
+    keyUrl.search = "";
+    if (graphKind) keyUrl.searchParams.set("limit", String(graphLimit(graphKind, limit ?? undefined)));
+  }
   keyUrl.searchParams.set("__read_contract", READ_EDGE_CACHE_VERSION);
   const key = new Request(keyUrl);
   const isAssetDetail = /^\/v2\/assets\/[^/]+$/.test(keyUrl.pathname);
-  const fallbackUrl = new URL(keyUrl.origin + keyUrl.pathname);
-  fallbackUrl.searchParams.set("__asset_last_good", READ_EDGE_CACHE_VERSION);
+  const fallbackTtl = isAssetDetail ? 604800 : graphKind ? 86400 : report;
+  const fallbackUrl = new URL(isAssetDetail ? keyUrl.origin + keyUrl.pathname : keyUrl);
+  fallbackUrl.searchParams.set(isAssetDetail ? "__asset_last_good" : "__last_good", READ_EDGE_CACHE_VERSION);
   const fallbackKey = new Request(fallbackUrl);
   const lastGood = async () => {
-    if (!isAssetDetail) return undefined;
+    if (!fallbackTtl) return undefined;
     const stale = await cache.match(fallbackKey).catch(() => undefined);
     if (!stale) return undefined;
     const response = new Response(stale.body, stale);
-    response.headers.set("cache-control", "public, max-age=30, stale-while-revalidate=120");
-    response.headers.set("warning", '110 - "stale asset detail served after origin failure"');
+    response.headers.set("cache-control", "no-store");
+    response.headers.set("warning", '110 - "stale response served after origin failure"');
     response.headers.set("x-cache", "STALE-IF-ERROR");
     return response;
   };
@@ -65,21 +79,27 @@ read.use("*", async (c, next) => {
     await next();
   } catch (error) {
     const stale = await lastGood();
-    if (stale) return stale;
+    if (stale) {
+      c.res = stale;
+      return;
+    }
     throw error;
   }
   const res = c.res;
   if (res && res.status >= 500) {
     const stale = await lastGood();
-    if (stale) return stale;
+    if (stale) {
+      c.res = stale;
+      return;
+    }
   }
   const cc = res?.headers.get("cache-control") || "";
   if (res && res.status === 200 && cc.includes("max-age") && !cc.includes("max-age=0")) {
     try {
       c.executionCtx.waitUntil(cache.put(key, res.clone()));
-      if (isAssetDetail) {
+      if (fallbackTtl) {
         const durable = res.clone();
-        durable.headers.set("cache-control", "public, max-age=604800");
+        durable.headers.set("cache-control", `public, max-age=${fallbackTtl}`);
         c.executionCtx.waitUntil(cache.put(fallbackKey, durable));
       }
     } catch {

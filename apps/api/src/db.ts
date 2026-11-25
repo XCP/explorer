@@ -16,6 +16,14 @@ export const one = <T>(db: D1Database, sql: string, ...binds: unknown[]): Promis
     .bind(...binds)
     .first<T>();
 
+export function isD1Overloaded(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/\bD1 (?:DB|database) is overloaded\b/i.test(error.message) ||
+      (error.cause instanceof Error && /\bD1 (?:DB|database) is overloaded\b/i.test(error.cause.message)))
+  );
+}
+
 export async function retryOverloadedRead<T>(query: () => Promise<T>): Promise<T> {
   // Large aggregates can fill a D1 resource window. Retry only the rejected read after that window.
   for (let attempt = 0; ; attempt++) {
