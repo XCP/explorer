@@ -37,6 +37,7 @@ test("compact graph reads use canonical identities and only the active generatio
     CREATE TABLE curated(kind TEXT,key TEXT,PRIMARY KEY(kind,key));
     CREATE TABLE balances(balance_id INTEGER PRIMARY KEY,address_id INTEGER,asset_id INTEGER,quantity TEXT,
       quantity_normalized TEXT);
+    CREATE VIEW published_graph_edges AS SELECT * FROM graph_edges;
     CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,
       weight REAL,edge_block INTEGER,PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
     INSERT INTO core_state VALUES

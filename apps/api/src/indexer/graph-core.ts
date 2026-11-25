@@ -201,7 +201,7 @@ for (let lo = 0; lo < BAL_MAX; lo += BAL_CHUNK) balWindows.push([lo, lo + BAL_CH
 // Addresses and assets share entity_dictionary identities. Each rebuild is isolated by generation,
 // and the completed generation becomes visible only when finalization publishes it.
 const ENTITY_CHUNK = 50_000;
-const ENTITY_MAX = 1_000_000;
+export const ENTITY_MAX = 1_000_000;
 const entityWindows: Array<[number, number]> = [];
 for (let lo = 0; lo < ENTITY_MAX; lo += ENTITY_CHUNK) entityWindows.push([lo, lo + ENTITY_CHUNK]);
 
@@ -215,7 +215,7 @@ export function entitySeedInsertStatement(generation: number, rows: number): str
           ON CONFLICT(generation,entity_id,slot) DO UPDATE SET score=excluded.score`;
 }
 
-const ENTITY_EXCLUDED = (addressId: string) => `(
+export const ENTITY_EXCLUDED = (addressId: string) => `(
   EXISTS (SELECT 1 FROM address_signals signal WHERE signal.address_id=${addressId}
            AND (signal.is_exchange=1 OR signal.is_burn=1 OR signal.is_deposit=1
                 OR signal.is_emblem_vault=1))

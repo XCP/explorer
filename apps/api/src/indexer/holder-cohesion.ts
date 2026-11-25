@@ -31,7 +31,7 @@ export async function buildHolderCohesion(
        SELECT COUNT(*) edges,
          COALESCE(SUM(CASE WHEN edge.weight>=? THEN 1 ELSE 0 END),0) strong,
          (SELECT COUNT(*) FROM holders) holders
-       FROM graph_edges edge,active
+       FROM published_graph_edges edge,active
        WHERE edge.generation=active.generation
          AND edge.source_entity_id IN (SELECT address_id FROM holders)
          AND edge.destination_entity_id IN (SELECT address_id FROM holders)

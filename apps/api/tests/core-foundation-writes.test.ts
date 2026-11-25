@@ -1,5 +1,6 @@
 import type { Env } from "#api/env";
 import { buildGraphTrust } from "#api/indexer/graph";
+import { advanceGraphDiff } from "#api/indexer/graph-diff";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { restoreUndo, writeWithUndo } from "#api/indexer/reorg-undo";
 import assert from "node:assert/strict";
@@ -2429,5 +2430,72 @@ test("graph send windows resume within a block, commit weights with the cursor a
     assert.equal(weight(5), 9);
   } finally {
     database.close();
+  }
+});
+
+test("differential graph writes only changed pairs and publishes additions, removals and new heights together", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(`
+      CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT);
+      INSERT INTO core_state VALUES ('graph_generation','5'),('graph_diff_revision','1'),('graph_diff_cursor','0'),
+        ('graph_diff_end','4'),('graph_diff_tip','100'),('graph_bipartite','0');
+      CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,weight REAL,edge_block INTEGER,
+        PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
+      INSERT INTO graph_edges VALUES (5,1,2,ln(2),50),(5,1,3,ln(2),30),(5,2,3,ln(2),10);
+      CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
+      INSERT INTO address_dictionary VALUES (1,'a'),(2,'b'),(3,'c'),(4,'d');
+      CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT);
+      INSERT INTO entity_dictionary SELECT address_id,'address',address FROM address_dictionary;
+      CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT);
+      CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,issuer_id INTEGER);
+      CREATE TABLE address_signals(address_id INTEGER,is_exchange INTEGER,is_burn INTEGER,is_deposit INTEGER,is_emblem_vault INTEGER);
+      CREATE TABLE curated(kind TEXT,key TEXT);
+      CREATE TABLE sends(source_id INTEGER,destination_id INTEGER,block_index INTEGER);
+      INSERT INTO sends VALUES (1,2,50),(1,3,60),(3,4,70),(1,2,101);
+      CREATE TABLE order_matches(tx0_address_id INTEGER,tx1_address_id INTEGER,block_index INTEGER);
+      CREATE TABLE dispenses(destination_id INTEGER,source_id INTEGER,dispenser_tx_index INTEGER,block_index INTEGER);
+      CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,source_id INTEGER,origin_id INTEGER);`);
+    db.exec(readFileSync("migrations-core/0102_graph_edge_revisions.sql", "utf8"));
+    const binding = d1(db);
+    const visible = () =>
+      db
+        .prepare("SELECT source_entity_id,destination_entity_id,edge_block FROM published_graph_edges ORDER BY 1,2")
+        .all()
+        .map((r) => Object.values(r));
+    const original = visible();
+    const staged = () => db.prepare("SELECT count(*) n FROM graph_edges WHERE revision=1").get()?.n;
+    await advanceGraphDiff(binding);
+    assert.equal(staged(), 3);
+    assert.deepEqual(visible(), original);
+    assert.equal(
+      db.prepare("SELECT revision FROM graph_edges WHERE source_entity_id=1 AND destination_entity_id=2").get()
+        ?.revision,
+      null,
+    );
+    db.exec("UPDATE core_state SET value='0' WHERE key='graph_diff_cursor'");
+    assert.match((await advanceGraphDiff(binding)).note, /0 changed edges/);
+    db.exec("INSERT INTO core_state VALUES ('graph_edge_revision','1')");
+    assert.deepEqual(visible(), [
+      [1, 2, 50],
+      [1, 3, 60],
+      [3, 4, 70],
+    ]);
+    db.exec(`UPDATE core_state SET value='0' WHERE key='graph_diff_cursor'; UPDATE core_state SET value='2' WHERE key='graph_diff_revision';
+      INSERT INTO sends VALUES(2,3,80); INSERT INTO curated VALUES('burn','c');`);
+    await advanceGraphDiff(binding);
+    assert.deepEqual(visible(), [
+      [1, 2, 50],
+      [1, 3, 60],
+      [3, 4, 70],
+    ]);
+    db.exec("UPDATE core_state SET value='2' WHERE key='graph_edge_revision'");
+    assert.deepEqual(visible(), [
+      [1, 2, 50],
+      [1, 3, 60],
+      [2, 3, 80],
+    ]);
+  } finally {
+    db.close();
   }
 });
