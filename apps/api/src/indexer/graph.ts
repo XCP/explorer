@@ -23,6 +23,7 @@
  *          value moved. The retired SQL form of these passes billed ~200M D1 row writes per rebuild; the
  *          in-memory form bills the changed rows.
  */
+import { advanceGraphDiff, startGraphDiff } from "#api/indexer/graph-diff";
 import type { Env } from "#api/env";
 import { q } from "#api/db";
 import { claimCoreMaintenance, setCoreStateStatement } from "#api/indexer/core-state";
@@ -219,7 +220,9 @@ const SIGNAL_PAGE = 50_000;
 const UPDATE_ROWS = 30; // 90 bound parameters per statement, under D1's 100-bind cap
 const UPDATE_STATEMENTS_PER_BATCH = 40;
 
-async function readEdges(env: Env, generation: number): Promise<GraphEdgeArrays> {
+async function readEdges(env: Env, generation: number, revision?: number): Promise<GraphEdgeArrays> {
+  const weight = revision === undefined ? "weight" : "CASE WHEN revision<=?4 THEN next_weight ELSE weight END";
+  // Tombstones can over-allocate the typed arrays slightly. edgeCount is the number of visible edges.
   const total =
     Number(
       (
@@ -239,12 +242,13 @@ async function readEdges(env: Env, generation: number): Promise<GraphEdgeArrays>
   for (;;) {
     const page = await q<{ s: number; d: number; w: number }>(
       env.CORE_DB,
-      `SELECT source_entity_id s,destination_entity_id d,weight w FROM graph_edges
-       WHERE generation=?1 AND (source_entity_id>?2 OR (source_entity_id=?2 AND destination_entity_id>?3))
+      `SELECT source_entity_id s,destination_entity_id d,${weight} w FROM graph_edges
+       WHERE generation=?1 AND (source_entity_id,destination_entity_id)>(?2,?3) AND (${weight})>0
        ORDER BY source_entity_id,destination_entity_id LIMIT ${EDGE_PAGE}`,
       generation,
       lastSource,
       lastDestination,
+      ...(revision === undefined ? [] : [revision]),
     );
     for (const row of page) {
       if (edges.edgeCount >= total) break; // a concurrent insert grew the table mid-read; the extra edge waits a week
@@ -339,7 +343,7 @@ interface ScoreSummary {
   assetUpdates: number;
 }
 
-async function runScorePass(env: Env, generation: number): Promise<ScoreSummary> {
+async function runScorePass(env: Env, generation: number, revision?: number): Promise<ScoreSummary> {
   await stageSeeds(env, generation);
   const seeds: GraphSeed[] = (
     await q<{ entity_id: number; slot: number; score: number }>(
@@ -351,7 +355,7 @@ async function runScorePass(env: Env, generation: number): Promise<ScoreSummary>
   const maxEntityId =
     Number((await env.CORE_DB.prepare(`SELECT MAX(entity_id) m FROM entity_dictionary`).first<{ m: number }>())?.m) ||
     0;
-  const edges = await readEdges(env, generation);
+  const edges = await readEdges(env, generation, revision);
   const graph = buildDenseGraph(edges, maxEntityId);
   const { trust, distrust } = computeGraphScores(graph, edges, seeds);
 
@@ -365,6 +369,7 @@ async function runScorePass(env: Env, generation: number): Promise<ScoreSummary>
         ["graph_cut_asset_trust", asset.trustCut],
         ["graph_cut_asset_distrust", asset.distrustCut],
         ["graph_generation", generation],
+        ...(revision === undefined ? [] : [["graph_edge_revision", revision]]),
       ] as Array<[string, number]>
     ).map(([key, value]) =>
       env.CORE_DB.prepare(
@@ -531,6 +536,16 @@ async function advanceGraph(
   const work = Math.max(1, Math.min(40, opts.work ?? DEFAULT_WORK));
   const db = env.CORE_DB;
   const active = int(await getState(db, "graph_generation"), 0);
+  const differential = active > 0 && (await getState(db, "graph_differential_enabled")) === "1";
+  const currentPhase = await getState(db, K_PHASE);
+  if (differential && (opts.reset || currentPhase === "build" || currentPhase === "diff")) {
+    if (opts.reset || currentPhase !== "diff") {
+      const bipartite = opts.bipartite ?? (await getState(db, "graph_bipartite")) === "1";
+      if (!(await startGraphDiff(db, bipartite)))
+        return { phase: "build", done: false, note: "resolving graph identities" };
+    }
+    return advanceGraphDiff(db);
+  }
   const legacyBuild = (await getState(db, K_PHASE)) === "build" && !(await getState(db, "graph_atomic_build"));
   if (opts.reset || legacyBuild) {
     // Legacy cursors could lag committed additive writes. Rebuild only the unpublished generation.
@@ -587,8 +602,16 @@ async function advanceGraph(
     if (now - lease < SCORE_LEASE_SECONDS) return { phase: "score", done: false, note: "score pass in progress" };
     await setState(env.CORE_DB, K_SCORE_LEASE, now);
     try {
-      const score = await runScorePass(env, generation);
+      const targetRevision = int(await getState(db, "graph_diff_revision"), 0);
+      const publishedRevision = int(await getState(db, "graph_edge_revision"), 0);
+      const score = await runScorePass(env, generation, differential ? targetRevision || publishedRevision : undefined);
       await db.batch([
+        ...(targetRevision
+          ? [
+              setCoreStateStatement(db, K_EDGES_BLOCK, int(await getState(db, "graph_diff_tip"), 0)),
+              setCoreStateStatement(db, "graph_diff_revision", 0),
+            ]
+          : []),
         setCoreStateStatement(db, K_SCORED_BLOCK, await graphTip(env)),
         setCoreStateStatement(db, K_PHASE, "done"),
       ]);
@@ -607,6 +630,7 @@ async function advanceGraph(
  */
 export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
   const phase = (await getState(env.CORE_DB, K_PHASE)) || "done";
+  if (phase === "diff") return await buildGraphTrust(env);
   if (phase === "build") return await buildGraphTrust(env, { work: 4 });
   if (phase === "score") return await buildGraphTrust(env, {});
   const tip = await graphTip(env);

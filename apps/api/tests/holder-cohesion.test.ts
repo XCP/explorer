@@ -34,6 +34,7 @@ test("holder cohesion uses compact holder identities and only the published grap
     CREATE TABLE asset_signals(asset_id INTEGER PRIMARY KEY,holders INTEGER,max_realized_usd REAL,
       holder_cohesion REAL,cohesion_edges INTEGER,cohesion_strong INTEGER);
     CREATE TABLE balances(asset_id INTEGER,address_id INTEGER,quantity TEXT);
+    CREATE VIEW published_graph_edges AS SELECT * FROM graph_edges;
     CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,weight REAL);
     INSERT INTO core_state VALUES('graph_generation','1');
     INSERT INTO asset_dictionary VALUES(10,'CARD'),(20,'LATER');

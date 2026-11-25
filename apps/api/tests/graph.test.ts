@@ -11,6 +11,7 @@
  * newcomer is unscored (exactly zero), never negative.
  */
 import { test } from "node:test";
+import { graphDiffSql } from "#api/indexer/graph-diff";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -335,6 +336,16 @@ test("normalized edge builder resolves compact relationships through canonical e
     false,
     "excluded infrastructure cannot endorse",
   );
+  db.exec(`ALTER TABLE graph_edges ADD COLUMN revision INTEGER;
+    ALTER TABLE graph_edges ADD COLUMN next_weight REAL;
+    ALTER TABLE graph_edges ADD COLUMN next_edge_block INTEGER;`);
+  assert.deepEqual(db.prepare(graphDiffSql(false)).all(0, 100, generation, 1, 1000), []);
+  db.exec("INSERT INTO balances VALUES(1,2,10,'2'),(2,1,10,'1')");
+  for (const step of entityEdgeSteps(generation + 1, true))
+    db.exec(
+      `WITH graph_input AS MATERIALIZED (SELECT * FROM ${step.table} WHERE ${step.scope} ${step.start === undefined ? "" : `AND ${step.keys[0]}>${step.start}`}) ${step.sql}`,
+    );
+  assert.deepEqual(db.prepare(graphDiffSql(true)).all(0, 100, generation + 1, 1, 1000), []);
   db.close();
 });
 
