@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Env } from "#api/env";
 import { boundedInteger } from "#api/http/numbers";
+import { isD1Overloaded } from "#api/db";
 
 export type ReadApp = Hono<{ Bindings: Env }>;
 export type Ctx = Context<{ Bindings: Env }>;
@@ -122,7 +123,11 @@ export async function cached(
     .prepare(`SELECT body, ctype, expires_at FROM cache WHERE key=?`)
     .bind(key)
     .first<{ body: string; ctype: string; expires_at: number }>()
-    .catch(() => null);
+    .catch((error: unknown) => {
+      // An unavailable cache lookup must not trigger a more expensive cold computation.
+      if (isD1Overloaded(error)) throw error;
+      return null;
+    });
   if (hit?.body) {
     if (now < hit.expires_at) {
       const response = send(hit.body, hit.ctype);

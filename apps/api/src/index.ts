@@ -74,6 +74,10 @@ app.onError((error, c) => {
     error: failure.internal,
   });
   c.header("X-Request-Id", id);
+  if (failure.status === 503 && c.req.method === "GET") {
+    c.header("Retry-After", "12");
+    c.header("Cache-Control", "no-store");
+  }
   return c.json({ error: failure.publicMessage }, failure.status);
 });
 

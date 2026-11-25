@@ -1,5 +1,6 @@
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { isD1Overloaded } from "#api/db";
 
 export interface HttpErrorDescription {
   status: ContentfulStatusCode;
@@ -14,6 +15,7 @@ export function describeHttpError(error: unknown): HttpErrorDescription {
       ? { name: error.name, message: error.message, stack: error.stack }
       : { name: "UnknownError", message: String(error) };
 
+  if (!expected && isD1Overloaded(error)) return { status: 503, publicMessage: "Database temporarily busy", internal };
   return {
     status: expected ? error.status : 500,
     publicMessage: expected ? error.message : "Internal Server Error",

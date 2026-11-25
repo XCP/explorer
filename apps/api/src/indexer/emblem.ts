@@ -17,7 +17,13 @@ import { fetchAlchemyContractNfts } from "#api/integrations/alchemy-nfts";
 import { fetchEtherscanMintLogs } from "#api/integrations/etherscan-logs";
 import { fetchEmblemCuratedCollections } from "#api/integrations/emblem-curated";
 import { fetchEmblemMetadata } from "#api/integrations/emblem-metadata";
-import { getCoreState, getCoreStateStringArray, setCoreState } from "#api/indexer/core-state";
+import {
+  claimCoreMaintenance,
+  getCoreState,
+  getCoreStateStringArray,
+  setCoreState,
+  setCoreStateStatement,
+} from "#api/indexer/core-state";
 
 const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
 const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
@@ -264,43 +270,41 @@ export async function maybeRefreshEmblemStats(env: Env): Promise<Record<string, 
   const last = Number((await getCoreState(env.CORE_DB, "emblem_stats_updated_at")) || 0);
   if (now - last < STATS_REFRESH_SECONDS) return { skipped: true, updated_at: last };
 
-  const vaultAddresses = `SELECT DISTINCT btc_address_id FROM emblem_vaults WHERE btc_address_id IS NOT NULL`;
-  const statements = [
-    `SELECT COUNT(*) value FROM emblem_vaults WHERE btc_address_id IS NOT NULL`,
-    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(*) value FROM vault_addresses vault
-       WHERE EXISTS (SELECT 1 FROM balances balance WHERE balance.address_id=vault.btc_address_id
-         AND CAST(balance.quantity AS INTEGER)>0)`,
-    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(DISTINCT send.destination_id) value
-       FROM vault_addresses vault JOIN sends send ON send.source_id=vault.btc_address_id
-       LEFT JOIN vault_addresses destination ON destination.btc_address_id=send.destination_id
-       WHERE send.destination_id IS NOT NULL AND destination.btc_address_id IS NULL`,
-    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(DISTINCT send.destination_id) value
-       FROM vault_addresses vault JOIN sends send ON send.source_id=vault.btc_address_id
-       JOIN vault_addresses destination ON destination.btc_address_id=send.destination_id`,
-    `WITH vault_addresses AS (${vaultAddresses}) SELECT COUNT(DISTINCT send.source_id) value
-       FROM vault_addresses vault JOIN sends send ON send.destination_id=vault.btc_address_id`,
-    `SELECT COUNT(*) value FROM address_signals WHERE assets_held>0`,
-    `SELECT COUNT(*) value FROM address_signals WHERE assets_held>0 AND is_emblem_vault=0
-       AND is_exchange=0 AND is_burn=0 AND is_deposit=0`,
-  ];
-  const results = await env.CORE_DB.batch<{ value: number }>(
-    statements.map((statement) => env.CORE_DB.prepare(statement)),
-  );
-  const values = results.map((result) => Number(result.results?.[0]?.value ?? 0));
-  await env.CORE_DB.batch([
-    env.CORE_DB.prepare(
-      `INSERT INTO emblem_stats
-       (id,vaults,funded,cracked_to_user,revaulted,depositors,all_holders,real_users,updated_at)
-       VALUES(1,?,?,?,?,?,?,?,?)
+  const db = env.CORE_DB;
+  if (!(await claimCoreMaintenance(db, "emblem_stats_retry_after", now, 3600))) return { skipped: true };
+  // Traverse the vaults' indexed sends once. Many vaults can send to the same recipient.
+  // Test vault membership after deduplicating the recipients, before counting each category.
+  const result = await db.batch([
+    db
+      .prepare(
+        `WITH vault AS MATERIALIZED (
+         SELECT btc_address_id id,COUNT(*) n FROM emblem_vaults
+         WHERE btc_address_id IS NOT NULL GROUP BY btc_address_id
+       ), recipients AS MATERIALIZED (
+         SELECT DISTINCT send.destination_id id FROM vault
+         CROSS JOIN sends send ON send.source_id=vault.id WHERE send.destination_id IS NOT NULL
+       ), recipient_counts AS (
+         SELECT COUNT(*) total,COUNT(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM emblem_vaults dest WHERE dest.btc_address_id=recipients.id
+         )) revaulted FROM recipients
+       ), holder_counts AS (
+         SELECT COUNT(*) holders,COUNT(*) FILTER (
+           WHERE is_emblem_vault=0 AND is_exchange=0 AND is_burn=0 AND is_deposit=0
+         ) real_users FROM address_signals WHERE assets_held>0
+       )
+       INSERT INTO emblem_stats(id,vaults,funded,cracked_to_user,revaulted,depositors,all_holders,real_users,updated_at)
+       SELECT 1,(SELECT COALESCE(SUM(n),0) FROM vault),
+         (SELECT COUNT(*) FROM vault WHERE EXISTS (SELECT 1 FROM balances b
+           WHERE b.address_id=vault.id AND b.address_id IS NOT NULL AND CAST(b.quantity AS INTEGER)>0)),
+         total-revaulted,revaulted,
+         (SELECT COUNT(DISTINCT send.source_id) FROM vault CROSS JOIN sends send ON send.destination_id=vault.id),
+         holders,real_users,? FROM recipient_counts CROSS JOIN holder_counts WHERE 1
        ON CONFLICT(id) DO UPDATE SET vaults=excluded.vaults,funded=excluded.funded,
-       cracked_to_user=excluded.cracked_to_user,revaulted=excluded.revaulted,
-       depositors=excluded.depositors,all_holders=excluded.all_holders,
-       real_users=excluded.real_users,updated_at=excluded.updated_at`,
-    ).bind(...values, now),
-    env.CORE_DB.prepare(
-      `INSERT INTO core_state(key,value) VALUES('emblem_stats_updated_at',?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    ).bind(String(now)),
+         cracked_to_user=excluded.cracked_to_user,revaulted=excluded.revaulted,depositors=excluded.depositors,
+         all_holders=excluded.all_holders,real_users=excluded.real_users,updated_at=excluded.updated_at`,
+      )
+      .bind(now),
+    setCoreStateStatement(db, "emblem_stats_updated_at", now),
   ]);
-  return { refreshed: true, updated_at: now };
+  return { refreshed: true, updated_at: now, rows_read: result[0].meta.rows_read };
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { addressEgo, assetHolders } from "#api/queries/graph-extract";
 import { graphCuts, graphOverview, graphScore } from "#api/queries/graph";
@@ -9,20 +10,27 @@ class Statement {
   constructor(
     private readonly db: DatabaseSync,
     private readonly sql: string,
+    private readonly edgePlans: string[],
   ) {}
   bind(...args: unknown[]) {
     this.args = args;
     return this;
   }
   async all<T>() {
+    if (this.sql.includes("published_graph_edges")) {
+      const plan = this.db.prepare("EXPLAIN QUERY PLAN " + this.sql).all(...this.args) as { detail: string }[];
+      this.edgePlans.push(
+        ...plan.filter((row) => /(?:SCAN|SEARCH) graph_edges/.test(row.detail)).map((row) => row.detail),
+      );
+    }
     return { results: this.db.prepare(this.sql).all(...this.args) as T[] };
   }
   async first<T>() {
     return (this.db.prepare(this.sql).get(...this.args) as T | undefined) ?? null;
   }
 }
-const d1 = (db: DatabaseSync): D1Database =>
-  ({ prepare: (sql: string) => new Statement(db, sql) }) as unknown as D1Database;
+const d1 = (db: DatabaseSync, plans: string[]): D1Database =>
+  ({ prepare: (sql: string) => new Statement(db, sql, plans) }) as unknown as D1Database;
 
 test("compact graph reads use canonical identities and only the active generation", async () => {
   const db = new DatabaseSync(":memory:");
@@ -37,9 +45,9 @@ test("compact graph reads use canonical identities and only the active generatio
     CREATE TABLE curated(kind TEXT,key TEXT,PRIMARY KEY(kind,key));
     CREATE TABLE balances(balance_id INTEGER PRIMARY KEY,address_id INTEGER,asset_id INTEGER,quantity TEXT,
       quantity_normalized TEXT);
-    CREATE VIEW published_graph_edges AS SELECT * FROM graph_edges;
     CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,
       weight REAL,edge_block INTEGER,PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
+    CREATE INDEX idx_graph_edges_destination ON graph_edges(generation,destination_entity_id,source_entity_id);
     INSERT INTO core_state VALUES
       ('graph_generation','2'),('graph_cut_addr_trust','0.2'),('graph_cut_addr_distrust','0.4'),
       ('graph_cut_asset_trust','0.3'),('graph_cut_asset_distrust','0.5');
@@ -52,8 +60,13 @@ test("compact graph reads use canonical identities and only the active generatio
     INSERT INTO balances VALUES(1,2,10,'200','2.0'),(2,3,10,'100','1.0');
     INSERT INTO graph_edges VALUES
       (1,1,3,99,1),(2,1,2,2,2),(2,2,3,3,2),(2,3,2,1,2),(2,10,1,0.693147,2);
+    WITH RECURSIVE ids(n) AS (VALUES(100) UNION ALL SELECT n+1 FROM ids WHERE n<2100)
+      INSERT INTO graph_edges SELECT 2,n,n+1,1,2 FROM ids;
+    ANALYZE;
   `);
-  const binding = d1(db);
+  db.exec(readFileSync("migrations-core/0102_graph_edge_revisions.sql", "utf8"));
+  const plans: string[] = [];
+  const binding = d1(db, plans);
   assert.deepEqual(await graphScore(binding, "address", "alice"), { trust: 0.8, distrust: 0.1 });
   assert.deepEqual((await graphCuts(binding)).asset, { trust: 0.3, distrust: 0.5 });
   const ego = await addressEgo(binding, "alice", 10);
@@ -69,6 +82,17 @@ test("compact graph reads use canonical identities and only the active generatio
     ["CARD", "bob", "carol"],
   );
   assert.equal(holders.edges.filter((edge) => !edge.spoke).length, 2);
+  assert.equal(
+    plans.filter((plan) => plan.includes("generation=? AND source_entity_id=? AND destination_entity_id=?")).length,
+    2,
+  );
+  assert.ok(
+    plans.every(
+      (plan) =>
+        plan.startsWith("SEARCH graph_edges") && /generation=\? AND (source|destination)_entity_id=\?/.test(plan),
+    ),
+    plans.join("\n"),
+  );
   const overview = await graphOverview(binding);
   assert.equal(overview.addresses.tiers.trusted, 2);
   assert.equal(overview.addresses.tiers.distrusted, 1);

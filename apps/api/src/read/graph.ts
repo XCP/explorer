@@ -17,17 +17,17 @@ export const graph = router();
 
 // Bounded, renderable sub-graphs for the viz experiment. limit clamps the node budget so a hub can't return
 // its whole neighbourhood. GET /v2/graph/address/:a (ego-network) · /v2/graph/asset/:a (holder star).
-const clampLimit = (v: string | undefined, def: number, max: number) =>
-  Math.min(Math.max(parseInt(v || "", 10) || def, 1), max);
+export const graphLimit = (kind: string, v?: string) =>
+  Math.min(Math.max(parseInt(v || "", 10) || (kind === "asset" ? 80 : 60), 1), kind === "asset" ? 300 : 200);
 
 graph.get("/v2/graph/address/:address", async (c) => {
   const address = c.req.param("address");
-  const { nodes, edges, stats } = await addressEgo(c.env.CORE_DB, address, clampLimit(c.req.query("limit"), 60, 200));
+  const { nodes, edges, stats } = await addressEgo(c.env.CORE_DB, address, graphLimit("address", c.req.query("limit")));
   return J(c, { result: { center: address, scope: "address-ego", nodes, edges, stats } as GraphSubgraph }, 120);
 });
 
 graph.get("/v2/graph/asset/:asset", async (c) => {
   const asset = c.req.param("asset").toUpperCase();
-  const { nodes, edges, stats } = await assetHolders(c.env.CORE_DB, asset, clampLimit(c.req.query("limit"), 80, 300));
+  const { nodes, edges, stats } = await assetHolders(c.env.CORE_DB, asset, graphLimit("asset", c.req.query("limit")));
   return J(c, { result: { center: asset, scope: "asset-holders", nodes, edges, stats } as GraphSubgraph }, 120);
 });
