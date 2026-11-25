@@ -2362,3 +2362,72 @@ test("a failed graph checkpoint rolls back the step and a second runner observes
   assert.equal(database.prepare("SELECT COUNT(*) n FROM entity_dictionary").get()?.n, 10001);
   database.close();
 });
+
+test("graph send windows resume within a block, commit weights with the cursor and limit one page per call", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(`
+    CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    INSERT INTO core_state VALUES ('graph_generation','5'),('graph_build_generation','6'),('graph_phase','build'),
+      ('graph_build_i','7'),('graph_atomic_build','1');
+    CREATE TABLE sends(event_index INTEGER PRIMARY KEY,block_index INTEGER,source_id INTEGER,destination_id INTEGER);
+    CREATE INDEX idx_sends_block ON sends(block_index,event_index);
+    CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
+    INSERT INTO address_dictionary VALUES (1,'a'),(2,'b');
+    CREATE TABLE entity_dictionary(entity_type TEXT,entity_key TEXT,entity_id INTEGER);
+    INSERT INTO entity_dictionary VALUES ('address','a',10),('address','b',20);
+    CREATE TABLE address_signals(address_id INTEGER,is_exchange INTEGER,is_burn INTEGER,is_deposit INTEGER,is_emblem_vault INTEGER);
+    CREATE TABLE curated(kind TEXT,key TEXT);
+    CREATE TABLE dispensers(source_id INTEGER,origin_id INTEGER);
+    CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,weight REAL,edge_block INTEGER,
+      PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
+    INSERT INTO graph_edges VALUES (5,10,20,9,300000),(6,10,20,4,400000);
+    WITH RECURSIVE seq(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM seq WHERE i<1002)
+      INSERT INTO sends SELECT i,400001,1,2 FROM seq;
+    INSERT INTO sends VALUES(1003,500001,1,2);
+    CREATE TRIGGER fail_edge_cursor BEFORE INSERT ON core_state WHEN NEW.key='graph_edge_cursor'
+      BEGIN SELECT RAISE(ABORT,'failed edge cursor'); END;
+  `);
+  const env = { CORE_DB: d1(database) } as Env;
+  const weight = (gen: number) =>
+    database.prepare("SELECT weight FROM graph_edges WHERE generation=?").get(gen)?.weight;
+  const run = () => buildGraphTrust(env, { work: 40 });
+  try {
+    await assert.rejects(run(), /failed edge cursor/);
+    assert.equal(weight(6), 4);
+    database.exec("DROP TRIGGER fail_edge_cursor; UPDATE core_state SET value='0' WHERE key='graph_job_retry_after'");
+    assert.equal((await run()).build?.at, 7);
+    assert.equal(weight(6), 1004);
+    assert.equal(
+      database.prepare("SELECT value FROM core_state WHERE key='graph_edge_cursor'").get()?.value,
+      "[400001,1000]",
+    );
+    assert.equal((await run()).build?.at, 8);
+    assert.equal(weight(6), 1006);
+    assert.equal(database.prepare("SELECT value FROM core_state WHERE key='graph_edge_cursor'").get()?.value, "");
+    assert.equal(weight(5), 9);
+    // One source may have more destinations than fit in a page. Normalization must visit each edge once.
+    database.exec(`WITH RECURSIVE seq(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM seq WHERE i<1000)
+      INSERT INTO graph_edges SELECT 6,11,i,9,400001 FROM seq;
+      UPDATE core_state SET value='51' WHERE key='graph_build_i';`);
+    assert.equal((await run()).build?.at, 51);
+    assert.equal((await run()).build?.at, 52);
+    assert.equal(
+      database
+        .prepare(
+          "SELECT COUNT(*) n FROM graph_edges WHERE generation=6 AND source_entity_id=11 AND abs(weight-ln(10))<0.000001",
+        )
+        .get()?.n,
+      1000,
+    );
+    database.exec(
+      "CREATE TABLE graph_seed(generation INTEGER,entity_id INTEGER,slot INTEGER,PRIMARY KEY(generation,entity_id,slot)) WITHOUT ROWID",
+    );
+    await buildGraphTrust(env, { reset: true });
+    assert.equal(database.prepare("SELECT COUNT(*) n FROM graph_edges WHERE generation=6").get()?.n, 1);
+    await run();
+    assert.equal(database.prepare("SELECT COUNT(*) n FROM graph_edges WHERE generation=6").get()?.n, 0);
+    assert.equal(weight(5), 9);
+  } finally {
+    database.close();
+  }
+});

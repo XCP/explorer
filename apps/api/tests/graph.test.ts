@@ -23,7 +23,7 @@ import {
   graphPercentileCut,
   entitySeedInsertStatement,
   ENTITY_IDENTITY_STATEMENTS,
-  entityEdgeStatements,
+  entityEdgeSteps,
   K,
   DISTRUST_SLOT,
   type GraphEdgeArrays,
@@ -306,7 +306,10 @@ test("normalized edge builder resolves compact relationships through canonical e
     INSERT INTO assets VALUES(10,1);
   `);
   for (const sql of ENTITY_IDENTITY_STATEMENTS) db.exec(sql);
-  for (const sql of entityEdgeStatements(generation)) db.exec(sql);
+  for (const step of entityEdgeSteps(generation))
+    db.exec(
+      `WITH graph_input AS MATERIALIZED (SELECT * FROM ${step.table} WHERE ${step.scope} ${step.start === undefined ? "" : `AND ${step.keys[0]}>${step.start}`}) ${step.sql}`,
+    );
   const edges = db
     .prepare(
       `SELECT source.entity_key source,destination.entity_key destination,ROUND(edge.weight,6) weight
