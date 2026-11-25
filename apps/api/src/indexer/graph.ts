@@ -31,7 +31,8 @@ import {
   DISTRUST_SLOT,
   ENTITY_IDENTITY_STATEMENTS,
   seedSubset,
-  entityEdgeStatements,
+  entityEdgeSteps,
+  type GraphEdgeStep,
   entitySeedInsertStatement,
   buildDenseGraph,
   computeGraphScores,
@@ -383,6 +384,8 @@ async function runScorePass(env: Env, generation: number): Promise<ScoreSummary>
 // The edge build op list (bounded units advanced per tick) and the phase driver.
 // ---------------------------------------------------------------------------------------------------
 const K_IDENTITY_CURSOR = "graph_identity_cursor";
+const K_EDGE_CURSOR = "graph_edge_cursor";
+const EDGE_WRITE_PAGE = 1000;
 const IDENTITY_PAGE = 10_000;
 
 async function advanceGraphIdentity(db: D1Database, kind: "asset" | "address", step: number) {
@@ -410,19 +413,76 @@ async function advanceGraphIdentity(db: D1Database, kind: "asset" | "address", s
   return done;
 }
 
-function buildOps(db: D1Database, generation: number, active: number, bipartite: boolean) {
+/** Select the same indexed input page twice inside one transaction. The second selection only reads keys.
+ * Edge writes never change the paging keys, including when normalizing graph_edges in place. */
+async function advanceGraphEdge(db: D1Database, edge: GraphEdgeStep, step: number): Promise<void> {
+  const saved = await getState(db, K_EDGE_CURSOR);
+  const cursor: unknown = saved ? JSON.parse(saved) : [];
+  if (
+    !Array.isArray(cursor) ||
+    (cursor.length !== 0 && cursor.length !== edge.keys.length) ||
+    !cursor.every(Number.isSafeInteger)
+  )
+    throw new Error("Invalid graph edge page cursor");
+  const keys = edge.keys.join(",");
+  // Keeping the original lower bound on later pages makes SQLite rescan every earlier block.
+  let after = edge.start === undefined ? "" : `AND ${edge.keys[0]}>${edge.start}`;
+  if (cursor.length) after = `AND (${keys})>(${cursor.map(() => "?").join(",")})`;
+  const page = `FROM ${edge.table} WHERE ${edge.scope} ${after} ORDER BY ${keys} LIMIT ${EDGE_WRITE_PAGE}`;
+  const descending = edge.keys.map((key) => key + " DESC").join(",");
+  await db.batch([
+    db.prepare(`WITH graph_input AS MATERIALIZED (SELECT * ${page}) ${edge.sql}`).bind(...cursor),
+    db
+      .prepare(
+        `INSERT INTO core_state(key,value)
+      VALUES (?,COALESCE((SELECT CASE WHEN COUNT(*) OVER ()=${EDGE_WRITE_PAGE} THEN json_array(${keys}) ELSE '' END
+                          FROM (SELECT ${keys} ${page}) ORDER BY ${descending} LIMIT 1),''))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .bind(K_EDGE_CURSOR, ...cursor),
+    db
+      .prepare("UPDATE core_state SET value=? WHERE key=? AND (SELECT value FROM core_state WHERE key=?)=''")
+      .bind(String(step + 1), K_BUILD, K_EDGE_CURSOR),
+  ]);
+}
+
+/** Seek an obsolete generation without scanning the published graph. Keep step zero until cleanup finishes. */
+async function clearOldGraphPage(db: D1Database, active: number): Promise<boolean> {
+  for (const [table, keys] of [
+    ["graph_seed", "generation,entity_id,slot"],
+    ["graph_edges", "generation,source_entity_id,destination_entity_id"],
+  ]) {
+    const row = await db
+      .prepare(
+        `SELECT COALESCE(
+      (SELECT generation FROM ${table} WHERE generation<? LIMIT 1),
+      (SELECT generation FROM ${table} WHERE generation>? LIMIT 1)) AS stale`,
+      )
+      .bind(active, active)
+      .first<{ stale: number | null }>();
+    if (row && row.stale !== null) {
+      await db
+        .prepare(
+          `DELETE FROM ${table} WHERE (${keys}) IN
+        (SELECT ${keys} FROM ${table} WHERE generation=? LIMIT ${EDGE_WRITE_PAGE})`,
+        )
+        .bind(row.stale)
+        .run();
+      return false;
+    }
+  }
+  await setState(db, K_BUILD, 1);
+  return true;
+}
+
+function buildOps(generation: number, active: number, bipartite: boolean) {
   if (generation === active) throw new Error("Cannot rebuild the published graph generation");
   return [
-    {
-      name: "reset",
-      statements: ["graph_seed", "graph_edges"].map((table) =>
-        db.prepare(`DELETE FROM ${table} WHERE generation<>?`).bind(active),
-      ),
-    },
+    { name: "reset" },
     ...(["address", "asset"] as const).map((kind, i) => ({ name: `identity_${i}`, kind })),
-    ...entityEdgeStatements(generation, bipartite).map((sql, i) => ({
+    ...entityEdgeSteps(generation, bipartite).map((edge, i) => ({
       name: `edges_${i}`,
-      statements: [db.prepare(sql)],
+      edge,
     })),
   ];
 }
@@ -480,6 +540,7 @@ async function advanceGraph(
       setCoreStateStatement(db, K_PHASE, "build"),
       setCoreStateStatement(db, K_BUILD, 0),
       setCoreStateStatement(db, K_IDENTITY_CURSOR, ""),
+      setCoreStateStatement(db, K_EDGE_CURSOR, ""),
       setCoreStateStatement(db, "graph_bipartite", bipartite ? 1 : 0),
       setCoreStateStatement(db, "graph_atomic_build", 1),
     ]);
@@ -490,7 +551,7 @@ async function advanceGraph(
   if (!["build", "score", "done"].includes(phase)) phase = "done";
 
   if (phase === "build") {
-    const ops = buildOps(db, generation, active, bipartite);
+    const ops = buildOps(generation, active, bipartite);
     let i = int(await getState(env.CORE_DB, K_BUILD), 0);
     if (i < 0 || i > ops.length) throw new Error("Invalid graph build cursor");
     const ran: string[] = [];
@@ -499,9 +560,13 @@ async function advanceGraph(
       ran.push(op.name);
       if ("kind" in op) {
         if (await advanceGraphIdentity(db, op.kind, i)) i++;
+      } else if ("edge" in op) {
+        await advanceGraphEdge(db, op.edge, i);
+        i = int(await getState(db, K_BUILD), i);
+        break;
       } else {
-        await db.batch([...op.statements, setCoreStateStatement(db, K_BUILD, i + 1)]);
-        i++;
+        if (await clearOldGraphPage(db, active)) i++;
+        break;
       }
     }
 
