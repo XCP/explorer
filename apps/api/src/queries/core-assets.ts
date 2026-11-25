@@ -57,6 +57,31 @@ export function listCoreAssets(db: D1Database, filter: CoreAssetListFilter): Pro
   if (query === "") {
     const sort = SORTS[filter.sort ?? ""] ?? SORTS.created;
     const direction = filter.dir === "asc" ? "ASC" : "DESC";
+    if (filter.sort === "asset" && filter.offset >= 4096) {
+      // Find the requested slice in ascending rank order in either direction.
+      // One statement keeps counts, names, and returned rows on the same snapshot.
+      const firstOffset = direction === "ASC" ? "?2" : "MAX(0, total - ?2 - ?1)";
+      return q<AssetIndexRow>(
+        db,
+        `WITH sizes AS (
+           SELECT first_name, members, SUM(members) OVER (ORDER BY first_name) AS end_offset,
+                  SUM(members) OVER () AS total FROM asset_page_ranges
+         ), bounds AS (
+           SELECT *, ${firstOffset} AS first_offset, MIN(?1, total - ?2) AS take FROM sizes
+         ), anchor AS MATERIALIZED (
+           SELECT first_name, first_offset - (end_offset - members) AS skip, take FROM bounds
+           WHERE take > 0 AND first_offset >= end_offset - members AND first_offset < end_offset LIMIT 1
+         ), page AS MATERIALIZED (
+           SELECT d.asset_id FROM asset_dictionary d CROSS JOIN assets a ON a.asset_id = d.asset_id
+           WHERE d.asset >= (SELECT first_name FROM anchor) ORDER BY d.asset
+           LIMIT COALESCE((SELECT take FROM anchor), 0) OFFSET COALESCE((SELECT skip FROM anchor), 0)
+         )
+         ${SELECT} WHERE assets.asset_id IN (SELECT asset_id FROM page)
+         ORDER BY dictionary.asset ${direction}`,
+        filter.limit,
+        filter.offset,
+      );
+    }
     return q<AssetIndexRow>(
       db,
       `WITH page AS MATERIALIZED (
