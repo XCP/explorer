@@ -1,6 +1,11 @@
+import type { AssetListBudget } from "#api/http/asset-list-budget";
+
 /** Cloudflare bindings and configuration available to the API Worker. */
 export interface Env {
   PUBLIC_API_RATE_LIMITER?: RateLimit;
+  ASSET_LIST_CLIENT_LIMIT: RateLimit;
+  ASSET_LIST_MISS_LIMIT: RateLimit;
+  ASSET_LIST_BUDGET: DurableObjectNamespace<AssetListBudget>;
   CORE_DB: D1Database;
   RECOVERY_DB: D1Database;
   RECOVERY_TRANSACTIONS: R2Bucket;

@@ -1,5 +1,5 @@
 name = "xcp-api"
-main = "src/index.ts"
+main = "src/worker.ts"
 compatibility_date = "2025-01-01"
 minify = true
 workers_dev = false
@@ -22,6 +22,25 @@ namespace_id = "20260721"
   [ratelimits.simple]
   limit = 600
   period = 60
+
+# Public asset-list bursts and a per-location prefilter for coordinated cache misses.
+[[ratelimits]]
+name = "ASSET_LIST_CLIENT_LIMIT"
+namespace_id = "2026112501"
+simple = { limit = 30, period = 60 }
+
+[[ratelimits]]
+name = "ASSET_LIST_MISS_LIMIT"
+namespace_id = "2026112502"
+simple = { limit = 240, period = 60 }
+
+[[durable_objects.bindings]]
+name = "ASSET_LIST_BUDGET"
+class_name = "AssetListBudget"
+
+[[migrations]]
+tag = "asset-list-budget-v1"
+new_sqlite_classes = ["AssetListBudget"]
 
 [triggers]
 crons = ["*/2 * * * *", "1-59/2 * * * *"]

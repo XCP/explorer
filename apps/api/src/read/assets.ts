@@ -4,6 +4,7 @@
  *  config-driven scoring composition are business logic and live here; every DB statement is a query fn. */
 import type { AssetDetail, AssetActivityMonth, RatingsOverview } from "@xcp/shared/assets";
 import { fetchExternalMetadata } from "#api/integrations/external-metadata";
+import { limitAssetListMiss } from "#api/http/rate-budget";
 import { router, J, lim, off, round, cached } from "#api/read/respond";
 import { scoreConviction, convictionScore } from "#api/reputation/score";
 import { assetActivityOutlook } from "#api/reputation/activity-outlook";
@@ -69,6 +70,8 @@ assets.get("/v2/assets", async (c) => {
     sort: c.req.query("sort"),
     dir: c.req.query("dir") === "asc" ? "asc" : c.req.query("dir") === "desc" ? "desc" : undefined,
   } as const;
+  const rejected = await limitAssetListMiss(c, filter);
+  if (rejected) return rejected;
   // Discovery must reflect a just-committed issuance. Prefer the primary D1 session here because the
   // root router's unconstrained replica can legitimately lag the canonical issuance projection.
   const session = c.env.CORE_DB as unknown as { withSession?: (mode?: string) => D1Database };
