@@ -29,8 +29,8 @@ import { claimCoreMaintenance, setCoreStateStatement } from "#api/indexer/core-s
 import {
   K,
   DISTRUST_SLOT,
-  seedSubset,
   ENTITY_IDENTITY_STATEMENTS,
+  seedSubset,
   entityEdgeStatements,
   entitySeedInsertStatement,
   buildDenseGraph,
@@ -382,6 +382,34 @@ async function runScorePass(env: Env, generation: number): Promise<ScoreSummary>
 // ---------------------------------------------------------------------------------------------------
 // The edge build op list (bounded units advanced per tick) and the phase driver.
 // ---------------------------------------------------------------------------------------------------
+const K_IDENTITY_CURSOR = "graph_identity_cursor";
+const IDENTITY_PAGE = 10_000;
+
+async function advanceGraphIdentity(db: D1Database, kind: "asset" | "address", step: number) {
+  const key = `${kind}_id`;
+  const table = `${kind}_dictionary`;
+  const cursor = await getState(db, K_IDENTITY_CURSOR);
+  const from = cursor ? `WHERE ${key}>?` : "";
+  const start = cursor ? [Number(cursor)] : [];
+  const page = await db
+    .prepare(`SELECT MAX(id) last,COUNT(*) n FROM (SELECT ${key} id FROM ${table} ${from} ORDER BY ${key} LIMIT ?)`)
+    .bind(...start, IDENTITY_PAGE)
+    .first<{ last: number | null; n: number }>();
+  if (!page) throw new Error("Missing graph identity page boundary");
+  const done = page.n < IDENTITY_PAGE;
+  const statements = [];
+  if (page.last !== null) {
+    const range = cursor ? `${key}>? AND ${key}<=?` : `${key}<=?`;
+    statements.push(
+      db.prepare(`${ENTITY_IDENTITY_STATEMENTS[kind === "address" ? 0 : 1]} WHERE ${range}`).bind(...start, page.last),
+    );
+  }
+  statements.push(setCoreStateStatement(db, K_IDENTITY_CURSOR, done ? "" : String(page.last)));
+  if (done) statements.push(setCoreStateStatement(db, K_BUILD, step + 1));
+  await db.batch(statements);
+  return done;
+}
+
 function buildOps(db: D1Database, generation: number, active: number, bipartite: boolean) {
   if (generation === active) throw new Error("Cannot rebuild the published graph generation");
   return [
@@ -391,7 +419,7 @@ function buildOps(db: D1Database, generation: number, active: number, bipartite:
         db.prepare(`DELETE FROM ${table} WHERE generation<>?`).bind(active),
       ),
     },
-    ...ENTITY_IDENTITY_STATEMENTS.map((sql, i) => ({ name: `identity_${i}`, statements: [db.prepare(sql)] })),
+    ...(["address", "asset"] as const).map((kind, i) => ({ name: `identity_${i}`, kind })),
     ...entityEdgeStatements(generation, bipartite).map((sql, i) => ({
       name: `edges_${i}`,
       statements: [db.prepare(sql)],
@@ -421,7 +449,17 @@ export async function buildGraphTrust(
   if (!(await claimCoreMaintenance(env.CORE_DB, leaseKey, now, 21600))) {
     return { phase: (await getState(env.CORE_DB, K_PHASE)) || "done", done: false, note: "graph job cooling down" };
   }
-  const result = await advanceGraph(env, opts);
+  let result;
+  try {
+    result = await advanceGraph(env, opts);
+  } catch (error) {
+    // The step cursor and its mutations are atomic. A transient resource-limit rejection can retry
+    // after the database cools down. Ambiguous failures retain the longer crash lease.
+    if (error instanceof Error && error.message.includes("overloaded")) {
+      await setState(env.CORE_DB, leaseKey, Math.floor(Date.now() / 1000) + 600);
+    }
+    throw error;
+  }
   await setState(env.CORE_DB, leaseKey, 0);
   return result;
 }
@@ -441,6 +479,7 @@ async function advanceGraph(
       setCoreStateStatement(db, K_GENERATION, active + 1),
       setCoreStateStatement(db, K_PHASE, "build"),
       setCoreStateStatement(db, K_BUILD, 0),
+      setCoreStateStatement(db, K_IDENTITY_CURSOR, ""),
       setCoreStateStatement(db, "graph_bipartite", bipartite ? 1 : 0),
       setCoreStateStatement(db, "graph_atomic_build", 1),
     ]);
@@ -455,9 +494,15 @@ async function advanceGraph(
     let i = int(await getState(env.CORE_DB, K_BUILD), 0);
     if (i < 0 || i > ops.length) throw new Error("Invalid graph build cursor");
     const ran: string[] = [];
-    for (let n = 0; n < work && i < ops.length; n++, i++) {
-      await db.batch([...ops[i].statements, setCoreStateStatement(db, K_BUILD, i + 1)]);
-      ran.push(ops[i].name);
+    for (let n = 0; n < work && i < ops.length; n++) {
+      const op = ops[i];
+      ran.push(op.name);
+      if ("kind" in op) {
+        if (await advanceGraphIdentity(db, op.kind, i)) i++;
+      } else {
+        await db.batch([...op.statements, setCoreStateStatement(db, K_BUILD, i + 1)]);
+        i++;
+      }
     }
 
     if (i >= ops.length) {

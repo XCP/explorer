@@ -2334,8 +2334,8 @@ test("a failed graph checkpoint rolls back the step and a second runner observes
  CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  INSERT INTO core_state VALUES ('graph_generation','5'),('graph_build_generation','6'),('graph_phase','build'),
    ('graph_build_i','1'),('graph_atomic_build','1');
- CREATE TABLE address_dictionary(address TEXT);
- INSERT INTO address_dictionary VALUES('a');
+ CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
+ INSERT INTO address_dictionary(address) VALUES('a');
  CREATE TABLE entity_dictionary(entity_type TEXT,entity_key TEXT,UNIQUE(entity_type,entity_key));
  CREATE TRIGGER fail_checkpoint BEFORE UPDATE ON core_state WHEN NEW.key='graph_build_i'
  BEGIN SELECT RAISE(ABORT,'checkpoint failed'); END;
@@ -2348,5 +2348,17 @@ test("a failed graph checkpoint rolls back the step and a second runner observes
   database.exec("DROP TRIGGER fail_checkpoint; UPDATE core_state SET value='0' WHERE key='graph_job_retry_after'");
   assert.equal((await buildGraphTrust(env, { work: 1 })).build?.at, 2);
   assert.equal(database.prepare("SELECT COUNT(*) n FROM entity_dictionary").get()?.n, 1);
+  database.exec(`
+    WITH RECURSIVE ids(id) AS (VALUES(2) UNION ALL SELECT id+1 FROM ids WHERE id<10001)
+    INSERT INTO address_dictionary SELECT id,printf('address-%d',id) FROM ids;
+    UPDATE core_state SET value='1' WHERE key='graph_build_i';
+  `);
+  assert.equal((await buildGraphTrust(env, { work: 1 })).build?.at, 1);
+  assert.equal(
+    database.prepare("SELECT value FROM core_state WHERE key='graph_identity_cursor'").get()?.value,
+    "10000",
+  );
+  assert.equal((await buildGraphTrust(env, { work: 1 })).build?.at, 2);
+  assert.equal(database.prepare("SELECT COUNT(*) n FROM entity_dictionary").get()?.n, 10001);
   database.close();
 });
