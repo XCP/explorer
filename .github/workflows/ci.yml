@@ -30,7 +30,7 @@ jobs:
           # worker is 191 KiB, which is nowhere near a platform limit, so this
           # is a discipline guard rather than a hard ceiling -- but it only
           # works as one if it is honest about where the worker actually is.
-          node ../../scripts/check-bundle-size.mjs .dry-run/index.js 786432
+          node ../../scripts/check-bundle-size.mjs .dry-run/worker.js 786432
 
   web-deployment-build:
     runs-on: ubuntu-latest
