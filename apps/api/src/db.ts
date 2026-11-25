@@ -15,3 +15,15 @@ export const one = <T>(db: D1Database, sql: string, ...binds: unknown[]): Promis
     .prepare(sql)
     .bind(...binds)
     .first<T>();
+
+export async function retryOverloadedRead<T>(query: () => Promise<T>): Promise<T> {
+  // Large aggregates can fill a D1 resource window. Retry only the rejected read after that window.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await query();
+    } catch (error) {
+      if (attempt >= 2 || !(error instanceof Error) || !error.message.includes("overloaded")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 11000));
+    }
+  }
+}

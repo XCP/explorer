@@ -47,9 +47,14 @@ export const addresses = router();
 // Population census — the /addresses knowledge page. Registered before the :address routes so the
 // literal segment cannot be captured as an address. One D1-cached payload, refreshed daily.
 addresses.get("/v2/addresses/census", (c) =>
-  cached(c, "addresses:census:1", { ttl: 86400, edge: 600, swr: 86400 }, async () => ({
-    result: await addressCensus(c.env.CORE_DB),
-  })),
+  cached(
+    c,
+    "addresses:census:1",
+    { ttl: 86400, edge: 600, swr: 604800, singleFlight: true, durableWrite: true },
+    async () => ({
+      result: await addressCensus(c.env.CORE_DB),
+    }),
+  ),
 );
 
 // Batch creator lookup — badges for a page of addresses in one call. Literal segment, so it sits with
