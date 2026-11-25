@@ -25,6 +25,7 @@
  */
 import type { Env } from "#api/env";
 import { q } from "#api/db";
+import { claimCoreMaintenance, setCoreStateStatement } from "#api/indexer/core-state";
 import {
   K,
   DISTRUST_SLOT,
@@ -381,29 +382,21 @@ async function runScorePass(env: Env, generation: number): Promise<ScoreSummary>
 // ---------------------------------------------------------------------------------------------------
 // The edge build op list (bounded units advanced per tick) and the phase driver.
 // ---------------------------------------------------------------------------------------------------
-function buildOps(generation: number, bipartite: boolean): { name: string; exec: (env: Env) => Promise<void> }[] {
-  const runSql = (sql: string) => async (env: Env) => {
-    await env.CORE_DB.prepare(sql).run();
-  };
-  const ops: { name: string; exec: (env: Env) => Promise<void> }[] = [
+function buildOps(db: D1Database, generation: number, active: number, bipartite: boolean) {
+  if (generation === active) throw new Error("Cannot rebuild the published graph generation");
+  return [
     {
       name: "reset",
-      exec: async (env) => {
-        // Keep the ACTIVE published generation readable while this one builds; clean everything older,
-        // plus this generation's own rows so a resumed build stays idempotent.
-        const active = int(await getState(env.CORE_DB, "graph_generation"), 0);
-        for (const table of ["graph_seed", "graph_edges"]) {
-          await env.CORE_DB.prepare(`DELETE FROM ${table} WHERE generation<>? AND generation<>?`)
-            .bind(generation, active)
-            .run();
-          await env.CORE_DB.prepare(`DELETE FROM ${table} WHERE generation=?`).bind(generation).run();
-        }
-      },
+      statements: ["graph_seed", "graph_edges"].map((table) =>
+        db.prepare(`DELETE FROM ${table} WHERE generation<>?`).bind(active),
+      ),
     },
+    ...ENTITY_IDENTITY_STATEMENTS.map((sql, i) => ({ name: `identity_${i}`, statements: [db.prepare(sql)] })),
+    ...entityEdgeStatements(generation, bipartite).map((sql, i) => ({
+      name: `edges_${i}`,
+      statements: [db.prepare(sql)],
+    })),
   ];
-  ENTITY_IDENTITY_STATEMENTS.forEach((sql, i) => ops.push({ name: `identity_${i}`, exec: runSql(sql) }));
-  entityEdgeStatements(generation, bipartite).forEach((sql, i) => ops.push({ name: `edges_${i}`, exec: runSql(sql) }));
-  return ops;
 }
 
 export interface GraphBuildProgress {
@@ -422,14 +415,35 @@ export async function buildGraphTrust(
   env: Env,
   opts: { work?: number; reset?: boolean; bipartite?: boolean } = {},
 ): Promise<GraphBuildProgress> {
+  const now = Math.floor(Date.now() / 1000);
+  const leaseKey = "graph_job_retry_after";
+  // A timed-out invocation cannot keep replaying its most expensive statement every two minutes.
+  if (!(await claimCoreMaintenance(env.CORE_DB, leaseKey, now, 21600))) {
+    return { phase: (await getState(env.CORE_DB, K_PHASE)) || "done", done: false, note: "graph job cooling down" };
+  }
+  const result = await advanceGraph(env, opts);
+  await setState(env.CORE_DB, leaseKey, 0);
+  return result;
+}
+
+async function advanceGraph(
+  env: Env,
+  opts: { work?: number; reset?: boolean; bipartite?: boolean },
+): Promise<GraphBuildProgress> {
   const work = Math.max(1, Math.min(40, opts.work ?? DEFAULT_WORK));
-  if (opts.reset) {
-    const active = int(await getState(env.CORE_DB, "graph_generation"), 0);
-    await setState(env.CORE_DB, K_GENERATION, active + 1);
-    await setState(env.CORE_DB, K_PHASE, "build");
-    await setState(env.CORE_DB, K_BUILD, "0");
-    // captured at reset so every resumed call constructs the same deterministic op list
-    await setState(env.CORE_DB, "graph_bipartite", opts.bipartite ? "1" : "0");
+  const db = env.CORE_DB;
+  const active = int(await getState(db, "graph_generation"), 0);
+  const legacyBuild = (await getState(db, K_PHASE)) === "build" && !(await getState(db, "graph_atomic_build"));
+  if (opts.reset || legacyBuild) {
+    // Legacy cursors could lag committed additive writes. Rebuild only the unpublished generation.
+    const bipartite = opts.reset ? opts.bipartite : (await getState(db, "graph_bipartite")) === "1";
+    await db.batch([
+      setCoreStateStatement(db, K_GENERATION, active + 1),
+      setCoreStateStatement(db, K_PHASE, "build"),
+      setCoreStateStatement(db, K_BUILD, 0),
+      setCoreStateStatement(db, "graph_bipartite", bipartite ? 1 : 0),
+      setCoreStateStatement(db, "graph_atomic_build", 1),
+    ]);
   }
   const generation = int(await getState(env.CORE_DB, K_GENERATION), 1);
   const bipartite = (await getState(env.CORE_DB, "graph_bipartite")) === "1";
@@ -437,18 +451,20 @@ export async function buildGraphTrust(
   if (!["build", "score", "done"].includes(phase)) phase = "done";
 
   if (phase === "build") {
-    const ops = buildOps(generation, bipartite);
+    const ops = buildOps(db, generation, active, bipartite);
     let i = int(await getState(env.CORE_DB, K_BUILD), 0);
-    if (i < 0 || i > ops.length) i = 0;
+    if (i < 0 || i > ops.length) throw new Error("Invalid graph build cursor");
     const ran: string[] = [];
     for (let n = 0; n < work && i < ops.length; n++, i++) {
-      await ops[i].exec(env);
+      await db.batch([...ops[i].statements, setCoreStateStatement(db, K_BUILD, i + 1)]);
       ran.push(ops[i].name);
     }
-    await setState(env.CORE_DB, K_BUILD, String(i));
+
     if (i >= ops.length) {
-      await setState(env.CORE_DB, K_EDGES_BLOCK, String(await graphTip(env)));
-      await setState(env.CORE_DB, K_PHASE, "score");
+      await db.batch([
+        setCoreStateStatement(db, K_EDGES_BLOCK, await graphTip(env)),
+        setCoreStateStatement(db, K_PHASE, "score"),
+      ]);
       return { phase: "build", done: false, build: { at: i, of: ops.length, ran }, note: "build complete -> score" };
     }
     return { phase: "build", done: false, build: { at: i, of: ops.length, ran } };
@@ -462,8 +478,10 @@ export async function buildGraphTrust(
     await setState(env.CORE_DB, K_SCORE_LEASE, now);
     try {
       const score = await runScorePass(env, generation);
-      await setState(env.CORE_DB, K_PHASE, "done");
-      await setState(env.CORE_DB, K_SCORED_BLOCK, String(await graphTip(env)));
+      await db.batch([
+        setCoreStateStatement(db, K_SCORED_BLOCK, await graphTip(env)),
+        setCoreStateStatement(db, K_PHASE, "done"),
+      ]);
       return { phase: "score", done: true, score, note: "scores published to signals" };
     } finally {
       await setState(env.CORE_DB, K_SCORE_LEASE, 0);
