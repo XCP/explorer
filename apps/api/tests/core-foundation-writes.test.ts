@@ -1,3 +1,5 @@
+import type { Env } from "#api/env";
+import { buildGraphTrust } from "#api/indexer/graph";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { restoreUndo, writeWithUndo } from "#api/indexer/reorg-undo";
 import assert from "node:assert/strict";
@@ -2324,4 +2326,39 @@ test("missing protocol evidence leaves existing state and cursors intact", async
     globalThis.fetch = original;
     database.close();
   }
+});
+
+test("a failed graph checkpoint rolls back the step and a second runner observes the cooldown", async () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec(`
+ CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+ INSERT INTO core_state VALUES ('graph_generation','5'),('graph_build_generation','6'),('graph_phase','build'),
+   ('graph_build_i','1'),('graph_atomic_build','1');
+ CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT);
+ INSERT INTO address_dictionary(address) VALUES('a');
+ CREATE TABLE entity_dictionary(entity_type TEXT,entity_key TEXT,UNIQUE(entity_type,entity_key));
+ CREATE TRIGGER fail_checkpoint BEFORE UPDATE ON core_state WHEN NEW.key='graph_build_i'
+ BEGIN SELECT RAISE(ABORT,'checkpoint failed'); END;
+ `);
+  const env = { CORE_DB: d1(database) } as Env;
+  await assert.rejects(buildGraphTrust(env, { work: 1 }), /checkpoint failed/);
+  assert.equal(database.prepare("SELECT COUNT(*) n FROM entity_dictionary").get()?.n, 0);
+  assert.equal(database.prepare("SELECT value FROM core_state WHERE key='graph_build_i'").get()?.value, "1");
+  assert.match((await buildGraphTrust(env, { work: 1 })).note ?? "", /cooling down/);
+  database.exec("DROP TRIGGER fail_checkpoint; UPDATE core_state SET value='0' WHERE key='graph_job_retry_after'");
+  assert.equal((await buildGraphTrust(env, { work: 1 })).build?.at, 2);
+  assert.equal(database.prepare("SELECT COUNT(*) n FROM entity_dictionary").get()?.n, 1);
+  database.exec(`
+    WITH RECURSIVE ids(id) AS (VALUES(2) UNION ALL SELECT id+1 FROM ids WHERE id<10001)
+    INSERT INTO address_dictionary SELECT id,printf('address-%d',id) FROM ids;
+    UPDATE core_state SET value='1' WHERE key='graph_build_i';
+  `);
+  assert.equal((await buildGraphTrust(env, { work: 1 })).build?.at, 1);
+  assert.equal(
+    database.prepare("SELECT value FROM core_state WHERE key='graph_identity_cursor'").get()?.value,
+    "10000",
+  );
+  assert.equal((await buildGraphTrust(env, { work: 1 })).build?.at, 2);
+  assert.equal(database.prepare("SELECT COUNT(*) n FROM entity_dictionary").get()?.n, 10001);
+  database.close();
 });

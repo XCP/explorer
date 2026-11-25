@@ -1,4 +1,4 @@
-import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
+import { getCoreStateInt, setCoreStateStatement, claimCoreMaintenance } from "#api/indexer/core-state";
 
 export const ADDRESS_REPUTATION_MODEL_VERSION = 1;
 
@@ -82,10 +82,9 @@ export const ADDRESS_REPUTATION_RECONCILE_SQL = `DELETE FROM address_reputations
   )`;
 
 /** Rebuild the compact public distribution after the weekly population rank refresh. */
-export async function refreshAddressReputationHistogram(db: D1Database) {
-  const result = await db
-    .prepare(
-      `INSERT INTO address_reputation_histogram(singleton,bins)
+function histogramStatement(db: D1Database) {
+  return db.prepare(
+    `INSERT INTO address_reputation_histogram(singleton,bins)
       SELECT 1,json_group_array(json_object('bin',bin,'count',count))
       FROM (
         SELECT MIN(100,CAST(reputation AS INTEGER)) bin,COUNT(*) count
@@ -96,8 +95,11 @@ export async function refreshAddressReputationHistogram(db: D1Database) {
       WHERE 1
       ON CONFLICT(singleton) DO UPDATE SET bins=excluded.bins
       WHERE address_reputation_histogram.bins IS NOT excluded.bins`,
-    )
-    .run();
+  );
+}
+
+export async function refreshAddressReputationHistogram(db: D1Database) {
+  const result = await histogramStatement(db).run();
   return { changed: (result.meta.rows_written ?? 0) === 1 };
 }
 
@@ -105,9 +107,9 @@ export async function refreshAddressReputations(db: D1Database, now = Math.floor
   const [result] = await db.batch([
     db.prepare(ADDRESS_REPUTATION_UPSERT_SQL).bind(now),
     db.prepare(ADDRESS_REPUTATION_RECONCILE_SQL),
+    histogramStatement(db),
+    setCoreStateStatement(db, "address_reputations_refreshed_at", now),
   ]);
-  await refreshAddressReputationHistogram(db);
-  await setCoreState(db, "address_reputations_refreshed_at", now);
   return {
     refreshed: true,
     rowsWritten: result.meta.changes,
@@ -119,6 +121,8 @@ export async function refreshAddressReputations(db: D1Database, now = Math.floor
 export async function maybeRefreshAddressReputations(db: D1Database, now = Math.floor(Date.now() / 1_000)) {
   const refreshedAt = await getCoreStateInt(db, "address_reputations_refreshed_at");
   if (!addressReputationRefreshDue(now, refreshedAt)) return { refreshed: false, refreshedAt };
+  if (!(await claimCoreMaintenance(db, "address_reputations_retry_after", now, 21600)))
+    return { refreshed: false, refreshedAt };
   return refreshAddressReputations(db, now);
 }
 

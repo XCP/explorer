@@ -30,3 +30,20 @@ export function setCoreStateStatement(db: D1Database, key: string, value: string
     .prepare(`INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
     .bind(key, String(value));
 }
+
+/** A failed or interrupted expensive job keeps its cooldown. A successful job can release early. */
+export async function claimCoreMaintenance(
+  db: D1Database,
+  key: string,
+  now: number,
+  seconds: number,
+): Promise<boolean> {
+  const result = await db
+    .prepare(
+      `INSERT INTO core_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value
+     WHERE CAST(core_state.value AS INTEGER)<=?`,
+    )
+    .bind(key, String(now + seconds), now)
+    .run();
+  return result.meta.changes === 1;
+}

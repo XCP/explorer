@@ -24,7 +24,7 @@ import type {
 } from "@xcp/shared/addresses";
 import type { AddressSignalsRow } from "#api/storage-types";
 import { PERSONA } from "#api/reputation/config";
-import { q, one } from "#api/db";
+import { q, one, retryOverloadedRead } from "#api/db";
 import { ADDRESS_LEDGER_SQL } from "#api/queries/ledger";
 
 export interface Page {
@@ -351,8 +351,9 @@ export function reputationTierMembers(
  *  and collection holder-makeup use. */
 export async function addressCensus(db: D1Database): Promise<AddressCensus> {
   const P = PERSONA;
+  const aggregate = <T>(sql: string) => retryOverloadedRead(() => q<T>(db, sql));
   const [kindRows, personaRows, arrivalRows, tipRow] = [
-    await q<
+    await aggregate<
       AddressKindRow & {
         infra_exchanges: number;
         infra_deposits: number;
@@ -362,7 +363,6 @@ export async function addressCensus(db: D1Database): Promise<AddressCensus> {
         utxo: number;
       }
     >(
-      db,
       `SELECT
          CASE WHEN d.address LIKE '1%' THEN 'p2pkh' WHEN d.address LIKE '3%' THEN 'p2sh'
               WHEN d.address LIKE 'bc1q%' AND LENGTH(d.address)=42 THEN 'p2wpkh'
@@ -381,8 +381,7 @@ export async function addressCensus(db: D1Database): Promise<AddressCensus> {
        LEFT JOIN address_reputations r ON r.address_id=d.address_id
        GROUP BY kind`,
     ),
-    await q<{ persona: string; addresses: number }>(
-      db,
+    await aggregate<{ persona: string; addresses: number }>(
       `WITH classified AS (
          SELECT CASE
            WHEN s.is_exchange=1 OR s.is_deposit=1 OR s.is_emblem_vault=1 OR s.is_burn=1 THEN 'service'
@@ -409,13 +408,12 @@ export async function addressCensus(db: D1Database): Promise<AddressCensus> {
        )
        SELECT persona, COUNT(*) addresses FROM classified GROUP BY persona ORDER BY addresses DESC`,
     ),
-    await q<{ year: string; addresses: number }>(
-      db,
+    await aggregate<{ year: string; addresses: number }>(
       `SELECT strftime('%Y', b.block_time, 'unixepoch') year, COUNT(*) addresses
        FROM address_signals s JOIN blocks b ON b.block_index=s.first_block
        WHERE s.first_block>0 GROUP BY year ORDER BY year`,
     ),
-    await one<{ tip: number }>(db, `SELECT MAX(block_index) tip FROM blocks`),
+    await retryOverloadedRead(() => one<{ tip: number }>(db, `SELECT MAX(block_index) tip FROM blocks`)),
   ];
   const infrastructure = { exchanges: 0, deposits: 0, vaults: 0, burns: 0 };
   const kinds: AddressKindRow[] = [];

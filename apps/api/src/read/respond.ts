@@ -29,10 +29,15 @@ function primaryCacheDatabase(db: D1Database): D1Database {
 }
 
 /** Atomically elect one stale-cache request to refresh while every contender serves the existing body. */
-export async function claimCacheRefresh(db: D1Database, key: string, now: number): Promise<boolean> {
+export async function claimCacheRefresh(
+  db: D1Database,
+  key: string,
+  now: number,
+  leaseSeconds = CACHE_REFRESH_LEASE_SECONDS,
+): Promise<boolean> {
   const result = await db
     .prepare(`UPDATE cache SET refreshing_until=? WHERE key=? AND refreshing_until<?`)
-    .bind(now + CACHE_REFRESH_LEASE_SECONDS, key, now)
+    .bind(now + leaseSeconds, key, now)
     .run();
   return (result.meta.rows_written ?? 0) === 1;
 }
@@ -81,6 +86,8 @@ export async function cached(
     staleKey?: string;
     /** Require a successful cache publication before returning an expensive cold result. */
     durableWrite?: boolean;
+    /** Elect one producer on cache misses for expensive global reports. */
+    singleFlight?: boolean;
   },
   producer: () => Promise<unknown>,
 ): Promise<Response> {
@@ -132,7 +139,9 @@ export async function cached(
         }
       })();
       if (ctx) {
-        const claimed = await claimCacheRefresh(cacheDb, key, now).catch(() => false);
+        const claimed = await claimCacheRefresh(cacheDb, key, now, opts.singleFlight ? 300 : undefined).catch(
+          () => false,
+        );
         if (claimed) ctx.waitUntil(write().catch(() => {}));
         const response = send(hit.body, hit.ctype);
         response.headers.set("x-d1-cache", "STALE");
@@ -156,7 +165,9 @@ export async function cached(
       })();
       if (ctx) {
         const now2 = Math.floor(Date.now() / 1000);
-        const claimed = await claimCacheRefresh(cacheDb, staleKey, now2).catch(() => false);
+        const claimed = await claimCacheRefresh(cacheDb, staleKey, now2, opts.singleFlight ? 300 : undefined).catch(
+          () => false,
+        );
         if (claimed) ctx.waitUntil(write().catch(() => {}));
         // max-age=0 keeps the edge middleware from pinning the PRIOR version's body under the
         // CURRENT contract key for the full edge TTL — the recompute must be the first body cached.
@@ -164,6 +175,24 @@ export async function cached(
         response.headers.set("x-d1-cache", "STALE-VERSION");
         return response;
       }
+    }
+  }
+  if (opts.singleFlight) {
+    const claim = await cacheDb
+      .prepare(
+        `INSERT INTO cache(key,body,ctype,expires_at,refreshing_until) VALUES(?,'','application/json',?,?)
+       ON CONFLICT(key) DO UPDATE SET refreshing_until=excluded.refreshing_until
+       WHERE cache.expires_at<=? AND cache.refreshing_until<?`,
+      )
+      .bind(key, now, now + 300, now, now)
+      .run();
+    if (!claim.meta.changes) {
+      const winner = await cacheDb
+        .prepare("SELECT body,ctype FROM cache WHERE key=?")
+        .bind(key)
+        .first<{ body: string; ctype: string }>();
+      if (winner?.body) return send(winner.body, winner.ctype, 0);
+      return c.json({ error: "Report is being prepared" }, 503, { "Retry-After": "30", "Cache-Control": "no-store" });
     }
   }
   const started = Date.now();

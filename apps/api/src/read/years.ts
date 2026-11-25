@@ -6,6 +6,8 @@
  * for propagating curation fixes like a new lowq flag into past years). The current year moves,
  * so it caches for an hour. Records are derived from the assembled index, never claimed by hand.
  */
+import { retryOverloadedRead } from "#api/db";
+import { HTTPException } from "hono/http-exception";
 import type { Envelope } from "@xcp/shared/envelope";
 import type { YearIndex, YearPage, YearSummary } from "@xcp/shared/years";
 import { router, cached } from "#api/read/respond";
@@ -50,15 +52,14 @@ const RECORD_KEYS = ["transactions", "actors", "newcomers", "new_assets", "dex_f
 const currentYear = (): number => new Date().getUTCFullYear();
 
 async function buildIndex(db: D1Database): Promise<YearIndex> {
-  const [activity, newcomer, asset, rawDex, clean, xcp, btc] = await Promise.all([
-    yearActivityLedger(db),
-    yearNewcomerLedger(db),
-    yearAssetLedger(db),
-    yearRawDexLedger(db),
-    yearCleanLedger(db),
-    yearOhlcLedger(db, "XCP"),
-    yearOhlcLedger(db, "BTC"),
-  ]);
+  // Each ledger is a large aggregate. Keep one in flight at a time on the database.
+  const activity = await retryOverloadedRead(() => yearActivityLedger(db));
+  const newcomer = await retryOverloadedRead(() => yearNewcomerLedger(db));
+  const asset = await retryOverloadedRead(() => yearAssetLedger(db));
+  const rawDex = await retryOverloadedRead(() => yearRawDexLedger(db));
+  const clean = await retryOverloadedRead(() => yearCleanLedger(db));
+  const xcp = await retryOverloadedRead(() => yearOhlcLedger(db, "XCP"));
+  const btc = await retryOverloadedRead(() => yearOhlcLedger(db, "BTC"));
   const by = <T extends { y: string }>(rows: T[]) => new Map(rows.map((row) => [Number(row.y), row]));
   const activityBy = by(activity);
   const newcomerBy = by(newcomer);
@@ -119,14 +120,22 @@ export async function readCachedYearIndex(db: D1Database): Promise<YearIndex | n
 
 export const years = router();
 
-years.get("/v2/years", (c) =>
+const yearIndexResponse = (c: Parameters<typeof cached>[0]) =>
   cached(
     c,
     YEARS_INDEX_CACHE_KEY,
-    { ttl: 86_400, edge: 3_600, swr: 604_800, staleKey: YEARS_INDEX_STALE_CACHE_KEY },
+    {
+      ttl: 86_400,
+      edge: 3_600,
+      swr: 604_800,
+      singleFlight: true,
+      durableWrite: true,
+      staleKey: YEARS_INDEX_STALE_CACHE_KEY,
+    },
     async (): Promise<Envelope<YearIndex>> => ({ result: await buildIndex(c.env.CORE_DB) }),
-  ),
-);
+  );
+
+years.get("/v2/years", yearIndexResponse);
 
 years.get("/v2/years/:year", (c) => {
   const year = Number(c.req.param("year"));
@@ -139,6 +148,8 @@ years.get("/v2/years/:year", (c) => {
     `years:${year}:${YEARS_CACHE_VERSION}`,
     {
       ...(partial ? { ttl: 3_600, edge: 300, swr: 86_400 } : { ttl: 31_536_000, edge: 86_400, swr: 31_536_000 }),
+      durableWrite: true,
+      singleFlight: true,
       staleKey: `years:${year}:${YEARS_CACHE_STALE_VERSION}`,
     },
     async (): Promise<Envelope<YearPage>> => {
@@ -147,39 +158,26 @@ years.get("/v2/years/:year", (c) => {
       const end = yearEnd(year);
       // The all-year ledgers are shared with the index (one SQL definition), so a year page can
       // never disagree with the nav strip built from /v2/years.
-      const [
-        index,
-        assetLedger,
-        detail,
-        monthly,
-        venues,
-        settlement,
-        topAssets,
-        sale,
-        currencySale,
-        burn,
-        collections,
-        cards,
-        daily,
-        pepecash,
-        zaif,
-      ] = await Promise.all([
-        readCachedYearIndex(db).then((index) => index ?? buildIndex(db)),
-        yearAssetLedger(db),
-        yearStatsDetail(db, start, end),
-        yearMonthly(db, start, end),
-        yearVenues(db, start, end),
-        yearSettlement(db, start, end),
-        yearTopAssets(db, start, end),
-        yearSaleOfYear(db, start, end),
-        yearCurrencySale(db, start, end),
-        yearBurn(db, start, end),
-        yearCollections(db, start, end),
-        yearCards(db, start, end),
-        yearXcpDaily(db, year),
-        yearPepecashVwap(db, start, end),
-        yearZaif(db, year),
-      ]);
+      let index = await readCachedYearIndex(db);
+      if (!index) {
+        const response = await yearIndexResponse(c);
+        if (!response.ok) throw new HTTPException(503, { message: "Year index is being prepared" });
+        index = ((await response.json()) as Envelope<YearIndex>).result;
+      }
+      const assetLedger = await retryOverloadedRead(() => yearAssetLedger(db));
+      const detail = await retryOverloadedRead(() => yearStatsDetail(db, start, end));
+      const monthly = await retryOverloadedRead(() => yearMonthly(db, start, end));
+      const venues = await retryOverloadedRead(() => yearVenues(db, start, end));
+      const settlement = await retryOverloadedRead(() => yearSettlement(db, start, end));
+      const topAssets = await retryOverloadedRead(() => yearTopAssets(db, start, end));
+      const sale = await retryOverloadedRead(() => yearSaleOfYear(db, start, end));
+      const currencySale = await retryOverloadedRead(() => yearCurrencySale(db, start, end));
+      const burn = await retryOverloadedRead(() => yearBurn(db, start, end));
+      const collections = await retryOverloadedRead(() => yearCollections(db, start, end));
+      const cards = await retryOverloadedRead(() => yearCards(db, start, end));
+      const daily = await retryOverloadedRead(() => yearXcpDaily(db, year));
+      const pepecash = await retryOverloadedRead(() => yearPepecashVwap(db, start, end));
+      const zaif = await retryOverloadedRead(() => yearZaif(db, year));
       const summary = index.years.find((row) => row.year === year);
       if (!summary) throw new Error(`year ${year} missing from index`);
       const editorial = YEARS_CATALOG[year] ?? {

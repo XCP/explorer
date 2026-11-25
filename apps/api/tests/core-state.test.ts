@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
+  claimCoreMaintenance,
   getCoreState,
   getCoreStateInt,
   getCoreStateStringArray,
@@ -23,8 +24,8 @@ class Statement {
     return (this.db.prepare(this.sql).get(...this.args) as T | undefined) ?? null;
   }
   async run() {
-    this.db.prepare(this.sql).run(...this.args);
-    return { success: true };
+    const { changes } = this.db.prepare(this.sql).run(...this.args);
+    return { success: true, meta: { changes: Number(changes) } };
   }
 }
 
@@ -44,5 +45,18 @@ test("core state has one typed, convergent access path", async () => {
   assert.deepEqual(await getCoreStateStringArray(db, "items"), ["a", "b"]);
   await setCoreState(db, "items", "not-json");
   assert.deepEqual(await getCoreStateStringArray(db, "items"), []);
+  sqlite.close();
+});
+
+test("an interrupted maintenance attempt is not replayed by a concurrent or later cron tick", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec("CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
+  const db = d1(sqlite);
+  assert.deepEqual(
+    await Promise.all([claimCoreMaintenance(db, "graph", 100, 60), claimCoreMaintenance(db, "graph", 100, 60)]),
+    [true, false],
+  );
+  assert.equal(await claimCoreMaintenance(db, "graph", 159, 60), false);
+  assert.equal(await claimCoreMaintenance(db, "graph", 160, 60), true);
   sqlite.close();
 });

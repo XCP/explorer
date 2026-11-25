@@ -9,6 +9,15 @@ export async function refreshRecoveryStats(env: Env, force = false): Promise<{ r
   const now = Math.floor(Date.now() / 1000);
   if (!force && current && now - current.updated_at < DAY) return { refreshed: false };
 
+  const claim = await env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_state(key,value,updated_at) VALUES('stats_refresh_retry_after',?,?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+     WHERE CAST(recovery_state.value AS INTEGER)<=?`,
+  )
+    .bind(String(now + 3600), now, now)
+    .run();
+  if (!claim.meta.changes) return { refreshed: false };
+
   const stamp = `EXISTS (SELECT 1 FROM recovery_protected_transactions p
     WHERE p.txid=recovery_outputs.txid AND p.protection_kind='stamp')`;
   const [summary, months, addresses, spentHeights] = await Promise.all([
@@ -49,18 +58,13 @@ export async function refreshRecoveryStats(env: Env, force = false): Promise<{ r
 
   const blockTimes = new Map<number, number>();
   for (let offset = 0; offset < spentHeights.results.length; offset += 100) {
-    const results = await env.CORE_DB.batch(
-      spentHeights.results
-        .slice(offset, offset + 100)
-        .map((row) =>
-          env.CORE_DB.prepare(`SELECT block_index,block_time FROM blocks WHERE block_index=?`).bind(row.spent_height),
-        ),
-    );
-    for (const result of results) {
-      const row = result.results[0] as { block_index?: number; block_time?: number | null } | undefined;
-      if (row?.block_index != null && row.block_time != null)
-        blockTimes.set(Number(row.block_index), Number(row.block_time));
-    }
+    const heights = spentHeights.results.slice(offset, offset + 100).map((row) => row.spent_height);
+    const { results } = await env.CORE_DB.prepare(
+      `SELECT block_index,block_time FROM blocks WHERE block_index IN (${heights.map(() => "?").join(",")})`,
+    )
+      .bind(...heights)
+      .all<{ block_index: number; block_time: number | null }>();
+    for (const row of results) if (row.block_time != null) blockTimes.set(row.block_index, row.block_time);
   }
   const recovered = new Map<number, { outputs: number; spending_transactions: number; gross_sats: number }>();
   for (const row of spentHeights.results) {
@@ -75,23 +79,23 @@ export async function refreshRecoveryStats(env: Env, force = false): Promise<{ r
     recovered.set(month, value);
   }
 
-  const statements: D1PreparedStatement[] = [
-    env.RECOVERY_DB.prepare(
-      `INSERT INTO recovery_stats_snapshot VALUES (1,?,?,?,?,?,?,?,?)
+  const snapshot = env.RECOVERY_DB.prepare(
+    `INSERT INTO recovery_stats_snapshot VALUES (1,?,?,?,?,?,?,?,?)
        ON CONFLICT(singleton) DO UPDATE SET recoverable_outputs=excluded.recoverable_outputs,
        recoverable_sats=excluded.recoverable_sats,protected_stamp_outputs=excluded.protected_stamp_outputs,
        protected_stamp_sats=excluded.protected_stamp_sats,unprotected_outputs=excluded.unprotected_outputs,
        unprotected_sats=excluded.unprotected_sats,recovery_addresses=excluded.recovery_addresses,updated_at=excluded.updated_at`,
-    ).bind(
-      summary.recoverable_outputs,
-      summary.recoverable_sats,
-      summary.protected_stamp_outputs,
-      summary.protected_stamp_sats,
-      summary.unprotected_outputs,
-      summary.unprotected_sats,
-      summary.recovery_addresses,
-      now,
-    ),
+  ).bind(
+    summary.recoverable_outputs,
+    summary.recoverable_sats,
+    summary.protected_stamp_outputs,
+    summary.protected_stamp_sats,
+    summary.unprotected_outputs,
+    summary.unprotected_sats,
+    summary.recovery_addresses,
+    now,
+  );
+  const statements: D1PreparedStatement[] = [
     ...months.results.map((row) =>
       env.RECOVERY_DB.prepare(
         `INSERT INTO recovery_monthly_stats VALUES (?,?,?,?,?,?) ON CONFLICT(month) DO UPDATE SET
@@ -138,6 +142,8 @@ export async function refreshRecoveryStats(env: Env, force = false): Promise<{ r
     env.RECOVERY_DB.prepare(`DELETE FROM recovery_monthly_stats WHERE updated_at<?`).bind(now),
     env.RECOVERY_DB.prepare(`DELETE FROM recovery_address_stats WHERE updated_at<?`).bind(now),
     env.RECOVERY_DB.prepare(`DELETE FROM recovery_monthly_recovered WHERE updated_at<?`).bind(now),
+    snapshot,
+    env.RECOVERY_DB.prepare("UPDATE recovery_state SET value='0' WHERE key='stats_refresh_retry_after'"),
   ]);
   return { refreshed: true };
 }
