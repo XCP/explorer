@@ -1,4 +1,4 @@
-import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
+import { getCoreStateInt, setCoreStateStatement, claimCoreMaintenance } from "#api/indexer/core-state";
 import { assetRankingEligibleSql } from "#api/reputation/eligibility";
 
 export const ASSET_RATING_MODEL_VERSION = 1;
@@ -69,8 +69,8 @@ export async function refreshAssetRatings(db: D1Database, now = Math.floor(Date.
   const [result] = await db.batch([
     db.prepare(ASSET_RATING_UPSERT_SQL).bind(now),
     db.prepare(ASSET_RATING_RECONCILE_SQL),
+    setCoreStateStatement(db, "asset_ratings_refreshed_at", now),
   ]);
-  await setCoreState(db, "asset_ratings_refreshed_at", now);
   return {
     refreshed: true,
     rowsWritten: result.meta.changes,
@@ -85,5 +85,7 @@ export async function maybeRefreshAssetRatings(db: D1Database, now = Math.floor(
   if (!assetRatingRefreshReady(now, refreshedAt, pendingSignals)) {
     return { refreshed: false, refreshedAt, pendingSignals };
   }
+  if (!(await claimCoreMaintenance(db, "asset_ratings_retry_after", now, 21600)))
+    return { refreshed: false, refreshedAt, pendingSignals };
   return refreshAssetRatings(db, now);
 }

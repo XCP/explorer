@@ -1,4 +1,4 @@
-import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
+import { getCoreStateInt, setCoreStateStatement, claimCoreMaintenance } from "#api/indexer/core-state";
 import { assetRankingEligibleSql } from "#api/reputation/eligibility";
 
 export const ACTIVITY_OUTLOOK_REFRESH_SECONDS = 86_400;
@@ -40,13 +40,15 @@ export async function refreshAssetActivityOutlook(db: D1Database, now = Math.flo
   const [result] = await db.batch([
     db.prepare(ASSET_ACTIVITY_OUTLOOK_UPSERT_SQL).bind(now),
     db.prepare(ASSET_ACTIVITY_OUTLOOK_RECONCILE_SQL),
+    setCoreStateStatement(db, "asset_activity_outlook_refreshed_at", now),
   ]);
-  await setCoreState(db, "asset_activity_outlook_refreshed_at", now);
   return { refreshed: true, rowsWritten: result.meta.changes, calculatedAt: now };
 }
 
 export async function maybeRefreshAssetActivityOutlook(db: D1Database, now = Math.floor(Date.now() / 1_000)) {
   const refreshedAt = await getCoreStateInt(db, "asset_activity_outlook_refreshed_at");
   if (!activityOutlookRefreshDue(now, refreshedAt)) return { refreshed: false, refreshedAt };
+  if (!(await claimCoreMaintenance(db, "asset_activity_outlook_retry_after", now, 21600)))
+    return { refreshed: false, refreshedAt };
   return refreshAssetActivityOutlook(db, now);
 }

@@ -1,6 +1,6 @@
 /** Polymorphic sales ledger across Counterparty and external venues. */
 import type { Env } from "#api/env";
-import { getCoreStateInt, setCoreState } from "#api/indexer/core-state";
+import { getCoreStateInt, setCoreStateStatement } from "#api/indexer/core-state";
 
 const ETH_TOKENS = [
   "eth",
@@ -287,8 +287,7 @@ async function advanceBlockVenue(
   const cursor = await getCoreStateInt(db, stateKey);
   if (cursor >= tip) return { written: 0, done: true };
   const high = Math.min(cursor + BLOCK_WINDOW, tip);
-  const result = await db.prepare(sql).bind(cursor, high).run();
-  await setCoreState(db, stateKey, high);
+  const [result] = await db.batch([db.prepare(sql).bind(cursor, high), setCoreStateStatement(db, stateKey, high)]);
   return { range: { from: cursor, to: high }, written: result.meta.rows_written ?? 0, done: high >= tip };
 }
 
@@ -302,11 +301,11 @@ async function advanceDispenseVenue(
   const results = await db.batch([
     db.prepare(DISPENSE_TRADES_SQL).bind(cursor, high),
     db.prepare(DISPENSE_TRADE_LEGS_SQL).bind(cursor, high),
+    setCoreStateStatement(db, "trades_cur_dispense_payments", high),
   ]);
-  await setCoreState(db, "trades_cur_dispense_payments", high);
   return {
     range: { from: cursor, to: high },
-    written: results.reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0),
+    written: results.slice(0, 2).reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0),
     done: high >= tip,
   };
 }
@@ -356,10 +355,12 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
     let dexReconcileCursor = await getCoreStateInt(env.CORE_DB, "trades_dex_reconcile_block");
     if (dexReconcileCursor >= tip) dexReconcileCursor = 0;
     const high = Math.min(dexReconcileCursor + BLOCK_WINDOW, tip);
-    const result = await env.CORE_DB.prepare(coreDexTradesSql()).bind(dexReconcileCursor, high).run();
+    const [result] = await env.CORE_DB.batch([
+      env.CORE_DB.prepare(coreDexTradesSql()).bind(dexReconcileCursor, high),
+      setCoreStateStatement(env.CORE_DB, "trades_dex_reconcile_block", high),
+      setCoreStateStatement(env.CORE_DB, "trades_dex_reconcile_run_block", tip),
+    ]);
     writes.dex_reconcile = result.meta.rows_written ?? 0;
-    await setCoreState(env.CORE_DB, "trades_dex_reconcile_block", high);
-    await setCoreState(env.CORE_DB, "trades_dex_reconcile_run_block", tip);
   }
 
   const emblemTip = Number(
@@ -369,11 +370,11 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
   const emblemCursor = await getCoreStateInt(env.CORE_DB, "trades_cur_emblem");
   if (emblemCursor < emblemTip) {
     const high = Math.min(emblemCursor + EMBLEM_WINDOW, emblemTip);
-    const result = await env.CORE_DB.prepare(emblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`))
-      .bind(emblemCursor, high)
-      .run();
+    const [result] = await env.CORE_DB.batch([
+      env.CORE_DB.prepare(emblemTradesSql(`AND sale.rowid>? AND sale.rowid<=?`)).bind(emblemCursor, high),
+      setCoreStateStatement(env.CORE_DB, "trades_cur_emblem", high),
+    ]);
     writes.emblem_new = result.meta.rows_written ?? 0;
-    await setCoreState(env.CORE_DB, "trades_cur_emblem", high);
   }
 
   const emblemReconcile = await reconcileDirtyEmblemTrades(env.CORE_DB);
@@ -387,9 +388,9 @@ export async function buildTrades(env: Env): Promise<TradesBuildProgress> {
     const swapbot = await env.CORE_DB.batch([
       env.CORE_DB.prepare(SWAPBOT_TRADES_SQL),
       env.CORE_DB.prepare(SWAPBOT_TRADE_LEGS_SQL),
+      setCoreStateStatement(env.CORE_DB, "trades_tokenly_swapbot_version", SWAPBOT_PROJECTION_VERSION),
     ]);
-    writes.tokenly_swapbot = swapbot.reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0);
-    await setCoreState(env.CORE_DB, "trades_tokenly_swapbot_version", SWAPBOT_PROJECTION_VERSION);
+    writes.tokenly_swapbot = swapbot.slice(0, 2).reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0);
   }
   return {
     tip,
