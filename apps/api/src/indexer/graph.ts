@@ -23,7 +23,7 @@
  *          value moved. The retired SQL form of these passes billed ~200M D1 row writes per rebuild; the
  *          in-memory form bills the changed rows.
  */
-import { advanceGraphDiff, startGraphDiff } from "#api/indexer/graph-diff";
+import { advanceDirtyGraph, startDirtyGraph } from "#api/indexer/graph-dirty";
 import { measureGraphRefresh } from "#api/indexer/graph-usage";
 import type { Env } from "#api/env";
 import { q } from "#api/db";
@@ -222,7 +222,10 @@ const UPDATE_ROWS = 30; // 90 bound parameters per statement, under D1's 100-bin
 const UPDATE_STATEMENTS_PER_BATCH = 40;
 
 async function readEdges(env: Env, generation: number, revision?: number): Promise<GraphEdgeArrays> {
-  const weight = revision === undefined ? "weight" : "CASE WHEN revision<=?4 THEN next_weight ELSE weight END";
+  const weight =
+    revision === undefined
+      ? "weight"
+      : "CASE WHEN revision<=?4 AND revision<>COALESCE((SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_abandoned_revision'),-1) THEN next_weight ELSE weight END";
   // Tombstones can over-allocate the typed arrays slightly. edgeCount is the number of visible edges.
   const total =
     Number(
@@ -510,6 +513,7 @@ export async function buildGraphTrust(
   opts: { work?: number; reset?: boolean; bipartite?: boolean } = {},
 ): Promise<GraphBuildProgress> {
   const now = Math.floor(Date.now() / 1000);
+  if ((await getState(env.CORE_DB, "graph_refresh_paused")) === "1") return { phase: "paused", done: false };
   const leaseKey = "graph_job_retry_after";
   // A timed-out invocation cannot keep replaying its most expensive statement every two minutes.
   if (!(await claimCoreMaintenance(env.CORE_DB, leaseKey, now, 21600))) {
@@ -539,13 +543,12 @@ async function advanceGraph(
   const active = int(await getState(db, "graph_generation"), 0);
   const differential = active > 0 && (await getState(db, "graph_differential_enabled")) === "1";
   const currentPhase = await getState(db, K_PHASE);
-  if (differential && (opts.reset || currentPhase === "build" || currentPhase === "diff")) {
-    if (opts.reset || currentPhase !== "diff") {
-      const bipartite = opts.bipartite ?? (await getState(db, "graph_bipartite")) === "1";
-      if (!(await startGraphDiff(db, bipartite)))
-        return { phase: "build", done: false, note: "resolving graph identities" };
+  const scoringFrozenEpoch = currentPhase === "score" && (await getState(db, "graph_processing_epoch"));
+  if (differential && !scoringFrozenEpoch && (opts.reset || currentPhase === "build" || currentPhase === "diff")) {
+    if (currentPhase !== "diff" || !(await getState(db, "graph_processing_epoch"))) {
+      await startDirtyGraph(db, opts.bipartite);
     }
-    return advanceGraphDiff(db);
+    return advanceDirtyGraph(db);
   }
   const legacyBuild = (await getState(db, K_PHASE)) === "build" && !(await getState(db, "graph_atomic_build"));
   if (opts.reset || legacyBuild) {
@@ -611,6 +614,7 @@ async function advanceGraph(
           ? [
               setCoreStateStatement(db, K_EDGES_BLOCK, int(await getState(db, "graph_diff_tip"), 0)),
               setCoreStateStatement(db, "graph_diff_revision", 0),
+              db.prepare("DELETE FROM core_state WHERE key='graph_processing_epoch'"),
             ]
           : []),
         setCoreStateStatement(db, K_SCORED_BLOCK, await graphTip(env)),
@@ -630,10 +634,13 @@ async function advanceGraph(
  * every ~8 weeks the edge topology itself rebuilds (bounded ops trickled a few per tick), then scores.
  */
 export async function maybeBuildGraph(env: Env): Promise<GraphBuildProgress | { skipped: string }> {
-  const phaseResult = await env.CORE_DB.prepare("SELECT value FROM core_state WHERE key=?")
+  const phaseResult = await env.CORE_DB.prepare(
+    "SELECT CASE WHEN (SELECT value FROM core_state WHERE key='graph_refresh_paused')='1' THEN 'paused' ELSE (SELECT value FROM core_state WHERE key=?) END value",
+  )
     .bind(K_PHASE)
     .all<{ value: string }>();
   const phase = phaseResult.results[0]?.value || "done";
+  if (phase === "paused") return { skipped: "graph refresh paused" };
   if (phase === "diff" || phase === "score") return measureGraphRefresh(env, phase, phaseResult.meta, buildGraphTrust);
   if (phase === "build") return await buildGraphTrust(env, { work: 4 });
   const tip = await graphTip(env);

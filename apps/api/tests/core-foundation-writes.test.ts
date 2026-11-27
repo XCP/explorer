@@ -1,6 +1,6 @@
 import type { Env } from "#api/env";
-import { buildGraphTrust } from "#api/indexer/graph";
-import { advanceGraphDiff } from "#api/indexer/graph-diff";
+import { buildGraphTrust, maybeBuildGraph } from "#api/indexer/graph";
+import { advanceDirtyGraph, startDirtyGraph, changedPairSql } from "#api/indexer/graph-dirty";
 import { counterpartyJson } from "#api/integrations/counterparty";
 import { restoreUndo, writeWithUndo } from "#api/indexer/reorg-undo";
 import assert from "node:assert/strict";
@@ -2439,13 +2439,13 @@ test("differential graph writes only changed pairs and publishes additions, remo
     db.exec(`
       CREATE TABLE core_state(key TEXT PRIMARY KEY,value TEXT);
       INSERT INTO core_state VALUES ('graph_generation','5'),('graph_diff_revision','1'),('graph_diff_cursor','0'),
-        ('graph_diff_end','4'),('graph_diff_tip','100'),('graph_bipartite','0');
+        ('graph_diff_end','4'),('graph_diff_tip','100'),('graph_bipartite','0'),('graph_phase','diff');
       CREATE TABLE graph_edges(generation INTEGER,source_entity_id INTEGER,destination_entity_id INTEGER,weight REAL,edge_block INTEGER,
         PRIMARY KEY(generation,source_entity_id,destination_entity_id)) WITHOUT ROWID;
       INSERT INTO graph_edges VALUES (5,1,2,ln(2),50),(5,1,3,ln(2),30),(5,2,3,ln(2),10);
       CREATE TABLE address_dictionary(address_id INTEGER PRIMARY KEY,address TEXT UNIQUE);
       INSERT INTO address_dictionary VALUES (1,'a'),(2,'b'),(3,'c'),(4,'d');
-      CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT);
+      CREATE TABLE entity_dictionary(entity_id INTEGER PRIMARY KEY,entity_type TEXT,entity_key TEXT,UNIQUE(entity_type,entity_key));
       INSERT INTO entity_dictionary SELECT address_id,'address',address FROM address_dictionary;
       CREATE TABLE asset_dictionary(asset_id INTEGER PRIMARY KEY,asset TEXT);
       CREATE TABLE assets(asset_id INTEGER PRIMARY KEY,issuer_id INTEGER);
@@ -2455,46 +2455,125 @@ test("differential graph writes only changed pairs and publishes additions, remo
       INSERT INTO sends VALUES (1,2,50),(1,3,60),(3,4,70),(1,2,101);
       CREATE TABLE order_matches(tx0_address_id INTEGER,tx1_address_id INTEGER,block_index INTEGER);
       CREATE TABLE dispenses(destination_id INTEGER,source_id INTEGER,dispenser_tx_index INTEGER,block_index INTEGER);
-      CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,source_id INTEGER,origin_id INTEGER);`);
+      CREATE TABLE dispensers(tx_index INTEGER PRIMARY KEY,source_id INTEGER,origin_id INTEGER);
+      CREATE TABLE balances(balance_id INTEGER PRIMARY KEY,address_id INTEGER,asset_id INTEGER,quantity TEXT);
+      CREATE TABLE blocks(block_index INTEGER PRIMARY KEY); INSERT INTO blocks VALUES(100);`);
     db.exec(readFileSync("migrations-core/0102_graph_edge_revisions.sql", "utf8"));
+    db.exec(readFileSync("migrations-core/0103_graph_dirty_pairs.sql", "utf8"));
+    // A partially staged legacy revision cannot become visible with the next publication.
+    db.exec(
+      "UPDATE graph_edges SET revision=1,next_weight=99,next_edge_block=90 WHERE source_entity_id=1 AND destination_entity_id=2",
+    );
+    db.exec("INSERT INTO graph_dirty_pairs VALUES(1,0,1,3),(1,0,2,3),(1,0,3,4)");
     const binding = d1(db);
+    const graphEnv = { CORE_DB: binding } as Env;
+    db.exec("INSERT INTO core_state VALUES('graph_refresh_paused','1')");
+    assert.deepEqual(await maybeBuildGraph(graphEnv), { skipped: "graph refresh paused" });
+    assert.equal((await buildGraphTrust(graphEnv, { reset: true })).phase, "paused");
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM core_state WHERE key='graph_job_retry_after'").get()?.n, 0);
+    db.exec("DELETE FROM core_state WHERE key='graph_refresh_paused'");
+    await startDirtyGraph(binding);
     const visible = () =>
       db
         .prepare("SELECT source_entity_id,destination_entity_id,edge_block FROM published_graph_edges ORDER BY 1,2")
         .all()
         .map((r) => Object.values(r));
     const original = visible();
-    const staged = () => db.prepare("SELECT count(*) n FROM graph_edges WHERE revision=1").get()?.n;
-    await advanceGraphDiff(binding);
+    assert.equal(db.prepare(changedPairSql(false)).all("[]", 100, 5, 2, 1).length, 0);
+    const staged = () => db.prepare("SELECT count(*) n FROM graph_edges WHERE revision=2").get()?.n;
+    await advanceDirtyGraph(binding);
     assert.equal(staged(), 3);
     assert.deepEqual(visible(), original);
     assert.equal(
       db.prepare("SELECT revision FROM graph_edges WHERE source_entity_id=1 AND destination_entity_id=2").get()
         ?.revision,
-      null,
+      1,
     );
-    db.exec("UPDATE core_state SET value='0' WHERE key='graph_diff_cursor'");
-    assert.match((await advanceGraphDiff(binding)).note, /0 changed edges/);
-    db.exec("INSERT INTO core_state VALUES ('graph_edge_revision','1')");
+    db.exec("INSERT INTO graph_dirty_pairs VALUES(1,0,1,3)");
+    assert.match((await advanceDirtyGraph(binding)).note, /0 changed edges/);
+    db.exec("INSERT INTO core_state VALUES ('graph_edge_revision','2')");
     assert.deepEqual(visible(), [
       [1, 2, 50],
       [1, 3, 60],
       [3, 4, 70],
     ]);
-    db.exec(`UPDATE core_state SET value='0' WHERE key='graph_diff_cursor'; UPDATE core_state SET value='2' WHERE key='graph_diff_revision';
-      INSERT INTO sends VALUES(2,3,80); INSERT INTO curated VALUES('burn','c');`);
-    await advanceGraphDiff(binding);
+    db.exec("INSERT INTO sends VALUES(2,3,80); INSERT INTO curated VALUES('burn','c');");
+    await startDirtyGraph(binding);
+    // A repeated, concurrent invalidation survives completion of the frozen epoch.
+    db.exec("INSERT INTO sends VALUES(2,3,81)");
+    await advanceDirtyGraph(binding);
+    await advanceDirtyGraph(binding);
+    assert.equal(db.prepare("SELECT count(*) n FROM graph_dirty_pairs WHERE epoch=3").get()?.n, 1);
     assert.deepEqual(visible(), [
       [1, 2, 50],
       [1, 3, 60],
       [3, 4, 70],
     ]);
-    db.exec("UPDATE core_state SET value='2' WHERE key='graph_edge_revision'");
+    db.exec("UPDATE core_state SET value='3' WHERE key='graph_edge_revision'");
     assert.deepEqual(visible(), [
       [1, 2, 50],
       [1, 3, 60],
-      [2, 3, 80],
+      [2, 3, 81],
     ]);
+    db.exec(
+      "INSERT INTO order_matches VALUES(1,3,99); INSERT INTO order_matches VALUES(1,3,99); DELETE FROM order_matches;",
+    );
+    assert.deepEqual(
+      db.prepare("SELECT a,b FROM graph_dirty_pairs WHERE epoch=3 AND kind=0 ORDER BY a,b").all().map(Object.values),
+      [
+        [1, 3],
+        [2, 3],
+        [3, 1],
+      ],
+    );
+    db.exec(
+      "INSERT INTO dispensers VALUES(10,2,3); INSERT INTO dispenses VALUES(1,2,10,75); UPDATE dispensers SET origin_id=4 WHERE tx_index=10",
+    );
+    assert.equal(
+      db.prepare("SELECT count(*) n FROM graph_dirty_pairs WHERE epoch=3 AND kind=0 AND a=1 AND b IN(2,3,4)").get()?.n,
+      3,
+    );
+    db.exec(
+      "INSERT INTO asset_dictionary VALUES(10,'CARD'); INSERT INTO assets VALUES(10,1); INSERT INTO balances VALUES(1,2,10,'3')",
+    );
+    assert.equal(db.prepare("SELECT count(*) n FROM graph_dirty_pairs WHERE kind=1 AND a=2").get()?.n, 0);
+    db.exec(
+      "UPDATE assets SET issuer_id=2; UPDATE core_state SET value='1' WHERE key='graph_bipartite'; INSERT INTO balances VALUES(2,3,10,'1'); DELETE FROM balances WHERE balance_id=2",
+    );
+    assert.deepEqual(
+      db.prepare("SELECT a,b FROM graph_dirty_pairs WHERE epoch=3 AND kind=1 ORDER BY a").all().map(Object.values),
+      [
+        [1, 10],
+        [2, 10],
+        [3, 10],
+      ],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("graph cutover discovers pre-capture pairs by block and an idle refresh reads no canonical flows", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(CORE_DDL);
+    db.exec(`INSERT INTO core_state(key,value) VALUES ('graph_catchup_cursor','90'),('graph_processing_epoch','1'),
+      ('graph_diff_revision','2'),('graph_generation','5'),('graph_diff_tip','100')
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+      UPDATE core_state SET value='100' WHERE key='graph_capture_tip';
+      INSERT INTO address_dictionary(address_id,address) VALUES(1,'from'),(2,'to'),(3,'other');
+      INSERT INTO sends(event_index,tx_index,tx_hash,block_index,source_id,destination_id,asset_id,quantity,msg_index)
+        VALUES(1,1,zeroblob(32),89,1,3,1,'1',0),(2,2,zeroblob(32),95,1,2,1,'1',1);
+      DELETE FROM graph_dirty_pairs;`);
+    const queries: string[] = [];
+    const binding = d1(db, undefined, (sql) => queries.push(sql));
+    await advanceDirtyGraph(binding);
+    assert.deepEqual(db.prepare("SELECT kind,a,b FROM graph_dirty_pairs").all().map(Object.values), [[0, 1, 2]]);
+    await advanceDirtyGraph(binding);
+    assert.equal(db.prepare("SELECT count(*) n FROM graph_edges WHERE revision=2").get()?.n, 1);
+    queries.length = 0;
+    assert.equal((await advanceDirtyGraph(binding)).phase, "score");
+    assert.ok(queries.every((sql) => !/(?:FROM|JOIN) (sends|graph_edges|entity_dictionary)\b/i.test(sql)));
   } finally {
     db.close();
   }
