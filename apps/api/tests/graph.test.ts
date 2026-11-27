@@ -11,7 +11,7 @@
  * newcomer is unscored (exactly zero), never negative.
  */
 import { test } from "node:test";
-import { graphDiffSql } from "#api/indexer/graph-diff";
+import { changedPairSql } from "#api/indexer/graph-dirty";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -339,13 +339,18 @@ test("normalized edge builder resolves compact relationships through canonical e
   db.exec(`CREATE TABLE IF NOT EXISTS core_state(key TEXT PRIMARY KEY,value TEXT); ALTER TABLE graph_edges ADD COLUMN revision INTEGER;
     ALTER TABLE graph_edges ADD COLUMN next_weight REAL;
     ALTER TABLE graph_edges ADD COLUMN next_edge_block INTEGER;`);
-  assert.deepEqual(db.prepare(graphDiffSql(false)).all(0, 100, generation, 1, 1000), []);
+  const pairs = [];
+  for (let addr = 1; addr <= 5; addr++) {
+    pairs.push([1, addr, 10]);
+    for (let other = 1; other <= 5; other++) if (other !== addr) pairs.push([0, addr, other]);
+  }
+  assert.deepEqual(db.prepare(changedPairSql(false)).all(JSON.stringify(pairs), 1000, generation, 1, -1), []);
   db.exec("INSERT INTO balances VALUES(1,2,10,'2'),(2,1,10,'1')");
   for (const step of entityEdgeSteps(generation + 1, true))
     db.exec(
       `WITH graph_input AS MATERIALIZED (SELECT * FROM ${step.table} WHERE ${step.scope} ${step.start === undefined ? "" : `AND ${step.keys[0]}>${step.start}`}) ${step.sql}`,
     );
-  assert.deepEqual(db.prepare(graphDiffSql(true)).all(0, 100, generation + 1, 1, 1000), []);
+  assert.deepEqual(db.prepare(changedPairSql(true)).all(JSON.stringify(pairs), 1000, generation + 1, 1, -1), []);
   db.close();
 });
 

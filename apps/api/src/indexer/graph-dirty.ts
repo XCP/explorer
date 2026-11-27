@@ -1,5 +1,5 @@
 import { BIP_W, ENTITY_EXCLUDED, ENTITY_MAX } from "#api/indexer/graph-core";
-import { graphDiffSql, stageGraphChanges, type EdgeChange } from "#api/indexer/graph-diff";
+import { changedEligibilitySql, stageGraphChanges, type EdgeChange } from "#api/indexer/graph-diff";
 import { getCoreStateInt, setCoreStateStatement } from "#api/indexer/core-state";
 
 type DirtyPair = { kind: number; a: number; b: number };
@@ -185,8 +185,8 @@ export async function advanceDirtyGraph(db: D1Database) {
     const rows = id
       ? (
           await db
-            .prepare(graphDiffSql(bipartite))
-            .bind(id - 1, id, gen, rev, tip)
+            .prepare(changedEligibilitySql(bipartite))
+            .bind(id, batch[0].a, gen, rev, tip, abandoned)
             .all<EdgeChange>()
         ).results
       : [];
