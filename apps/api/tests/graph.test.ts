@@ -336,7 +336,7 @@ test("normalized edge builder resolves compact relationships through canonical e
     false,
     "excluded infrastructure cannot endorse",
   );
-  db.exec(`ALTER TABLE graph_edges ADD COLUMN revision INTEGER;
+  db.exec(`CREATE TABLE IF NOT EXISTS core_state(key TEXT PRIMARY KEY,value TEXT); ALTER TABLE graph_edges ADD COLUMN revision INTEGER;
     ALTER TABLE graph_edges ADD COLUMN next_weight REAL;
     ALTER TABLE graph_edges ADD COLUMN next_edge_block INTEGER;`);
   assert.deepEqual(db.prepare(graphDiffSql(false)).all(0, 100, generation, 1, 1000), []);

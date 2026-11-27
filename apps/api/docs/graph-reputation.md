@@ -82,7 +82,7 @@ does not establish a general trust verdict. The zero-score fraction remains a us
 Edges table (address→address from sends/trades/dispenses with origin-aware attribution, plus
 optionally holder↔asset edges), out-degree normalized. k seed subsets from `curated` kinds. ~20
 in-memory passes per seed subset as a weekly single-invocation job (the persisted `graph_edges`
-read into typed arrays; edges themselves fully rebuild every ~8 weeks as bounded SQL ops); reverse
+read into typed arrays; scheduled edge refreshes consume recorded input changes); reverse
 pass from scam seeds; publish `graph_trust`, `graph_distrust` as quantized delta writes, tier by
 threshold. All rebuildable, Layer-2 rules apply (derived, never contaminates mirrors).
 
@@ -96,3 +96,22 @@ pre-registered incremental bar → graph trust takes NO score weight.** Its prod
 displayed tier trait + the distrust curation queue (first harvest: 14 assets curated 2026-07-06,
 which feed back as seeds). Re-run this experiment only if the edge model changes materially
 (e.g. the bipartite variant) — same gauge, same bar.
+
+
+## Pausing and resuming the graph
+
+Set `core_state.graph_refresh_paused` to `1` to skip scheduled and manual graph work. Acquire the graph maintenance lease first when fencing an older Worker or waiting for an in-flight batch to finish. Public reads use the published generation and scores. Canonical ingestion continues to record affected pairs during the pause.
+
+After migration 0103, each edge refresh freezes the current queue epoch. Sends, matches, dispenser attribution, issuer changes, optional positive balance memberships and address eligibility changes enqueue their affected keys. A rollback or a second edit enqueues the old and new dependencies. The consumer stages edge changes and acknowledges those keys in one transaction. A changed source eligibility rule can affect every outgoing edge from that particular address. Ranking still uses the published graph plus the pending edge revision.
+
+The first refresh after cutover uses block indexes to collect affected pairs between the last published edge block and the start of change capture. It retains published weights as its baseline. Unpublished edits from an interrupted source-range comparison stay separate, including when later revisions are published. Historical weight repairs unrelated to captured changes require a separate reconciliation. Mutable classification changes that predate capture have no complete historical journal.
+
+For the November 26 production pause, the existing lease also fences older Worker versions. To resume intentionally after verifying the queue consumer is deployed, atomically clear both controls:
+
+```sql
+UPDATE core_state SET value='0'
+WHERE (key='graph_refresh_paused' AND value='1')
+   OR (key='graph_job_retry_after' AND value='253402300799');
+```
+
+The next scheduled invocation opens a queue epoch. Leave the publication markers and the old source cursor in place.

@@ -1,5 +1,4 @@
 import { BIP_W, ENTITY_EXCLUDED, ENTITY_MAX } from "#api/indexer/graph-core";
-import { getCoreStateInt, setCoreStateStatement } from "#api/indexer/core-state";
 
 // Partition by source so all contributions to one directed pair are counted together.
 // Comparing to the staged revision also makes a retry or an explicit restart idempotent.
@@ -47,8 +46,8 @@ export function graphDiffSql(bipartite: boolean): string {
       JOIN entity_dictionary e ON e.entity_type='asset' AND e.entity_key=d.asset ${holdings}
     ), stored(src,dst,w,h) AS MATERIALIZED (
       SELECT source_entity_id,destination_entity_id,
-        CASE WHEN revision<=?4 THEN next_weight ELSE weight END,
-        CASE WHEN revision<=?4 THEN next_edge_block ELSE edge_block END
+        CASE WHEN revision<=?4 AND revision<>COALESCE((SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_abandoned_revision'),-1) THEN next_weight ELSE weight END,
+        CASE WHEN revision<=?4 AND revision<>COALESCE((SELECT CAST(value AS INTEGER) FROM core_state WHERE key='graph_abandoned_revision'),-1) THEN next_edge_block ELSE edge_block END
       FROM graph_edges WHERE generation=?3 AND source_entity_id>?1 AND source_entity_id<=?2
     )
     SELECT e.src,e.dst,e.w,e.h FROM expected e LEFT JOIN stored s ON s.src=e.src AND s.dst=e.dst
@@ -58,77 +57,20 @@ export function graphDiffSql(bipartite: boolean): string {
     ORDER BY 1,2 LIMIT 501`;
 }
 
-interface EdgeChange {
+export interface EdgeChange {
   src: number;
   dst: number;
   w: number;
   h: number | null;
 }
 
-export async function startGraphDiff(db: D1Database, bipartite: boolean) {
-  // Dictionaries can gain entries between rebuilds. Existing identities require no writes.
-  for (const kind of ["address", "asset"]) {
-    const result = await db
-      .prepare(
-        `INSERT OR IGNORE INTO entity_dictionary(entity_type,entity_key)
-      SELECT ?,d.${kind} FROM ${kind}_dictionary d WHERE NOT EXISTS
-      (SELECT 1 FROM entity_dictionary e WHERE e.entity_type=? AND e.entity_key=d.${kind}) LIMIT 500`,
-      )
-      .bind(kind, kind)
-      .run();
-    if (result.meta.changes === 500) return false;
-  }
-  const tip = await db.prepare("SELECT MAX(block_index) b FROM blocks").first<number>("b");
-  const revision = await getCoreStateInt(db, "graph_edge_revision", 0);
-  const active = await getCoreStateInt(db, "graph_generation", 0);
-  const last = await db
-    .prepare(
-      `SELECT MAX(COALESCE((SELECT MAX(entity_id) FROM entity_dictionary),0),
-    COALESCE((SELECT MAX(source_entity_id) FROM graph_edges WHERE generation=?),0)) AS e`,
-    )
-    .bind(active)
-    .first<number>("e");
-  if (!active || !tip || !last) throw new Error("Missing published graph or canonical tip");
-  await db.batch([
-    setCoreStateStatement(db, "graph_diff_tip", tip),
-    setCoreStateStatement(db, "graph_diff_end", last),
-    setCoreStateStatement(db, "graph_diff_cursor", 0),
-    setCoreStateStatement(db, "graph_diff_revision", revision + 1),
-    setCoreStateStatement(db, "graph_build_generation", active),
-    setCoreStateStatement(db, "graph_bipartite", bipartite ? 1 : 0),
-    setCoreStateStatement(db, "graph_phase", "diff"),
-  ]);
-  return true;
-}
-
-export async function advanceGraphDiff(db: D1Database) {
-  const state = Object.fromEntries(
-    (
-      await db
-        .prepare(
-          `SELECT key,value FROM core_state
-      WHERE key IN ('graph_diff_cursor','graph_diff_end','graph_diff_revision','graph_generation','graph_bipartite','graph_diff_tip')`,
-        )
-        .all<{ key: string; value: string }>()
-    ).results.map((r) => [r.key, Number(r.value)]),
-  );
-  const from = state.graph_diff_cursor,
-    end = state.graph_diff_end,
-    revision = state.graph_diff_revision,
-    gen = state.graph_generation;
-  if (
-    ![from, end, revision, gen, state.graph_diff_tip].every(Number.isSafeInteger) ||
-    end < from ||
-    revision < 1 ||
-    gen < 1
-  )
-    throw new Error("Invalid differential graph checkpoint");
-  const to = Math.min(end, from + 512);
-  const result = await db
-    .prepare(graphDiffSql(state.graph_bipartite === 1))
-    .bind(from, to, gen, revision, state.graph_diff_tip)
-    .all<EdgeChange>();
-  const changes = result.results.slice(0, 500);
+export function stageGraphChanges(
+  db: D1Database,
+  gen: number,
+  revision: number,
+  abandoned: number,
+  changes: EdgeChange[],
+) {
   const statements: D1PreparedStatement[] = [];
   for (let i = 0; i < changes.length; i += 24) {
     const rows = changes.slice(i, i + 24);
@@ -139,26 +81,12 @@ export async function advanceGraphDiff(db: D1Database) {
           `INSERT INTO graph_edges(generation,source_entity_id,destination_entity_id,weight,edge_block,revision,next_weight,next_edge_block)
       VALUES ${rows.map(() => `(${gen},?,?,0,NULL,${revision},?,?)`).join(",")}
       ON CONFLICT(generation,source_entity_id,destination_entity_id) DO UPDATE SET
-        weight=CASE WHEN graph_edges.revision<excluded.revision THEN graph_edges.next_weight ELSE graph_edges.weight END,
-        edge_block=CASE WHEN graph_edges.revision<excluded.revision THEN graph_edges.next_edge_block ELSE graph_edges.edge_block END,
+        weight=CASE WHEN graph_edges.revision<excluded.revision AND graph_edges.revision<>${abandoned} THEN graph_edges.next_weight ELSE graph_edges.weight END,
+        edge_block=CASE WHEN graph_edges.revision<excluded.revision AND graph_edges.revision<>${abandoned} THEN graph_edges.next_edge_block ELSE graph_edges.edge_block END,
         revision=excluded.revision,next_weight=excluded.next_weight,next_edge_block=excluded.next_edge_block`,
         )
         .bind(...rows.flatMap((r) => [r.src, r.dst, r.w, r.h])),
     );
   }
-  const complete = result.results.length <= 500;
-  if (complete) {
-    statements.push(setCoreStateStatement(db, "graph_diff_cursor", to));
-    if (to === end) statements.push(setCoreStateStatement(db, "graph_phase", "score"));
-  }
-  const writes = await db.batch(statements);
-  return {
-    phase: "diff",
-    done: false,
-    source_through: complete ? to : from,
-    changed_pairs: changes.length,
-    comparison_rows_read: result.meta?.rows_read,
-    batch_rows_written: writes.reduce((sum, r) => sum + r.meta.rows_written, 0),
-    note: `sources ${from + 1}-${to}, ${changes.length} changed edges`,
-  };
+  return statements;
 }
